@@ -22,10 +22,37 @@ export const AuthProvider = ({ children }) => {
   const fetchProfile = useCallback(async (supabaseUser) => {
     if (!supabaseUser) return null;
     try {
-      const profile = await base44.auth.me();
-      return profile;
-    } catch {
-      // Perfil não existe ou erro de rede — usa metadados do Auth como fallback
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', supabaseUser.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        console.warn('[AC.Prod] Erro ao buscar perfil:', error);
+      }
+
+      const meta = supabaseUser.user_metadata || {};
+      return {
+        id: supabaseUser.id,
+        email: supabaseUser.email,
+        name: profile?.name || meta.name || supabaseUser.email?.split('@')[0] || '',
+        role: profile?.role || meta.role || 'operator',
+        cell: profile?.cell || meta.cell || '',
+        permissions: profile?.permissions || meta.permissions || {
+          view_dashboards: true,
+          register_production: true,
+          manage_occurrences: true,
+          manage_cells: false,
+          manage_operators: false,
+          view_reports: false,
+          manage_automations: false,
+          manage_users: false,
+        },
+        dashboard_layout: profile?.dashboard_layout || null,
+      };
+    } catch (err) {
+      console.error('[AC.Prod] Erro no catch de fetchProfile:', err);
       const meta = supabaseUser.user_metadata || {};
       return {
         id: supabaseUser.id,
@@ -70,10 +97,29 @@ export const AuthProvider = ({ children }) => {
         const session = sessionResult?.data?.session;
 
         if (session?.user) {
-          const profile = await fetchProfile(session.user);
-          if (!isMounted) return;
-          setUser(profile);
-          setIsAuthenticated(true);
+          // Valida a sessão com o servidor do Supabase com timeout para evitar travamento
+          const userResult = await Promise.race([
+            supabase.auth.getUser(),
+            new Promise((resolve) =>
+              setTimeout(() => resolve({ data: { user: null }, error: { message: 'Timeout' } }), 4000)
+            ),
+          ]);
+          const user = userResult?.data?.user;
+          const userError = userResult?.error;
+
+          if (user && !userError) {
+            const profile = await fetchProfile(user);
+            if (!isMounted) return;
+            setUser(profile);
+            setIsAuthenticated(true);
+          } else {
+            // Sessão inválida no servidor — limpa localmente
+            if (isMounted) {
+              setUser(null);
+              setIsAuthenticated(false);
+            }
+            await supabase.auth.signOut();
+          }
         } else {
           setUser(null);
           setIsAuthenticated(false);
@@ -135,10 +181,26 @@ export const AuthProvider = ({ children }) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        const profile = await fetchProfile(session.user);
-        setUser(profile);
-        setIsAuthenticated(true);
-        setAuthError(null);
+        // Valida a sessão com o servidor do Supabase com timeout para evitar travamento
+        const userResult = await Promise.race([
+          supabase.auth.getUser(),
+          new Promise((resolve) =>
+            setTimeout(() => resolve({ data: { user: null }, error: { message: 'Timeout' } }), 4000)
+          ),
+        ]);
+        const user = userResult?.data?.user;
+        const userError = userResult?.error;
+
+        if (user && !userError) {
+          const profile = await fetchProfile(user);
+          setUser(profile);
+          setIsAuthenticated(true);
+          setAuthError(null);
+        } else {
+          setUser(null);
+          setIsAuthenticated(false);
+          await supabase.auth.signOut();
+        }
       } else {
         setUser(null);
         setIsAuthenticated(false);

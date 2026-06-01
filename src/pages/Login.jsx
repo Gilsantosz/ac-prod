@@ -63,7 +63,7 @@ export default function Login() {
               onChange={(e) => setEmail(e.target.value)}
               required
               placeholder="voce@empresa.com"
-              autoComplete="email"
+              autoComplete="off"
             />
           </div>
           <div className="space-y-2">
@@ -75,7 +75,7 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)}
               required
               placeholder="••••••••"
-              autoComplete="current-password"
+              autoComplete="one-time-code"
             />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}

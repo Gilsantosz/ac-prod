@@ -10,10 +10,23 @@ export default defineConfig({
   // Base path para GitHub Pages: https://gilsantosz.github.io/ac-prod/
   base: '/ac-prod/',
 
-  logLevel: 'error',
+  logLevel: 'info',
 
   plugins: [
     react(),
+    {
+      name: 'redirect-to-basename',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url === '/' || req.url === '/index.html' || req.url === '') {
+            res.writeHead(302, { Location: '/ac-prod/' });
+            res.end();
+          } else {
+            next();
+          }
+        });
+      }
+    },
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icons/*.png'],

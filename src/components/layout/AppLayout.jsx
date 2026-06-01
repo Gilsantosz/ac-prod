@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { base44 } from '@/lib/localDb';
-import { Factory, LayoutDashboard, PlusCircle, LogOut, AlertOctagon, Zap, LineChart, Boxes, Users, Gauge, HardHat, TimerOff, ClipboardList, TrendingUp, Trophy } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, LogOut, AlertOctagon, Zap, LineChart, Boxes, Users, Gauge, HardHat, TimerOff, ClipboardList, TrendingUp, Trophy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { KioskProvider, useKiosk } from '@/lib/KioskContext';
 import { useAuth } from '@/lib/AuthContext';
 import LeoLogo from '@/components/ui/LeoLogo';
+import { useRealtimeSync } from '@/hooks/useRealtimeSync';
 
 const nav = [
   { to: '/', label: 'Painéis', icon: LayoutDashboard },
@@ -37,6 +37,9 @@ function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const { kiosk } = useKiosk();
   const { user, logout } = useAuth();
+
+  // Ativa a escuta de eventos em tempo real do banco de dados enquanto logado
+  useRealtimeSync(!!user);
 
   const visibleNav = nav.filter((item) => {
     // Se o item é reservado para administrador e o usuário não for admin

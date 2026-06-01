@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { User as UserIcon, Eye, EyeOff, Edit3, Trash2, Save, X, ShieldAlert, LayoutDashboard, PlusCircle, AlertOctagon, Boxes, HardHat, LineChart, Zap, Users } from 'lucide-react';
+import { User as UserIcon, Eye, EyeOff, Edit3, Trash2, Save, X, LayoutDashboard, PlusCircle, AlertOctagon, Boxes, HardHat, LineChart, Zap, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCells } from '@/hooks/useCells';
 

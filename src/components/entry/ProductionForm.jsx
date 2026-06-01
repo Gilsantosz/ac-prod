@@ -86,14 +86,14 @@ export default function ProductionForm({ onSubmit, saving }) {
     if (cell?.notes) {
       setData((d) => ({ ...d, notes: d.notes || cell.notes }));
     }
-  }, [data.cell]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [data.cell]);  
 
   // ─── Ao mudar célula ou turno, busca as horas cadastradas do turno ──────────
   useEffect(() => {
     if (!data.cell) return;
     const h = getShiftHours(data.cell, data.shift);
     if (h != null) setData((d) => ({ ...d, hours: String(h) }));
-  }, [data.cell, data.shift]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [data.cell, data.shift]);  
 
   // ─── Calcula a meta/hora a partir da meta diária cadastrada ─────────────────
   useEffect(() => {

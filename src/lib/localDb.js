@@ -154,10 +154,9 @@ const createEntityClient = (entityName) => {
 // ─── Auth wrapper usando Supabase Auth ───────────────────────────────────────
 const auth = {
   me: async () => {
-    // Usa getSession() em vez de getUser() — lê do localStorage (sem chamada de rede)
-    const { data: { session } } = await supabase.auth.getSession();
-    const user = session?.user;
-    if (!user) {
+    // Valida a sessão com o servidor do Supabase para evitar "sessões fantasma"
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (!user || userError) {
       const err = new Error('Authentication required');
       err.status = 401;
       throw err;
@@ -368,6 +367,11 @@ const users = {
 export const base44 = {
   auth,
   users,
+  functions: {
+    invoke: async (functionName, options) => {
+      return supabase.functions.invoke(functionName, options);
+    }
+  },
   entities: {
     ProductionEntry: createEntityClient('ProductionEntry'),
     DailyGoal: createEntityClient('DailyGoal'),
