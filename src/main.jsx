@@ -24,22 +24,6 @@ if (typeof window !== 'undefined' && window.Node && window.Node.prototype) {
   };
 }
 
-// Limpa qualquer cache do navegador programaticamente para evitar scripts obsoletos na inicialização
-if (typeof window !== 'undefined' && 'caches' in window) {
-  caches.keys().then((keys) => {
-    keys.forEach((key) => caches.delete(key));
-  }).catch(() => {});
-}
-
 ReactDOM.createRoot(document.getElementById('root')).render(
   <App />
 )
-
-// Desregistra qualquer Service Worker ativo para evitar cache obsoleto (evitando erros de renderização)
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then((registrations) => {
-    for (let registration of registrations) {
-      registration.unregister();
-    }
-  }).catch(() => {});
-}

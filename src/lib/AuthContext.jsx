@@ -22,11 +22,17 @@ export const AuthProvider = ({ children }) => {
   const fetchProfile = useCallback(async (supabaseUser) => {
     if (!supabaseUser) return null;
     try {
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', supabaseUser.id)
-        .single();
+      // Busca o perfil com timeout de 4 segundos para evitar travamento em redes lentas
+      const { data: profile, error } = await Promise.race([
+        supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', supabaseUser.id)
+          .single(),
+        new Promise((resolve) =>
+          setTimeout(() => resolve({ data: null, error: { message: 'Timeout', code: 'TIMEOUT' } }), 4000)
+        ),
+      ]);
 
       if (error && error.code !== 'PGRST116') {
         console.warn('[AC.Prod] Erro ao buscar perfil:', error);
