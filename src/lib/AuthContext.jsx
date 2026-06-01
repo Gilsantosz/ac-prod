@@ -4,6 +4,14 @@ import { base44 } from '@/lib/localDb';
 
 const AuthContext = createContext();
 
+// Helper: garante que redirecionamentos incluem o basename /ac-prod
+const redirectTo = (path) => {
+  const base = import.meta.env.BASE_URL || '/ac-prod/';
+  const cleanBase = base.replace(/\/$/, '');
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  window.location.replace(`${cleanBase}${cleanPath}`);
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -18,7 +26,7 @@ export const AuthProvider = ({ children }) => {
       const profile = await base44.auth.me();
       return profile;
     } catch {
-      // Se o perfil não existe ainda, retorna dados básicos do Auth
+      // Perfil ainda não existe — usa metadados básicos do Auth
       return {
         id: supabaseUser.id,
         email: supabaseUser.email,
@@ -40,42 +48,39 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  // ─── Listener reativo de sessão Supabase ─────────────────────────────────────
+  // ─── Inicialização da sessão via onAuthStateChange (padrão Supabase v2) ──────
+  // No Supabase v2, onAuthStateChange dispara INITIAL_SESSION imediatamente
+  // após o registro do listener. É a maneira confiável de detectar sessão existente.
   useEffect(() => {
-    setIsLoadingAuth(true);
+    let resolved = false;
 
-    // Verifica sessão existente de forma ultra-robusta
-    supabase.auth.getSession().then(async ({ data }) => {
-      try {
-        const session = data?.session;
-        if (session?.user) {
-          const profile = await fetchProfile(session.user);
-          setUser(profile);
-          setIsAuthenticated(true);
-        } else {
-          setUser(null);
-          setIsAuthenticated(false);
-        }
-      } catch (err) {
-        console.error('Erro ao buscar perfil inicial:', err);
+    // Segurança: força saída do estado de loading após 6 segundos
+    // (evita tela branca infinita em casos de rede instável ou token corrompido)
+    const hardTimeout = setTimeout(() => {
+      if (!resolved) {
+        console.warn('[AC.Prod] Auth timeout — forçando estado não autenticado');
+        resolved = true;
         setUser(null);
         setIsAuthenticated(false);
-      } finally {
         setIsLoadingAuth(false);
         setAuthChecked(true);
       }
-    }).catch(err => {
-      console.error('Erro ao buscar sessão inicial:', err);
-      setUser(null);
-      setIsAuthenticated(false);
-      setIsLoadingAuth(false);
-      setAuthChecked(true);
-    });
+    }, 6000);
 
-    // Escuta mudanças de sessão (login, logout, refresh de token)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       try {
-        if (event === 'SIGNED_IN' && session?.user) {
+        if (event === 'INITIAL_SESSION') {
+          // Primeiro evento sempre disparado — define o estado inicial real
+          if (session?.user) {
+            const profile = await fetchProfile(session.user);
+            setUser(profile);
+            setIsAuthenticated(true);
+            setAuthError(null);
+          } else {
+            setUser(null);
+            setIsAuthenticated(false);
+          }
+        } else if (event === 'SIGNED_IN' && session?.user) {
           const profile = await fetchProfile(session.user);
           setUser(profile);
           setIsAuthenticated(true);
@@ -84,20 +89,32 @@ export const AuthProvider = ({ children }) => {
           setUser(null);
           setIsAuthenticated(false);
         } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-          // Silently refresh — mantém o usuário logado
+          // Refresh silencioso — mantém sessão ativa
+        } else if (event === 'USER_UPDATED' && session?.user) {
+          const profile = await fetchProfile(session.user);
+          setUser(profile);
         }
       } catch (err) {
-        console.error('Erro no tratador onAuthStateChange:', err);
+        console.error('[AC.Prod] Erro no AuthStateChange:', err);
+        setUser(null);
+        setIsAuthenticated(false);
       } finally {
-        setIsLoadingAuth(false);
-        setAuthChecked(true);
+        if (!resolved || event === 'INITIAL_SESSION') {
+          resolved = true;
+          clearTimeout(hardTimeout);
+          setIsLoadingAuth(false);
+          setAuthChecked(true);
+        }
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(hardTimeout);
+      subscription.unsubscribe();
+    };
   }, [fetchProfile]);
 
-  // ─── checkUserAuth para compatibilidade com componentes existentes ────────────
+  // ─── checkUserAuth — compatibilidade com ProtectedRoute ──────────────────────
   const checkUserAuth = useCallback(async () => {
     setIsLoadingAuth(true);
     try {
@@ -112,6 +129,7 @@ export const AuthProvider = ({ children }) => {
         setIsAuthenticated(false);
       }
     } catch (error) {
+      console.error('[AC.Prod] checkUserAuth error:', error);
       setUser(null);
       setIsAuthenticated(false);
     } finally {
@@ -166,12 +184,12 @@ export const AuthProvider = ({ children }) => {
     setAuthChecked(true);
     await base44.auth.logout();
     if (shouldRedirect) {
-      window.location.href = '/login';
+      redirectTo('/login');
     }
   };
 
   const navigateToLogin = () => {
-    window.location.href = '/login';
+    redirectTo('/login');
   };
 
   return (
