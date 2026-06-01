@@ -1,14 +1,16 @@
 import { useState } from 'react';
-import { base44 } from '@/lib/localDb';
-import { Link } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
-import { Factory, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import LeoLogo from '@/components/ui/LeoLogo';
 
 export default function Login() {
+  const { login } = useAuth();
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -19,16 +21,27 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      await base44.auth.loginViaEmailPassword(email, password);
-      window.location.href = '/';
+      await login(email, password);
+      // navigate() do React Router respeita o basename /ac-prod/ automaticamente
+      // Não usar window.location.href que causa 404 no dev e GitHub Pages
+      navigate('/', { replace: true });
     } catch (err) {
       setError(err?.message || 'Falha ao entrar. Verifique suas credenciais.');
       setLoading(false);
     }
   };
 
-  const handleGoogle = () => {
-    base44.auth.loginWithProvider('google', '/');
+  const handleGoogle = async () => {
+    try {
+      const { supabase } = await import('@/lib/supabaseClient');
+      const base = import.meta.env.BASE_URL || '/ac-prod/';
+      await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: `${window.location.origin}${base}` },
+      });
+    } catch {
+      setError('Falha ao iniciar login com Google.');
+    }
   };
 
   return (
@@ -43,11 +56,27 @@ export default function Login() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email">E-mail</Label>
-            <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="voce@empresa.com" />
+            <Input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              placeholder="voce@empresa.com"
+              autoComplete="email"
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Senha</Label>
-            <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="••••••••" />
+            <Input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              placeholder="••••••••"
+              autoComplete="current-password"
+            />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <Button type="submit" className="w-full" disabled={loading}>
@@ -56,15 +85,25 @@ export default function Login() {
         </form>
 
         <div className="relative my-6">
-          <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div>
-          <div className="relative flex justify-center text-xs"><span className="bg-card px-2 text-muted-foreground">ou</span></div>
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t border-border" />
+          </div>
+          <div className="relative flex justify-center text-xs">
+            <span className="bg-card px-2 text-muted-foreground">ou</span>
+          </div>
         </div>
 
-        <Button variant="outline" className="w-full" onClick={handleGoogle}>Continuar com Google</Button>
+        <Button variant="outline" className="w-full" onClick={handleGoogle}>
+          Continuar com Google
+        </Button>
 
         <div className="flex items-center justify-between mt-6 text-sm">
-          <Link to="/forgot-password" className="text-muted-foreground hover:text-foreground">Esqueceu a senha?</Link>
-          <Link to="/register" className="text-accent font-medium hover:underline">Criar conta</Link>
+          <Link to="/forgot-password" className="text-muted-foreground hover:text-foreground">
+            Esqueceu a senha?
+          </Link>
+          <Link to="/register" className="text-accent font-medium hover:underline">
+            Criar conta
+          </Link>
         </div>
       </Card>
     </div>

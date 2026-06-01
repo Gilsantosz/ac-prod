@@ -4,12 +4,11 @@ import { base44 } from '@/lib/localDb';
 
 const AuthContext = createContext();
 
-// Helper: garante que redirecionamentos incluem o basename /ac-prod
+// ─── Helper: navega respeitando o basename /ac-prod/ ────────────────────────
 const redirectTo = (path) => {
-  const base = import.meta.env.BASE_URL || '/ac-prod/';
-  const cleanBase = base.replace(/\/$/, '');
+  const base = (import.meta.env.BASE_URL || '/ac-prod/').replace(/\/$/, '');
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  window.location.replace(`${cleanBase}${cleanPath}`);
+  window.location.replace(`${base}${cleanPath}`);
 };
 
 export const AuthProvider = ({ children }) => {
@@ -19,20 +18,21 @@ export const AuthProvider = ({ children }) => {
   const [authError, setAuthError] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
 
-  // ─── Busca o perfil completo do usuário (com role, cell, permissions) ────────
+  // ─── Busca o perfil completo (com role e permissions da tabela profiles) ────
   const fetchProfile = useCallback(async (supabaseUser) => {
     if (!supabaseUser) return null;
     try {
       const profile = await base44.auth.me();
       return profile;
     } catch {
-      // Perfil ainda não existe — usa metadados básicos do Auth
+      // Perfil não existe ou erro de rede — usa metadados do Auth como fallback
+      const meta = supabaseUser.user_metadata || {};
       return {
         id: supabaseUser.id,
         email: supabaseUser.email,
-        name: supabaseUser.user_metadata?.name || supabaseUser.email?.split('@')[0] || '',
-        role: supabaseUser.user_metadata?.role || 'operator',
-        cell: supabaseUser.user_metadata?.cell || '',
+        name: meta.name || supabaseUser.email?.split('@')[0] || '',
+        role: meta.role || 'operator',
+        cell: meta.cell || '',
         permissions: {
           view_dashboards: true,
           register_production: true,
@@ -48,68 +48,83 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  // ─── Inicialização da sessão via onAuthStateChange (padrão Supabase v2) ──────
-  // No Supabase v2, onAuthStateChange dispara INITIAL_SESSION imediatamente
-  // após o registro do listener. É a maneira confiável de detectar sessão existente.
+  // ─── Inicialização do estado de autenticação ─────────────────────────────────
+  // Estratégia: getSession() como fonte primária (lê localStorage, instantâneo
+  // para sessões válidas). onAuthStateChange() como listener de mudanças reativas.
   useEffect(() => {
-    let resolved = false;
+    let isMounted = true;
 
-    // Segurança: força saída do estado de loading após 6 segundos
-    // (evita tela branca infinita em casos de rede instável ou token corrompido)
-    const hardTimeout = setTimeout(() => {
-      if (!resolved) {
-        console.warn('[AC.Prod] Auth timeout — forçando estado não autenticado');
-        resolved = true;
-        setUser(null);
-        setIsAuthenticated(false);
-        setIsLoadingAuth(false);
-        setAuthChecked(true);
-      }
-    }, 6000);
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const initAuth = async () => {
       try {
-        if (event === 'INITIAL_SESSION') {
-          // Primeiro evento sempre disparado — define o estado inicial real
-          if (session?.user) {
-            const profile = await fetchProfile(session.user);
-            setUser(profile);
-            setIsAuthenticated(true);
-            setAuthError(null);
-          } else {
-            setUser(null);
-            setIsAuthenticated(false);
-          }
-        } else if (event === 'SIGNED_IN' && session?.user) {
+        // getSession() lê do localStorage. Se houver token expirado, tenta refresh
+        // via rede (pode demorar). Limitamos a 4 segundos para evitar spinner eterno.
+        const sessionResult = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise((resolve) =>
+            setTimeout(() => resolve({ data: { session: null }, timedOut: true }), 4000)
+          ),
+        ]);
+
+        if (!isMounted) return;
+
+        const session = sessionResult?.data?.session;
+
+        if (session?.user) {
           const profile = await fetchProfile(session.user);
+          if (!isMounted) return;
           setUser(profile);
           setIsAuthenticated(true);
-          setAuthError(null);
-        } else if (event === 'SIGNED_OUT') {
+        } else {
           setUser(null);
           setIsAuthenticated(false);
-        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-          // Refresh silencioso — mantém sessão ativa
-        } else if (event === 'USER_UPDATED' && session?.user) {
-          const profile = await fetchProfile(session.user);
-          setUser(profile);
         }
       } catch (err) {
-        console.error('[AC.Prod] Erro no AuthStateChange:', err);
-        setUser(null);
-        setIsAuthenticated(false);
+        console.error('[AC.Prod] Erro ao inicializar sessão:', err);
+        if (isMounted) {
+          setUser(null);
+          setIsAuthenticated(false);
+        }
       } finally {
-        if (!resolved || event === 'INITIAL_SESSION') {
-          resolved = true;
-          clearTimeout(hardTimeout);
+        if (isMounted) {
           setIsLoadingAuth(false);
           setAuthChecked(true);
         }
       }
+    };
+
+    initAuth();
+
+    // Listener reativo para mudanças APÓS a inicialização:
+    // SIGNED_IN → usuário fez login (após a tela de login)
+    // SIGNED_OUT → usuário saiu
+    // TOKEN_REFRESHED → refresh silencioso de token
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!isMounted) return;
+
+      if (event === 'SIGNED_IN' && session?.user) {
+        try {
+          const profile = await fetchProfile(session.user);
+          if (!isMounted) return;
+          setUser(profile);
+          setIsAuthenticated(true);
+          setAuthError(null);
+        } catch (err) {
+          console.error('[AC.Prod] Erro ao carregar perfil após login:', err);
+        }
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setIsAuthenticated(false);
+      } else if (event === 'USER_UPDATED' && session?.user) {
+        try {
+          const profile = await fetchProfile(session.user);
+          if (isMounted) setUser(profile);
+        } catch { /* silencioso */ }
+      }
+      // TOKEN_REFRESHED: gerenciado automaticamente pelo cliente Supabase
     });
 
     return () => {
-      clearTimeout(hardTimeout);
+      isMounted = false;
       subscription.unsubscribe();
     };
   }, [fetchProfile]);
@@ -140,9 +155,9 @@ export const AuthProvider = ({ children }) => {
 
   // ─── Login ────────────────────────────────────────────────────────────────────
   const login = async (email, password) => {
+    setIsLoadingAuth(true);
+    setAuthError(null);
     try {
-      setIsLoadingAuth(true);
-      setAuthError(null);
       const profile = await base44.auth.loginViaEmailPassword(email, password);
       setUser(profile);
       setIsAuthenticated(true);
@@ -161,9 +176,9 @@ export const AuthProvider = ({ children }) => {
 
   // ─── Register ─────────────────────────────────────────────────────────────────
   const register = async ({ email, password, name }) => {
+    setIsLoadingAuth(true);
+    setAuthError(null);
     try {
-      setIsLoadingAuth(true);
-      setAuthError(null);
       const result = await base44.auth.register({ email, password, name });
       return result;
     } catch (error) {
@@ -182,15 +197,15 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     setIsAuthenticated(false);
     setAuthChecked(true);
-    await base44.auth.logout();
+    try {
+      await supabase.auth.signOut();
+    } catch { /* silencioso — sessão local já foi limpa */ }
     if (shouldRedirect) {
       redirectTo('/login');
     }
   };
 
-  const navigateToLogin = () => {
-    redirectTo('/login');
-  };
+  const navigateToLogin = () => redirectTo('/login');
 
   return (
     <AuthContext.Provider value={{

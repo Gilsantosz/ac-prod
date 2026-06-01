@@ -270,7 +270,7 @@ const auth = {
   },
 
   redirectToLogin: () => {
-    window.location.href = '/login';
+    window.location.replace(`${(import.meta.env.BASE_URL || '/ac-prod/').replace(/\/$/, '')}/login`);
   },
 
   setToken: () => { /* Gerenciado pelo Supabase Auth automaticamente */ },

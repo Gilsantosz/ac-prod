@@ -86,7 +86,7 @@ export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthe
 
           <div className="flex flex-col gap-2.5 pt-2">
             <button
-              onClick={() => window.location.href = '/'}
+              onClick={() => window.location.replace(import.meta.env.BASE_URL || '/ac-prod/')}
               className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-sm py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/10 hover:translate-y-[-1px] active:translate-y-0"
             >
               <ArrowLeft className="w-4 h-4" /> Voltar para o Painel Principal

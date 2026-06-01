@@ -1,6 +1,6 @@
 import { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { base44 } from '@/lib/localDb';
-import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,6 +9,7 @@ import { Factory, Loader2 } from 'lucide-react';
 import LeoLogo from '@/components/ui/LeoLogo';
 
 export default function Register() {
+  const navigate = useNavigate();
   const [step, setStep] = useState('register');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -36,10 +37,8 @@ export default function Register() {
     setError('');
     setLoading(true);
     try {
-      const res = await base44.auth.verifyOtp({ email, otpCode: otp });
-      const token = res?.access_token || res?.data?.access_token;
-      if (token) base44.auth.setToken(token);
-      window.location.href = '/';
+      await base44.auth.verifyOtp({ email, otpCode: otp });
+      navigate('/', { replace: true });
     } catch (err) {
       setError(err?.message || 'Código inválido.');
       setLoading(false);

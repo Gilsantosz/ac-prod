@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/lib/localDb';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,6 +9,7 @@ import { Factory, Loader2 } from 'lucide-react';
 import LeoLogo from '@/components/ui/LeoLogo';
 
 export default function ResetPassword() {
+  const navigate = useNavigate();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
@@ -22,7 +24,7 @@ export default function ResetPassword() {
     setLoading(true);
     try {
       await base44.auth.resetPassword({ resetToken, newPassword: password });
-      window.location.href = '/login';
+      navigate('/login', { replace: true });
     } catch (err) {
       setError(err?.message || 'Falha ao redefinir a senha.');
       setLoading(false);
