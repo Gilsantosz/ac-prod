@@ -1,0 +1,39 @@
+{
+  "name": "AlertLog",
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Data do alerta"
+    },
+    "cell": {
+      "type": "string",
+      "description": "C\u00e9lula alertada"
+    },
+    "signature": {
+      "type": "string",
+      "description": "Assinatura \u00fanica do alerta (data+celula+horas) para evitar duplicidade"
+    },
+    "currentEff": {
+      "type": "number",
+      "description": "Efici\u00eancia registrada no momento do alerta"
+    },
+    "consecutiveHours": {
+      "type": "number",
+      "description": "Horas consecutivas abaixo do limite"
+    },
+    "recipients": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "E-mails notificados"
+    }
+  },
+  "required": [
+    "date",
+    "cell",
+    "signature"
+  ]
+}

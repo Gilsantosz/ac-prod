@@ -1,0 +1,51 @@
+{
+  "name": "MonthlyGoal",
+  "type": "object",
+  "properties": {
+    "month": {
+      "type": "string",
+      "description": "M\u00eas de refer\u00eancia no formato yyyy-MM"
+    },
+    "cell": {
+      "type": "string",
+      "description": "C\u00e9lula de produ\u00e7\u00e3o"
+    },
+    "shift": {
+      "type": "string",
+      "enum": [
+        "1\u00ba Turno",
+        "2\u00ba Turno",
+        "3\u00ba Turno"
+      ],
+      "description": "Turno"
+    },
+    "monthlyTarget": {
+      "type": "number",
+      "description": "Meta total de produ\u00e7\u00e3o para o m\u00eas"
+    }
+  },
+  "required": [
+    "month",
+    "cell",
+    "shift",
+    "monthlyTarget"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": null,
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

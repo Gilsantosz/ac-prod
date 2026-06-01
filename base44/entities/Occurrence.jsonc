@@ -1,0 +1,86 @@
+{
+  "name": "Occurrence",
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Data da ocorr\u00eancia"
+    },
+    "shift": {
+      "type": "string",
+      "enum": [
+        "1\u00ba Turno",
+        "2\u00ba Turno",
+        "3\u00ba Turno"
+      ],
+      "description": "Turno"
+    },
+    "cell": {
+      "type": "string",
+      "description": "C\u00e9lula de produ\u00e7\u00e3o"
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "Falta de Material",
+        "Manuten\u00e7\u00e3o Corretiva",
+        "Manuten\u00e7\u00e3o Preventiva",
+        "Setup / Troca",
+        "Falta de Operador",
+        "Qualidade / Refugo",
+        "Falta de Energia",
+        "Outros"
+      ],
+      "description": "Motivo da parada n\u00e3o planejada"
+    },
+    "downtime": {
+      "type": "number",
+      "default": 0,
+      "description": "Tempo de parada em minutos"
+    },
+    "operator": {
+      "type": "string",
+      "description": "Operador que registrou"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Detalhes da ocorr\u00eancia"
+    }
+  },
+  "required": [
+    "date",
+    "shift",
+    "cell",
+    "reason",
+    "downtime"
+  ],
+  "rls": {
+    "create": null,
+    "read": null,
+    "update": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

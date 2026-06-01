@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+
+    <!-- ─── Viewport e Mobile ──────────────────────────────────────────── -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0" />
+
+    <!-- ─── PWA / iOS ──────────────────────────────────────────────────── -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="AC.Prod" />
+    <link rel="apple-touch-icon" href="/ac-prod/icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/ac-prod/icons/icon-192.png" />
+
+    <!-- ─── Theme / Brand ──────────────────────────────────────────────── -->
+    <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="application-name" content="AC.Prod" />
+    <meta name="msapplication-TileColor" content="#0f172a" />
+
+    <!-- ─── SEO / OG ───────────────────────────────────────────────────── -->
+    <meta name="description" content="Sistema MES de controle e apontamento de produção industrial. Registre produções por célula e turno, acompanhe OEE e gere relatórios." />
+    <meta property="og:title" content="AC.Prod — Controle de Produção" />
+    <meta property="og:description" content="Sistema MES industrial para gestão de produção por célula e turno." />
+    <meta property="og:type" content="website" />
+
+    <!-- ─── Favicon e Manifest ─────────────────────────────────────────── -->
+    <link rel="icon" type="image/png" href="/ac-prod/icons/icon-192.png" />
+    <!-- O manifest é injetado automaticamente pelo vite-plugin-pwa -->
+
+    <title>AC.Prod — Controle de Produção</title>
+
+    <!-- ─── SPA Routing: GitHub Pages redirect ─────────────────────────── -->
+    <script>
+      // GitHub Pages SPA redirect: se vier de 404.html com ?p=, redireciona para a rota correta
+      (function () {
+        var redirect = sessionStorage.redirect;
+        delete sessionStorage.redirect;
+        if (redirect && redirect !== location.href) {
+          history.replaceState(null, null, redirect);
+        }
+      })();
+    </script>
+
+    <!-- ─── Performance: preconnect ao Supabase ────────────────────────── -->
+    <link rel="preconnect" href="https://uozuzdfvnufsjsonswag.supabase.co" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "type": "supabase",
+  "scopes": [
+    "all"
+  ]
+}

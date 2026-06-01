@@ -1,0 +1,38 @@
+{
+  "name": "Operator",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Nome do operador"
+    },
+    "registration": {
+      "type": "string",
+      "description": "Matr\u00edcula / c\u00f3digo do colaborador"
+    },
+    "cells": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "C\u00e9lulas \u00e0s quais o operador est\u00e1 associado"
+    },
+    "shift": {
+      "type": "string",
+      "enum": [
+        "1\u00ba Turno",
+        "2\u00ba Turno",
+        "3\u00ba Turno"
+      ],
+      "description": "Turno de trabalho do operador"
+    },
+    "active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Se o operador est\u00e1 ativo"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "name": "ProdView — Monitoramento de Produção",
+  "short_name": "ProdView",
+  "description": "Registro e monitoramento de produção industrial, com suporte offline.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "icons": [
+    {
+      "src": "https://media.base44.com/images/public/6a1c417163a3ec729614a643/3bb148077_generated_image.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://media.base44.com/images/public/6a1c417163a3ec729614a643/3bb148077_generated_image.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

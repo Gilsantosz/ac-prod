@@ -1,0 +1,48 @@
+{
+  "name": "Manager",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Nome do gestor"
+    },
+    "email": {
+      "type": "string",
+      "description": "E-mail do gestor para receber alertas"
+    },
+    "cells": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "C\u00e9lulas das quais o gestor recebe alertas (vazio = todas)"
+    },
+    "active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Se o gestor est\u00e1 ativo para receber alertas"
+    }
+  },
+  "required": [
+    "name",
+    "email"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": null,
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

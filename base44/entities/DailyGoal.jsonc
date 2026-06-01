@@ -1,0 +1,56 @@
+{
+  "name": "DailyGoal",
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Data da meta"
+    },
+    "shift": {
+      "type": "string",
+      "enum": [
+        "1\u00ba Turno",
+        "2\u00ba Turno",
+        "3\u00ba Turno"
+      ],
+      "description": "Turno"
+    },
+    "cell": {
+      "type": "string",
+      "description": "C\u00e9lula de produ\u00e7\u00e3o"
+    },
+    "target": {
+      "type": "number",
+      "description": "Meta de produ\u00e7\u00e3o do turno para a c\u00e9lula"
+    },
+    "hours": {
+      "type": "number",
+      "description": "Horas trabalhadas no turno para a c\u00e9lula"
+    }
+  },
+  "required": [
+    "date",
+    "shift",
+    "cell",
+    "target"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": null,
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

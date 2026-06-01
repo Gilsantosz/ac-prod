@@ -1,0 +1,42 @@
+{
+  "name": "WorkdayCalendar",
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Data marcada manualmente"
+    },
+    "isWorkday": {
+      "type": "boolean",
+      "default": true,
+      "description": "Se a data \u00e9 considerada dia \u00fatil para divis\u00e3o da meta mensal"
+    },
+    "label": {
+      "type": "string",
+      "description": "R\u00f3tulo opcional (ex: Feriado, Ponto facultativo)"
+    }
+  },
+  "required": [
+    "date",
+    "isWorkday"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": null,
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "name": "Cell",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Nome da c\u00e9lula de produ\u00e7\u00e3o"
+    },
+    "active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Se a c\u00e9lula est\u00e1 ativa"
+    },
+    "hoursShift1": {
+      "type": "number",
+      "default": 8,
+      "description": "Horas trabalhadas no 1\u00ba Turno"
+    },
+    "hoursShift2": {
+      "type": "number",
+      "default": 8,
+      "description": "Horas trabalhadas no 2\u00ba Turno"
+    },
+    "hoursShift3": {
+      "type": "number",
+      "default": 8,
+      "description": "Horas trabalhadas no 3\u00ba Turno"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Observa\u00e7\u00f5es sobre a c\u00e9lula"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": null,
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

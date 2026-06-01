@@ -1,0 +1,80 @@
+{
+  "name": "AutomationRule",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Nome da regra de automa\u00e7\u00e3o"
+    },
+    "active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Se a regra est\u00e1 ativa"
+    },
+    "metric": {
+      "type": "string",
+      "enum": [
+        "efficiency",
+        "scrapRate",
+        "downtime",
+        "produced"
+      ],
+      "description": "M\u00e9trica monitorada"
+    },
+    "operator": {
+      "type": "string",
+      "enum": [
+        "lt",
+        "lte",
+        "gt",
+        "gte"
+      ],
+      "description": "Operador de compara\u00e7\u00e3o"
+    },
+    "threshold": {
+      "type": "number",
+      "description": "Valor limite para disparo"
+    },
+    "cell": {
+      "type": "string",
+      "description": "C\u00e9lula espec\u00edfica (vazio = todas)"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "alert",
+        "log_occurrence"
+      ],
+      "description": "A\u00e7\u00e3o executada quando a condi\u00e7\u00e3o \u00e9 atendida"
+    },
+    "occurrenceReason": {
+      "type": "string",
+      "description": "Motivo usado ao registrar ocorr\u00eancia autom\u00e1tica"
+    }
+  },
+  "required": [
+    "name",
+    "metric",
+    "operator",
+    "threshold",
+    "action"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "read": null,
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "User",
+  "type": "object",
+  "properties": {
+    "role": {
+      "type": "string",
+      "enum": [
+        "admin",
+        "user"
+      ],
+      "default": "user",
+      "description": "N\u00edvel de acesso do usu\u00e1rio"
+    },
+    "dashboard_layout": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Ordem personalizada dos pain\u00e9is do dashboard definida pelo usu\u00e1rio"
+    }
+  }
+}
