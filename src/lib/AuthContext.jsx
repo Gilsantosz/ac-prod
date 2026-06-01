@@ -44,35 +44,54 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     setIsLoadingAuth(true);
 
-    // Verifica sessão existente
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        const profile = await fetchProfile(session.user);
-        setUser(profile);
-        setIsAuthenticated(true);
-      } else {
+    // Verifica sessão existente de forma ultra-robusta
+    supabase.auth.getSession().then(async ({ data }) => {
+      try {
+        const session = data?.session;
+        if (session?.user) {
+          const profile = await fetchProfile(session.user);
+          setUser(profile);
+          setIsAuthenticated(true);
+        } else {
+          setUser(null);
+          setIsAuthenticated(false);
+        }
+      } catch (err) {
+        console.error('Erro ao buscar perfil inicial:', err);
         setUser(null);
         setIsAuthenticated(false);
+      } finally {
+        setIsLoadingAuth(false);
+        setAuthChecked(true);
       }
+    }).catch(err => {
+      console.error('Erro ao buscar sessão inicial:', err);
+      setUser(null);
+      setIsAuthenticated(false);
       setIsLoadingAuth(false);
       setAuthChecked(true);
     });
 
     // Escuta mudanças de sessão (login, logout, refresh de token)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        const profile = await fetchProfile(session.user);
-        setUser(profile);
-        setIsAuthenticated(true);
-        setAuthError(null);
-      } else if (event === 'SIGNED_OUT') {
-        setUser(null);
-        setIsAuthenticated(false);
-      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-        // Silently refresh — mantém o usuário logado
+      try {
+        if (event === 'SIGNED_IN' && session?.user) {
+          const profile = await fetchProfile(session.user);
+          setUser(profile);
+          setIsAuthenticated(true);
+          setAuthError(null);
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          setIsAuthenticated(false);
+        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+          // Silently refresh — mantém o usuário logado
+        }
+      } catch (err) {
+        console.error('Erro no tratador onAuthStateChange:', err);
+      } finally {
+        setIsLoadingAuth(false);
+        setAuthChecked(true);
       }
-      setIsLoadingAuth(false);
-      setAuthChecked(true);
     });
 
     return () => subscription.unsubscribe();
