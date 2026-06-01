@@ -154,27 +154,31 @@ const createEntityClient = (entityName) => {
 // ─── Auth wrapper usando Supabase Auth ───────────────────────────────────────
 const auth = {
   me: async () => {
-    const { data: { user }, error } = await supabase.auth.getUser();
-    if (error || !user) {
+    // Usa getSession() em vez de getUser() — lê do localStorage (sem chamada de rede)
+    const { data: { session } } = await supabase.auth.getSession();
+    const user = session?.user;
+    if (!user) {
       const err = new Error('Authentication required');
       err.status = 401;
       throw err;
     }
 
-    // Buscar perfil com dados de negócio
-    const { data: profile } = await supabase
+    // Buscar perfil com dados de negócio da tabela profiles
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', user.id)
       .single();
 
+    // Se erro de RLS ou perfil não existe, usa metadados do Auth como fallback
+    const meta = user.user_metadata || {};
     return {
       id: user.id,
       email: user.email,
-      name: profile?.name || user.email?.split('@')[0] || '',
-      role: profile?.role || 'operator',
-      cell: profile?.cell || '',
-      permissions: profile?.permissions || {
+      name: profile?.name || meta.name || user.email?.split('@')[0] || '',
+      role: profile?.role || meta.role || 'operator',
+      cell: profile?.cell || meta.cell || '',
+      permissions: profile?.permissions || meta.permissions || {
         view_dashboards: true,
         register_production: true,
         manage_occurrences: true,
@@ -189,7 +193,8 @@ const auth = {
   },
 
   updateMe: async (updateData) => {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { session } } = await supabase.auth.getSession();
+    const user = session?.user;
     if (!user) throw new Error('Unauthenticated');
 
     const { data, error } = await supabase
@@ -211,8 +216,28 @@ const auth = {
       throw err;
     }
 
-    const profile = await auth.me();
-    return profile;
+    // Retorna dados básicos do usuário direto da resposta do signIn (sem chamada extra de rede).
+    // O onAuthStateChange SIGNED_IN vai buscar o perfil completo em background.
+    const user = data.user;
+    const meta = user.user_metadata || {};
+    return {
+      id: user.id,
+      email: user.email,
+      name: meta.name || user.email?.split('@')[0] || '',
+      role: meta.role || 'operator',
+      cell: meta.cell || '',
+      permissions: meta.permissions || {
+        view_dashboards: true,
+        register_production: true,
+        manage_occurrences: true,
+        manage_cells: false,
+        manage_operators: false,
+        view_reports: false,
+        manage_automations: false,
+        manage_users: false,
+      },
+      dashboard_layout: null,
+    };
   },
 
   register: async ({ email, password, name = '' }) => {
@@ -251,9 +276,10 @@ const auth = {
   setToken: () => { /* Gerenciado pelo Supabase Auth automaticamente */ },
 
   resetPasswordRequest: async (email) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
+    // Inclui o basename /ac-prod no redirectTo para GitHub Pages e produção
+    const base = import.meta.env.BASE_URL || '/ac-prod/';
+    const redirectTo = `${window.location.origin}${base}reset-password`;
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
     if (error) throw new Error(error.message);
     return { success: true };
   },
