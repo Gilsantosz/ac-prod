@@ -114,6 +114,20 @@ const createEntityClient = (entityName) => {
       delete clean.created_date;
       delete clean.created_at;
 
+      // Se for a entidade User, intercepta a alteração de senha para fazer via RPC seguro
+      if (entityName === 'User') {
+        const password = clean.password;
+        delete clean.password;
+        
+        if (password) {
+          const { error: rpcError } = await supabase.rpc('admin_update_user_password', {
+            target_user_id: id,
+            new_password: password,
+          });
+          if (rpcError) throw rpcError;
+        }
+      }
+
       const { data, error } = await supabase
         .from(table)
         .update(clean)
