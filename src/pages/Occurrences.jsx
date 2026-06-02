@@ -76,25 +76,25 @@ export default function Occurrences() {
       </div>
 
       {/* Painel Coesivo de Filtros Industriais */}
-      <div className="flex flex-wrap items-end gap-6 bg-card p-5 rounded-2xl border border-border/60 shadow-sm">
-        <div className="space-y-1.5">
+      <div className="flex flex-col sm:flex-row sm:items-end flex-wrap gap-4 sm:gap-6 bg-card p-4 sm:p-5 rounded-2xl border border-border/60 shadow-sm w-full">
+        <div className="space-y-1.5 w-full sm:w-auto">
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Dia das Ocorrências</span>
           <input 
             type="date" 
             value={date} 
             onChange={(e) => setDate(e.target.value)} 
-            className="flex h-9 w-[160px] rounded-lg border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-9 w-full sm:w-[160px] rounded-lg border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           />
         </div>
 
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 w-full sm:w-auto max-w-full overflow-hidden">
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">Filtrar por Célula</span>
-          <div className="flex gap-1 bg-muted p-1 rounded-lg border border-border/40">
+          <div className="flex gap-1 bg-muted p-1 rounded-lg border border-border/40 overflow-x-auto max-w-full scrollbar-none whitespace-nowrap">
             <Button 
               variant={cell === 'all' ? 'default' : 'ghost'} 
               size="sm" 
               onClick={() => setCell('all')}
-              className="h-7 text-xs rounded-md px-3 font-medium transition-all"
+              className="h-7 text-xs rounded-md px-3 font-medium transition-all shrink-0"
             >
               Todas
             </Button>
@@ -104,7 +104,7 @@ export default function Occurrences() {
                 variant={cell === c ? 'default' : 'ghost'} 
                 size="sm" 
                 onClick={() => setCell(c)}
-                className="h-7 text-xs rounded-md px-3 font-medium transition-all"
+                className="h-7 text-xs rounded-md px-3 font-medium transition-all shrink-0"
               >
                 {c}
               </Button>
@@ -112,14 +112,14 @@ export default function Occurrences() {
           </div>
         </div>
 
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 w-full sm:w-auto max-w-full overflow-hidden">
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">Filtrar por Turno</span>
-          <div className="flex gap-1 bg-muted p-1 rounded-lg border border-border/40">
+          <div className="flex gap-1 bg-muted p-1 rounded-lg border border-border/40 overflow-x-auto max-w-full scrollbar-none whitespace-nowrap">
             <Button 
               variant={shift === 'all' ? 'default' : 'ghost'} 
               size="sm" 
               onClick={() => setShift('all')}
-              className="h-7 text-xs rounded-md px-3 font-medium transition-all"
+              className="h-7 text-xs rounded-md px-3 font-medium transition-all shrink-0"
             >
               Todos
             </Button>
@@ -129,7 +129,7 @@ export default function Occurrences() {
                 variant={shift === s ? 'default' : 'ghost'} 
                 size="sm" 
                 onClick={() => setShift(s)}
-                className="h-7 text-xs rounded-md px-3 font-medium transition-all"
+                className="h-7 text-xs rounded-md px-3 font-medium transition-all shrink-0"
               >
                 {s}
               </Button>
@@ -137,7 +137,7 @@ export default function Occurrences() {
           </div>
         </div>
         
-        <div className="ml-auto">
+        <div className="w-full sm:w-auto sm:ml-auto flex justify-end">
           <ExportOccurrencesButton 
             occurrences={occurrences} 
             date={date} 

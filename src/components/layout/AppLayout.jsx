@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, PlusCircle, LogOut, AlertOctagon, Zap, LineChart, Boxes, Users, Gauge, HardHat, TimerOff, ClipboardList, TrendingUp, Trophy } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, LogOut, AlertOctagon, Zap, LineChart, Boxes, Users, Gauge, HardHat, TimerOff, ClipboardList, TrendingUp, Trophy, Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { KioskProvider, useKiosk } from '@/lib/KioskContext';
@@ -34,7 +34,8 @@ export default function AppLayout() {
 
 function AppShell() {
   const location = useLocation();
-  const [collapsed, setCollapsed] = useState(false);
+  // Inicializa colapsado por padrão em dispositivos móveis (< 768px) para otimizar espaço de tela
+  const [collapsed, setCollapsed] = useState(() => window.innerWidth < 768);
   const { kiosk } = useKiosk();
   const { user, logout } = useAuth();
 
@@ -67,65 +68,104 @@ function AppShell() {
   });
 
   return (
-    <div className="h-screen flex bg-background overflow-hidden">
+    <div className="h-screen flex bg-background overflow-hidden relative">
+      {/* Backdrop de desfocagem/vidro desfocado no mobile quando o menu está expandido */}
+      {!collapsed && (
+        <div 
+          className="md:hidden fixed inset-0 bg-background/60 backdrop-blur-xs z-30 transition-opacity duration-200"
+          onClick={() => setCollapsed(true)}
+        />
+      )}
+
+      {/* Sidebar Colapsável (Funciona no Desktop e no Mobile como lateral esquerda) */}
       <aside className={cn(
-        'hidden md:flex flex-col border-r border-border bg-card/50 backdrop-blur transition-all duration-200 shrink-0 h-screen',
-        kiosk && 'md:hidden',
-        collapsed ? 'w-20' : 'w-64'
+        'flex flex-col border-r border-border bg-card/95 md:bg-card/50 backdrop-blur transition-all duration-200 shrink-0 h-screen z-40',
+        kiosk && 'hidden',
+        collapsed 
+          ? 'w-16 md:w-20' 
+          : 'fixed md:relative inset-y-0 left-0 w-64 shadow-2xl md:shadow-none'
       )}>
+        {/* Cabeçalho da Sidebar / Botão de Expandir/Colapsar */}
         <button
           onClick={() => setCollapsed((c) => !c)}
           title={collapsed ? 'Expandir menu' : 'Recolher menu'}
-          className={cn('h-16 flex items-center border-b border-border w-full hover:bg-secondary/60 transition-colors', collapsed ? 'justify-center px-2' : 'gap-3 px-6')}>
+          className={cn(
+            'h-16 flex items-center border-b border-border w-full hover:bg-secondary/60 transition-colors shrink-0', 
+            collapsed ? 'justify-center px-2' : 'gap-3 px-6'
+          )}
+        >
           <LeoLogo size="sm" />
-          <div className={cn('min-w-0 text-left transition-all duration-200', collapsed ? 'w-0 opacity-0 md:hidden' : 'w-auto opacity-100')}>
+          <div className={cn(
+            'min-w-0 text-left transition-all duration-200', 
+            collapsed ? 'w-0 opacity-0 hidden' : 'w-auto opacity-100'
+          )}>
             <p className="font-bold leading-tight truncate">AC. Produção</p>
             <p className="text-xs text-muted-foreground truncate">Produção Industrial</p>
           </div>
         </button>
-        <nav className="flex-1 p-4 space-y-1">
+
+        {/* Links de Navegação */}
+        <nav className="flex-1 p-2 md:p-4 space-y-1.5 overflow-y-auto">
           {visibleNav.map((item) => {
             const active = location.pathname === item.to;
             return (
-              <Link key={item.to} to={item.to} title={item.label}
+              <Link 
+                key={item.to} 
+                to={item.to} 
+                title={item.label}
+                onClick={() => {
+                  // Colapsa automaticamente no mobile ao clicar em qualquer item para revelar a página
+                  if (window.innerWidth < 768) {
+                    setCollapsed(true);
+                  }
+                }}
                 className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
-                  collapsed && 'justify-center',
-                  active ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                  'flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-sm font-medium transition-all min-h-[44px] md:min-h-[40px]',
+                  collapsed ? 'justify-center' : 'justify-start',
+                  active ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                )}
+              >
+                <item.icon className="w-5 h-5 md:w-4 md:h-4 shrink-0" />
+                <span className={cn(
+                  'transition-all duration-200 truncate', 
+                  collapsed ? 'w-0 opacity-0 hidden' : 'w-auto opacity-100'
                 )}>
-                <item.icon className="w-4 h-4 shrink-0" />
-                <span className={cn('transition-all duration-200 truncate', collapsed ? 'w-0 opacity-0 md:hidden' : 'w-auto opacity-100')}>
                   {item.label}
                 </span>
               </Link>
             );
           })}
         </nav>
-        <div className="p-4 border-t border-border space-y-1">
-          <Button variant="ghost" className={cn('w-full gap-3 text-muted-foreground', collapsed ? 'justify-center px-0' : 'justify-start')}
-            onClick={() => logout()} title="Sair">
-            <LogOut className="w-4 h-4" />
-            <span className={cn('transition-all duration-200 truncate', collapsed ? 'w-0 opacity-0 md:hidden' : 'w-auto opacity-100')}>
+
+        {/* Botão de Sair (Logout) no Rodapé da Sidebar */}
+        <div className="p-2 md:p-4 border-t border-border space-y-1 shrink-0">
+          <Button 
+            variant="ghost" 
+            className={cn(
+              'w-full gap-3 text-muted-foreground hover:bg-destructive/10 hover:text-destructive rounded-xl min-h-[44px] md:min-h-[40px]', 
+              collapsed ? 'justify-center px-0' : 'justify-start'
+            )}
+            onClick={() => {
+              if (window.innerWidth < 768) {
+                setCollapsed(true);
+              }
+              logout();
+            }} 
+            title="Sair"
+          >
+            <LogOut className="w-5 h-5 md:w-4 md:h-4" />
+            <span className={cn(
+              'transition-all duration-200 truncate', 
+              collapsed ? 'w-0 opacity-0 hidden' : 'w-auto opacity-100'
+            )}>
               Sair
             </span>
           </Button>
         </div>
       </aside>
 
+      {/* Painel Principal de Conteúdo */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        <header className={cn('md:hidden h-14 flex items-center justify-between px-4 border-b border-border bg-card', kiosk && 'hidden')}>
-          <div className="flex items-center gap-2">
-            <LeoLogo size="sm" />
-            <span className="font-bold">AC. Produção</span>
-          </div>
-          <nav className="flex gap-1">
-            {visibleNav.map((item) => (
-              <Link key={item.to} to={item.to} className="p-2 rounded-lg hover:bg-secondary">
-                <item.icon className="w-5 h-5" />
-              </Link>
-            ))}
-          </nav>
-        </header>
         <main className="flex-1 overflow-y-auto">
           <Outlet />
         </main>

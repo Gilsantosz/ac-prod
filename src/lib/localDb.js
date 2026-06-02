@@ -322,8 +322,20 @@ const users = {
 
     const finalPermissions = permissions || defaultPermissions;
 
-    // Registrar usuário normalmente (o trigger handle_new_user vai criar o perfil)
-    const { data, error } = await supabase.auth.signUp({
+    // Criar um cliente temporário sem persistência de sessão para não deslogar o administrador atual
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const tempSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    });
+
+    // Registrar usuário normalmente usando o cliente temporário
+    const { data, error } = await tempSupabase.auth.signUp({
       email,
       password: password || 'Senha@' + Math.random().toString(36).slice(2, 10),
       options: {
@@ -338,7 +350,7 @@ const users = {
 
     if (error) throw new Error(error.message);
 
-    // 2. Atualizar perfil com campos adicionais (o trigger pode não ter todos)
+    // 2. Atualizar perfil com campos adicionais (usando o cliente principal autenticado do admin)
     if (data.user) {
       await supabase.from('profiles').upsert({
         id: data.user.id,
