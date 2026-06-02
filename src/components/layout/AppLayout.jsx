@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, PlusCircle, LogOut, AlertOctagon, Zap, LineChart, Boxes, Users, Gauge, HardHat, TimerOff, ClipboardList, TrendingUp, Trophy, Menu, X } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, LogOut, AlertOctagon, Zap, LineChart, Boxes, Users, Gauge, HardHat, TimerOff, ClipboardList, TrendingUp, Trophy, Menu, X, Sun, Moon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { KioskProvider, useKiosk } from '@/lib/KioskContext';
@@ -38,6 +38,23 @@ function AppShell() {
   const [collapsed, setCollapsed] = useState(() => window.innerWidth < 768);
   const { kiosk } = useKiosk();
   const { user, logout } = useAuth();
+
+  // Controle de Tema (Claro / Escuro)
+  const [theme, setTheme] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    if (saved) return saved;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [theme]);
 
   // Ativa a escuta de eventos em tempo real do banco de dados enquanto logado
   useRealtimeSync(!!user);
@@ -137,8 +154,32 @@ function AppShell() {
           })}
         </nav>
 
-        {/* Botão de Sair (Logout) no Rodapé da Sidebar */}
-        <div className="p-2 md:p-4 border-t border-border space-y-1 shrink-0">
+        {/* Rodapé da Sidebar: Tema & Sair */}
+        <div className="p-2 md:p-4 border-t border-border space-y-1.5 shrink-0">
+          {/* Toggle de Tema */}
+          <Button 
+            variant="ghost" 
+            className={cn(
+              'w-full gap-3 text-muted-foreground hover:bg-secondary rounded-xl min-h-[44px] md:min-h-[40px]', 
+              collapsed ? 'justify-center px-0' : 'justify-start'
+            )}
+            onClick={() => setTheme((t) => t === 'dark' ? 'light' : 'dark')} 
+            title={theme === 'dark' ? 'Ativar Modo Claro' : 'Ativar Modo Escuro'}
+          >
+            {theme === 'dark' ? (
+              <Sun className="w-5 h-5 md:w-4 md:h-4 text-amber-500 shrink-0" />
+            ) : (
+              <Moon className="w-5 h-5 md:w-4 md:h-4 text-indigo-500 shrink-0" />
+            )}
+            <span className={cn(
+              'transition-all duration-200 truncate', 
+              collapsed ? 'w-0 opacity-0 hidden' : 'w-auto opacity-100'
+            )}>
+              {theme === 'dark' ? 'Tema Claro' : 'Tema Escuro'}
+            </span>
+          </Button>
+
+          {/* Botão de Sair */}
           <Button 
             variant="ghost" 
             className={cn(
@@ -153,7 +194,7 @@ function AppShell() {
             }} 
             title="Sair"
           >
-            <LogOut className="w-5 h-5 md:w-4 md:h-4" />
+            <LogOut className="w-5 h-5 md:w-4 md:h-4 shrink-0" />
             <span className={cn(
               'transition-all duration-200 truncate', 
               collapsed ? 'w-0 opacity-0 hidden' : 'w-auto opacity-100'

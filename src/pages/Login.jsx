@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ShieldAlert, ArrowLeft } from 'lucide-react';
 import LeoLogo from '@/components/ui/LeoLogo';
 
 export default function Login() {
@@ -15,6 +15,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleAuthError, setGoogleAuthError] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -31,25 +32,43 @@ export default function Login() {
     }
   };
 
-  const handleGoogle = async () => {
-    try {
-      const { supabase } = await import('@/lib/supabaseClient');
-      const base = import.meta.env.BASE_URL || '/ac-prod/';
-      await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: `${window.location.origin}${base}` },
-      });
-    } catch {
-      setError('Falha ao iniciar login com Google.');
-    }
+  const handleGoogle = () => {
+    setGoogleAuthError(true);
   };
+
+  if (googleAuthError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md p-8 shadow-xl border-border/60 text-center space-y-6">
+          <div className="flex flex-col items-center">
+            <div className="w-16 h-16 rounded-full bg-destructive/15 flex items-center justify-center text-destructive mb-4 animate-bounce">
+              <ShieldAlert className="w-8 h-8" />
+            </div>
+            <h1 className="text-xl font-bold text-foreground">Acesso Negado</h1>
+            <p className="text-muted-foreground text-sm mt-2">
+              Sem autorização para esta ação.
+            </p>
+          </div>
+
+          <Button 
+            variant="default" 
+            className="w-full gap-2 min-h-[44px]"
+            onClick={() => setGoogleAuthError(false)}
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Voltar para o login convencional
+          </Button>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md p-8 shadow-xl border-border/60">
         <div className="flex flex-col items-center mb-8">
           <LeoLogo size="lg" className="mb-4" />
-          <h1 className="text-2xl font-bold">AC. Produção</h1>
+          <h1 className="text-2xl font-bold text-foreground">AC. Produção</h1>
           <p className="text-muted-foreground text-sm mt-1">Painel de Produção Industrial</p>
         </div>
 
