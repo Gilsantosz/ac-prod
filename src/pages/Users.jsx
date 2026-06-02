@@ -72,9 +72,11 @@ export default function Users() {
 
   return (
     <div className="p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Usuários e Acessos</h1>
-        <p className="text-muted-foreground">Cadastre novos colaboradores, configure senhas e defina o nível granular de acesso de cada um.</p>
+      <div className="bg-card/40 backdrop-blur-md border border-border/40 p-5 rounded-2xl shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 hover:shadow-md transition-all duration-300">
+        <div>
+          <h1 className="text-2xl font-extrabold tracking-tight text-foreground bg-gradient-to-r from-foreground via-foreground/90 to-foreground/80 bg-clip-text">Usuários e Acessos</h1>
+          <p className="text-muted-foreground text-sm mt-1">Cadastre novos colaboradores, configure senhas e defina o nível granular de acesso de cada um.</p>
+        </div>
       </div>
 
       <InviteUserForm onInvite={handleInvite} saving={saving} />

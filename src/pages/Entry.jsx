@@ -72,10 +72,10 @@ export default function Entry() {
 
   return (
     <div className="p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="bg-card/40 backdrop-blur-md border border-border/40 p-5 rounded-2xl shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 hover:shadow-md transition-all duration-300">
         <div>
-          <h1 className="text-2xl font-bold">Entrada de Produção</h1>
-          <p className="text-muted-foreground">Registre a produção por turno, célula e hora.</p>
+          <h1 className="text-2xl font-extrabold tracking-tight text-foreground bg-gradient-to-r from-foreground via-foreground/90 to-foreground/80 bg-clip-text">Entrada de Produção</h1>
+          <p className="text-muted-foreground text-sm mt-1">Registre a produção por turno, célula e hora.</p>
         </div>
         <SyncStatus online={online} pending={pending} syncing={syncing} />
       </div>

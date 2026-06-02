@@ -68,10 +68,10 @@ export default function Occurrences() {
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+      <div className="bg-card/40 backdrop-blur-md border border-border/40 p-5 rounded-2xl shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 hover:shadow-md transition-all duration-300">
         <div>
-          <h1 className="text-2xl font-bold">Ocorrências e Paradas</h1>
-          <p className="text-muted-foreground">Registre paradas não planejadas e priorize melhorias com o gráfico de Pareto.</p>
+          <h1 className="text-2xl font-extrabold tracking-tight text-foreground bg-gradient-to-r from-foreground via-foreground/90 to-foreground/80 bg-clip-text">Ocorrências e Paradas</h1>
+          <p className="text-muted-foreground text-sm mt-1">Registre paradas não planejadas e priorize melhorias com o gráfico de Pareto.</p>
         </div>
       </div>
 

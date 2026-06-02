@@ -85,7 +85,7 @@ function AppShell() {
   });
 
   return (
-    <div className="h-screen flex bg-background overflow-hidden relative">
+    <div className="h-[100dvh] flex bg-background overflow-hidden relative">
       {/* Backdrop de desfocagem/vidro desfocado no mobile quando o menu está expandido */}
       {!collapsed && (
         <div 
@@ -96,7 +96,7 @@ function AppShell() {
 
       {/* Sidebar Colapsável (Funciona no Desktop e no Mobile como lateral esquerda) */}
       <aside className={cn(
-        'flex flex-col border-r border-border bg-card/95 md:bg-card/50 backdrop-blur transition-all duration-200 shrink-0 h-screen z-40',
+        'flex flex-col border-r border-border bg-card/95 md:bg-card/50 backdrop-blur transition-all duration-200 shrink-0 h-[100dvh] z-40',
         kiosk && 'hidden',
         collapsed 
           ? 'w-16 md:w-20' 
@@ -206,7 +206,7 @@ function AppShell() {
       </aside>
 
       {/* Painel Principal de Conteúdo */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 h-[100dvh] overflow-hidden">
         <main className="flex-1 overflow-y-auto">
           <Outlet />
         </main>

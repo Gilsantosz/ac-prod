@@ -156,12 +156,12 @@ export default function Dashboard() {
   return (
     <div className={kiosk ? 'p-4 space-y-4' : 'p-6 lg:p-8 space-y-6'}>
       <LowEfficiencyAlertModal open={lowEff.open} alerts={lowEff.alerts} onDismiss={lowEff.dismiss} />
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div className="bg-card/40 backdrop-blur-md border border-border/40 p-5 rounded-2xl shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 hover:shadow-md transition-all duration-300">
         <div>
-          <h1 className={kiosk ? 'text-3xl font-bold' : 'text-2xl font-bold'}>
+          <h1 className={cn("font-extrabold tracking-tight text-foreground bg-gradient-to-r from-foreground via-foreground/90 to-foreground/80 bg-clip-text", kiosk ? 'text-3xl' : 'text-2xl')}>
             Painéis de Produtividade{kiosk && kioskCell !== 'all' ? ` · ${kioskCell}` : ''}
           </h1>
-          {!kiosk && <p className="text-muted-foreground">Indicadores automáticos por turno, célula e hora.</p>}
+          {!kiosk && <p className="text-muted-foreground text-sm mt-1">Indicadores automáticos por turno, célula e hora.</p>}
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {kiosk && (
@@ -176,7 +176,7 @@ export default function Dashboard() {
           {!kiosk && <DashboardFilters filters={filters} setFilters={setFilters} cells={cells} />}
           {!kiosk && <CellReportButton cells={cells} allEntries={all} date={filters.date} />}
           {!kiosk && <ExportMenu entries={filtered} allEntries={all} filters={filters} chartsRef={chartsRef} />}
-          <Button variant={kiosk ? 'default' : 'outline'} className="gap-2" onClick={toggleKiosk}>
+          <Button variant={kiosk ? 'default' : 'outline'} className="gap-2 min-h-[44px] md:min-h-[40px]" onClick={toggleKiosk}>
             {kiosk ? <><Minimize2 className="w-4 h-4" /> Sair do Quiosque</> : <><Monitor className="w-4 h-4" /> Modo Quiosque</>}
           </Button>
         </div>
