@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Gauge } from 'lucide-react';
 import { useCells } from '@/hooks/useCells';
+import PageHeader from '@/components/ui/PageHeader';
 import DashboardFilters from '@/components/dashboard/DashboardFilters';
 import OeeGauge from '@/components/oee/OeeGauge';
 import OeeByCellChart from '@/components/oee/OeeByCellChart';
@@ -58,31 +59,18 @@ export default function OEE() {
   }), [filters]);
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div className="rounded-2xl bg-gradient-to-r from-slate-900 to-slate-700 text-white p-6 lg:p-7 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center">
-            <Gauge className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">OEE — Eficiência Global</h1>
-            <p className="text-white/70 text-sm">Disponibilidade × Performance × Qualidade por célula.</p>
-          </div>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
-          <div className="[&_button]:bg-white/10 [&_button]:border-white/20 [&_button]:text-white">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+      <PageHeader
+        title="OEE — Eficiência Global"
+        subtitle="Disponibilidade × Performance × Qualidade por célula."
+        icon={Gauge}
+        actions={
+          <div className="flex flex-col sm:flex-row gap-2.5 sm:items-center">
             <DashboardFilters filters={filters} setFilters={setFilters} cells={cells} />
+            <OeeReportButton overall={overall} byCell={byCell} occurrences={filteredOccurrences} meta={reportMeta} chartsRef={chartsRef} disabled={filtered.length === 0} />
           </div>
-          <OeeReportButton
-            overall={overall}
-            byCell={byCell}
-            occurrences={filteredOccurrences}
-            meta={reportMeta}
-            chartsRef={chartsRef}
-            disabled={filtered.length === 0}
-          />
-        </div>
-      </div>
+        }
+      />
 
       {filtered.length === 0 ? (
         <div className="text-center py-20 text-muted-foreground border border-dashed border-border rounded-2xl">

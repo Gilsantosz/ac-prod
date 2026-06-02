@@ -3,12 +3,14 @@ import { base44 } from '@/lib/localDb';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+import { AlertOctagon } from 'lucide-react';
 import { useCells } from '@/hooks/useCells';
 import { Button } from '@/components/ui/button';
 import OccurrenceForm from '@/components/occurrences/OccurrenceForm';
 import ParetoChart from '@/components/occurrences/ParetoChart';
 import RecentOccurrences from '@/components/occurrences/RecentOccurrences';
 import ExportOccurrencesButton from '@/components/occurrences/ExportOccurrencesButton';
+import PageHeader from '@/components/ui/PageHeader';
 
 export default function Occurrences() {
   const queryClient = useQueryClient();
@@ -67,13 +69,12 @@ export default function Occurrences() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div className="bg-card/40 backdrop-blur-md border border-border/40 p-5 rounded-2xl shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 hover:shadow-md transition-all duration-300">
-        <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-foreground bg-gradient-to-r from-foreground via-foreground/90 to-foreground/80 bg-clip-text">Ocorrências e Paradas</h1>
-          <p className="text-muted-foreground text-sm mt-1">Registre paradas não planejadas e priorize melhorias com o gráfico de Pareto.</p>
-        </div>
-      </div>
+    <div className="p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+      <PageHeader
+        title="Ocorrências e Paradas"
+        subtitle="Registre paradas não planejadas e priorize melhorias com o gráfico de Pareto."
+        icon={AlertOctagon}
+      />
 
       {/* Painel Coesivo de Filtros Industriais */}
       <div className="flex flex-col sm:flex-row sm:items-end flex-wrap gap-4 sm:gap-6 bg-card p-4 sm:p-5 rounded-2xl border border-border/60 shadow-sm w-full">

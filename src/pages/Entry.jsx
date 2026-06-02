@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { base44 } from '@/lib/localDb';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { PlusCircle } from 'lucide-react';
 import ProductionForm from '@/components/entry/ProductionForm';
 import RecentEntries from '@/components/entry/RecentEntries';
 import CriticalIssueDialog from '@/components/entry/CriticalIssueDialog';
 import SyncStatus from '@/components/entry/SyncStatus';
+import PageHeader from '@/components/ui/PageHeader';
 import { isCritical } from '@/lib/productionMetrics';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { useAutomationRunner } from '@/hooks/useAutomationRunner';
@@ -71,14 +73,13 @@ export default function Entry() {
   };
 
   return (
-    <div className="p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
-      <div className="bg-card/40 backdrop-blur-md border border-border/40 p-5 rounded-2xl shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 hover:shadow-md transition-all duration-300">
-        <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-foreground bg-gradient-to-r from-foreground via-foreground/90 to-foreground/80 bg-clip-text">Entrada de Produção</h1>
-          <p className="text-muted-foreground text-sm mt-1">Registre a produção por turno, célula e hora.</p>
-        </div>
-        <SyncStatus online={online} pending={pending} syncing={syncing} />
-      </div>
+    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-5 sm:space-y-6">
+      <PageHeader
+        title="Entrada de Produção"
+        subtitle="Registre a produção por turno, célula e hora."
+        icon={PlusCircle}
+        actions={<SyncStatus online={online} pending={pending} syncing={syncing} />}
+      />
 
       <ProductionForm onSubmit={handleSubmit} saving={false} />
       <RecentEntries entries={entries} onDelete={deleteMutation.mutate} />

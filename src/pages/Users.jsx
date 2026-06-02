@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { base44 } from '@/lib/localDb';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ShieldAlert } from 'lucide-react';
+import { ShieldAlert, Users as UsersIcon } from 'lucide-react';
 import InviteUserForm from '@/components/users/InviteUserForm';
 import UserList from '@/components/users/UserList';
+import PageHeader from '@/components/ui/PageHeader';
 
 export default function Users() {
   const queryClient = useQueryClient();
@@ -71,13 +72,12 @@ export default function Users() {
   }
 
   return (
-    <div className="p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
-      <div className="bg-card/40 backdrop-blur-md border border-border/40 p-5 rounded-2xl shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 hover:shadow-md transition-all duration-300">
-        <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-foreground bg-gradient-to-r from-foreground via-foreground/90 to-foreground/80 bg-clip-text">Usuários e Acessos</h1>
-          <p className="text-muted-foreground text-sm mt-1">Cadastre novos colaboradores, configure senhas e defina o nível granular de acesso de cada um.</p>
-        </div>
-      </div>
+    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-5 sm:space-y-6">
+      <PageHeader
+        title="Usuários e Acessos"
+        subtitle="Cadastre novos colaboradores, configure senhas e defina o nível de acesso de cada um."
+        icon={UsersIcon}
+      />
 
       <InviteUserForm onInvite={handleInvite} saving={saving} />
       

@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { base44 } from '@/lib/localDb';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { HardHat } from 'lucide-react';
 import { useCells } from '@/hooks/useCells';
 import OperatorForm from '@/components/operators/OperatorForm';
 import OperatorList from '@/components/operators/OperatorList';
+import PageHeader from '@/components/ui/PageHeader';
 
 export default function Operators() {
   const queryClient = useQueryClient();
@@ -48,11 +50,12 @@ export default function Operators() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Operadores</h1>
-        <p className="text-muted-foreground">Cadastre colaboradores, associe-os a células e defina o turno de trabalho.</p>
-      </div>
+    <div className="p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+      <PageHeader
+        title="Operadores"
+        subtitle="Cadastre colaboradores, associe-os a células e defina o turno de trabalho."
+        icon={HardHat}
+      />
 
       <OperatorForm
         operator={editing}

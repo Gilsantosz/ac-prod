@@ -2,8 +2,9 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { base44 } from '@/lib/localDb';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { Package, Target, Gauge, AlertTriangle, Monitor, Minimize2 } from 'lucide-react';
+import { Package, Target, Gauge, AlertTriangle, Monitor, Minimize2, LayoutDashboard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import PageHeader from '@/components/ui/PageHeader';
 import { useKiosk } from '@/lib/KioskContext';
 import KioskCellControl from '@/components/dashboard/KioskCellControl';
 import KpiCard from '@/components/dashboard/KpiCard';
@@ -154,33 +155,38 @@ export default function Dashboard() {
   ], [monthlyTracking, ranking, effDrop, goalProgress, projection, weeklyTrend, weeklyTrendLabel, performers, byHour, byShift, byCell, kiosk]);
 
   return (
-    <div className={kiosk ? 'p-4 space-y-4' : 'p-6 lg:p-8 space-y-6'}>
+    <div className={kiosk ? 'p-4 space-y-4' : 'p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6'}>
       <LowEfficiencyAlertModal open={lowEff.open} alerts={lowEff.alerts} onDismiss={lowEff.dismiss} />
-      <div className="bg-card/40 backdrop-blur-md border border-border/40 p-5 rounded-2xl shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 hover:shadow-md transition-all duration-300">
-        <div>
-          <h1 className={cn("font-extrabold tracking-tight text-foreground bg-gradient-to-r from-foreground via-foreground/90 to-foreground/80 bg-clip-text", kiosk ? 'text-3xl' : 'text-2xl')}>
-            Painéis de Produtividade{kiosk && kioskCell !== 'all' ? ` · ${kioskCell}` : ''}
+      {!kiosk && (
+        <PageHeader
+          title={`Painéis de Produtividade`}
+          subtitle="Indicadores automáticos por turno, célula e hora."
+          icon={LayoutDashboard}
+          actions={
+            <>
+              <DashboardFilters filters={filters} setFilters={setFilters} cells={cells} />
+              <CellReportButton cells={cells} allEntries={all} date={filters.date} />
+              <ExportMenu entries={filtered} allEntries={all} filters={filters} chartsRef={chartsRef} />
+              <Button variant="outline" className="gap-2 min-h-[44px] md:min-h-[40px] bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={toggleKiosk}>
+                <Monitor className="w-4 h-4" /> Modo Quiosque
+              </Button>
+            </>
+          }
+        />
+      )}
+      {kiosk && (
+        <div className="flex items-center justify-between">
+          <h1 className="font-display text-3xl font-extrabold text-foreground">
+            Painéis{kioskCell !== 'all' ? ` · ${kioskCell}` : ''}
           </h1>
-          {!kiosk && <p className="text-muted-foreground text-sm mt-1">Indicadores automáticos por turno, célula e hora.</p>}
+          <div className="flex items-center gap-3">
+            <KioskCellControl cells={cells} active={kioskCell} setActive={setKioskCell} rotating={rotating} setRotating={setRotating} />
+            <Button variant="default" className="gap-2 min-h-[44px]" onClick={toggleKiosk}>
+              <Minimize2 className="w-4 h-4" /> Sair do Quiosque
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {kiosk && (
-            <KioskCellControl
-              cells={cells}
-              active={kioskCell}
-              setActive={setKioskCell}
-              rotating={rotating}
-              setRotating={setRotating}
-            />
-          )}
-          {!kiosk && <DashboardFilters filters={filters} setFilters={setFilters} cells={cells} />}
-          {!kiosk && <CellReportButton cells={cells} allEntries={all} date={filters.date} />}
-          {!kiosk && <ExportMenu entries={filtered} allEntries={all} filters={filters} chartsRef={chartsRef} />}
-          <Button variant={kiosk ? 'default' : 'outline'} className="gap-2 min-h-[44px] md:min-h-[40px]" onClick={toggleKiosk}>
-            {kiosk ? <><Minimize2 className="w-4 h-4" /> Sair do Quiosque</> : <><Monitor className="w-4 h-4" /> Modo Quiosque</>}
-          </Button>
-        </div>
-      </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard index={0} title="Total Produzido" value={totalProduced.toLocaleString('pt-BR')} icon={Package} accent="accent" sub={`${filtered.length} registros`} />

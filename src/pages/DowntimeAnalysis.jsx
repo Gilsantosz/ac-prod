@@ -5,6 +5,7 @@ import { format } from 'date-fns';
 import { TimerOff, Clock, AlertTriangle, BarChart3 } from 'lucide-react';
 import DashboardFilters from '@/components/dashboard/DashboardFilters';
 import KpiCard from '@/components/dashboard/KpiCard';
+import PageHeader from '@/components/ui/PageHeader';
 import TopReasonsByCellChart from '@/components/downtime/TopReasonsByCellChart';
 import DowntimeFrequencyChart from '@/components/downtime/DowntimeFrequencyChart';
 import MttrChart from '@/components/downtime/MttrChart';
@@ -41,21 +42,13 @@ export default function DowntimeAnalysis() {
   const topReason = mttr.length > 0 ? [...mttr].sort((a, b) => b.total - a.total)[0] : null;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div className="rounded-2xl bg-gradient-to-r from-rose-900 to-rose-700 text-white p-6 lg:p-7 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center">
-            <TimerOff className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">Análise de Paradas</h1>
-            <p className="text-white/70 text-sm">Top motivos por célula, frequência no tempo e MTTR por tipo.</p>
-          </div>
-        </div>
-        <div className="[&_button]:bg-white/10 [&_button]:border-white/20 [&_button]:text-white">
-          <DashboardFilters filters={filters} setFilters={setFilters} cells={cells} />
-        </div>
-      </div>
+    <div className="p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+      <PageHeader
+        title="Análise de Paradas"
+        subtitle="Top motivos por célula, frequência no tempo e MTTR por tipo."
+        icon={TimerOff}
+        actions={<DashboardFilters filters={filters} setFilters={setFilters} cells={cells} />}
+      />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard title="Ocorrências" value={filtered.length} icon={AlertTriangle} />

@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react';
 import { base44 } from '@/lib/localDb';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { Zap } from 'lucide-react';
+import PageHeader from '@/components/ui/PageHeader';
 import RuleForm from '@/components/automations/RuleForm';
 import RuleList from '@/components/automations/RuleList';
 
@@ -52,11 +54,12 @@ export default function Automations() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Automações</h1>
-        <p className="text-muted-foreground">Defina condições e ações automáticas para padronizar seus processos de produção.</p>
-      </div>
+    <div className="p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+      <PageHeader
+        title="Automações"
+        subtitle="Defina condições e ações automáticas para padronizar seus processos de produção."
+        icon={Zap}
+      />
 
       <RuleForm onSubmit={handleSubmit} saving={saving} cells={cells} />
       <RuleList rules={rules} onToggle={(r) => toggle.mutate(r)} onDelete={(id) => remove.mutate(id)} />

@@ -4,6 +4,7 @@ import { base44 } from '@/lib/localDb';
 import { Calendar, ClipboardList, ChevronDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import PageHeader from '@/components/ui/PageHeader';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -66,97 +67,56 @@ export default function DailySummary() {
   const summary = useMemo(() => buildDailySummary(filtered), [filtered]);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <ClipboardList className="w-6 h-6" /> Resumo Diário
-          </h1>
-          <p className="text-sm text-muted-foreground">Acumulado do turno: produção, peças boas, refugos e paradas.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2">
-            <Calendar className="w-4 h-4 text-muted-foreground" />
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border-0 p-0 h-auto w-36 focus-visible:ring-0 text-foreground bg-transparent font-medium [color-scheme:light] dark:[color-scheme:dark]" />
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-5 sm:space-y-6">
+      <PageHeader
+        title="Resumo Diário"
+        subtitle="Acumulado do turno: produção, peças boas, refugos e paradas."
+        icon={ClipboardList}
+        actions={
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center gap-2 bg-white/10 border border-white/20 rounded-xl px-3 py-2">
+              <Calendar className="w-4 h-4 text-white/70" />
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border-0 p-0 h-auto w-36 focus-visible:ring-0 text-white bg-transparent font-medium [color-scheme:dark]" />
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="w-44 justify-between gap-2 text-left font-normal bg-white/10 border-white/20 text-white hover:bg-white/20">
+                  <span className="truncate">{shiftTriggerText}</span>
+                  <ChevronDown className="w-4 h-4 opacity-50 shrink-0" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-44">
+                <DropdownMenuLabel>Filtrar por Turno</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuCheckboxItem checked={selectedShifts.length === 3} onCheckedChange={(c) => setSelectedShifts(c ? ['1º Turno', '2º Turno', '3º Turno'] : [])}>Todos os turnos</DropdownMenuCheckboxItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuCheckboxItem checked={selectedShifts.includes('1º Turno')} onCheckedChange={() => toggleShift('1º Turno')}>1º Turno</DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem checked={selectedShifts.includes('2º Turno')} onCheckedChange={() => toggleShift('2º Turno')}>2º Turno</DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem checked={selectedShifts.includes('3º Turno')} onCheckedChange={() => toggleShift('3º Turno')}>3º Turno</DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="w-52 justify-between gap-2 text-left font-normal bg-white/10 border-white/20 text-white hover:bg-white/20">
+                  <span className="truncate">{cellTriggerText}</span>
+                  <ChevronDown className="w-4 h-4 opacity-50 shrink-0" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-52">
+                <DropdownMenuLabel>Filtrar por Célula</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuCheckboxItem checked={selectedCells.length === 0} onCheckedChange={() => setSelectedCells([])}>Todas as células</DropdownMenuCheckboxItem>
+                {activeCells.length > 0 && <DropdownMenuSeparator />}
+                {activeCells.map((c) => (
+                  <DropdownMenuCheckboxItem key={c.id} checked={selectedCells.includes(c.name)} onCheckedChange={() => toggleCell(c.name)}>{c.name}</DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <ExportDailyButton date={date} shift={selectedShifts} cell={selectedCells} summary={summary} disabled={filtered.length === 0} />
+            <CloseShiftButton date={date} disabled={filtered.length === 0} />
           </div>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="w-48 justify-between gap-2 text-left font-normal">
-                <span className="truncate">{shiftTriggerText}</span>
-                <ChevronDown className="w-4 h-4 opacity-50 shrink-0" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-48">
-              <DropdownMenuLabel>Filtrar por Turno</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuCheckboxItem
-                checked={selectedShifts.length === 3}
-                onCheckedChange={(checked) => {
-                  if (checked) {
-                    setSelectedShifts(['1º Turno', '2º Turno', '3º Turno']);
-                  } else {
-                    setSelectedShifts([]);
-                  }
-                }}
-              >
-                Todos os turnos
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuCheckboxItem
-                checked={selectedShifts.includes('1º Turno')}
-                onCheckedChange={() => toggleShift('1º Turno')}
-              >
-                1º Turno
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={selectedShifts.includes('2º Turno')}
-                onCheckedChange={() => toggleShift('2º Turno')}
-              >
-                2º Turno
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={selectedShifts.includes('3º Turno')}
-                onCheckedChange={() => toggleShift('3º Turno')}
-              >
-                3º Turno
-              </DropdownMenuCheckboxItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="w-56 justify-between gap-2 text-left font-normal">
-                <span className="truncate">{cellTriggerText}</span>
-                <ChevronDown className="w-4 h-4 opacity-50 shrink-0" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56">
-              <DropdownMenuLabel>Filtrar por Célula</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuCheckboxItem
-                checked={selectedCells.length === 0}
-                onCheckedChange={() => setSelectedCells([])}
-              >
-                Todas as células
-              </DropdownMenuCheckboxItem>
-              {activeCells.length > 0 && <DropdownMenuSeparator />}
-              {activeCells.map((c) => (
-                <DropdownMenuCheckboxItem
-                  key={c.id}
-                  checked={selectedCells.includes(c.name)}
-                  onCheckedChange={() => toggleCell(c.name)}
-                >
-                  {c.name}
-                </DropdownMenuCheckboxItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <ExportDailyButton date={date} shift={selectedShifts} cell={selectedCells} summary={summary} disabled={filtered.length === 0} />
-          <CloseShiftButton date={date} disabled={filtered.length === 0} />
-        </div>
-      </div>
+        }
+      />
 
       <SummaryKpis total={summary.total} />
 

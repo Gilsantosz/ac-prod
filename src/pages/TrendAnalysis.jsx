@@ -10,6 +10,7 @@ import { seriesByCell } from '@/lib/trendMetrics';
 import TrendLineChart from '@/components/trend/TrendLineChart';
 import TrendSummaryCards from '@/components/trend/TrendSummaryCards';
 import ExportTrendButton from '@/components/trend/ExportTrendButton';
+import PageHeader from '@/components/ui/PageHeader';
 
 export default function TrendAnalysis() {
   const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
@@ -47,30 +48,21 @@ export default function TrendAnalysis() {
   const prodData = useMemo(() => buildPivot('productivity'), [byCell]);
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div className="rounded-2xl bg-gradient-to-r from-slate-900 to-slate-700 text-white p-6 lg:p-7 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center">
-            <TrendingUp className="w-6 h-6" />
+    <div className="p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+      <PageHeader
+        title="Análise de Tendência"
+        subtitle="Evolução diária de OEE e produtividade por célula ao longo do mês."
+        icon={TrendingUp}
+        actions={
+          <div className="flex items-end gap-2.5">
+            <div className="space-y-1">
+              <Label className="text-xs text-white/70">Mês</Label>
+              <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="w-40 bg-white/10 border-white/20 text-white [color-scheme:dark]" />
+            </div>
+            <ExportTrendButton month={month} targetRef={reportRef} disabled={monthEntries.length === 0} />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold">Análise de Tendência</h1>
-            <p className="text-white/70 text-sm">Evolução diária de OEE e produtividade por célula ao longo do mês.</p>
-          </div>
-        </div>
-        <div className="flex items-end gap-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-white/70">Mês</Label>
-            <Input
-              type="month"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              className="w-44 bg-white/10 border-white/20 text-white [color-scheme:dark]"
-            />
-          </div>
-          <ExportTrendButton month={month} targetRef={reportRef} disabled={monthEntries.length === 0} />
-        </div>
-      </div>
+        }
+      />
 
       {monthEntries.length === 0 ? (
         <div className="text-center py-20 text-muted-foreground border border-dashed border-border rounded-2xl">

@@ -6,6 +6,7 @@ import { Trophy } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { buildLeaderboard } from '@/lib/gamification';
+import PageHeader from '@/components/ui/PageHeader';
 import Podium from '@/components/gamification/Podium';
 import Leaderboard from '@/components/gamification/Leaderboard';
 
@@ -26,22 +27,18 @@ export default function Gamification() {
   const rows = useMemo(() => buildLeaderboard(monthEntries), [monthEntries]);
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div className="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white p-6 lg:p-7 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center">
-            <Trophy className="w-6 h-6" />
+    <div className="p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+      <PageHeader
+        title="Gamificação"
+        subtitle="Ranking de equipes por atingimento de meta, pontos e conquistas."
+        icon={Trophy}
+        actions={
+          <div className="space-y-1">
+            <Label className="text-xs text-white/70">Mês</Label>
+            <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="w-40 bg-white/10 border-white/20 text-white [color-scheme:dark]" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold">Gamificação</h1>
-            <p className="text-white/80 text-sm">Ranking de equipes por atingimento de meta, pontos e conquistas.</p>
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs text-white/80">Mês</Label>
-          <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="w-44 bg-white/10 border-white/20 text-white [color-scheme:dark]" />
-        </div>
-      </div>
+        }
+      />
 
       {monthEntries.length === 0 ? (
         <div className="text-center py-20 text-muted-foreground border border-dashed border-border rounded-2xl">

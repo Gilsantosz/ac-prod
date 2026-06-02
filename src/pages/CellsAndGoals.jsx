@@ -1,5 +1,6 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Boxes, Target, Users, CalendarRange } from 'lucide-react';
+import PageHeader from '@/components/ui/PageHeader';
 import CellsManager from '@/components/cells/CellsManager';
 import GoalsManager from '@/components/goals/GoalsManager';
 import MonthlyGoalsManager from '@/components/monthlygoals/MonthlyGoalsManager';
@@ -7,11 +8,12 @@ import ManagersManager from '@/components/managers/ManagersManager';
 
 export default function CellsAndGoals() {
   return (
-    <div className="p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Células e Metas</h1>
-        <p className="text-muted-foreground">Cadastre as células e suas horas por turno, e defina as metas diárias de produção.</p>
-      </div>
+    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-5 sm:space-y-6">
+      <PageHeader
+        title="Células e Metas"
+        subtitle="Cadastre as células e suas horas por turno, e defina as metas diárias de produção."
+        icon={Boxes}
+      />
 
       <Tabs defaultValue="cells" className="space-y-6">
         <TabsList>

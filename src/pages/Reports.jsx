@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { base44 } from '@/lib/localDb';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { Download } from 'lucide-react';
+import { Download, LineChart } from 'lucide-react';
 import { toast } from 'sonner';
 import { monthlySeries, monthlyByCell, monthOverMonth, seasonalityAlerts, executiveSummary, nextMonthProjection, cellBenchmark } from '@/lib/reportMetrics';
 import { exportProductionCsv } from '@/lib/exportReports';
@@ -14,6 +14,7 @@ import SeasonalityAlerts from '@/components/reports/SeasonalityAlerts';
 import MonthSummary from '@/components/reports/MonthSummary';
 import MonthlyTrendChart from '@/components/reports/MonthlyTrendChart';
 import CellTrendChart from '@/components/reports/CellTrendChart';
+import PageHeader from '@/components/ui/PageHeader';
 
 export default function Reports() {
   const [range, setRange] = useState({ from: '', to: '' });
@@ -48,17 +49,17 @@ export default function Reports() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Relatórios Analíticos</h1>
-          <p className="text-muted-foreground">Produtividade mês a mês e histórico de performance das células para identificar sazonalidades.</p>
-        </div>
-        <Button variant="outline" className="gap-2" onClick={handleExport}>
-          <Download className="w-4 h-4" /> Exportar para CSV
-        </Button>
-      </div>
-
+    <div className="p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+      <PageHeader
+        title="Relatórios Analíticos"
+        subtitle="Produtividade mês a mês e histórico de performance das células."
+        icon={LineChart}
+        actions={
+          <Button variant="outline" className="gap-2 bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={handleExport}>
+            <Download className="w-4 h-4" /> Exportar CSV
+          </Button>
+        }
+      />
       <DateRangeFilter range={range} setRange={setRange} />
 
       {filtered.length === 0 ? (
