@@ -73,47 +73,58 @@ export default function DailySummary() {
         subtitle="Acumulado do turno: produção, peças boas, refugos e paradas."
         icon={ClipboardList}
         actions={
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="flex items-center gap-2 bg-white/10 border border-white/20 rounded-xl px-3 py-2">
-              <Calendar className="w-4 h-4 text-white/70" />
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border-0 p-0 h-auto w-36 focus-visible:ring-0 text-white bg-transparent font-medium [color-scheme:dark]" />
+          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
+            <div className="flex items-center gap-2 bg-white/10 border border-white/20 rounded-xl px-3 py-2 w-full sm:w-auto shrink-0">
+              <Calendar className="w-4 h-4 text-white/70 shrink-0" />
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border-0 p-0 h-auto w-full sm:w-36 focus-visible:ring-0 text-white bg-transparent font-medium [color-scheme:dark]" />
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="w-44 justify-between gap-2 text-left font-normal bg-white/10 border-white/20 text-white hover:bg-white/20">
-                  <span className="truncate">{shiftTriggerText}</span>
-                  <ChevronDown className="w-4 h-4 opacity-50 shrink-0" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-44">
-                <DropdownMenuLabel>Filtrar por Turno</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuCheckboxItem checked={selectedShifts.length === 3} onCheckedChange={(c) => setSelectedShifts(c ? ['1º Turno', '2º Turno', '3º Turno'] : [])}>Todos os turnos</DropdownMenuCheckboxItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuCheckboxItem checked={selectedShifts.includes('1º Turno')} onCheckedChange={() => toggleShift('1º Turno')}>1º Turno</DropdownMenuCheckboxItem>
-                <DropdownMenuCheckboxItem checked={selectedShifts.includes('2º Turno')} onCheckedChange={() => toggleShift('2º Turno')}>2º Turno</DropdownMenuCheckboxItem>
-                <DropdownMenuCheckboxItem checked={selectedShifts.includes('3º Turno')} onCheckedChange={() => toggleShift('3º Turno')}>3º Turno</DropdownMenuCheckboxItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="w-52 justify-between gap-2 text-left font-normal bg-white/10 border-white/20 text-white hover:bg-white/20">
-                  <span className="truncate">{cellTriggerText}</span>
-                  <ChevronDown className="w-4 h-4 opacity-50 shrink-0" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-52">
-                <DropdownMenuLabel>Filtrar por Célula</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuCheckboxItem checked={selectedCells.length === 0} onCheckedChange={() => setSelectedCells([])}>Todas as células</DropdownMenuCheckboxItem>
-                {activeCells.length > 0 && <DropdownMenuSeparator />}
-                {activeCells.map((c) => (
-                  <DropdownMenuCheckboxItem key={c.id} checked={selectedCells.includes(c.name)} onCheckedChange={() => toggleCell(c.name)}>{c.name}</DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <ExportDailyButton date={date} shift={selectedShifts} cell={selectedCells} summary={summary} disabled={filtered.length === 0} />
-            <CloseShiftButton date={date} disabled={filtered.length === 0} />
+
+            <div className="w-full sm:w-44 shrink-0">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between gap-2 text-left font-normal bg-white/10 border-white/20 text-white hover:bg-white/20">
+                    <span className="truncate">{shiftTriggerText}</span>
+                    <ChevronDown className="w-4 h-4 opacity-50 shrink-0" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-full sm:w-44">
+                  <DropdownMenuLabel>Filtrar por Turno</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuCheckboxItem checked={selectedShifts.length === 3} onCheckedChange={(c) => setSelectedShifts(c ? ['1º Turno', '2º Turno', '3º Turno'] : [])}>Todos os turnos</DropdownMenuCheckboxItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuCheckboxItem checked={selectedShifts.includes('1º Turno')} onCheckedChange={() => toggleShift('1º Turno')}>1º Turno</DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem checked={selectedShifts.includes('2º Turno')} onCheckedChange={() => toggleShift('2º Turno')}>2º Turno</DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem checked={selectedShifts.includes('3º Turno')} onCheckedChange={() => toggleShift('3º Turno')}>3º Turno</DropdownMenuCheckboxItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
+            <div className="w-full sm:w-52 shrink-0">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between gap-2 text-left font-normal bg-white/10 border-white/20 text-white hover:bg-white/20">
+                    <span className="truncate">{cellTriggerText}</span>
+                    <ChevronDown className="w-4 h-4 opacity-50 shrink-0" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-full sm:w-52">
+                  <DropdownMenuLabel>Filtrar por Célula</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuCheckboxItem checked={selectedCells.length === 0} onCheckedChange={() => setSelectedCells([])}>Todas as células</DropdownMenuCheckboxItem>
+                  {activeCells.length > 0 && <DropdownMenuSeparator />}
+                  {activeCells.map((c) => (
+                    <DropdownMenuCheckboxItem key={c.id} checked={selectedCells.includes(c.name)} onCheckedChange={() => toggleCell(c.name)}>{c.name}</DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
+            <div className="w-full sm:w-auto shrink-0 flex">
+              <ExportDailyButton date={date} shift={selectedShifts} cell={selectedCells} summary={summary} disabled={filtered.length === 0} />
+            </div>
+            <div className="w-full sm:w-auto shrink-0 flex">
+              <CloseShiftButton date={date} disabled={filtered.length === 0} />
+            </div>
           </div>
         }
       />

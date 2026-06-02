@@ -21,11 +21,7 @@ body {
   font-family: 'DM Sans', system-ui, sans-serif;
 }
 
-/* Garante área de toque mínima de 44px (padrão Apple HIG) */
-button, a, [role="button"], select, input[type="checkbox"], input[type="radio"] {
-  min-height: 44px;
-}
-
+/* Área de toque mínima: aplicada via classes nos botões interativos, não globalmente */
 /* Scrollbar sutil para desktop */
 @media (hover: hover) {
   ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -214,13 +210,19 @@ button, a, [role="button"], select, input[type="checkbox"], input[type="radio"] 
     opacity: 1;
   }
 
-  /* Header premium das páginas */
+  /* Header premium das páginas — nunca corta conteúdo */
   .page-header {
-    @apply rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4;
+    @apply rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4;
     background: var(--header-gradient);
     box-shadow: 0 4px 20px hsl(217 91% 50% / 0.25);
     position: relative;
-    overflow: hidden;
+    /* overflow visível para não cortar botões que façam wrap */
+    overflow: visible;
+  }
+
+  /* Row interna: título + actions, quebra para coluna em telas estreitas */
+  .page-header-inner {
+    @apply flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4;
   }
 
   .page-header::after {

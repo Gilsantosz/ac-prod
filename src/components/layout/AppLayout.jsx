@@ -92,17 +92,8 @@ function AppShell() {
         />
       )}
 
-      {/* ── Botão hamburguer flutuante no mobile (quando collapsed) ─────── */}
-      {collapsed && !kiosk && (
-        <button
-          id="mobile-menu-btn"
-          className="mobile-menu-toggle md:hidden"
-          onClick={() => setCollapsed(false)}
-          aria-label="Abrir menu"
-        >
-          <Menu className="w-5 h-5 text-foreground" />
-        </button>
-      )}
+      {/* ── Botão fechar ou abrir no mobile ── */}
+      {/* O menu hamburguer agora reside dentro do Topbar Móvel no topo da página, fornecendo um visual limpo e sem sobreposições. */}
 
       {/* ── Sidebar ─────────────────────────────────────────────────────── */}
       <aside
@@ -241,6 +232,39 @@ function AppShell() {
 
       {/* ── Painel Principal ─────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 h-[100dvh] overflow-hidden">
+        {/* Topbar Móvel (apenas mobile/tablet) */}
+        {!kiosk && (
+          <header className="md:hidden flex items-center justify-between px-4 h-14 bg-background/80 backdrop-blur-md border-b border-border/60 z-20 shrink-0 relative">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setCollapsed(false)}
+                className="flex items-center justify-center w-10 h-10 rounded-xl border border-border/80 bg-card/90 text-foreground hover:bg-secondary/60 active:scale-95 transition-all"
+                aria-label="Abrir menu"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+              <div className="flex items-center gap-2">
+                <LeoLogo size="sm" className="shrink-0" />
+                <span className="font-display font-bold text-sm leading-tight text-foreground">AC. Produção</span>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <button
+                className="flex items-center justify-center w-10 h-10 rounded-xl border border-border/80 bg-card/90 text-muted-foreground hover:text-foreground active:scale-95 transition-all"
+                onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+                title={theme === 'dark' ? 'Ativar Modo Claro' : 'Ativar Modo Escuro'}
+              >
+                {theme === 'dark' ? (
+                  <Sun className="w-4.5 h-4.5 text-amber-400" />
+                ) : (
+                  <Moon className="w-4.5 h-4.5 text-indigo-400" />
+                )}
+              </button>
+            </div>
+          </header>
+        )}
+
         <main className="flex-1 overflow-y-auto">
           <Outlet />
         </main>

@@ -54,12 +54,14 @@ export default function TrendAnalysis() {
         subtitle="Evolução diária de OEE e produtividade por célula ao longo do mês."
         icon={TrendingUp}
         actions={
-          <div className="flex items-end gap-2.5">
-            <div className="space-y-1">
+          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-end gap-2.5 w-full sm:w-auto">
+            <div className="space-y-1 w-full sm:w-40 shrink-0">
               <Label className="text-xs text-white/70">Mês</Label>
-              <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="w-40 bg-white/10 border-white/20 text-white [color-scheme:dark]" />
+              <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="w-full bg-white/10 border-white/20 text-white [color-scheme:dark]" />
             </div>
-            <ExportTrendButton month={month} targetRef={reportRef} disabled={monthEntries.length === 0} />
+            <div className="w-full sm:w-auto shrink-0 flex">
+              <ExportTrendButton month={month} targetRef={reportRef} disabled={monthEntries.length === 0} />
+            </div>
           </div>
         }
       />

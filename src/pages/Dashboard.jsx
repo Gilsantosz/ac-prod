@@ -163,14 +163,22 @@ export default function Dashboard() {
           subtitle="Indicadores automáticos por turno, célula e hora."
           icon={LayoutDashboard}
           actions={
-            <>
+            <div className="flex flex-col xl:flex-row flex-wrap items-stretch xl:items-center gap-2.5 w-full xl:w-auto">
               <DashboardFilters filters={filters} setFilters={setFilters} cells={cells} />
-              <CellReportButton cells={cells} allEntries={all} date={filters.date} />
-              <ExportMenu entries={filtered} allEntries={all} filters={filters} chartsRef={chartsRef} />
-              <Button variant="outline" className="gap-2 min-h-[44px] md:min-h-[40px] bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={toggleKiosk}>
-                <Monitor className="w-4 h-4" /> Modo Quiosque
-              </Button>
-            </>
+              <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2.5 w-full xl:w-auto">
+                <div className="w-full sm:w-auto shrink-0 flex">
+                  <CellReportButton cells={cells} allEntries={all} date={filters.date} />
+                </div>
+                <div className="w-full sm:w-auto shrink-0 flex">
+                  <ExportMenu entries={filtered} allEntries={all} filters={filters} chartsRef={chartsRef} />
+                </div>
+                <div className="w-full sm:w-auto shrink-0 flex">
+                  <Button variant="outline" className="w-full gap-2 min-h-[44px] md:min-h-[40px] bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={toggleKiosk}>
+                    <Monitor className="w-4 h-4" /> Modo Quiosque
+                  </Button>
+                </div>
+              </div>
+            </div>
           }
         />
       )}
