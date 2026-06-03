@@ -56,7 +56,7 @@ export default function ExportMenu({ entries, allEntries, filters, chartsRef }) 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="gap-2">
+        <Button variant="outline" className="gap-2 bg-white/10 border-white/20 text-white hover:bg-white/20">
           <Download className="w-4 h-4" /> Exportar
         </Button>
       </DropdownMenuTrigger>

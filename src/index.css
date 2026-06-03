@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -18,7 +18,7 @@ html {
 body {
   overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
-  font-family: 'DM Sans', system-ui, sans-serif;
+  font-family: 'Inter', system-ui, sans-serif;
 }
 
 /* Área de toque mínima: aplicada via classes nos botões interativos, não globalmente */
@@ -130,11 +130,11 @@ body {
     @apply bg-background text-foreground;
     background-attachment: fixed;
     transition: background-color 0.4s ease, color 0.4s ease;
-    font-family: 'DM Sans', system-ui, sans-serif;
+    font-family: 'Inter', system-ui, sans-serif;
   }
 
   h1, h2, h3, .font-display {
-    font-family: 'Syne', system-ui, sans-serif;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
     letter-spacing: -0.02em;
   }
 
@@ -241,7 +241,7 @@ body {
   }
 
   .page-header h1 {
-    font-family: 'Syne', system-ui, sans-serif;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
     font-weight: 800;
     letter-spacing: -0.03em;
   }

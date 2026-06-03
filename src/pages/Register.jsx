@@ -96,15 +96,28 @@ export default function Register() {
           <form onSubmit={handleVerify} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="otp">Código de verificação</Label>
-              <Input id="otp" value={otp} onChange={(e) => setOtp(e.target.value)} required placeholder="000000" />
+              <Input id="otp" value={otp} onChange={(e) => setOtp(e.target.value)} required placeholder="000000" className="text-center text-lg font-bold tracking-widest" maxLength={6} />
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Verificar'}
+            {error && <p className="text-sm text-destructive text-center">{error}</p>}
+            <Button type="submit" className="w-full h-11" disabled={loading}>
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Verificar e Entrar'}
             </Button>
-            <button type="button" onClick={handleResend} className="w-full text-sm text-muted-foreground hover:text-foreground">
-              Reenviar código
-            </button>
+            <div className="flex flex-col gap-2 pt-2 text-center">
+              <button
+                type="button"
+                onClick={handleResend}
+                className="text-xs text-muted-foreground hover:text-foreground active:scale-95 transition-all"
+              >
+                Não recebeu o código? <span className="font-semibold text-primary hover:underline">Reenviar código</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep('register')}
+                className="text-xs text-accent hover:underline font-semibold active:scale-95 transition-all mt-1"
+              >
+                Voltar / Alterar e-mail
+              </button>
+            </div>
           </form>
         )}
       </Card>

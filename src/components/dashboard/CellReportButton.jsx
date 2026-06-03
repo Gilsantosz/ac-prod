@@ -48,7 +48,7 @@ export default function CellReportButton({ cells, allEntries, date }) {
 
   return (
     <>
-      <Button variant="outline" className="gap-2" onClick={() => setOpen(true)}>
+      <Button variant="outline" className="gap-2 bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => setOpen(true)}>
         <FileText className="w-4 h-4" /> Gerar Relatório
       </Button>
 

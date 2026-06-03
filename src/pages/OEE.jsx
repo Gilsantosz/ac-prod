@@ -65,9 +65,11 @@ export default function OEE() {
         subtitle="Disponibilidade × Performance × Qualidade por célula."
         icon={Gauge}
         actions={
-          <div className="flex flex-col sm:flex-row gap-2.5 sm:items-center">
+          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
             <DashboardFilters filters={filters} setFilters={setFilters} cells={cells} />
-            <OeeReportButton overall={overall} byCell={byCell} occurrences={filteredOccurrences} meta={reportMeta} chartsRef={chartsRef} disabled={filtered.length === 0} />
+            <div className="w-full sm:w-auto shrink-0 flex">
+              <OeeReportButton overall={overall} byCell={byCell} occurrences={filteredOccurrences} meta={reportMeta} chartsRef={chartsRef} disabled={filtered.length === 0} />
+            </div>
           </div>
         }
       />

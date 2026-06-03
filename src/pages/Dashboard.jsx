@@ -183,13 +183,13 @@ export default function Dashboard() {
         />
       )}
       {kiosk && (
-        <div className="flex items-center justify-between">
-          <h1 className="font-display text-3xl font-extrabold text-foreground">
+        <div className="bg-card/40 backdrop-blur-md border border-border/40 p-4 sm:p-5 rounded-2xl shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 hover:shadow-md transition-all duration-300">
+          <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-foreground">
             Painéis{kioskCell !== 'all' ? ` · ${kioskCell}` : ''}
           </h1>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
             <KioskCellControl cells={cells} active={kioskCell} setActive={setKioskCell} rotating={rotating} setRotating={setRotating} />
-            <Button variant="default" className="gap-2 min-h-[44px]" onClick={toggleKiosk}>
+            <Button variant="default" className="w-full sm:w-auto gap-2 min-h-[44px]" onClick={toggleKiosk}>
               <Minimize2 className="w-4 h-4" /> Sair do Quiosque
             </Button>
           </div>

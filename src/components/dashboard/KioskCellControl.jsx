@@ -27,22 +27,24 @@ export default function KioskCellControl({ cells, active, setActive, rotating, s
   if (!cells.length) return null;
 
   return (
-    <div className="flex items-center gap-2">
-      <Button variant="outline" size="icon" onClick={() => step(-1)} title="Célula anterior">
-        <ChevronLeft className="w-4 h-4" />
-      </Button>
-      <Select value={active} onValueChange={setActive}>
-        <SelectTrigger className="w-[200px]"><SelectValue /></SelectTrigger>
-        <SelectContent>
-          {cells.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-        </SelectContent>
-      </Select>
-      <Button variant="outline" size="icon" onClick={() => step(1)} title="Próxima célula">
-        <ChevronRight className="w-4 h-4" />
-      </Button>
+    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+      <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
+        <Button variant="outline" size="icon" onClick={() => step(-1)} title="Célula anterior" className="shrink-0">
+          <ChevronLeft className="w-4 h-4" />
+        </Button>
+        <Select value={active} onValueChange={setActive}>
+          <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {cells.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Button variant="outline" size="icon" onClick={() => step(1)} title="Próxima célula" className="shrink-0">
+          <ChevronRight className="w-4 h-4" />
+        </Button>
+      </div>
       <Button
         variant={rotating ? 'default' : 'outline'}
-        className="gap-2"
+        className="gap-2 flex-1 sm:flex-none justify-center"
         onClick={() => setRotating((r) => !r)}
         title="Rotação automática entre células"
       >

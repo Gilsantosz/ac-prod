@@ -58,6 +58,32 @@ const normalizeFromDb = (entity, row) => {
       dashboard_layout: row.dashboard_layout || null,
     };
   }
+  if (entity === 'Cell') {
+    const sh = row.shift_hours || {};
+    return {
+      ...base,
+      hoursShift1: Number(sh.shift1 ?? 8),
+      hoursShift2: Number(sh.shift2 ?? 8),
+      hoursShift3: Number(sh.shift3 ?? 8),
+    };
+  }
+  if (entity === 'Operator') {
+    let extra = {};
+    if (row.role) {
+      try {
+        extra = JSON.parse(row.role);
+      } catch (e) {
+        extra = { role: row.role };
+      }
+    }
+    return {
+      ...base,
+      registration: extra.registration || '',
+      shift: extra.shift || '',
+      cells: extra.cells || [],
+      role: extra.role || 'operator',
+    };
+  }
   return base;
 };
 
@@ -98,12 +124,50 @@ const createEntityClient = (entityName) => {
       delete enriched.id;          // deixar o DB gerar
       delete enriched.created_date; // campo legado
 
+      // Limpar campos auxiliares do frontend que começam com "_" (evita PGRST204)
+      Object.keys(enriched).forEach((key) => {
+        if (key.startsWith('_')) {
+          delete enriched[key];
+        }
+      });
+
       // Normalizar campos de data para formato ISO
       if (enriched.date && typeof enriched.date === 'string' && enriched.date.length === 10) {
         // mantém yyyy-MM-dd que o PostgreSQL aceita como DATE
       }
 
-      const { data, error } = await supabase.from(table).insert(enriched).select().single();
+      if (entityName === 'Cell') {
+        enriched.shift_hours = {
+          shift1: Number(enriched.hoursShift1 ?? 8),
+          shift2: Number(enriched.hoursShift2 ?? 8),
+          shift3: Number(enriched.hoursShift3 ?? 8),
+        };
+        delete enriched.hoursShift1;
+        delete enriched.hoursShift2;
+        delete enriched.hoursShift3;
+      }
+
+      if (entityName === 'Operator') {
+        const roleData = {
+          registration: enriched.registration || '',
+          shift: enriched.shift || '',
+          cells: enriched.cells || [],
+          role: enriched.role || 'operator',
+        };
+        enriched.role = JSON.stringify(roleData);
+        delete enriched.registration;
+        delete enriched.shift;
+        delete enriched.cells;
+      }
+
+      let q;
+      if (entityName === 'DailyGoal') {
+        q = supabase.from(table).upsert(enriched, { onConflict: 'date,shift,cell' }).select().single();
+      } else {
+        q = supabase.from(table).insert(enriched).select().single();
+      }
+
+      const { data, error } = await q;
       if (error) throw error;
       return normalizeFromDb(entityName, data);
     },
@@ -113,6 +177,13 @@ const createEntityClient = (entityName) => {
       delete clean.id;
       delete clean.created_date;
       delete clean.created_at;
+
+      // Limpar campos auxiliares do frontend que começam com "_" (evita PGRST204)
+      Object.keys(clean).forEach((key) => {
+        if (key.startsWith('_')) {
+          delete clean[key];
+        }
+      });
 
       // Se for a entidade User, intercepta a alteração de senha para fazer via RPC seguro
       if (entityName === 'User') {
@@ -126,6 +197,30 @@ const createEntityClient = (entityName) => {
           });
           if (rpcError) throw rpcError;
         }
+      }
+
+      if (entityName === 'Cell') {
+        clean.shift_hours = {
+          shift1: Number(clean.hoursShift1 ?? 8),
+          shift2: Number(clean.hoursShift2 ?? 8),
+          shift3: Number(clean.hoursShift3 ?? 8),
+        };
+        delete clean.hoursShift1;
+        delete clean.hoursShift2;
+        delete clean.hoursShift3;
+      }
+
+      if (entityName === 'Operator') {
+        const roleData = {
+          registration: clean.registration || '',
+          shift: clean.shift || '',
+          cells: clean.cells || [],
+          role: clean.role || 'operator',
+        };
+        clean.role = JSON.stringify(roleData);
+        delete clean.registration;
+        delete clean.shift;
+        delete clean.cells;
       }
 
       const { data, error } = await supabase
