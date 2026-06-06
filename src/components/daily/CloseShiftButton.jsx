@@ -25,7 +25,7 @@ export default function CloseShiftButton({ date, disabled }) {
   };
 
   return (
-    <Button onClick={handleSend} disabled={disabled || loading} className="gap-2">
+    <Button variant="outline" onClick={handleSend} disabled={disabled || loading} className="gap-2 bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full shadow-sm">
       {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
       Enviar Fechamento
     </Button>

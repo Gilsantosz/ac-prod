@@ -55,7 +55,7 @@ export default function Reports() {
         subtitle="Produtividade mês a mês e histórico de performance das células."
         icon={LineChart}
         actions={
-          <Button variant="outline" className="gap-2 bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={handleExport}>
+          <Button variant="outline" className="gap-2 bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full shadow-sm" onClick={handleExport}>
             <Download className="w-4 h-4" /> Exportar CSV
           </Button>
         }

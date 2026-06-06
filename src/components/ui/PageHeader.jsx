@@ -1,46 +1,36 @@
 import { cn } from '@/lib/utils';
 
 /**
- * PageHeader — Cabeçalho premium padrão para todas as páginas.
- *
- * Props:
- *  - title:    string (obrigatório) — título principal
- *  - subtitle: string               — subtítulo/descrição
- *  - icon:     LucideIcon           — ícone opcional
- *  - actions:  ReactNode            — botões/ações à direita
- *  - className: string              — classes extras para o container
+ * PageHeader — Cabeçalho minimalista de alta fidelidade para todas as páginas.
  */
-export default function PageHeader({ title, subtitle, icon: Icon, actions, className }) {
+export default function PageHeader({ title, subtitle = '', icon: Icon = null, actions = null, className = '' }) {
   return (
     <header
       className={cn(
-        'page-header animate-fade-up flex flex-col md:flex-row md:items-center md:justify-between gap-4',
+        'page-header animate-fade-up flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4 py-4 md:py-6',
         className
       )}
     >
-      {/* ── Orb de brilho decorativo ── */}
-      <div className="absolute -top-8 -left-8 w-32 h-32 rounded-full bg-white/5 blur-2xl pointer-events-none" aria-hidden="true" />
-
-      {/* ── Lado esquerdo: ícone + textos ── */}
-      <div className="flex items-center gap-4 relative z-10 w-full md:w-auto">
+      {/* Lado esquerdo: título e subtítulo */}
+      <div className="flex items-center gap-4 relative z-10 w-full xl:w-auto">
         {Icon && (
-          <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-white/10 border border-white/15 shrink-0">
-            <Icon className="w-5 h-5 text-white/90" />
+          <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-card border border-border/80 text-foreground shadow-sm shrink-0">
+            <Icon className="w-5.5 h-5.5" />
           </div>
         )}
         <div>
-          <h1 className="title-gradient text-2xl sm:text-3xl font-extrabold leading-tight">
+          {subtitle && (
+            <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest mb-1 leading-none">{subtitle}</p>
+          )}
+          <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight text-foreground tracking-tight select-none">
             {title}
           </h1>
-          {subtitle && (
-            <p className="text-white/60 text-sm mt-0.5 leading-relaxed">{subtitle}</p>
-          )}
         </div>
       </div>
 
-      {/* ── Lado direito: ações ── */}
+      {/* Lado direito: ações e filtros */}
       {actions && (
-        <div className="flex flex-wrap items-center gap-2.5 relative z-10 w-full md:w-auto shrink-0">
+        <div className="flex flex-wrap items-center gap-2.5 relative z-10 w-full xl:w-auto shrink-0">
           {actions}
         </div>
       )}

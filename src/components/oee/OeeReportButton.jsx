@@ -24,7 +24,7 @@ export default function OeeReportButton({ overall, byCell, occurrences, meta, ch
   };
 
   return (
-    <Button onClick={handleExport} disabled={disabled || loading} className="gap-2 bg-white/10 border border-white/20 text-white hover:bg-white/20">
+    <Button variant="outline" onClick={handleExport} disabled={disabled || loading} className="gap-2 bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full shadow-sm">
       {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} Exportar PDF
     </Button>
   );

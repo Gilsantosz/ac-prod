@@ -1,9 +1,10 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { base44 } from '@/lib/localDb';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { Package, Target, Gauge, AlertTriangle, Monitor, Minimize2, LayoutDashboard } from 'lucide-react';
+import { Package, Target, Gauge, AlertTriangle, Monitor, Minimize2, LayoutDashboard, FlaskConical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { runSeedTestData } from '@/lib/seedTestData';
 import PageHeader from '@/components/ui/PageHeader';
 import { useKiosk } from '@/lib/KioskContext';
 import KioskCellControl from '@/components/dashboard/KioskCellControl';
@@ -33,6 +34,25 @@ import { useEfficiencyDropAlert } from '@/hooks/useEfficiencyDropAlert';
 const PANEL_IDS = ['monthlyTracker', 'charts', 'weeklyRanking', 'effDrop', 'goalProgress', 'goalProjection', 'weeklyTrend', 'highPerformers'];
 
 export default function Dashboard() {
+  const queryClient = useQueryClient();
+  const [seeding, setSeeding] = useState(false);
+  const [seedResult, setSeedResult] = useState(null);
+
+  async function handleSeed() {
+    setSeeding(true);
+    setSeedResult(null);
+    try {
+      const result = await runSeedTestData(10);
+      setSeedResult(result);
+      // Invalida cache para recarregar os dados
+      await queryClient.invalidateQueries();
+    } catch (e) {
+      setSeedResult({ errors: [e.message] });
+    } finally {
+      setSeeding(false);
+    }
+  }
+
   const [filters, setFilters] = useState({
     date: format(new Date(), 'yyyy-MM-dd'),
     shift: 'all',
@@ -158,29 +178,49 @@ export default function Dashboard() {
     <div className={kiosk ? 'p-4 space-y-4' : 'p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6'}>
       <LowEfficiencyAlertModal open={lowEff.open} alerts={lowEff.alerts} onDismiss={lowEff.dismiss} />
       {!kiosk && (
-        <PageHeader
-          title={`Painéis de Produtividade`}
-          subtitle="Indicadores automáticos por turno, célula e hora."
-          icon={LayoutDashboard}
-          actions={
-            <div className="flex flex-col xl:flex-row flex-wrap items-stretch xl:items-center gap-2.5 w-full xl:w-auto">
+        <>
+          <PageHeader
+            title={`Painéis de Produtividade`}
+            subtitle="Indicadores automáticos por turno, célula e hora."
+            icon={LayoutDashboard}
+            actions={
               <DashboardFilters filters={filters} setFilters={setFilters} cells={cells} />
-              <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2.5 w-full xl:w-auto">
-                <div className="w-full sm:w-auto shrink-0 flex">
-                  <CellReportButton cells={cells} allEntries={all} date={filters.date} />
-                </div>
-                <div className="w-full sm:w-auto shrink-0 flex">
-                  <ExportMenu entries={filtered} allEntries={all} filters={filters} chartsRef={chartsRef} />
-                </div>
-                <div className="w-full sm:w-auto shrink-0 flex">
-                  <Button variant="outline" className="w-full gap-2 min-h-[44px] md:min-h-[40px] bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={toggleKiosk}>
-                    <Monitor className="w-4 h-4" /> Modo Quiosque
-                  </Button>
-                </div>
-              </div>
-            </div>
-          }
-        />
+            }
+          />
+          <div className="flex flex-wrap items-center gap-2.5">
+            <CellReportButton cells={cells} allEntries={all} date={filters.date} />
+            <ExportMenu entries={filtered} allEntries={all} filters={filters} chartsRef={chartsRef} />
+            <Button
+              variant="outline"
+              className="gap-2 bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full shadow-sm"
+              onClick={toggleKiosk}
+            >
+              <Monitor className="w-4 h-4" /> Modo Quiosque
+            </Button>
+            <Button
+              variant="outline"
+              className="gap-2 bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-900/40 rounded-full shadow-sm"
+              onClick={handleSeed}
+              disabled={seeding}
+              title="Insere 10 dias de dados de produção de teste para validar gráficos"
+            >
+              <FlaskConical className="w-4 h-4" />
+              {seeding ? 'Gerando...' : 'Dados de Teste'}
+            </Button>
+            {seedResult && (
+              <span className={`text-xs rounded-full px-3 py-1.5 border font-medium ${
+                seedResult.errors?.length
+                  ? 'bg-red-50 border-red-200 text-red-600 dark:bg-red-950/30 dark:border-red-800 dark:text-red-400'
+                  : 'bg-green-50 border-green-200 text-green-700 dark:bg-green-950/30 dark:border-green-800 dark:text-green-400'
+              }`}>
+                {seedResult.errors?.length
+                  ? `Erro: ${seedResult.errors[0]}`
+                  : `✓ ${seedResult.entries} entradas · ${seedResult.goals} metas inseridas`
+                }
+              </span>
+            )}
+          </div>
+        </>
       )}
       {kiosk && (
         <div className="bg-card/40 backdrop-blur-md border border-border/40 p-4 sm:p-5 rounded-2xl shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 hover:shadow-md transition-all duration-300">

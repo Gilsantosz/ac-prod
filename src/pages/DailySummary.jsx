@@ -73,21 +73,23 @@ export default function DailySummary() {
         subtitle="Acumulado do turno: produção, peças boas, refugos e paradas."
         icon={ClipboardList}
         actions={
-          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
-            <div className="flex items-center gap-2 bg-white/10 border border-white/20 rounded-xl px-3 py-2 w-full sm:w-auto shrink-0">
-              <Calendar className="w-4 h-4 text-white/70 shrink-0" />
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border-0 p-0 h-auto w-full sm:w-36 focus-visible:ring-0 text-white bg-transparent font-medium [color-scheme:dark]" />
+          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 w-full sm:w-auto">
+            {/* Seletor de Data em Cápsula */}
+            <div className="flex items-center gap-2 bg-card border border-border/80 rounded-full px-4 py-2 w-full sm:w-auto shrink-0 shadow-sm">
+              <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border-0 p-0 h-auto w-full sm:w-36 focus-visible:ring-0 text-foreground bg-transparent font-medium focus:outline-none [color-scheme:light] dark:[color-scheme:dark]" />
             </div>
 
+            {/* Seletor de Turno em Cápsula */}
             <div className="w-full sm:w-44 shrink-0">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="w-full justify-between gap-2 text-left font-normal bg-white/10 border-white/20 text-white hover:bg-white/20">
+                  <Button variant="outline" className="w-full justify-between gap-2 text-left font-normal bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full focus:ring-0 focus:ring-offset-0 shadow-sm px-4">
                     <span className="truncate">{shiftTriggerText}</span>
                     <ChevronDown className="w-4 h-4 opacity-50 shrink-0" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-full sm:w-44">
+                <DropdownMenuContent className="w-full sm:w-44 rounded-2xl">
                   <DropdownMenuLabel>Filtrar por Turno</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuCheckboxItem checked={selectedShifts.length === 3} onCheckedChange={(c) => setSelectedShifts(c ? ['1º Turno', '2º Turno', '3º Turno'] : [])}>Todos os turnos</DropdownMenuCheckboxItem>
@@ -99,15 +101,16 @@ export default function DailySummary() {
               </DropdownMenu>
             </div>
 
+            {/* Seletor de Célula em Cápsula */}
             <div className="w-full sm:w-52 shrink-0">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="w-full justify-between gap-2 text-left font-normal bg-white/10 border-white/20 text-white hover:bg-white/20">
+                  <Button variant="outline" className="w-full justify-between gap-2 text-left font-normal bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full focus:ring-0 focus:ring-offset-0 shadow-sm px-4">
                     <span className="truncate">{cellTriggerText}</span>
                     <ChevronDown className="w-4 h-4 opacity-50 shrink-0" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-full sm:w-52">
+                <DropdownMenuContent className="w-full sm:w-52 rounded-2xl">
                   <DropdownMenuLabel>Filtrar por Célula</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuCheckboxItem checked={selectedCells.length === 0} onCheckedChange={() => setSelectedCells([])}>Todas as células</DropdownMenuCheckboxItem>
@@ -118,16 +121,14 @@ export default function DailySummary() {
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-
-            <div className="w-full sm:w-auto shrink-0 flex">
-              <ExportDailyButton date={date} shift={selectedShifts} cell={selectedCells} summary={summary} disabled={filtered.length === 0} />
-            </div>
-            <div className="w-full sm:w-auto shrink-0 flex">
-              <CloseShiftButton date={date} disabled={filtered.length === 0} />
-            </div>
           </div>
         }
       />
+
+      <div className="flex flex-wrap items-center gap-2.5">
+        <ExportDailyButton date={date} shift={selectedShifts} cell={selectedCells} summary={summary} disabled={filtered.length === 0} />
+        <CloseShiftButton date={date} disabled={filtered.length === 0} />
+      </div>
 
       <SummaryKpis total={summary.total} />
 

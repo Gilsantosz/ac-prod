@@ -33,9 +33,9 @@ export default function Gamification() {
         subtitle="Ranking de equipes por atingimento de meta, pontos e conquistas."
         icon={Trophy}
         actions={
-          <div className="space-y-1">
-            <Label className="text-xs text-white/70">Mês</Label>
-            <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="w-40 bg-white/10 border-white/20 text-white [color-scheme:dark]" />
+          <div className="space-y-1.5">
+            <Label className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider leading-none">Mês</Label>
+            <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="w-40 bg-card border-border/80 text-foreground rounded-full px-4 shadow-sm [color-scheme:light] dark:[color-scheme:dark]" />
           </div>
         }
       />
