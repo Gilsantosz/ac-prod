@@ -15,15 +15,25 @@ export default defineConfig({
   plugins: [
     react(),
     {
-      name: 'redirect-to-basename',
+      name: 'spa-fallback',
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
-          if (req.url === '/' || req.url === '/index.html' || req.url === '') {
+          const url = req.url || '';
+
+          // Redireciona "/" e "" para "/ac-prod/"
+          if (url === '/' || url === '' || url === '/index.html') {
             res.writeHead(302, { Location: '/ac-prod/' });
             res.end();
-          } else {
-            next();
+            return;
           }
+
+          // SPA fallback: rotas dentro de /ac-prod/ sem extensão de arquivo
+          // -> reescreve para /ac-prod/ e deixa o Vite servir o index.html
+          if (url.startsWith('/ac-prod/') && !url.match(/\.[a-z0-9]+(\?.*)?$/i)) {
+            req.url = '/ac-prod/';
+          }
+
+          next();
         });
       }
     },
