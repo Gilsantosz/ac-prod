@@ -27,9 +27,14 @@ export default defineConfig({
             return;
           }
 
-          // SPA fallback: rotas dentro de /ac-prod/ sem extensão de arquivo
-          // -> reescreve para /ac-prod/ e deixa o Vite servir o index.html
-          if (url.startsWith('/ac-prod/') && !url.match(/\.[a-z0-9]+(\?.*)?$/i)) {
+          // SPA fallback: apenas reescreve para o index.html se for uma requisição GET de navegação (HTML)
+          // e não for um recurso interno do Vite (como @vite/client ou @react-refresh)
+          const accept = req.headers.accept || '';
+          const isGet = req.method === 'GET';
+          const isHtml = accept.includes('text/html');
+          const isViteInternal = url.includes('/@');
+
+          if (isGet && isHtml && url.startsWith('/ac-prod/') && !isViteInternal) {
             req.url = '/ac-prod/';
           }
 
