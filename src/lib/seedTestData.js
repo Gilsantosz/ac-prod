@@ -34,13 +34,16 @@ const CELL_EFFICIENCY_PROFILES = {
   'Célula E': { avg: 95, variance: 5 },   // Excelente performance
 };
 
-// Ocorrências típicas de parada
+// Ocorrências típicas de parada (compatíveis com os motivos do formulário de ocorrências)
 const DOWNTIME_REASONS = [
-  'Setup de máquina',
-  'Manutenção preventiva',
-  'Falta de material',
-  'Ajuste de processo',
-  'Troca de ferramenta',
+  'Falta de Material',
+  'Manutenção Corretiva',
+  'Manutenção Preventiva',
+  'Setup / Troca',
+  'Falta de Operador',
+  'Qualidade / Refugo',
+  'Falta de Energia',
+  'Outros',
 ];
 
 function randomBetween(min, max) {
@@ -88,6 +91,7 @@ function generateEfficiency(cell, shift, hour) {
  */
 async function seedProductionEntries(daysBack = 10) {
   const entries = [];
+  const occurrences = [];
 
   for (let day = 0; day < daysBack; day++) {
     const date = dateNDaysAgo(day);
@@ -108,6 +112,7 @@ async function seedProductionEntries(daysBack = 10) {
           const scrap = eff < 70 ? randomBetween(2, 8) : randomBetween(0, 3);
           const downtime = eff < 65 ? randomBetween(10, 30) : (eff < 80 ? randomBetween(0, 10) : 0);
           const reason = downtime > 0 ? DOWNTIME_REASONS[randomBetween(0, DOWNTIME_REASONS.length - 1)] : '';
+          const operator = `Operador ${randomBetween(1, 5)}`;
 
           entries.push({
             date,
@@ -118,15 +123,28 @@ async function seedProductionEntries(daysBack = 10) {
             target,
             scrap,
             downtime,
-            downtime_reason: reason,
-            operator: `Operador ${randomBetween(1, 5)}`,
+            notes: reason,
+            operator,
           });
+
+          // Se houve parada, cria também um registro de Ocorrência correspondente
+          if (downtime > 0) {
+            occurrences.push({
+              date,
+              shift,
+              cell,
+              reason: reason,
+              downtime,
+              operator,
+              notes: 'Parada registrada automaticamente pelo gerador de dados de teste.',
+            });
+          }
         }
       }
     }
   }
 
-  // Insere em lotes de 20
+  // Insere entradas em lotes de 20
   let count = 0;
   for (let i = 0; i < entries.length; i += 20) {
     const batch = entries.slice(i, i + 20);
@@ -134,6 +152,36 @@ async function seedProductionEntries(daysBack = 10) {
     count += batch.length;
   }
 
+  // Insere ocorrências em lotes de 20
+  let occCount = 0;
+  for (let i = 0; i < occurrences.length; i += 20) {
+    const batch = occurrences.slice(i, i + 20);
+    await Promise.all(batch.map(o => base44.entities.Occurrence.create(o)));
+    occCount += batch.length;
+  }
+
+  return { entries: count, occurrences: occCount };
+}
+
+async function seedOperators() {
+  const existing = await base44.entities.Operator.list();
+  const existingNames = existing.map(o => o.name);
+  let count = 0;
+
+  const testOperators = [
+    { name: 'Carlos Silva', registration: '00101', shift: '1º Turno', cells: ['Célula A', 'Célula B'], active: true },
+    { name: 'Marcos Souza', registration: '00102', shift: '2º Turno', cells: ['Célula B', 'Célula C'], active: true },
+    { name: 'Ana Costa', registration: '00103', shift: '3º Turno', cells: ['Célula A', 'Célula D'], active: true },
+    { name: 'Juliana Lima', registration: '00104', shift: '1º Turno', cells: ['Célula D', 'Célula E'], active: true },
+    { name: 'Roberto Alves', registration: '00105', shift: '2º Turno', cells: ['Célula C', 'Célula E'], active: true },
+  ];
+
+  for (const op of testOperators) {
+    if (!existingNames.includes(op.name)) {
+      await base44.entities.Operator.create(op);
+      count++;
+    }
+  }
   return count;
 }
 
@@ -204,7 +252,7 @@ async function seedCells() {
  * Retorna um resumo do que foi criado
  */
 export async function runSeedTestData(daysBack = 10) {
-  const results = { cells: 0, entries: 0, goals: 0, errors: [] };
+  const results = { cells: 0, entries: 0, occurrences: 0, goals: 0, operators: 0, errors: [] };
 
   try {
     results.cells = await seedCells();
@@ -213,9 +261,17 @@ export async function runSeedTestData(daysBack = 10) {
   }
 
   try {
-    results.entries = await seedProductionEntries(daysBack);
+    results.operators = await seedOperators();
   } catch (e) {
-    results.errors.push(`Entradas: ${e.message}`);
+    results.errors.push(`Operadores: ${e.message}`);
+  }
+
+  try {
+    const seedRes = await seedProductionEntries(daysBack);
+    results.entries = seedRes.entries;
+    results.occurrences = seedRes.occurrences;
+  } catch (e) {
+    results.errors.push(`Entradas/Ocorrências: ${e.message}`);
   }
 
   try {

@@ -215,7 +215,7 @@ export default function Dashboard() {
               }`}>
                 {seedResult.errors?.length
                   ? `Erro: ${seedResult.errors[0]}`
-                  : `✓ ${seedResult.entries} entradas · ${seedResult.goals} metas inseridas`
+                  : `✓ ${seedResult.entries} lançamentos · ${seedResult.occurrences} ocorrências · ${seedResult.goals} metas · ${seedResult.operators} operadores`
                 }
               </span>
             )}

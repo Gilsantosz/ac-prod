@@ -99,10 +99,10 @@ export default function OccurrenceForm({ onSubmit, saving }) {
 
       <form onSubmit={handleSubmit} className="space-y-5">
         {/* Linha 1: Data, Turno, Célula, Parada */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label className="flex items-center gap-1.5">
-              Data
+            <Label className="flex items-center flex-wrap gap-1">
+              <span>Data</span>
               <span className="text-[10px] text-muted-foreground font-normal">(automático)</span>
             </Label>
             <Input
@@ -115,8 +115,8 @@ export default function OccurrenceForm({ onSubmit, saving }) {
           </div>
 
           <div className="space-y-2">
-            <Label className="flex items-center gap-1.5">
-              Turno
+            <Label className="flex items-center flex-wrap gap-1">
+              <span>Turno</span>
               <span className="text-[10px] text-muted-foreground font-normal">(automático)</span>
             </Label>
             <Select
@@ -133,8 +133,8 @@ export default function OccurrenceForm({ onSubmit, saving }) {
           </div>
 
           <div className="space-y-2">
-            <Label className="flex items-center gap-1.5">
-              Célula
+            <Label className="flex items-center flex-wrap gap-1">
+              <span>Célula</span>
               {user?.cell && <span className="text-[10px] text-primary font-normal">(do perfil)</span>}
             </Label>
             <Select value={data.cell} onValueChange={(v) => set('cell', v)} required>
@@ -175,8 +175,8 @@ export default function OccurrenceForm({ onSubmit, saving }) {
             </Select>
           </div>
           <div className="space-y-2">
-            <Label className="flex items-center gap-1.5">
-              Operador
+            <Label className="flex items-center flex-wrap gap-1">
+              <span>Operador</span>
               {user?.role !== 'admin' && user?.name && (
                 <span className="text-[10px] text-primary font-normal">(do perfil)</span>
               )}

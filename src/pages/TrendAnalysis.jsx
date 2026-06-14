@@ -55,9 +55,9 @@ export default function TrendAnalysis() {
         icon={TrendingUp}
         actions={
           <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-end gap-2.5 w-full sm:w-auto">
-            <div className="space-y-1.5 w-full sm:w-40 shrink-0">
+            <div className="space-y-1.5 w-full sm:w-48 shrink-0">
               <Label className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider leading-none">Mês</Label>
-              <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="w-full bg-card border-border/80 text-foreground rounded-full px-4 shadow-sm [color-scheme:light] dark:[color-scheme:dark]" />
+              <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="w-full bg-card border-border/80 text-foreground rounded-full pl-4 pr-10 shadow-sm [color-scheme:light] dark:[color-scheme:dark]" />
             </div>
             <div className="w-full sm:w-auto shrink-0 flex">
               <ExportTrendButton month={month} targetRef={reportRef} disabled={monthEntries.length === 0} />
