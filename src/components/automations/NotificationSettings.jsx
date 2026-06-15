@@ -18,7 +18,7 @@ export default function NotificationSettings() {
   });
 
   const current = configs[0] || null;
-  const [form, setForm] = useState({ webhookUrl: '', webhookEnabled: false, emailEnabled: true });
+  const [form, setForm] = useState({ webhookUrl: '', webhookEnabled: false, emailEnabled: true, dailyClosureEnabled: false });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -27,6 +27,7 @@ export default function NotificationSettings() {
         webhookUrl: current.webhookUrl || '',
         webhookEnabled: current.webhookEnabled === true,
         emailEnabled: current.emailEnabled !== false,
+        dailyClosureEnabled: current.dailyClosureEnabled === true,
       });
     }
   }, [current]);
@@ -62,6 +63,14 @@ export default function NotificationSettings() {
           <p className="text-xs text-muted-foreground">Envia e-mail aos gestores responsáveis pela célula.</p>
         </div>
         <Switch checked={form.emailEnabled} onCheckedChange={(v) => set('emailEnabled', v)} />
+      </div>
+
+      <div className="flex items-center justify-between border border-border/60 rounded-xl px-4 py-3">
+        <div>
+          <p className="font-medium text-sm">Fechamento diário automático</p>
+          <p className="text-xs text-muted-foreground">Envia o relatório consolidado de produção diariamente às 06h00 (UTC) para os gestores cadastrados.</p>
+        </div>
+        <Switch checked={form.dailyClosureEnabled} onCheckedChange={(v) => set('dailyClosureEnabled', v)} />
       </div>
 
       <div className="border border-border/60 rounded-xl px-4 py-3 space-y-3">

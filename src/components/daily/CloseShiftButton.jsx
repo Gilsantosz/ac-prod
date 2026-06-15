@@ -11,14 +11,32 @@ export default function CloseShiftButton({ date, disabled }) {
     setLoading(true);
     try {
       const res = await base44.functions.invoke('sendDailyClosure', { date });
+      
+      if (res.error) {
+        console.error('Invoke error:', res.error);
+        let detailedError = '';
+        try {
+          const body = await res.error.context?.json();
+          detailedError = body?.error;
+        } catch (_) {}
+        
+        toast.error(detailedError || res.error.message || 'Falha ao enviar o fechamento.');
+        return;
+      }
+
       const sent = res?.data?.sent ?? 0;
       if (sent > 0) {
-        toast.success(`Fechamento enviado para ${sent} e-mail(s).`);
+        if (res.data.warning) {
+          toast.success(`Fechamento enviado para o e-mail do proprietário (${res.data.recipients.join(', ')}).`);
+          toast.warning(res.data.warning, { duration: 8000 });
+        } else {
+          toast.success(`Fechamento enviado para ${sent} e-mail(s).`);
+        }
       } else {
         toast.warning('Nenhum gestor cadastrado para receber o relatório.');
       }
-    } catch {
-      toast.error('Falha ao enviar o fechamento.');
+    } catch (err) {
+      toast.error(err.message || 'Falha ao enviar o fechamento.');
     } finally {
       setLoading(false);
     }

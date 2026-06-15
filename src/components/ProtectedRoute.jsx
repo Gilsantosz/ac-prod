@@ -40,15 +40,47 @@ export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthe
   let hasPermission = true;
   let requiredPermissionLabel = '';
 
-  // Usuários comuns (não administradores / operacionais) têm acesso livre, garantido e incondicional às 3 rotas de trabalho
-  if (user && user.role !== 'admin') {
-    const allowedPathsForOperators = ['/', '/entrada', '/resumo-diario'];
+  const pathPermissionMap = {
+    '/': 'view_dashboards',
+    '/entrada': 'register_production',
+    '/resumo-diario': 'view_dashboards',
+    '/oee': 'view_dashboards',
+    '/celulas-metas': 'manage_cells',
+    '/operadores': 'manage_operators',
+    '/ocorrencias': 'manage_occurrences',
+    '/analise-paradas': 'manage_occurrences',
+    '/analise-tendencia': 'view_dashboards',
+    '/gamificacao': 'view_dashboards',
+    '/relatorios': 'view_reports',
+    '/automacoes': 'manage_automations',
+  };
 
-    if (!allowedPathsForOperators.includes(path)) {
-      hasPermission = false;
-      requiredPermissionLabel = 'Acesso Reservado para Administradores';
-    } else {
-      hasPermission = true;
+  const permissionLabels = {
+    view_dashboards: 'Visualizar Painéis (OEE, Ocorrências)',
+    register_production: 'Lançar Produção',
+    manage_occurrences: 'Gerenciar Ocorrências e Paradas',
+    manage_cells: 'Gerenciar Células e Metas',
+    manage_operators: 'Gerenciar Operadores e Equipes',
+    view_reports: 'Visualizar Relatórios Industriais',
+    manage_automations: 'Gerenciar Alertas e Automações',
+  };
+
+  if (user && user.role !== 'admin') {
+    const cleanPath = path.replace(/\/$/, '') || '/';
+    const requiredPermission = pathPermissionMap[cleanPath];
+    if (requiredPermission) {
+      if (user.permissions && user.permissions[requiredPermission] !== undefined) {
+        hasPermission = !!user.permissions[requiredPermission];
+        if (!hasPermission) {
+          requiredPermissionLabel = `Permissão requerida: ${permissionLabels[requiredPermission]}`;
+        }
+      } else {
+        const allowedPathsForOperators = ['/', '/entrada', '/resumo-diario'];
+        if (!allowedPathsForOperators.includes(cleanPath)) {
+          hasPermission = false;
+          requiredPermissionLabel = 'Acesso Reservado para Administradores';
+        }
+      }
     }
   }
 

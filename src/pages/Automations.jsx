@@ -6,6 +6,7 @@ import { Zap } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import RuleForm from '@/components/automations/RuleForm';
 import RuleList from '@/components/automations/RuleList';
+import NotificationSettings from '@/components/automations/NotificationSettings';
 
 export default function Automations() {
   const queryClient = useQueryClient();
@@ -63,6 +64,10 @@ export default function Automations() {
 
       <RuleForm onSubmit={handleSubmit} saving={saving} cells={cells} />
       <RuleList rules={rules} onToggle={(r) => toggle.mutate(r)} onDelete={(id) => remove.mutate(id)} />
+
+      <div className="max-w-3xl pt-2">
+        <NotificationSettings />
+      </div>
     </div>
   );
 }

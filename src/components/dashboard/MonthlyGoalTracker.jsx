@@ -3,7 +3,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { CalendarRange, TrendingUp, CheckCircle2, AlertTriangle } from 'lucide-react';
 
-export default function MonthlyGoalTracker({ tracking }) {
+export default function MonthlyGoalTracker({ tracking, cellTrackings }) {
   if (!tracking) return null;
 
   const { produced, target, completedPct, projectedTotal, projectedPct, neededPerDay, daysLeft, dailyPace, willMeet, monthLabel } = tracking;
@@ -57,6 +57,34 @@ export default function MonthlyGoalTracker({ tracking }) {
             <p className="text-xs text-muted-foreground">Dias restantes</p>
           </div>
         </div>
+
+        {cellTrackings && cellTrackings.length > 0 && (
+          <div className="mt-6 pt-6 border-t border-border/50">
+            <h4 className="text-sm font-semibold mb-4 text-muted-foreground">Evolução por Célula</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+              {cellTrackings.map((ct) => {
+                const cBarPct = Math.min(ct.completedPct, 100);
+                const cMarkerPct = Math.min(ct.projectedPct, 100);
+                return (
+                  <div key={ct.cell} className="p-3.5 rounded-xl bg-secondary/40 flex flex-col gap-2.5">
+                    <div className="flex justify-between items-center">
+                      <span className="font-semibold text-sm truncate">{ct.cell}</span>
+                      <span className="text-sm font-bold">{ct.completedPct}%</span>
+                    </div>
+                    <div className="relative h-2.5 rounded-full bg-secondary overflow-hidden">
+                      <div className={`absolute top-0 bottom-0 left-0 rounded-full ${ct.willMeet ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${cBarPct}%` }} />
+                      <div className="absolute top-0 bottom-0 w-0.5 bg-sky-700" style={{ left: `${cMarkerPct}%` }} title="Previsão" />
+                    </div>
+                    <div className="flex justify-between items-center text-xs text-muted-foreground mt-0.5">
+                      <span>{ct.produced.toLocaleString('pt-BR')} / {ct.target.toLocaleString('pt-BR')}</span>
+                      <span>{ct.dailyPace.toLocaleString('pt-BR')}/d</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </Card>
     </motion.div>
   );

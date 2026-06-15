@@ -11,6 +11,7 @@ import { KioskProvider, useKiosk } from '@/lib/KioskContext';
 import { useAuth } from '@/lib/AuthContext';
 import LeoLogo from '@/components/ui/LeoLogo';
 import { useRealtimeSync } from '@/hooks/useRealtimeSync';
+import { useTheme } from '@/hooks/useTheme';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,17 +56,7 @@ function AppShell() {
     catch { return false; }
   });
 
-  // Controle de Tema (Claro / Escuro)
-  const [theme, setTheme] = useState(() => {
-    const saved = localStorage.getItem('theme');
-    if (saved) return saved;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  });
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-    localStorage.setItem('theme', theme);
-  }, [theme]);
+  const [theme, setTheme] = useTheme();
 
   useEffect(() => {
     try { localStorage.setItem('sidebar-collapsed', String(collapsed)); }
@@ -79,17 +70,30 @@ function AppShell() {
 
   useRealtimeSync(!!user);
 
+  const pathPermissionMap = {
+    '/': 'view_dashboards',
+    '/entrada': 'register_production',
+    '/resumo-diario': 'view_dashboards',
+    '/oee': 'view_dashboards',
+    '/celulas-metas': 'manage_cells',
+    '/operadores': 'manage_operators',
+    '/ocorrencias': 'manage_occurrences',
+    '/analise-paradas': 'manage_occurrences',
+    '/analise-tendencia': 'view_dashboards',
+    '/gamificacao': 'view_dashboards',
+    '/relatorios': 'view_reports',
+    '/automacoes': 'manage_automations',
+  };
+
   const visibleNav = nav.filter((item) => {
     if (item.adminOnly && user?.role !== 'admin') return false;
-    if (user?.role !== 'admin') {
-      const allowedPathsForOperators = ['/', '/entrada', '/resumo-diario'];
-      return allowedPathsForOperators.includes(item.to);
-    }
     if (user?.role === 'admin') return true;
     if (!user?.permissions) return false;
-    if (item.to === '/') return user.permissions.view_dashboards;
-    if (item.to === '/entrada') return user.permissions.register_production;
-    if (item.to === '/resumo-diario') return user.permissions.view_dashboards;
+    
+    const requiredPermission = pathPermissionMap[item.to];
+    if (requiredPermission) {
+      return !!user.permissions[requiredPermission];
+    }
     return true;
   });
 

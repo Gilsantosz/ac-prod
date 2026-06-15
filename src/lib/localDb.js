@@ -25,6 +25,7 @@ const TABLE_MAP = {
   MonthlyGoal: 'monthly_goals',
   Manager: 'profiles',
   WorkdayCalendar: 'production_entries', // fallback
+  NotificationConfig: 'notification_configs',
 };
 
 // ─── Normalização de dados do Supabase para o formato legado ─────────────────
@@ -84,6 +85,32 @@ const normalizeFromDb = (entity, row) => {
       role: extra.role || 'operator',
     };
   }
+  if (entity === 'Manager') {
+    let cells = [];
+    try {
+      cells = typeof row.cell === 'string' ? JSON.parse(row.cell) : (row.cell || []);
+      if (!Array.isArray(cells)) cells = [];
+    } catch (e) {
+      cells = [];
+    }
+    return {
+      ...base,
+      name: row.name || '',
+      email: row.email || '',
+      role: row.role || 'manager',
+      cells: cells,
+      active: row.active ?? true,
+    };
+  }
+  if (entity === 'NotificationConfig') {
+    return {
+      ...base,
+      webhookUrl: row.webhook_url || '',
+      webhookEnabled: row.webhook_enabled === true,
+      emailEnabled: row.email_enabled !== false,
+      dailyClosureEnabled: row.daily_closure_enabled === true,
+    };
+  }
   return base;
 };
 
@@ -108,14 +135,24 @@ const createEntityClient = (entityName) => {
   return {
     list: async (orderBy = null, limit = null) => {
       let q = supabase.from(table).select('*');
+
+      // Aplica ORDER BY no banco ANTES do LIMIT para garantir que o
+      // LIMIT retorne as linhas corretas (ex: as mais recentes por data).
+      if (orderBy) {
+        const desc = orderBy.startsWith('-');
+        const field = desc ? orderBy.substring(1) : orderBy;
+        // Mapeia nomes de campos legados para colunas reais do banco
+        const dbField = field === 'created_date' ? 'created_at' : field;
+        q = q.order(dbField, { ascending: !desc });
+      }
+
       if (limit) q = q.limit(limit);
 
       const { data, error } = await q;
       if (error) throw error;
 
-      let rows = (data || []).map((r) => normalizeFromDb(entityName, r));
-      if (orderBy) rows = sortData(rows, orderBy);
-      return rows;
+      // Já ordenados pelo banco; normaliza e retorna
+      return (data || []).map((r) => normalizeFromDb(entityName, r));
     },
 
     create: async (payload) => {
@@ -158,6 +195,40 @@ const createEntityClient = (entityName) => {
         delete enriched.registration;
         delete enriched.shift;
         delete enriched.cells;
+      }
+
+      if (entityName === 'Manager') {
+        const res = await users.inviteUser(
+          enriched.email,
+          'manager',
+          enriched.name,
+          '',
+          null,
+          JSON.stringify(enriched.cells || [])
+        );
+        // Sincroniza com o Resend
+        base44.functions.invoke('syncResendContact', {
+          action: 'create',
+          email: enriched.email,
+          name: enriched.name
+        }).catch(err => console.error('Erro ao sincronizar contato com Resend no create:', err));
+
+        // Atualiza a coluna active, se necessário, já que inviteUser não a define
+        if (enriched.active !== undefined) {
+          await supabase.from('profiles').update({ active: enriched.active }).eq('id', res.id);
+        }
+        return normalizeFromDb(entityName, { ...res, active: enriched.active ?? true, cell: JSON.stringify(enriched.cells || []) });
+      }
+
+      if (entityName === 'NotificationConfig') {
+        enriched.webhook_url = enriched.webhookUrl;
+        enriched.webhook_enabled = enriched.webhookEnabled;
+        enriched.email_enabled = enriched.emailEnabled;
+        enriched.daily_closure_enabled = enriched.dailyClosureEnabled;
+        delete enriched.webhookUrl;
+        delete enriched.webhookEnabled;
+        delete enriched.emailEnabled;
+        delete enriched.dailyClosureEnabled;
       }
 
       let q;
@@ -223,6 +294,48 @@ const createEntityClient = (entityName) => {
         delete clean.cells;
       }
 
+      if (entityName === 'Manager') {
+        let oldEmail = clean.email;
+        try {
+          const { data: oldManager } = await supabase.from('profiles').select('email').eq('id', id).single();
+          if (oldManager && oldManager.email) {
+            oldEmail = oldManager.email;
+          }
+        } catch (e) {
+          console.error('Erro ao buscar e-mail anterior do gestor:', e);
+        }
+
+        const res = await users.updateUser(id, {
+          name: clean.name,
+          email: clean.email,
+          cell: JSON.stringify(clean.cells || [])
+        });
+
+        // Sincroniza com o Resend
+        base44.functions.invoke('syncResendContact', {
+          action: 'update',
+          email: clean.email,
+          oldEmail: oldEmail,
+          name: clean.name
+        }).catch(err => console.error('Erro ao sincronizar contato com Resend no update:', err));
+
+        if (clean.active !== undefined) {
+          await supabase.from('profiles').update({ active: clean.active }).eq('id', id);
+        }
+        return normalizeFromDb(entityName, { ...res, active: clean.active ?? true, cell: JSON.stringify(clean.cells || []) });
+      }
+
+      if (entityName === 'NotificationConfig') {
+        clean.webhook_url = clean.webhookUrl;
+        clean.webhook_enabled = clean.webhookEnabled;
+        clean.email_enabled = clean.emailEnabled;
+        clean.daily_closure_enabled = clean.dailyClosureEnabled;
+        delete clean.webhookUrl;
+        delete clean.webhookEnabled;
+        delete clean.emailEnabled;
+        delete clean.dailyClosureEnabled;
+      }
+
       const { data, error } = await supabase
         .from(table)
         .update(clean)
@@ -234,6 +347,20 @@ const createEntityClient = (entityName) => {
     },
 
     delete: async (id) => {
+      if (entityName === 'Manager') {
+        try {
+          const { data: oldManager } = await supabase.from(table).select('email, name').eq('id', id).single();
+          if (oldManager && oldManager.email) {
+            base44.functions.invoke('syncResendContact', {
+              action: 'delete',
+              email: oldManager.email,
+              name: oldManager.name
+            }).catch(err => console.error('Erro ao remover contato do Resend:', err));
+          }
+        } catch (e) {
+          console.error('Erro ao buscar e-mail do gestor antes de deletar:', e);
+        }
+      }
       const { error } = await supabase.from(table).delete().eq('id', id);
       if (error) throw error;
       return { success: true, id };
@@ -445,6 +572,11 @@ const users = {
 
     if (error) throw new Error(error.message);
 
+    // Se o usuário já existe no Auth (identities vazia em contas com confirmação de email ativa)
+    if (data.user && data.user.identities && data.user.identities.length === 0) {
+      throw new Error("Este e-mail já está cadastrado no sistema. Se for necessário recriar o perfil, o usuário anterior deve ser removido primeiro.");
+    }
+
     // 2. Atualizar perfil com campos adicionais (usando o cliente principal autenticado do admin)
     if (data.user) {
       await supabase.from('profiles').upsert({
@@ -489,8 +621,10 @@ export const base44 = {
   auth,
   users,
   functions: {
-    invoke: async (functionName, options) => {
-      return supabase.functions.invoke(functionName, options);
+    invoke: async (functionName, options = {}) => {
+      const hasOptionKeys = 'body' in options || 'headers' in options || 'method' in options || 'queryParams' in options;
+      const invokeOptions = hasOptionKeys ? options : { body: options };
+      return supabase.functions.invoke(functionName, invokeOptions);
     }
   },
   entities: {
@@ -505,5 +639,6 @@ export const base44 = {
     MonthlyGoal: createEntityClient('MonthlyGoal'),
     Manager: createEntityClient('Manager'),
     WorkdayCalendar: createEntityClient('WorkdayCalendar'),
+    NotificationConfig: createEntityClient('NotificationConfig'),
   },
 };

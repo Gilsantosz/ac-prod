@@ -2,8 +2,9 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { base44 } from '@/lib/localDb';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { Package, Target, Gauge, AlertTriangle, Monitor, Minimize2, LayoutDashboard, FlaskConical } from 'lucide-react';
+import { Package, Target, Gauge, AlertTriangle, Monitor, Minimize2, LayoutDashboard, FlaskConical, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useTheme } from '@/hooks/useTheme';
 import { runSeedTestData } from '@/lib/seedTestData';
 import PageHeader from '@/components/ui/PageHeader';
 import { useKiosk } from '@/lib/KioskContext';
@@ -30,11 +31,14 @@ import SortablePanels from '@/components/dashboard/SortablePanels';
 import { useDashboardLayout } from '@/hooks/useDashboardLayout';
 import { usePerformanceAlert } from '@/hooks/usePerformanceAlert';
 import { useEfficiencyDropAlert } from '@/hooks/useEfficiencyDropAlert';
+import DailyProductionCard from '@/components/dashboard/DailyProductionCard';
+import DashboardLayoutSettings from '@/components/dashboard/DashboardLayoutSettings';
 
-const PANEL_IDS = ['monthlyTracker', 'charts', 'weeklyRanking', 'effDrop', 'goalProgress', 'goalProjection', 'weeklyTrend', 'highPerformers'];
+const PANEL_IDS = ['monthlyTracker', 'dailyProduction', 'charts', 'weeklyRanking', 'effDrop', 'goalProgress', 'goalProjection', 'weeklyTrend', 'highPerformers'];
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
+  const [theme, setTheme] = useTheme();
   const [seeding, setSeeding] = useState(false);
   const [seedResult, setSeedResult] = useState(null);
 
@@ -61,7 +65,7 @@ export default function Dashboard() {
 
   const { data: all = [] } = useQuery({
     queryKey: ['production'],
-    queryFn: () => base44.entities.ProductionEntry.list('-created_date', 500),
+    queryFn: () => base44.entities.ProductionEntry.list('-date', 5000),
     initialData: [],
   });
 
@@ -83,13 +87,14 @@ export default function Dashboard() {
     if (!kiosk) { setKioskCell('all'); setRotating(false); }
   }, [kiosk, cells]);  
 
+  const activeCell = kiosk && kioskCell !== 'all' ? kioskCell : filters.cell;
+
   const filtered = useMemo(() => all.filter((e) => {
     if (filters.date && e.date !== filters.date) return false;
     if (filters.shift !== 'all' && e.shift !== filters.shift) return false;
-    if (filters.cell !== 'all' && e.cell !== filters.cell) return false;
-    if (kiosk && kioskCell !== 'all' && e.cell !== kioskCell) return false;
+    if (activeCell !== 'all' && e.cell !== activeCell) return false;
     return true;
-  }), [all, filters, kiosk, kioskCell]);
+  }), [all, filters, activeCell]);
 
   const totalProduced = sumBy(filtered, 'produced');
   const totalTarget = sumBy(filtered, 'target');
@@ -103,7 +108,33 @@ export default function Dashboard() {
   const performers = useMemo(() => highPerformers(filtered, 95), [filtered]);
   const projection = useMemo(() => projectGoal(filtered, 3), [filtered]);
   const effDrop = useMemo(() => detectEfficiencyDrop(filtered, 3, 10), [filtered]);
-  const monthlyTracking = useMemo(() => monthlyGoalTracking(all, goals), [all, goals]);
+  const monthlyTracking = useMemo(() => {
+    const cellEntries = activeCell === 'all' ? all : all.filter(e => e.cell === activeCell);
+    const cellGoals = activeCell === 'all' ? goals : goals.filter(g => g.cell === activeCell);
+    return monthlyGoalTracking(cellEntries, cellGoals);
+  }, [all, goals, activeCell]);
+
+  const cellMonthlyTrackings = useMemo(() => {
+    if (activeCell !== 'all') return [];
+    const cellMap = {};
+    all.forEach(e => {
+      if (!e.cell) return;
+      if (!cellMap[e.cell]) cellMap[e.cell] = { entries: [], goals: [] };
+      cellMap[e.cell].entries.push(e);
+    });
+    goals.forEach(g => {
+      if (!g.cell) return;
+      if (!cellMap[g.cell]) cellMap[g.cell] = { entries: [], goals: [] };
+      cellMap[g.cell].goals.push(g);
+    });
+    
+    const trackings = [];
+    for (const [cellName, data] of Object.entries(cellMap)) {
+      const tr = monthlyGoalTracking(data.entries, data.goals);
+      if (tr && tr.target > 0) trackings.push({ cell: cellName, ...tr });
+    }
+    return trackings.sort((a, b) => b.completedPct - a.completedPct);
+  }, [all, goals, activeCell]);
   const ranking = useMemo(
     () => weeklyRanking(all, goals, filters.date ? new Date(filters.date + 'T00:00:00') : new Date()),
     [all, goals, filters.date]
@@ -147,18 +178,20 @@ export default function Dashboard() {
   const lowEff = useLowEfficiencyAlert(lowEffAlerts);
 
   const chartsRef = useRef(null);
-  const { order, reorder } = useDashboardLayout(PANEL_IDS);
+  const { order, hidden, sizes, reorder, toggleHidden, toggleSize } = useDashboardLayout(PANEL_IDS);
 
   const panels = useMemo(() => [
-    { id: 'monthlyTracker', node: <MonthlyGoalTracker tracking={monthlyTracking} /> },
-    { id: 'weeklyRanking', node: <WeeklyRankingPanel ranking={ranking} /> },
-    { id: 'effDrop', node: <EfficiencyAlert alert={effDrop} /> },
-    { id: 'goalProgress', node: <GoalProgressPanel items={goalProgress} /> },
-    { id: 'goalProjection', node: <GoalProjection projection={projection} /> },
-    { id: 'weeklyTrend', node: <WeeklyEfficiencyChart data={weeklyTrend} cellLabel={weeklyTrendLabel} /> },
-    { id: 'highPerformers', node: <HighPerformerPanel performers={performers} /> },
+    { id: 'monthlyTracker', title: 'Acompanhamento Mensal', node: <MonthlyGoalTracker tracking={monthlyTracking} cellTrackings={cellMonthlyTrackings} /> },
+    { id: 'dailyProduction', title: 'Produção Diária', node: <DailyProductionCard entries={filtered} goals={goals} kioskCell={kiosk ? kioskCell : null} /> },
+    { id: 'weeklyRanking', title: 'Ranking Semanal', node: <WeeklyRankingPanel ranking={ranking} /> },
+    { id: 'effDrop', title: 'Alerta de Eficiência', node: <EfficiencyAlert alert={effDrop} /> },
+    { id: 'goalProgress', title: 'Progresso do Turno', node: <GoalProgressPanel items={goalProgress} /> },
+    { id: 'goalProjection', title: 'Projeção de Meta', node: <GoalProjection projection={projection} /> },
+    { id: 'weeklyTrend', title: 'Tendência Semanal', node: <WeeklyEfficiencyChart data={weeklyTrend} cellLabel={weeklyTrendLabel} /> },
+    { id: 'highPerformers', title: 'Operadores Destaque', node: <HighPerformerPanel performers={performers} /> },
     {
       id: 'charts',
+      title: 'Gráficos de Produtividade',
       node: (
         <div ref={chartsRef} className={kiosk ? 'space-y-4 bg-background' : 'space-y-6 bg-background'}>
           <div className={kiosk ? 'grid grid-cols-1 xl:grid-cols-2 gap-4' : 'grid grid-cols-1 lg:grid-cols-2 gap-6'}>
@@ -190,6 +223,7 @@ export default function Dashboard() {
           <div className="flex flex-wrap items-center gap-2.5">
             <CellReportButton cells={cells} allEntries={all} date={filters.date} />
             <ExportMenu entries={filtered} allEntries={all} filters={filters} chartsRef={chartsRef} />
+            <DashboardLayoutSettings panels={panels} hidden={hidden} sizes={sizes} toggleHidden={toggleHidden} toggleSize={toggleSize} />
             <Button
               variant="outline"
               className="gap-2 bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full shadow-sm"
@@ -228,6 +262,18 @@ export default function Dashboard() {
             Painéis{kioskCell !== 'all' ? ` · ${kioskCell}` : ''}
           </h1>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+            <button
+              className="flex items-center justify-center w-10 h-10 shrink-0 rounded-xl border border-border/80 bg-card text-muted-foreground hover:text-foreground active:scale-95 transition-all"
+              onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+              title={theme === 'dark' ? 'Ativar Modo Claro' : 'Ativar Modo Escuro'}
+            >
+              {theme === 'dark' ? (
+                <Sun className="w-4.5 h-4.5 text-amber-400" />
+              ) : (
+                <Moon className="w-4.5 h-4.5 text-indigo-400" />
+              )}
+            </button>
+            <DashboardLayoutSettings panels={panels} hidden={hidden} sizes={sizes} toggleHidden={toggleHidden} toggleSize={toggleSize} />
             <KioskCellControl cells={cells} active={kioskCell} setActive={setKioskCell} rotating={rotating} setRotating={setRotating} />
             <Button variant="default" className="w-full sm:w-auto gap-2 min-h-[44px]" onClick={toggleKiosk}>
               <Minimize2 className="w-4 h-4" /> Sair do Quiosque
@@ -245,21 +291,14 @@ export default function Dashboard() {
 
       {filtered.length === 0 ? (
         <div key="no-data" className="space-y-6">
-          <MonthlyGoalTracker tracking={monthlyTracking} />
+          <MonthlyGoalTracker tracking={monthlyTracking} cellTrackings={cellMonthlyTrackings} />
           <div className="text-center py-20 text-muted-foreground border border-dashed border-border rounded-2xl">
             Nenhum dado para os filtros selecionados. Registre produção na aba "Entrada de Produção".
           </div>
         </div>
-      ) : kiosk ? (
-        <div key="kiosk" className="space-y-4">
-          {order.map((id) => {
-            const p = panels.find((x) => x.id === id);
-            return p ? <div key={id}>{p.node}</div> : null;
-          })}
-        </div>
       ) : (
         <div key="sortable-panels">
-          <SortablePanels panels={panels} order={order} onReorder={reorder} gap="space-y-6" />
+          <SortablePanels panels={panels} order={order} sizes={sizes} onReorder={reorder} onToggleHide={toggleHidden} onToggleSize={toggleSize} />
         </div>
       )}
     </div>

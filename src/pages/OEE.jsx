@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { base44 } from '@/lib/localDb';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
@@ -13,6 +13,16 @@ import OeeReportButton from '@/components/oee/OeeReportButton';
 import { computeOEE, oeeByCell } from '@/lib/oeeMetrics';
 
 export default function OEE() {
+  // Dark mode detection
+  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
+  useEffect(() => {
+    const obs = new MutationObserver(() =>
+      setDark(document.documentElement.classList.contains('dark'))
+    );
+    obs.observe(document.documentElement, { attributeFilter: ['class'] });
+    return () => obs.disconnect();
+  }, []);
+
   const [filters, setFilters] = useState({
     date: format(new Date(), 'yyyy-MM-dd'),
     shift: 'all',
@@ -24,7 +34,7 @@ export default function OEE() {
 
   const { data: all = [] } = useQuery({
     queryKey: ['production'],
-    queryFn: () => base44.entities.ProductionEntry.list('-created_date', 500),
+    queryFn: () => base44.entities.ProductionEntry.list('-date', 5000),
     initialData: [],
   });
 
@@ -59,7 +69,16 @@ export default function OEE() {
   }), [filters]);
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+    <div
+      className="p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6"
+      style={{
+        minHeight: '100vh',
+        background: dark
+          ? 'linear-gradient(135deg, hsl(240 10% 3.9%) 0%, hsl(240 10% 5%) 55%, hsl(160 30% 5%) 100%)'
+          : 'linear-gradient(135deg, #ffffff 0%, #f0fdf4 55%, #dcfce7 100%)',
+        transition: 'background 0.4s ease',
+      }}
+    >
       <PageHeader
         title="OEE — Eficiência Global"
         subtitle="Disponibilidade × Performance × Qualidade por célula."
@@ -80,7 +99,7 @@ export default function OEE() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
             <OeeGauge index={0} value={overall.oee} title="OEE Global" subtitle="Eficiência geral" />
             <OeeGauge index={1} value={overall.availability} title="Disponibilidade" subtitle={`${Math.round(overall.downtimeMin)} min parado`} />
             <OeeGauge index={2} value={overall.performance} title="Performance" subtitle={`${overall.produced.toLocaleString('pt-BR')} / ${overall.target.toLocaleString('pt-BR')}`} />

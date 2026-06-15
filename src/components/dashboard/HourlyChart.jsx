@@ -14,8 +14,7 @@ export default function HourlyChart({ grouped }) {
     <Card className="p-6 border-border/60">
       <h3 className="font-semibold mb-1">Produtividade por Hora</h3>
       <p className="text-sm text-muted-foreground mb-5">Produzido vs. meta e eficiência ao longo do dia</p>
-      <div className="h-72">
-        <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height={288}>
           <ComposedChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
             <XAxis dataKey="hora" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} />
@@ -46,8 +45,7 @@ export default function HourlyChart({ grouped }) {
             </Bar>
             <Line type="monotone" dataKey="Eficiência" stroke="hsl(var(--chart-1))" strokeWidth={2} dot={{ r: 3 }} yAxisId={0} name="Eficiência" />
           </ComposedChart>
-        </ResponsiveContainer>
-      </div>
+      </ResponsiveContainer>
     </Card>
   );
 }

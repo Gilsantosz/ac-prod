@@ -52,6 +52,17 @@ export default function InviteUserForm({ onInvite, saving }) {
         manage_automations: true,
         manage_users: true,
       });
+    } else if (role === 'manager') {
+      setPermissions({
+        view_dashboards: true,
+        register_production: true,
+        manage_occurrences: true,
+        manage_cells: false,
+        manage_operators: false,
+        view_reports: true,
+        manage_automations: false,
+        manage_users: false,
+      });
     } else {
       setPermissions({
         view_dashboards: true,
@@ -142,6 +153,7 @@ export default function InviteUserForm({ onInvite, saving }) {
               <SelectTrigger id="role"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="operator">Operador / Usuário</SelectItem>
+                <SelectItem value="manager">Gestor</SelectItem>
                 <SelectItem value="admin">Administrador</SelectItem>
               </SelectContent>
             </Select>

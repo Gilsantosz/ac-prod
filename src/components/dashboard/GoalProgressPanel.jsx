@@ -9,14 +9,14 @@ export default function GoalProgressPanel({ items = [] }) {
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-      <Card className="p-6 border-border/60">
-        <div className="flex items-center gap-2 mb-1">
+      <Card className="p-6 border-border/60 flex flex-col h-full max-h-[400px]">
+        <div className="flex items-center gap-2 mb-1 shrink-0">
           <Target className="w-5 h-5 text-primary" />
           <h3 className="font-semibold">Progresso das Metas do Turno</h3>
         </div>
-        <p className="text-sm text-muted-foreground mb-5">Quanto cada célula já produziu em relação à meta definida.</p>
+        <p className="text-sm text-muted-foreground mb-4 shrink-0">Quanto cada célula já produziu em relação à meta definida.</p>
 
-        <div className="space-y-5">
+        <div className="space-y-5 overflow-y-auto pr-2 pb-2 flex-1">
           {items.map((it) => {
             const pct = Math.min(100, Math.round((it.produced / it.target) * 100));
             const done = it.produced >= it.target;

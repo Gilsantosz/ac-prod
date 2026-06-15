@@ -171,6 +171,7 @@ function UserCard({ user, currentUserId, onUpdate, onDelete }) {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="operator">Operador / Usuário</SelectItem>
+                  <SelectItem value="manager">Gestor</SelectItem>
                   <SelectItem value="admin">Administrador</SelectItem>
                 </SelectContent>
               </Select>
@@ -224,8 +225,8 @@ function UserCard({ user, currentUserId, onUpdate, onDelete }) {
             <div className="min-w-0 space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-semibold text-foreground truncate">{user.name || user.email.split('@')[0]}</p>
-                <Badge variant={user.role === 'admin' ? "default" : "secondary"}>
-                  {user.role === 'admin' ? 'Administrador' : 'Operador'}
+                <Badge variant={user.role === 'admin' ? "default" : user.role === 'manager' ? "outline" : "secondary"}>
+                  {user.role === 'admin' ? 'Administrador' : user.role === 'manager' ? 'Gestor' : 'Operador'}
                 </Badge>
                 {user.role !== 'admin' && user.cell && (
                   <Badge variant="outline" className="bg-emerald-500/5 border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-medium">
