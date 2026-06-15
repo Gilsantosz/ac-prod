@@ -24,6 +24,16 @@ export function useAutomationRunner() {
           description: `${describeRule(rule)} (valor: ${value})`,
           duration: 7000,
         });
+
+        // Registrar o alerta no banco de dados para visualização e resolução em tempo real
+        base44.entities.AlertLog.create({
+          rule_id: rule.id,
+          message: `Regra "${rule.name}" disparada: ${describeRule(rule)} (valor: ${value})`,
+          cell: entry.cell,
+          resolved: false,
+        }).catch((err) => {
+          console.error('[Automation Runner] Falha ao registrar AlertLog:', err);
+        });
       } else if (rule.action === 'log_occurrence') {
         await base44.entities.Occurrence.create({
           date: entry.date,

@@ -19,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { motion, AnimatePresence } from 'framer-motion';
+import NotificationCenter from '@/components/layout/NotificationCenter';
 
 const nav = [
   { to: '/',                    label: 'Painéis',             icon: LayoutDashboard },
@@ -177,22 +178,25 @@ function AppShell() {
             'shrink-0 border-t border-border/60 p-3 space-y-2',
             collapsed ? 'flex flex-col items-center' : ''
           )}>
-            {/* Theme toggle */}
-            <button
-              className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-muted-foreground hover:bg-secondary hover:text-foreground transition-all duration-200 w-full',
-                collapsed ? 'justify-center' : 'justify-start'
-              )}
-              onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
-              title={theme === 'dark' ? 'Ativar Modo Claro' : 'Ativar Modo Escuro'}
-            >
-              {theme === 'dark' ? (
-                <Sun className="w-4.5 h-4.5 text-amber-400 shrink-0" />
-              ) : (
-                <Moon className="w-4.5 h-4.5 text-indigo-400 shrink-0" />
-              )}
-              {!collapsed && <span className="text-sm">{theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}</span>}
-            </button>
+            {/* Theme & Notifications */}
+            <div className={cn('flex items-center gap-2 w-full', collapsed ? 'flex-col' : 'justify-between')}>
+              <NotificationCenter />
+              <button
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-muted-foreground hover:bg-secondary hover:text-foreground transition-all duration-200',
+                  collapsed ? 'w-10 h-10 justify-center px-0' : 'flex-1'
+                )}
+                onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+                title={theme === 'dark' ? 'Ativar Modo Claro' : 'Ativar Modo Escuro'}
+              >
+                {theme === 'dark' ? (
+                  <Sun className="w-4.5 h-4.5 text-amber-400 shrink-0" />
+                ) : (
+                  <Moon className="w-4.5 h-4.5 text-indigo-400 shrink-0" />
+                )}
+                {!collapsed && <span className="text-sm">{theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}</span>}
+              </button>
+            </div>
 
             {/* User profile */}
             {user && (
@@ -260,9 +264,10 @@ function AppShell() {
           </div>
 
           <div className="flex items-center gap-2">
+            <NotificationCenter />
             <button
               className="flex items-center justify-center w-10 h-10 rounded-xl border border-border/80 bg-card text-muted-foreground hover:text-foreground active:scale-95 transition-all"
-              onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+              onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
             >
               {theme === 'dark' ? (
                 <Sun className="w-4.5 h-4.5 text-amber-400" />

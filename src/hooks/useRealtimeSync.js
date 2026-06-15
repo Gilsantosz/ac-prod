@@ -11,6 +11,7 @@ const TABLE_TO_QUERY_KEY = {
   cells: ['cells'],
   automation_rules: ['automationRules'],
   profiles: ['users', 'me'],
+  alert_logs: ['unresolvedAlerts'],
 };
 
 /**
