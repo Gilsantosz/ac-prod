@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useCells } from '@/hooks/useCells';
 import { format } from 'date-fns';
-import { Loader2, Save, Clock, Minus, Plus, Factory } from 'lucide-react';
+import { Loader2, Save, Clock, Factory } from 'lucide-react';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
 
@@ -25,7 +25,7 @@ function getTodayStr() {
   return format(new Date(), 'yyyy-MM-dd');
 }
 
-export default function ManualQuickEntryForm({ user = {}, onSubmit = null, saving = false }) {
+export default function ManualQuickEntryForm({ user = {}, onSubmit = null, saving = false, onContextChange = null }) {
   const { activeCells } = useCells();
   
   // Estados do formulário
@@ -57,6 +57,18 @@ export default function ManualQuickEntryForm({ user = {}, onSubmit = null, savin
     }, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // Notificar pai sobre mudança de contexto
+  useEffect(() => {
+    if (onContextChange) {
+      onContextChange({
+        cell,
+        hour,
+        date: getTodayStr(),
+        shift: getCurrentShift()
+      });
+    }
+  }, [cell, hour, onContextChange]);
 
   const handleAdjustProduced = (val) => {
     const curr = parseInt(produced) || 0;

@@ -4,10 +4,11 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { useCells } from '@/hooks/useCells';
 import { base44 } from '@/lib/localDb';
+import { supabase } from '@/lib/supabaseClient';
 import { format } from 'date-fns';
-import { Loader2, Save, Clock, Factory, AlertCircle, Sparkles } from 'lucide-react';
+import { useCells } from '@/hooks/useCells';
+import { Loader2, Save, Factory, AlertCircle, Sparkles } from 'lucide-react';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
 
@@ -26,7 +27,7 @@ function getTodayStr() {
   return format(new Date(), 'yyyy-MM-dd');
 }
 
-export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, saving = false }) {
+export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, saving = false, onContextChange = null }) {
   const { activeCells, getShiftHours, getCell } = useCells();
   const initializedRef = useRef(false);
 
@@ -81,6 +82,13 @@ export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, sa
     const id = setInterval(tick, 30000);
     return () => clearInterval(id);
   }, [dateEdited, shiftEdited, hourEdited]);
+
+  // Notificar pai sobre mudança de contexto
+  useEffect(() => {
+    if (onContextChange) {
+      onContextChange({ cell, hour, date, shift });
+    }
+  }, [cell, hour, date, shift, onContextChange]);
 
   // Ao alterar célula, puxa as notas padrões se existirem
   useEffect(() => {

@@ -177,22 +177,6 @@ export function useTraceability({ stageFilter = null, searchQuery = '', dateRang
     onError: (e) => toast.error(e?.message),
   });
 
-  // ─── Buscar eventos de um lote ───────────────────────────────
-  const getLotEvents = (lotId) =>
-    useQuery({
-      queryKey: ['lot-events', lotId],
-      queryFn: async () => {
-        const { data, error } = await supabase
-          .from('lot_step_events')
-          .select('*, profiles(name)')
-          .eq('lot_id', lotId)
-          .order('created_at', { ascending: true });
-        if (error) throw error;
-        return data || [];
-      },
-      enabled: !!lotId,
-    });
-
   // ─── Stats ───────────────────────────────────────────────────
   const stats = {
     total:      lots.data.length,
@@ -216,7 +200,6 @@ export function useTraceability({ stageFilter = null, searchQuery = '', dateRang
     advanceLot,
     blockLot,
     unblockLot,
-    getLotEvents,
     refetch: () => {
       lots.refetch();
       orders.refetch();
