@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { worstFactor } from '@/lib/oeeMetrics';
+import { drawBrandedPdfFooter, drawBrandedPdfHeader } from '@/lib/reportBranding';
 
 // Gera um relatório de OEE + Ocorrências do turno em PDF.
 // Pronto para impressão ou envio por e-mail. Se `chartsEl` for informado,
@@ -8,18 +9,16 @@ import { worstFactor } from '@/lib/oeeMetrics';
 export async function exportOeeReport({ overall, byCell, occurrences = [], meta = {}, chartsEl }, filename = 'relatorio-oee.pdf') {
   const doc = new jsPDF();
   const M = 14;
-  let y = 18;
-
-  // Cabeçalho
-  doc.setFontSize(18);
-  doc.setTextColor(20);
-  doc.text(meta.title || 'Relatório de OEE', M, y);
-  y += 7;
-  doc.setFontSize(10);
-  doc.setTextColor(110);
-  if (meta.subtitle) { doc.text(meta.subtitle, M, y); y += 5; }
-  doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, M, y);
-  y += 10;
+  let y = await drawBrandedPdfHeader(doc, {
+    title: meta.title || 'Relatorio de OEE',
+    subtitle: meta.subtitle || '',
+    summary: [
+      { label: 'OEE global', value: `${overall.oee}%` },
+      { label: 'Disponibilidade', value: `${overall.availability}%` },
+      { label: 'Performance', value: `${overall.performance}%` },
+      { label: 'Qualidade', value: `${overall.quality}%` },
+    ],
+  });
 
   // Resumo OEE global
   doc.setFillColor(30, 30, 30);
@@ -151,5 +150,6 @@ export async function exportOeeReport({ overall, byCell, occurrences = [], meta 
     }
   }
 
+  drawBrandedPdfFooter(doc);
   doc.save(filename);
 }

@@ -1,0 +1,135 @@
+import { useState, useMemo } from 'react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import PageHeader from '@/components/ui/PageHeader';
+import { useTraceability, KANBAN_STAGES } from '@/hooks/useTraceability';
+import LotKanban      from '@/components/traceability/LotKanban';
+import LotSearch      from '@/components/traceability/LotSearch';
+import LotTimeline    from '@/components/traceability/LotTimeline';
+import JoineryWorkbench from '@/components/traceability/JoineryWorkbench';
+import PackageManager from '@/components/traceability/PackageManager';
+import ShipmentPanel  from '@/components/traceability/ShipmentPanel';
+import TraceabilityTestPanel from '@/components/traceability/TraceabilityTestPanel';
+import {
+  Layers, Search, GitBranch, Wrench, Box, Truck, RefreshCw,
+  AlertCircle, Clock, CheckCircle, Lock, Play,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
+
+export default function Traceability() {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [stageFilter, setStageFilter] = useState('all');
+
+  const trace = useTraceability({ stageFilter, searchQuery });
+
+  return (
+    <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-5 sm:space-y-6">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <PageHeader
+          title="Rastreabilidade"
+          subtitle="Acompanhe cada lote e peça em tempo real — do Promob à expedição."
+          icon={Layers}
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2 shrink-0"
+          onClick={trace.refetch}
+        >
+          <RefreshCw className={cn('w-3.5 h-3.5', trace.lots.isFetching && 'animate-spin')} />
+          Atualizar
+        </Button>
+      </div>
+
+      {/* ── Stats Rápidos ───────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-5 gap-3">
+        <StatCard icon={Layers}        label="Total Lotes"       value={trace.stats.total}       />
+        <StatCard icon={Lock}          label="Bloqueados"         value={trace.stats.blocked}     accent="red" />
+        <StatCard icon={Clock}         label="Em Atraso"          value={trace.stats.late}        accent="amber" />
+        <StatCard icon={CheckCircle}   label="Finalizados"        value={trace.stats.completed}   accent="green" />
+        <StatCard icon={Wrench}        label="Com Marcenaria"     value={trace.stats.withJoinery} accent="amber" className="hidden xl:flex" />
+      </div>
+
+      {/* ── Abas ───────────────────────────────────────────── */}
+      <Tabs defaultValue="kanban" className="space-y-5">
+        <TabsList className="bg-card border border-border/60 h-auto p-1 flex-wrap gap-1">
+          <TabsTrigger value="kanban" className="gap-2 text-xs sm:text-sm">
+            <Layers className="w-3.5 h-3.5" /> Kanban
+          </TabsTrigger>
+          <TabsTrigger value="search" className="gap-2 text-xs sm:text-sm">
+            <Search className="w-3.5 h-3.5" /> Buscar
+          </TabsTrigger>
+          <TabsTrigger value="timeline" className="gap-2 text-xs sm:text-sm">
+            <GitBranch className="w-3.5 h-3.5" /> Histórico
+          </TabsTrigger>
+          <TabsTrigger value="joinery" className="gap-2 text-xs sm:text-sm">
+            <Wrench className="w-3.5 h-3.5" /> Marcenaria
+            {trace.stats.withJoinery > 0 && (
+              <Badge className="ml-1 text-[10px] px-1.5 py-0 h-4 bg-amber-500 text-white border-0">
+                {trace.stats.withJoinery}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="packaging" className="gap-2 text-xs sm:text-sm">
+            <Box className="w-3.5 h-3.5" /> Embalagem
+          </TabsTrigger>
+          <TabsTrigger value="shipping" className="gap-2 text-xs sm:text-sm">
+            <Truck className="w-3.5 h-3.5" /> Expedição
+          </TabsTrigger>
+          <TabsTrigger value="test-panel" className="gap-2 text-xs sm:text-sm">
+            <Play className="w-3.5 h-3.5" /> Simulador / Testes
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="kanban">
+          <LotKanban trace={trace} />
+        </TabsContent>
+
+        <TabsContent value="search">
+          <LotSearch />
+        </TabsContent>
+
+        <TabsContent value="timeline">
+          <LotTimeline trace={trace} />
+        </TabsContent>
+
+        <TabsContent value="joinery">
+          <JoineryWorkbench trace={trace} />
+        </TabsContent>
+
+        <TabsContent value="packaging">
+          <PackageManager trace={trace} />
+        </TabsContent>
+
+        <TabsContent value="shipping">
+          <ShipmentPanel trace={trace} />
+        </TabsContent>
+
+        <TabsContent value="test-panel">
+          <TraceabilityTestPanel />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// ─── StatCard ─────────────────────────────────────────────────
+function StatCard({ icon: Icon, label, value, accent, className }) {
+  const colors = {
+    red:    'text-red-600 bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800/40',
+    amber:  'text-amber-600 bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/40',
+    green:  'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/40',
+    default:'text-[#2d9c4a] bg-card border-border/60',
+  };
+  const c = colors[accent] || colors.default;
+  return (
+    <div className={cn('rounded-2xl p-4 border flex items-center gap-3', c, className)}>
+      <Icon className={cn('w-5 h-5 shrink-0', accent ? '' : 'text-[#2d9c4a]')} />
+      <div>
+        <p className="text-xs text-muted-foreground leading-none">{label}</p>
+        <p className="text-2xl font-bold mt-0.5">{value ?? 0}</p>
+      </div>
+    </div>
+  );
+}

@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { base44 } from '@/lib/localDb';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { PlusCircle } from 'lucide-react';
+import { Barcode, PenLine, PlusCircle } from 'lucide-react';
 import ProductionForm from '@/components/entry/ProductionForm';
 import RecentEntries from '@/components/entry/RecentEntries';
 import CriticalIssueDialog from '@/components/entry/CriticalIssueDialog';
@@ -11,11 +12,22 @@ import PageHeader from '@/components/ui/PageHeader';
 import { isCritical } from '@/lib/productionMetrics';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { useAutomationRunner } from '@/hooks/useAutomationRunner';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import TraceabilityCollection from '@/pages/TraceabilityCollection';
 
 export default function Entry() {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [criticalEntry, setCriticalEntry] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const activeMode = searchParams.get('modo') === 'coleta' ? 'collection' : 'manual';
+
+  const handleModeChange = (mode) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (mode === 'collection') nextParams.set('modo', 'coleta');
+    else nextParams.delete('modo');
+    setSearchParams(nextParams, { replace: true });
+  };
 
   const { data: entries = [] } = useQuery({
     queryKey: ['production'],
@@ -81,8 +93,19 @@ export default function Entry() {
         actions={<SyncStatus online={online} pending={pending} syncing={syncing} />}
       />
 
-      <ProductionForm onSubmit={handleSubmit} saving={false} />
-      <RecentEntries entries={entries} onDelete={deleteMutation.mutate} />
+      <Tabs value={activeMode} onValueChange={handleModeChange} className="space-y-5">
+        <TabsList className="h-auto p-1 bg-card border border-border rounded-md w-full sm:w-auto grid grid-cols-2 sm:inline-flex">
+          <TabsTrigger value="manual" className="h-10 gap-2"><PenLine className="w-4 h-4" /> Entrada Manual</TabsTrigger>
+          <TabsTrigger value="collection" className="h-10 gap-2"><Barcode className="w-4 h-4" /> Coleta Código/RFID</TabsTrigger>
+        </TabsList>
+        <TabsContent value="manual" className="space-y-5">
+          <ProductionForm onSubmit={handleSubmit} saving={false} />
+          <RecentEntries entries={entries} onDelete={deleteMutation.mutate} />
+        </TabsContent>
+        <TabsContent value="collection">
+          <TraceabilityCollection embedded />
+        </TabsContent>
+      </Tabs>
 
       <CriticalIssueDialog
         open={dialogOpen}

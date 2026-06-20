@@ -21,6 +21,32 @@ body {
   font-family: 'Outfit', system-ui, sans-serif;
 }
 
+.font-leo-title {
+  font-family: 'Arial Rounded MT Bold', 'Arial Black', 'Outfit', sans-serif;
+  font-weight: 900;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.login-access-shell {
+  display: block;
+}
+
+.login-access-visual {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .login-access-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(420px, 1fr);
+  }
+
+  .login-access-visual {
+    display: flex;
+  }
+}
+
 /* Área de toque mínima: aplicada via classes nos botões interativos, não globalmente */
 /* Scrollbar sutil para desktop */
 @media (hover: hover) {

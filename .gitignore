@@ -29,3 +29,8 @@ dist-ssr
 
 .env
 .vite
+
+# Test artifacts
+coverage
+playwright-report
+test-results

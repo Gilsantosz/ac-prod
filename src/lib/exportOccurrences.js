@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+import { drawBrandedPdfFooter, drawBrandedPdfHeader } from '@/lib/reportBranding';
 
 // Exigências da Tabela de Ocorrências
 const COLS = [
@@ -21,28 +22,23 @@ export async function exportOccurrencesPdf(occurrences, dateStr, filterCell, fil
 
   const doc = new jsPDF();
   const margin = 14;
-  let y = 18;
 
   const [yyyy, mm, dd] = dateStr.split('-');
   const niceDate = `${dd}/${mm}/${yyyy}`;
   const cellLabel = filterCell === 'all' ? 'Todas as células' : filterCell;
   const shiftLabel = filterShift === 'all' ? 'Todos os turnos' : filterShift;
+  const totalDowntime = filtered.reduce((s, o) => s + (Number(o.downtime) || 0), 0);
 
-  // 1. Cabeçalho Principal (Padrão Visual das outras páginas)
-  doc.setFontSize(18);
-  doc.setTextColor(20);
-  doc.text('Relatório Diário de Ocorrências e Gargalos', margin, y);
-  y += 7;
-
-  doc.setFontSize(10);
-  doc.setTextColor(110);
-  doc.text(`Data: ${niceDate}  ·  Célula: ${cellLabel}  ·  Turno: ${shiftLabel}`, margin, y);
-  y += 5;
-  doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, margin, y);
-  y += 10;
+  let y = await drawBrandedPdfHeader(doc, {
+    title: 'Relatorio Diario de Ocorrencias e Gargalos',
+    subtitle: `Data: ${niceDate} | Celula: ${cellLabel} | Turno: ${shiftLabel}`,
+    summary: [
+      { label: 'Total de paradas', value: filtered.length },
+      { label: 'Tempo total parado', value: `${totalDowntime} min` },
+    ],
+  });
 
   // 2. KPIs de Parada
-  const totalDowntime = filtered.reduce((s, o) => s + (Number(o.downtime) || 0), 0);
   doc.setTextColor(20);
   doc.setFontSize(11);
   doc.text(
@@ -119,5 +115,6 @@ export async function exportOccurrencesPdf(occurrences, dateStr, filterCell, fil
     });
   }
 
+  drawBrandedPdfFooter(doc);
   doc.save(filename);
 }

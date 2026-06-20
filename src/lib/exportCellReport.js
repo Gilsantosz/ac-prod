@@ -1,11 +1,12 @@
 import { jsPDF } from 'jspdf';
 import { efficiency, scrapRate, sumBy } from '@/lib/productionMetrics';
+import { drawBrandedPdfFooter, drawBrandedPdfHeader } from '@/lib/reportBranding';
 
 const SHIFTS = ['1º Turno', '2º Turno', '3º Turno'];
 
 // Gera um PDF formatado com o resumo diário de uma célula:
 // eficiência, metas alcançadas e observações por turno.
-export function exportCellReport(cell, date, entries, filename) {
+export async function exportCellReport(cell, date, entries, filename) {
   const doc = new jsPDF();
   const cellEntries = entries.filter((e) => e.cell === cell && (!date || e.date === date));
 
@@ -15,34 +16,34 @@ export function exportCellReport(cell, date, entries, filename) {
   const totalDowntime = sumBy(cellEntries, 'downtime');
   const overallEff = efficiency(totalProduced, totalTarget);
 
-  // Cabeçalho
-  doc.setFontSize(18);
-  doc.setTextColor(20);
-  doc.text('Relatório de Produção por Célula', 14, 18);
-  doc.setFontSize(11);
-  doc.setTextColor(80);
-  doc.text(`Célula: ${cell}`, 14, 26);
-  doc.text(`Data: ${date || 'Todas as datas'}`, 14, 32);
-  doc.setFontSize(9);
-  doc.setTextColor(120);
-  doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 38);
+  let y = await drawBrandedPdfHeader(doc, {
+    title: 'Relatorio de Producao por Celula',
+    subtitle: `Celula: ${cell} | Data: ${date || 'Todas as datas'}`,
+    summary: [
+      { label: 'Produzido', value: totalProduced },
+      { label: 'Meta', value: totalTarget },
+      { label: 'Eficiencia', value: `${overallEff}%` },
+      { label: 'Refugo', value: `${scrapRate(totalScrap, totalProduced)}%` },
+      { label: 'Parada total', value: `${totalDowntime} min` },
+    ],
+  });
 
   // Resumo geral
   doc.setDrawColor(220);
   doc.setFillColor(245, 245, 245);
-  doc.rect(14, 44, 182, 16, 'F');
+  doc.rect(14, y, 182, 16, 'F');
   doc.setFontSize(11);
   doc.setTextColor(20);
   doc.text(
     `Produzido: ${totalProduced}    Meta: ${totalTarget}    Eficiência: ${overallEff}%`,
-    18, 52
+    18, y + 8
   );
   doc.text(
     `Refugo: ${scrapRate(totalScrap, totalProduced)}%    Parada total: ${totalDowntime} min    Registros: ${cellEntries.length}`,
-    18, 58
+    18, y + 14
   );
 
-  let y = 70;
+  y += 26;
 
   // Resumo por turno
   doc.setFontSize(13);
@@ -91,5 +92,6 @@ export function exportCellReport(cell, date, entries, filename) {
     y += 6;
   });
 
+  drawBrandedPdfFooter(doc);
   doc.save(filename || `relatorio-${cell}-${date || 'geral'}.pdf`);
 }

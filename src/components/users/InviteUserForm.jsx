@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, UserPlus, Eye, EyeOff, LayoutDashboard, PlusCircle, AlertOctagon, Boxes, HardHat, LineChart, Zap, Users, ShieldAlert } from 'lucide-react';
+import { Loader2, UserPlus, LayoutDashboard, PlusCircle, AlertOctagon, Boxes, HardHat, LineChart, Zap, Users, ShieldAlert, BrainCircuit } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCells } from '@/hooks/useCells';
 
@@ -15,6 +15,7 @@ const PERMISSION_METADATA = [
   { key: 'manage_cells', label: 'Células e Metas', desc: 'Cadastrar células de trabalho e metas diárias.', icon: Boxes },
   { key: 'manage_operators', label: 'Operadores e Equipes', desc: 'Gerenciar cadastro de operadores.', icon: HardHat },
   { key: 'view_reports', label: 'Relatórios Industriais', desc: 'Acessar e exportar relatórios em PDF.', icon: LineChart },
+  { key: 'ai_operations', label: 'IA Operacional', desc: 'Consultar o Copilot e gerar análises produtivas.', icon: BrainCircuit },
   { key: 'manage_automations', label: 'Alertas e Automações', desc: 'Configurar automações e regras de alerta.', icon: Zap },
   { key: 'manage_users', label: 'Gerenciar Usuários', desc: 'Cadastrar usuários e configurar acessos.', icon: Users, warning: true },
 ];
@@ -23,8 +24,6 @@ export default function InviteUserForm({ onInvite, saving }) {
   const { activeCells } = useCells();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState('operator');
   const [cell, setCell] = useState('none');
   
@@ -35,6 +34,7 @@ export default function InviteUserForm({ onInvite, saving }) {
     manage_cells: false,
     manage_operators: false,
     view_reports: false,
+    ai_operations: false,
     manage_automations: false,
     manage_users: false,
   });
@@ -49,6 +49,7 @@ export default function InviteUserForm({ onInvite, saving }) {
         manage_cells: true,
         manage_operators: true,
         view_reports: true,
+        ai_operations: true,
         manage_automations: true,
         manage_users: true,
       });
@@ -60,6 +61,7 @@ export default function InviteUserForm({ onInvite, saving }) {
         manage_cells: false,
         manage_operators: false,
         view_reports: true,
+        ai_operations: true,
         manage_automations: false,
         manage_users: false,
       });
@@ -71,6 +73,7 @@ export default function InviteUserForm({ onInvite, saving }) {
         manage_cells: false,
         manage_operators: false,
         view_reports: false,
+        ai_operations: false,
         manage_automations: false,
         manage_users: false,
       });
@@ -86,15 +89,14 @@ export default function InviteUserForm({ onInvite, saving }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim() || !email.trim() || !password.trim()) return;
+    if (!name.trim() || !email.trim()) return;
     
     // Passando a célula vinculada. Caso seja 'none', passa vazio.
-    await onInvite(email.trim(), role, name.trim(), password.trim(), permissions, cell === 'none' ? '' : cell);
+    await onInvite(email.trim(), role, name.trim(), permissions, cell === 'none' ? '' : cell);
     
     // Limpar campos
     setName('');
     setEmail('');
-    setPassword('');
     setRole('operator');
     setCell('none');
     setPermissions({
@@ -104,6 +106,7 @@ export default function InviteUserForm({ onInvite, saving }) {
       manage_cells: false,
       manage_operators: false,
       view_reports: false,
+      ai_operations: false,
       manage_automations: false,
       manage_users: false,
     });
@@ -117,7 +120,7 @@ export default function InviteUserForm({ onInvite, saving }) {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="space-y-2 md:col-span-1">
             <Label htmlFor="name">Nome Completo</Label>
             <Input id="name" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="ex: Carlos Silva" required />
@@ -125,27 +128,6 @@ export default function InviteUserForm({ onInvite, saving }) {
           <div className="space-y-2 md:col-span-1">
             <Label htmlFor="email">E-mail (Login)</Label>
             <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ex: carlos@empresa.com" required />
-          </div>
-          <div className="space-y-2 md:col-span-1">
-            <Label htmlFor="password">Senha de Acesso</Label>
-            <div className="relative">
-              <Input
-                id="password"
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Defina a senha"
-                required
-                className="pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
           </div>
           <div className="space-y-2 md:col-span-1">
             <Label htmlFor="role">Papel</Label>

@@ -1,4 +1,4 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,15 +23,21 @@ export default function CriticalIssueDialog({ open, onOpenChange, entry, onCreat
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-xl gap-5">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-destructive">
-            <AlertTriangle className="w-5 h-5" /> Falha crítica detectada
+          <DialogTitle className="flex items-center gap-3 text-foreground">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+            </span>
+            <span>Falha crítica detectada</span>
           </DialogTitle>
+          <DialogDescription>
+            Registre a ocorrência para acompanhamento externo sem perder o contexto da produção.
+          </DialogDescription>
         </DialogHeader>
 
         {entry && (
-          <div className="bg-secondary rounded-xl p-4 text-sm space-y-1">
+          <div className="bg-background/60 border border-border/70 rounded-xl p-4 text-sm space-y-1 shadow-sm">
             <p><strong>{entry.cell}</strong> · {entry.shift} · {entry.hour}</p>
             <p className="text-muted-foreground">
               Produzido {entry.produced} de meta {entry.target || '—'} · Parada {entry.downtime || 0}min
@@ -59,7 +65,7 @@ export default function CriticalIssueDialog({ open, onOpenChange, entry, onCreat
         )}
         {result?.error && <p className="text-sm text-destructive">{result.error}</p>}
 
-        <DialogFooter>
+        <DialogFooter className="border-t border-border/60 pt-4">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Ignorar</Button>
           <Button onClick={handleCreate} disabled={loading || !owner || !repo} className="gap-2">
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4" />}

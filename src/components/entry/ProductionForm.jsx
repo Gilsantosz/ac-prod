@@ -10,6 +10,7 @@ import { Loader2, Save, Clock, Zap, Factory } from 'lucide-react';
 import { format } from 'date-fns';
 import { useCells } from '@/hooks/useCells';
 import { useAuth } from '@/lib/AuthContext';
+import ProductionIdentitySection from '@/components/entry/ProductionIdentitySection';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
 
@@ -44,6 +45,33 @@ function buildInitialState(user) {
     downtime: '',
     operator: user?.role !== 'admin' ? (user?.name || '') : '',
     notes: '',
+    production_order_id: null,
+    order_id: null,
+    lot_id: null,
+    order_item_id: null,
+    system_order_number: '',
+    customer_order_number: '',
+    order_number: '',
+    load_number: '',
+    lot_code: '',
+    customer_code: '',
+    customer_legal_name: '',
+    customer_trade_name: '',
+    customer_name: '',
+    cnpj: '',
+    product_code: '',
+    product_name: '',
+    product_description: '',
+    route_code: '',
+    route_name: '',
+    process_step: '',
+    finalization_date: '',
+    city: '',
+    state: '',
+    delivery_region: '',
+    mirror_quantity: 0,
+    pallet_number: '',
+    traceability_status: 'limited',
   };
 }
 
@@ -51,7 +79,11 @@ export default function ProductionForm({ onSubmit, saving }) {
   const { user } = useAuth();
   const { activeCells, getShiftHours, getCell } = useCells();
   const [data, setData] = useState(() => buildInitialState(user));
-  const set = (k, v) => setData((d) => ({ ...d, [k]: v }));
+  const [validationMessage, setValidationMessage] = useState('');
+  const set = (k, v) => {
+    setValidationMessage('');
+    setData((d) => ({ ...d, [k]: v }));
+  };
   const initializedRef = useRef(false);
 
   // ─── Autopreenchimento ao carregar o perfil do usuário ───────────────────────
@@ -122,12 +154,35 @@ export default function ProductionForm({ onSubmit, saving }) {
   // ─── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const numericFields = ['produced', 'target', 'scrap', 'downtime', 'hours'];
+    if (numericFields.some((field) => data[field] !== '' && Number(data[field]) < 0)) {
+      setValidationMessage('Os valores de produção não podem ser negativos.');
+      return;
+    }
+    if (Number(data.scrap) > 0 && !data.notes.trim()) {
+      setValidationMessage('Informe uma observação para registrar refugos.');
+      return;
+    }
+    if (Number(data.downtime) > 0 && !data.notes.trim()) {
+      setValidationMessage('Informe o motivo ou a ocorrência da parada.');
+      return;
+    }
+
     await onSubmit({
       ...data,
       produced: Number(data.produced) || 0,
       target: Number(data.target) || 0,
       scrap: Number(data.scrap) || 0,
       downtime: Number(data.downtime) || 0,
+      mirror_quantity: Number(data.mirror_quantity) || 0,
+      entry_mode: 'manual',
+      source: 'manual_entry',
+      approval_status: data.approval_status || 'valid',
+      order_number: data.order_number || 'MANUAL',
+      lot_code: data.lot_code || 'SEM_LOTE',
+      product_name: data.product_name || 'Não informado',
+      customer_name: data.customer_name || data.customer_trade_name || 'Não informado',
+      process_step: data.process_step || data.cell || 'APONTAMENTO_MANUAL',
     });
 
     // Preservar campos de contexto para o próximo lançamento
@@ -140,11 +195,43 @@ export default function ProductionForm({ onSubmit, saving }) {
       target: prev.target,
       operator: prev.operator,
       hour: getCurrentHour(),
+      production_order_id: prev.production_order_id,
+      order_id: prev.order_id,
+      lot_id: prev.lot_id,
+      order_item_id: prev.order_item_id,
+      system_order_number: prev.system_order_number,
+      customer_order_number: prev.customer_order_number,
+      order_number: prev.order_number,
+      load_number: prev.load_number,
+      lot_code: prev.lot_code,
+      customer_code: prev.customer_code,
+      customer_legal_name: prev.customer_legal_name,
+      customer_trade_name: prev.customer_trade_name,
+      customer_name: prev.customer_name,
+      cnpj: prev.cnpj,
+      product_code: prev.product_code,
+      product_name: prev.product_name,
+      product_description: prev.product_description,
+      route_code: prev.route_code,
+      route_name: prev.route_name,
+      process_step: prev.process_step,
+      finalization_date: prev.finalization_date,
+      city: prev.city,
+      state: prev.state,
+      delivery_region: prev.delivery_region,
+      mirror_quantity: prev.mirror_quantity,
+      pallet_number: prev.pallet_number,
+      traceability_status: prev.traceability_status,
+      _productionContext: prev._productionContext,
     }));
+    setValidationMessage('');
   };
 
   // ─── Indicador de preenchimento automático ───────────────────────────────────
   const hasAutoFill = user?.cell || (user && user.role !== 'admin');
+  const efficiency = Number(data.target) > 0 && Number(data.produced) >= 0
+    ? (Number(data.produced) / Number(data.target)) * 100
+    : null;
 
   return (
     <Card className="p-6 border-border/60">
@@ -230,6 +317,8 @@ export default function ProductionForm({ onSubmit, saving }) {
           </div>
         </div>
 
+        <ProductionIdentitySection value={data} onChange={setData} />
+
         {/* ═══ CAMPO PRINCIPAL: PRODUZIDO ═══ */}
         <div className="relative rounded-2xl border-2 border-primary bg-gradient-to-br from-primary/8 via-primary/5 to-transparent p-5 shadow-sm overflow-hidden">
           {/* Glow decorativo */}
@@ -289,46 +378,54 @@ export default function ProductionForm({ onSubmit, saving }) {
           <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">Dados Complementares</p>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="space-y-2">
-              <Label className="flex items-center gap-1.5">
+              <Label htmlFor="production-hours" className="flex items-center gap-1.5">
                 Horas do Turno
                 {data.hours && <span className="text-[10px] text-primary font-normal">(auto)</span>}
               </Label>
               <Input
+                id="production-hours"
                 type="number"
                 step="0.5"
                 value={data.hours}
                 onChange={(e) => set('hours', e.target.value)}
                 placeholder="0"
+                min="0"
               />
             </div>
             <div className="space-y-2">
-              <Label className="flex items-center gap-1.5">
+              <Label htmlFor="production-target" className="flex items-center gap-1.5">
                 Meta / hora
                 {data.target && <span className="text-[10px] text-primary font-normal">(auto)</span>}
               </Label>
               <Input
+                id="production-target"
                 type="number"
                 value={data.target}
                 onChange={(e) => set('target', e.target.value)}
                 placeholder="0"
+                min="0"
               />
             </div>
             <div className="space-y-2">
-              <Label>Refugos</Label>
+              <Label htmlFor="production-scrap">Refugos</Label>
               <Input
+                id="production-scrap"
                 type="number"
                 value={data.scrap}
                 onChange={(e) => set('scrap', e.target.value)}
                 placeholder="0"
+                min="0"
               />
             </div>
             <div className="space-y-2">
-              <Label>Parada (min)</Label>
+              <Label htmlFor="production-downtime">Parada (min)</Label>
               <Input
+                id="production-downtime"
                 type="number"
                 value={data.downtime}
                 onChange={(e) => set('downtime', e.target.value)}
                 placeholder="0"
+                min="0"
               />
             </div>
           </div>
@@ -345,21 +442,23 @@ export default function ProductionForm({ onSubmit, saving }) {
         {/* Linha 4: Operador e Observações */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label className="flex items-center gap-1.5">
+            <Label htmlFor="production-operator" className="flex items-center gap-1.5">
               Operador
               {user?.role !== 'admin' && user?.name && (
                 <span className="text-[10px] text-primary font-normal">(do perfil)</span>
               )}
             </Label>
             <Input
+              id="production-operator"
               value={data.operator}
               onChange={(e) => set('operator', e.target.value)}
               placeholder="Nome do operador"
             />
           </div>
           <div className="space-y-2">
-            <Label>Observações</Label>
+            <Label htmlFor="production-notes">Observações</Label>
             <Textarea
+              id="production-notes"
               value={data.notes}
               onChange={(e) => set('notes', e.target.value)}
               placeholder="Notas..."
@@ -367,6 +466,18 @@ export default function ProductionForm({ onSubmit, saving }) {
             />
           </div>
         </div>
+
+        {efficiency !== null && efficiency < 70 && (
+          <div role="alert" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+            Eficiência abaixo de 70%. Verifique a produção e registre observações quando necessário.
+          </div>
+        )}
+
+        {validationMessage && (
+          <div role="alert" className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
+            {validationMessage}
+          </div>
+        )}
 
         <div className="flex justify-end">
           <Button type="submit" disabled={saving} className="gap-2 px-6">

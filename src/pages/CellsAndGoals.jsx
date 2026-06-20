@@ -1,10 +1,10 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Boxes, Target, Users, CalendarRange } from 'lucide-react';
+import { Boxes, Target, CalendarRange, GitCommit } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import CellsManager from '@/components/cells/CellsManager';
 import GoalsManager from '@/components/goals/GoalsManager';
 import MonthlyGoalsManager from '@/components/monthlygoals/MonthlyGoalsManager';
-import ManagersManager from '@/components/managers/ManagersManager';
+import RouteTemplatesManager from '@/components/routing/RouteTemplatesManager';
 
 export default function CellsAndGoals() {
   return (
@@ -20,7 +20,7 @@ export default function CellsAndGoals() {
           <TabsTrigger value="cells" className="gap-2"><Boxes className="w-4 h-4" /> Células</TabsTrigger>
           <TabsTrigger value="monthly" className="gap-2"><CalendarRange className="w-4 h-4" /> Configuração de Metas</TabsTrigger>
           <TabsTrigger value="goals" className="gap-2"><Target className="w-4 h-4" /> Metas Diárias</TabsTrigger>
-          <TabsTrigger value="managers" className="gap-2"><Users className="w-4 h-4" /> Gestores</TabsTrigger>
+          <TabsTrigger value="routes" className="gap-2"><GitCommit className="w-4 h-4" /> Roteiros Produtivos</TabsTrigger>
         </TabsList>
 
         <TabsContent value="monthly">
@@ -30,11 +30,13 @@ export default function CellsAndGoals() {
         <TabsContent value="cells">
           <CellsManager />
         </TabsContent>
+        
         <TabsContent value="goals">
           <GoalsManager />
         </TabsContent>
-        <TabsContent value="managers">
-          <ManagersManager />
+        
+        <TabsContent value="routes">
+          <RouteTemplatesManager />
         </TabsContent>
       </Tabs>
     </div>

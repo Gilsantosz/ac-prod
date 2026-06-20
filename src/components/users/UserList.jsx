@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { User as UserIcon, Eye, EyeOff, Edit3, Trash2, Save, X, LayoutDashboard, PlusCircle, AlertOctagon, Boxes, HardHat, LineChart, Zap, Users } from 'lucide-react';
+import { User as UserIcon, Edit3, Trash2, Save, X, LayoutDashboard, PlusCircle, AlertOctagon, Boxes, HardHat, LineChart, Zap, Users, KeyRound, Send, BrainCircuit } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCells } from '@/hooks/useCells';
 
@@ -16,6 +16,7 @@ const PERMISSION_LABELS = {
   manage_cells: 'Células/Metas',
   manage_operators: 'Operadores',
   view_reports: 'Relatórios',
+  ai_operations: 'IA Operacional',
   manage_automations: 'Automações',
   manage_users: 'Usuários',
 };
@@ -27,6 +28,7 @@ const PERMISSION_METADATA = [
   { key: 'manage_cells', label: 'Células/Metas', icon: Boxes },
   { key: 'manage_operators', label: 'Operadores', icon: HardHat },
   { key: 'view_reports', label: 'Relatórios', icon: LineChart },
+  { key: 'ai_operations', label: 'IA Operacional', icon: BrainCircuit },
   { key: 'manage_automations', label: 'Automações', icon: Zap },
   { key: 'manage_users', label: 'Usuários', icon: Users, warning: true },
 ];
@@ -58,14 +60,12 @@ export default function UserList({ users, currentUserId, onUpdate, onDelete }) {
   );
 }
 
-function UserCard({ user, currentUserId, onUpdate, onDelete }) {
+function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, onResendInvite }) {
   const { activeCells } = useCells();
   const [isEditing, setIsEditing] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   
   // States para edição
   const [editName, setEditName] = useState(user.name || '');
-  const [editPassword, setEditPassword] = useState(user.password || '');
   const [editRole, setEditRole] = useState(user.role || 'operator');
   const [editCell, setEditCell] = useState(user.cell || 'none');
   const [editPermissions, setEditPermissions] = useState(user.permissions || {
@@ -75,6 +75,7 @@ function UserCard({ user, currentUserId, onUpdate, onDelete }) {
     manage_cells: false,
     manage_operators: false,
     view_reports: false,
+    ai_operations: false,
     manage_automations: false,
     manage_users: false,
   });
@@ -89,10 +90,9 @@ function UserCard({ user, currentUserId, onUpdate, onDelete }) {
   };
 
   const handleSave = async () => {
-    if (!editName.trim() || !editPassword.trim()) return;
+    if (!editName.trim()) return;
     await onUpdate(user.id, {
       name: editName.trim(),
-      password: editPassword.trim(),
       role: editRole,
       cell: editCell === 'none' ? '' : editCell, // Enviando a célula vinculada no payload
       permissions: editPermissions,
@@ -103,7 +103,6 @@ function UserCard({ user, currentUserId, onUpdate, onDelete }) {
   const handleCancel = () => {
     // Resetar formulário
     setEditName(user.name || '');
-    setEditPassword(user.password || '');
     setEditRole(user.role || 'operator');
     setEditCell(user.cell || 'none');
     setEditPermissions(user.permissions || {
@@ -113,6 +112,7 @@ function UserCard({ user, currentUserId, onUpdate, onDelete }) {
       manage_cells: false,
       manage_operators: false,
       view_reports: false,
+      ai_operations: false,
       manage_automations: false,
       manage_users: false,
     });
@@ -142,28 +142,10 @@ function UserCard({ user, currentUserId, onUpdate, onDelete }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Nome Completo</Label>
               <Input value={editName} onChange={(e) => setEditName(e.target.value)} required />
-            </div>
-            <div className="space-y-2">
-              <Label>Senha de Acesso</Label>
-              <div className="relative">
-                <Input
-                  type={showPassword ? "text" : "password"}
-                  value={editPassword}
-                  onChange={(e) => setEditPassword(e.target.value)}
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
             </div>
             <div className="space-y-2">
               <Label>Papel</Label>
@@ -252,21 +234,32 @@ function UserCard({ user, currentUserId, onUpdate, onDelete }) {
           </div>
 
           <div className="flex items-center justify-end gap-3 self-end sm:self-center shrink-0">
-            {/* Visualização de Senha */}
-            <div className="flex items-center gap-1.5 bg-secondary/30 px-3 py-1.5 rounded-lg border border-border/30 text-xs text-muted-foreground">
-              <span className="font-mono">{showPassword ? user.password : '••••••••'}</span>
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="text-muted-foreground hover:text-foreground transition-colors ml-1"
-                title={showPassword ? "Ocultar senha" : "Ver senha"}
+            {/* Ações de Email/Senha */}
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1 text-xs"
+                onClick={() => onResetPassword(user.email)}
+                title="Enviar e-mail para redefinir a senha"
               >
-                {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              </button>
+                <KeyRound className="w-3.5 h-3.5 text-muted-foreground" />
+                Redefinir Senha
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1 text-xs"
+                onClick={() => onResendInvite(user.email)}
+                title="Reenviar e-mail de convite / confirmação"
+              >
+                <Send className="w-3.5 h-3.5 text-muted-foreground" />
+                Reenviar Convite
+              </Button>
             </div>
 
-            {/* Ações */}
-            <div className="flex gap-1.5">
+            {/* Ações de Edição/Exclusão */}
+            <div className="flex gap-1.5 border-l border-border/40 pl-2">
               <Button
                 variant="outline"
                 size="icon"

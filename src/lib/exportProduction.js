@@ -1,6 +1,12 @@
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { efficiency, scrapRate, sumBy } from '@/lib/productionMetrics';
+import {
+  buildBrandedCsv,
+  downloadBlob,
+  drawBrandedPdfFooter,
+  drawBrandedPdfHeader,
+} from '@/lib/reportBranding';
 
 const COLS = [
   { key: 'date', label: 'Data' },
@@ -14,47 +20,25 @@ const COLS = [
   { key: 'operator', label: 'Operador' },
 ];
 
-function triggerDownload(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-export function exportCSV(entries, filename = 'relatorio-producao.csv') {
-  const header = COLS.map((c) => c.label).join(';');
-  const rows = entries.map((e) =>
-    COLS.map((c) => {
-      const v = e[c.key] ?? '';
-      return `"${String(v).replace(/"/g, '""')}"`;
-    }).join(';')
-  );
-  const csv = '\uFEFF' + [header, ...rows].join('\n');
-  triggerDownload(new Blob([csv], { type: 'text/csv;charset=utf-8;' }), filename);
-}
-
-function writeHeader(doc, entries, meta) {
+export function exportCSV(entries, filename = 'relatorio-producao.csv', meta = {}) {
   const totalProduced = sumBy(entries, 'produced');
   const totalTarget = sumBy(entries, 'target');
   const totalScrap = sumBy(entries, 'scrap');
 
-  doc.setFontSize(18);
-  doc.setTextColor(20);
-  doc.text(meta.title || 'Relatório de Produção', 14, 18);
+  const csv = buildBrandedCsv({
+    title: meta.title || 'Relatorio de Producao',
+    subtitle: meta.subtitle || '',
+    summary: [
+      { label: 'Produzido', value: totalProduced },
+      { label: 'Meta', value: totalTarget },
+      { label: 'Eficiencia', value: `${efficiency(totalProduced, totalTarget)}%` },
+      { label: 'Refugo', value: `${scrapRate(totalScrap, totalProduced)}%` },
+    ],
+    columns: COLS,
+    rows: entries,
+  });
 
-  doc.setFontSize(10);
-  doc.setTextColor(110);
-  doc.text(meta.subtitle || '', 14, 25);
-  doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 30);
-
-  doc.setTextColor(20);
-  doc.setFontSize(11);
-  doc.text(
-    `Produzido: ${totalProduced}   Meta: ${totalTarget}   Eficiência: ${efficiency(totalProduced, totalTarget)}%   Refugo: ${scrapRate(totalScrap, totalProduced)}%`,
-    14, 40
-  );
+  downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8;' }), filename);
 }
 
 function writeTable(doc, entries, startY) {
@@ -81,9 +65,21 @@ function writeTable(doc, entries, startY) {
 // Gera PDF incluindo a imagem dos gráficos do dashboard (elemento DOM)
 export async function exportPDFWithCharts(entries, meta = {}, chartsEl, filename = 'relatorio-producao.pdf') {
   const doc = new jsPDF();
-  writeHeader(doc, entries, meta);
+  const totalProduced = sumBy(entries, 'produced');
+  const totalTarget = sumBy(entries, 'target');
+  const totalScrap = sumBy(entries, 'scrap');
 
-  let y = 50;
+  let y = await drawBrandedPdfHeader(doc, {
+    title: meta.title || 'Relatorio de Producao',
+    subtitle: meta.subtitle || '',
+    summary: [
+      { label: 'Produzido', value: totalProduced },
+      { label: 'Meta', value: totalTarget },
+      { label: 'Eficiencia', value: `${efficiency(totalProduced, totalTarget)}%` },
+      { label: 'Refugo', value: `${scrapRate(totalScrap, totalProduced)}%` },
+    ],
+  });
+
   if (chartsEl) {
     const canvas = await html2canvas(chartsEl, { scale: 2, backgroundColor: '#ffffff', logging: false });
     const img = canvas.toDataURL('image/png');
@@ -98,49 +94,28 @@ export async function exportPDFWithCharts(entries, meta = {}, chartsEl, filename
   }
 
   writeTable(doc, entries, y);
+  drawBrandedPdfFooter(doc);
   doc.save(filename);
 }
 
-export function exportPDF(entries, meta = {}, filename = 'relatorio-producao.pdf') {
+export async function exportPDF(entries, meta = {}, filename = 'relatorio-producao.pdf') {
   const doc = new jsPDF();
   const totalProduced = sumBy(entries, 'produced');
   const totalTarget = sumBy(entries, 'target');
   const totalScrap = sumBy(entries, 'scrap');
 
-  doc.setFontSize(18);
-  doc.text(meta.title || 'Relatório de Produção', 14, 18);
-
-  doc.setFontSize(10);
-  doc.setTextColor(110);
-  doc.text(meta.subtitle || '', 14, 25);
-  doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 30);
-
-  doc.setTextColor(20);
-  doc.setFontSize(11);
-  doc.text(
-    `Produzido: ${totalProduced}   Meta: ${totalTarget}   Eficiência: ${efficiency(totalProduced, totalTarget)}%   Refugo: ${scrapRate(totalScrap, totalProduced)}%`,
-    14, 40
-  );
-
-  // Cabeçalho da tabela
-  let y = 50;
-  doc.setFillColor(30, 30, 30);
-  doc.setTextColor(255);
-  doc.setFontSize(8);
-  const xs = [14, 38, 58, 86, 102, 122, 142, 162, 188];
-  doc.rect(14, y - 5, 182, 7, 'F');
-  COLS.forEach((c, i) => doc.text(c.label, xs[i], y));
-  y += 7;
-
-  doc.setTextColor(40);
-  entries.forEach((e) => {
-    if (y > 285) {
-      doc.addPage();
-      y = 20;
-    }
-    COLS.forEach((c, i) => doc.text(String(e[c.key] ?? '—'), xs[i], y));
-    y += 6;
+  const y = await drawBrandedPdfHeader(doc, {
+    title: meta.title || 'Relatorio de Producao',
+    subtitle: meta.subtitle || '',
+    summary: [
+      { label: 'Produzido', value: totalProduced },
+      { label: 'Meta', value: totalTarget },
+      { label: 'Eficiencia', value: `${efficiency(totalProduced, totalTarget)}%` },
+      { label: 'Refugo', value: `${scrapRate(totalScrap, totalProduced)}%` },
+    ],
   });
 
+  writeTable(doc, entries, y);
+  drawBrandedPdfFooter(doc);
   doc.save(filename);
 }

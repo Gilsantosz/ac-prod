@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -6,119 +6,276 @@ import {
   Table, TableBody, TableCell,
   TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
-import { Trash2, AlertTriangle, ChevronDown, Clock } from 'lucide-react';
+import { 
+  Trash2, AlertTriangle, ChevronDown, Clock, Filter, 
+  ShieldAlert,
+} from 'lucide-react';
 import { efficiency, isCritical, scrapRate } from '@/lib/productionMetrics';
+import { useAuth } from '@/lib/AuthContext';
+import { format } from 'date-fns';
 
 const PAGE_SIZE = 8;
 
-export default function RecentEntries({ entries, onDelete }) {
+export default function RecentEntries({ entries = [], onDelete = null, onCorrect = null, onAddOccurrence = null }) {
+  const { user } = useAuth();
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'today', 'my_cell', 'my_shift', 'my_lot', 'critical', 'scrap', 'downtime', 'audited'
 
-  const visible = entries.slice(0, visibleCount);
-  const hasMore = visibleCount < entries.length;
-  const remaining = entries.length - visibleCount;
+  const userRole = user?.role || 'operator';
+  const isAdmin = userRole === 'admin';
+  const isManager = userRole === 'manager';
+
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+
+  // Aplicar filtros nos apontamentos
+  const filteredEntries = useMemo(() => {
+    return entries.filter(e => {
+      // Filtrar por status lógico (esconde corrigidos de visualização padrão dependendo do filtro)
+      if (activeFilter !== 'audited' && e.approval_status && e.approval_status !== 'valid') {
+        // esconde registros anulados ou corrigidos se não estiver no filtro de auditoria
+        if (activeFilter !== 'all') return false; 
+      }
+
+      switch (activeFilter) {
+        case 'today':
+          return e.date === todayStr;
+        case 'my_cell':
+          return e.cell === user?.cell;
+        case 'my_shift':
+          return e.shift === user?.shift || e.shift === '1º Turno'; // fallback
+        case 'my_lot':
+          return e.lot_code && e.lot_code !== 'SEM_LOTE';
+        case 'critical':
+          return isCritical(e);
+        case 'scrap':
+          return Number(e.scrap) > 0;
+        case 'downtime':
+          return Number(e.downtime) > 0;
+        case 'audited':
+          return e.approval_status && e.approval_status !== 'valid';
+        default:
+          return true;
+      }
+    });
+  }, [entries, activeFilter, todayStr, user]);
+
+  const visible = filteredEntries.slice(0, visibleCount);
+  const hasMore = visibleCount < filteredEntries.length;
+  const remaining = filteredEntries.length - visibleCount;
 
   const showMore = () =>
-    setVisibleCount((c) => Math.min(c + PAGE_SIZE, entries.length));
+    setVisibleCount((c) => Math.min(c + PAGE_SIZE, filteredEntries.length));
 
-  // Reset to PAGE_SIZE when new entries arrive (list changed externally)
-  // (opcional — manter scroll ao adicionar é melhor UX)
+  // Renderizador de Status de Auditoria
+  const renderAuditBadge = (status) => {
+    switch (status) {
+      case 'cancelled':
+        return <Badge variant="destructive" className="bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/10 text-[10px]">Cancelado</Badge>;
+      case 'reversed':
+        return <Badge className="bg-amber-500/10 text-amber-600 border border-amber-500/20 hover:bg-amber-500/10 text-[10px]">Estornado</Badge>;
+      case 'corrected':
+        return <Badge className="bg-sky-500/10 text-sky-600 border border-sky-500/20 hover:bg-sky-500/10 text-[10px]">Corrigido</Badge>;
+      case 'pending_review':
+        return <Badge className="bg-purple-500/10 text-purple-600 border border-purple-500/20 hover:bg-purple-500/10 text-[10px] animate-pulse">Sob Revisão</Badge>;
+      default:
+        return null;
+    }
+  };
 
   return (
-    <Card className="border-border/60 overflow-hidden">
+    <Card className="border-border/60 overflow-hidden bg-card">
+      
       {/* ── Header ── */}
-      <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-3">
+      <div className="px-5 py-4 border-b border-border/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-secondary/10">
         <div className="flex items-center gap-2">
           <Clock className="w-4 h-4 text-muted-foreground" />
-          <h3 className="font-semibold text-sm">Registros Recentes</h3>
+          <h3 className="font-bold text-sm text-foreground">Central de Apontamentos Recentes</h3>
         </div>
         <span className="text-xs text-muted-foreground tabular-nums">
-          {Math.min(visibleCount, entries.length)} de {entries.length}
+          Mostrando {Math.min(visibleCount, filteredEntries.length)} de {filteredEntries.length} registros
         </span>
       </div>
 
-      {/* ── Tabela com altura máxima e scroll ── */}
-      <div
-        className="overflow-x-auto overflow-y-auto"
-        style={{ maxHeight: '420px' }}
-      >
+      {/* ── Filtros Rápidos ── */}
+      <div className="px-5 py-3 border-b border-border/50 bg-secondary/5 flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mr-2 flex items-center gap-1">
+          <Filter className="w-3.5 h-3.5" /> Filtrar:
+        </span>
+        {[
+          { id: 'all', label: 'Todos' },
+          { id: 'today', label: 'Hoje' },
+          { id: 'my_cell', label: 'Minha Célula' },
+          { id: 'my_lot', label: 'Com Lote' },
+          { id: 'critical', label: 'Críticos' },
+          { id: 'scrap', label: 'Com Refugo' },
+          { id: 'downtime', label: 'Com Parada' },
+          { id: 'audited', label: 'Auditados / Estornos' },
+        ].map(filter => (
+          <Button
+            key={filter.id}
+            variant="ghost"
+            size="sm"
+            onClick={() => { setActiveFilter(filter.id); setVisibleCount(PAGE_SIZE); }}
+            className={`h-7 px-2.5 rounded-lg text-xs font-semibold ${
+              activeFilter === filter.id 
+                ? 'bg-[#2d9c4a]/15 text-[#2d9c4a] hover:bg-[#2d9c4a]/20' 
+                : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+            }`}
+          >
+            {filter.label}
+          </Button>
+        ))}
+      </div>
+
+      {/* ── Tabela de registros ── */}
+      <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: '420px' }}>
         <Table>
-          <TableHeader className="sticky top-0 z-10 bg-card">
+          <TableHeader className="sticky top-0 z-10 bg-card border-b border-border/60">
             <TableRow>
-              <TableHead>Data</TableHead>
-              <TableHead>Turno</TableHead>
-              <TableHead>Célula</TableHead>
-              <TableHead>Hora</TableHead>
-              <TableHead className="text-right">Prod.</TableHead>
-              <TableHead className="text-right">Meta</TableHead>
-              <TableHead className="text-right">Efic.</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead></TableHead>
-              <TableHead></TableHead>
+              <TableHead className="text-xs">Data/Hora</TableHead>
+              <TableHead className="text-xs">Contexto</TableHead>
+              <TableHead className="text-xs">OP / Lote</TableHead>
+              <TableHead className="text-xs">Produto / Etapa</TableHead>
+              <TableHead className="text-right text-xs">Prod.</TableHead>
+              <TableHead className="text-right text-xs">Meta</TableHead>
+              <TableHead className="text-right text-xs">Efic.</TableHead>
+              <TableHead className="text-xs">Status</TableHead>
+              <TableHead className="text-center text-xs">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {entries.length === 0 && (
+            {filteredEntries.length === 0 && (
               <TableRow>
-                <TableCell colSpan={10} className="text-center text-muted-foreground py-10">
-                  Nenhum registro ainda.
+                <TableCell colSpan={9} className="text-center text-muted-foreground py-12">
+                  Nenhum registro correspondente ao filtro ativo.
                 </TableCell>
               </TableRow>
             )}
 
             {visible.map((e) => {
-              const eff    = efficiency(e.produced, e.target);
-              const crit   = isCritical(e);
-              const sRate  = scrapRate(e.scrap, e.produced);
+              const eff = efficiency(e.produced, e.target);
+              const crit = isCritical(e);
+              const sRate = scrapRate(e.scrap, e.produced);
               const belowTarget = Number(e.target) > 0 && eff < 100;
-              const highScrap   = sRate >= 5;
+              const highScrap = sRate >= 5;
+              const limitedTraceability = e.traceability_status === 'limited'
+                || ((!e.order_number || e.order_number === 'MANUAL') && (!e.lot_code || e.lot_code === 'SEM_LOTE'));
 
               return (
-                <TableRow key={e.id} className="hover:bg-muted/40 transition-colors">
-                  <TableCell className="whitespace-nowrap">{e.date}</TableCell>
-                  <TableCell>{e.shift}</TableCell>
-                  <TableCell className="font-medium">{e.cell}</TableCell>
-                  <TableCell>{e.hour}</TableCell>
-                  <TableCell className="text-right tabular-nums">{e.produced}</TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">
+                <TableRow key={e.id} className={`hover:bg-secondary/15 transition-colors ${
+                  e.approval_status && e.approval_status !== 'valid' ? 'opacity-60 bg-secondary/5 line-through' : ''
+                }`}>
+                  {/* Data / Hora */}
+                  <TableCell className="whitespace-nowrap font-mono text-xs">
+                    {e.date} <span className="text-muted-foreground">@{e.hour}</span>
+                  </TableCell>
+
+                  {/* Contexto: Célula e Turno */}
+                  <TableCell className="text-xs">
+                    <span className="font-semibold text-foreground">{e.cell}</span>
+                    <span className="text-muted-foreground block text-[10px]">{e.shift}</span>
+                  </TableCell>
+
+                  {/* OP / Lote */}
+                  <TableCell className="text-xs font-mono">
+                    {limitedTraceability ? (
+                      <span className="text-amber-700 dark:text-amber-400 text-[10px] font-sans font-semibold">Rastreabilidade limitada</span>
+                    ) : (
+                      <><span className="text-foreground block">{e.order_number}</span><span className="text-muted-foreground text-[10px] block">{e.lot_code}</span></>
+                    )}
+                  </TableCell>
+
+                  {/* Produto / Etapa */}
+                  <TableCell className="text-xs truncate max-w-[140px]">
+                    <span className="text-foreground font-medium block truncate" title={e.product_name}>{e.product_name || '—'}</span>
+                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-border font-normal mt-0.5">
+                      {e.process_step || e.cell || '—'}
+                    </Badge>
+                  </TableCell>
+
+                  {/* Produzido */}
+                  <TableCell className="text-right tabular-nums text-xs font-bold text-foreground">
+                    {e.produced}
+                    {e.scrap > 0 && <span className="text-[10px] text-red-500 font-normal block">-{e.scrap} ref.</span>}
+                  </TableCell>
+
+                  {/* Meta */}
+                  <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
                     {e.target || '—'}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    <Badge variant={eff >= 100 ? 'default' : eff >= 70 ? 'secondary' : 'destructive'}>
+
+                  {/* Eficiência */}
+                  <TableCell className="text-right tabular-nums text-xs">
+                    <Badge className={`text-xs ${
+                      eff >= 95 ? 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/10' :
+                      eff >= 70 ? 'bg-amber-500/10 text-amber-600 hover:bg-amber-500/10' :
+                      'bg-red-500/10 text-red-600 hover:bg-red-500/10'
+                    }`}>
                       {eff}%
                     </Badge>
                   </TableCell>
-                  <TableCell>
+
+                  {/* Status / Alertas */}
+                  <TableCell className="text-xs">
                     <div className="flex flex-wrap gap-1">
-                      {belowTarget && (
-                        <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400">
-                          Abaixo da Meta
+                      {renderAuditBadge(e.approval_status)}
+                      {limitedTraceability && <Badge variant="outline" className="text-[9px] border-amber-300 text-amber-700 dark:text-amber-400">Limitada</Badge>}
+                      {crit && <Badge variant="destructive" className="text-[9px] gap-0.5 px-1 py-0 h-4"><AlertTriangle className="w-2.5 h-2.5" /> Crítico</Badge>}
+                      {belowTarget && !e.approval_status && (
+                        <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/10 dark:text-amber-400 text-[9px] font-normal border-0">
+                          Meta não atingida
                         </Badge>
                       )}
-                      {highScrap && (
-                        <Badge className="bg-red-100 text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400">
-                          Refugo {sRate}%
-                        </Badge>
-                      )}
-                      {!belowTarget && !highScrap && Number(e.target) > 0 && (
-                        <Badge className="bg-green-100 text-green-700 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-400">
-                          No Alvo
+                      {highScrap && !e.approval_status && (
+                        <Badge className="bg-red-100 text-red-700 hover:bg-red-100 dark:bg-red-900/10 dark:text-red-400 text-[9px] font-normal border-0">
+                          Refugo alto
                         </Badge>
                       )}
                     </div>
                   </TableCell>
+
+                  {/* Ações */}
                   <TableCell>
-                    {crit && <AlertTriangle className="w-4 h-4 text-destructive" />}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => onDelete(e.id)}
-                      className="hover:bg-destructive/10 hover:text-destructive"
-                    >
-                      <Trash2 className="w-4 h-4 text-muted-foreground" />
-                    </Button>
+                    <div className="flex items-center justify-center gap-1">
+                      {/* Ocorrência */}
+                      {(Number(e.scrap) > 0 || Number(e.downtime) > 0 || eff < 70) && !e.occurrence_id && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => onAddOccurrence?.(e)}
+                          title="Registrar Ocorrência"
+                          className="h-7 w-7 text-amber-500 hover:bg-amber-500/10"
+                        >
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+
+                      {/* Corrigir / Auditoria */}
+                      {onCorrect && (e.approval_status === 'valid' || !e.approval_status) && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => onCorrect(e)}
+                          title="Auditoria / Estorno"
+                          className="h-7 w-7 text-sky-500 hover:bg-sky-500/10"
+                        >
+                          <ShieldAlert className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+
+                      {/* Deletar (apenas admin) */}
+                      {isAdmin && onDelete && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => onDelete(e.id)}
+                          title="Deletar permanentemente"
+                          className="h-7 w-7 text-red-500 hover:bg-destructive/10"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               );
@@ -129,7 +286,7 @@ export default function RecentEntries({ entries, onDelete }) {
 
       {/* ── Botão "Ver mais" ── */}
       {hasMore && (
-        <div className="px-5 py-3 border-t border-border flex items-center justify-between gap-3 bg-muted/20">
+        <div className="px-5 py-3 border-t border-border flex items-center justify-between gap-3 bg-secondary/10">
           <span className="text-xs text-muted-foreground">
             +{remaining} registro{remaining !== 1 ? 's' : ''} oculto{remaining !== 1 ? 's' : ''}
           </span>
@@ -137,7 +294,7 @@ export default function RecentEntries({ entries, onDelete }) {
             variant="ghost"
             size="sm"
             onClick={showMore}
-            className="gap-1.5 text-xs h-7 px-3"
+            className="gap-1.5 text-xs h-7 px-3 text-[#2d9c4a] hover:bg-[#2d9c4a]/10"
           >
             <ChevronDown className="w-3.5 h-3.5" />
             Ver mais {Math.min(PAGE_SIZE, remaining)}

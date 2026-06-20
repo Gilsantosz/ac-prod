@@ -10,7 +10,7 @@ export default function ExportDailyButton({ date, shift, cell, summary, disabled
   const handleExport = async () => {
     setLoading(true);
     try {
-      exportDailySummaryPdf({ date, shift, cell, summary });
+      await exportDailySummaryPdf({ date, shift, cell, summary });
       toast.success('Relatório PDF gerado.');
     } catch {
       toast.error('Falha ao gerar o relatório.');

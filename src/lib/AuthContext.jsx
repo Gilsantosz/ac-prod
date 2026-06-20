@@ -1,14 +1,42 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { clearPersistedAuthSession, persistAuthSession, restoreAuthSession, supabase } from '@/lib/supabaseClient';
 import { base44 } from '@/lib/localDb';
 
 const AuthContext = createContext();
+const AUTH_STEP_TIMEOUT_MS = 3000;
+const AUTH_INIT_TIMEOUT_MS = 5000;
+
+const withTimeout = (promise, timeoutMs, fallback) => Promise.race([
+  promise,
+  new Promise((resolve) => setTimeout(() => resolve(fallback), timeoutMs)),
+]);
 
 // ─── Helper: navega respeitando o basename /ac-prod/ ────────────────────────
 const redirectTo = (path) => {
   const base = (import.meta.env.BASE_URL || '/ac-prod/').replace(/\/$/, '');
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
   window.location.replace(`${base}${cleanPath}`);
+};
+
+const resolveSessionUser = async (session) => {
+  if (!session?.user) return { user: null, shouldSignOut: false };
+
+  const userResult = await withTimeout(
+    supabase.auth.getUser(),
+    AUTH_STEP_TIMEOUT_MS,
+    { data: { user: null }, error: { message: 'Timeout' } },
+  );
+
+  if (userResult?.data?.user && !userResult?.error) {
+    return { user: userResult.data.user, shouldSignOut: false };
+  }
+
+  if (userResult?.error?.message === 'Timeout') {
+    console.warn('[AC.Prod] Validação remota da sessão demorou; usando sessão local.');
+    return { user: session.user, shouldSignOut: false };
+  }
+
+  return { user: null, shouldSignOut: true };
 };
 
 export const AuthProvider = ({ children }) => {
@@ -23,16 +51,15 @@ export const AuthProvider = ({ children }) => {
     if (!supabaseUser) return null;
     try {
       // Busca o perfil com timeout de 4 segundos para evitar travamento em redes lentas
-      const { data: profile, error } = await Promise.race([
+      const { data: profile, error } = await withTimeout(
         supabase
           .from('profiles')
           .select('*')
           .eq('id', supabaseUser.id)
           .single(),
-        new Promise((resolve) =>
-          setTimeout(() => resolve({ data: null, error: { message: 'Timeout', code: 'TIMEOUT' } }), 4000)
-        ),
-      ]);
+        AUTH_STEP_TIMEOUT_MS,
+        { data: null, error: { message: 'Timeout', code: 'TIMEOUT' } },
+      );
 
       if (error && error.code !== 'PGRST116') {
         console.warn('[AC.Prod] Erro ao buscar perfil:', error);
@@ -52,10 +79,12 @@ export const AuthProvider = ({ children }) => {
           manage_cells: false,
           manage_operators: false,
           view_reports: false,
+          ai_operations: false,
           manage_automations: false,
           manage_users: false,
         },
         dashboard_layout: profile?.dashboard_layout || null,
+        managed_cells: profile?.managed_cells || [],
       };
     } catch (err) {
       console.error('[AC.Prod] Erro no catch de fetchProfile:', err);
@@ -73,10 +102,12 @@ export const AuthProvider = ({ children }) => {
           manage_cells: false,
           manage_operators: false,
           view_reports: false,
+          ai_operations: false,
           manage_automations: false,
           manage_users: false,
         },
         dashboard_layout: null,
+        managed_cells: [],
       };
     }
   }, []);
@@ -86,45 +117,56 @@ export const AuthProvider = ({ children }) => {
   // para sessões válidas). onAuthStateChange() como listener de mudanças reativas.
   useEffect(() => {
     let isMounted = true;
+    let initTimedOut = false;
+    const authEventTimers = new Set();
+
+    const initFailSafe = setTimeout(() => {
+      if (!isMounted) return;
+      initTimedOut = true;
+      clearPersistedAuthSession();
+      setUser(null);
+      setIsAuthenticated(false);
+      setIsLoadingAuth(false);
+      setAuthChecked(true);
+    }, AUTH_INIT_TIMEOUT_MS);
 
     const initAuth = async () => {
       try {
         // getSession() lê do localStorage. Se houver token expirado, tenta refresh
         // via rede (pode demorar). Limitamos a 4 segundos para evitar spinner eterno.
-        const sessionResult = await Promise.race([
+        const sessionResult = await withTimeout(
           supabase.auth.getSession(),
-          new Promise((resolve) =>
-            setTimeout(() => resolve({ data: { session: null }, timedOut: true }), 4000)
-          ),
-        ]);
+          AUTH_STEP_TIMEOUT_MS,
+          { data: { session: null }, timedOut: true },
+        );
 
-        if (!isMounted) return;
+        if (!isMounted || initTimedOut) return;
 
-        const session = sessionResult?.data?.session;
+        let session = sessionResult?.data?.session;
+        if (!session && !sessionResult?.timedOut) {
+          session = await withTimeout(restoreAuthSession(), AUTH_STEP_TIMEOUT_MS, null);
+        }
+
+        if (!isMounted || initTimedOut) return;
 
         if (session?.user) {
-          // Valida a sessão com o servidor do Supabase com timeout para evitar travamento
-          const userResult = await Promise.race([
-            supabase.auth.getUser(),
-            new Promise((resolve) =>
-              setTimeout(() => resolve({ data: { user: null }, error: { message: 'Timeout' } }), 4000)
-            ),
-          ]);
-          const user = userResult?.data?.user;
-          const userError = userResult?.error;
+          const { user, shouldSignOut } = await resolveSessionUser(session);
 
-          if (user && !userError) {
+          if (!isMounted || initTimedOut) return;
+
+          if (user) {
             const profile = await fetchProfile(user);
-            if (!isMounted) return;
+            if (!isMounted || initTimedOut) return;
             setUser(profile);
             setIsAuthenticated(true);
-          } else {
+          } else if (shouldSignOut) {
             // Sessão inválida no servidor — limpa localmente
             if (isMounted) {
               setUser(null);
               setIsAuthenticated(false);
             }
-            await supabase.auth.signOut();
+            clearPersistedAuthSession();
+            await withTimeout(supabase.auth.signOut(), AUTH_STEP_TIMEOUT_MS, null);
           }
         } else {
           setUser(null);
@@ -137,7 +179,8 @@ export const AuthProvider = ({ children }) => {
           setIsAuthenticated(false);
         }
       } finally {
-        if (isMounted) {
+        clearTimeout(initFailSafe);
+        if (isMounted && !initTimedOut) {
           setIsLoadingAuth(false);
           setAuthChecked(true);
         }
@@ -150,33 +193,43 @@ export const AuthProvider = ({ children }) => {
     // SIGNED_IN → usuário fez login (após a tela de login)
     // SIGNED_OUT → usuário saiu
     // TOKEN_REFRESHED → refresh silencioso de token
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isMounted) return;
 
-      if (event === 'SIGNED_IN' && session?.user) {
-        try {
-          const profile = await fetchProfile(session.user);
-          if (!isMounted) return;
-          setUser(profile);
-          setIsAuthenticated(true);
-          setAuthError(null);
-        } catch (err) {
-          console.error('[AC.Prod] Erro ao carregar perfil após login:', err);
+      const timer = setTimeout(async () => {
+        authEventTimers.delete(timer);
+        if (!isMounted) return;
+
+        if (event === 'SIGNED_IN' && session?.user) {
+          try {
+            persistAuthSession(session);
+            const profile = await fetchProfile(session.user);
+            if (!isMounted) return;
+            setUser(profile);
+            setIsAuthenticated(true);
+            setAuthError(null);
+          } catch (err) {
+            console.error('[AC.Prod] Erro ao carregar perfil após login:', err);
+          }
+        } else if (event === 'SIGNED_OUT') {
+          clearPersistedAuthSession();
+          setUser(null);
+          setIsAuthenticated(false);
+        } else if (event === 'USER_UPDATED' && session?.user) {
+          try {
+            const profile = await fetchProfile(session.user);
+            if (isMounted) setUser(profile);
+          } catch { /* silencioso */ }
         }
-      } else if (event === 'SIGNED_OUT') {
-        setUser(null);
-        setIsAuthenticated(false);
-      } else if (event === 'USER_UPDATED' && session?.user) {
-        try {
-          const profile = await fetchProfile(session.user);
-          if (isMounted) setUser(profile);
-        } catch { /* silencioso */ }
-      }
-      // TOKEN_REFRESHED: gerenciado automaticamente pelo cliente Supabase
+        if (event === 'TOKEN_REFRESHED' && session) persistAuthSession(session);
+      }, 0);
+      authEventTimers.add(timer);
     });
 
     return () => {
       isMounted = false;
+      clearTimeout(initFailSafe);
+      authEventTimers.forEach((timer) => clearTimeout(timer));
       subscription.unsubscribe();
     };
   }, [fetchProfile]);
@@ -185,27 +238,31 @@ export const AuthProvider = ({ children }) => {
   const checkUserAuth = useCallback(async () => {
     setIsLoadingAuth(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        // Valida a sessão com o servidor do Supabase com timeout para evitar travamento
-        const userResult = await Promise.race([
-          supabase.auth.getUser(),
-          new Promise((resolve) =>
-            setTimeout(() => resolve({ data: { user: null }, error: { message: 'Timeout' } }), 4000)
-          ),
-        ]);
-        const user = userResult?.data?.user;
-        const userError = userResult?.error;
+      const sessionResult = await withTimeout(
+        supabase.auth.getSession(),
+        AUTH_STEP_TIMEOUT_MS,
+        { data: { session: null }, timedOut: true },
+      );
+      const session = sessionResult?.data?.session;
+      const restoredSession = session || (!sessionResult?.timedOut
+        ? await withTimeout(restoreAuthSession(), AUTH_STEP_TIMEOUT_MS, null)
+        : null);
+      if (restoredSession?.user) {
+        const { user, shouldSignOut } = await resolveSessionUser(restoredSession);
 
-        if (user && !userError) {
+        if (user) {
           const profile = await fetchProfile(user);
           setUser(profile);
           setIsAuthenticated(true);
           setAuthError(null);
+        } else if (shouldSignOut) {
+          setUser(null);
+          setIsAuthenticated(false);
+          clearPersistedAuthSession();
+          await withTimeout(supabase.auth.signOut(), AUTH_STEP_TIMEOUT_MS, null);
         } else {
           setUser(null);
           setIsAuthenticated(false);
-          await supabase.auth.signOut();
         }
       } else {
         setUser(null);
@@ -226,7 +283,12 @@ export const AuthProvider = ({ children }) => {
     setIsLoadingAuth(true);
     setAuthError(null);
     try {
-      const profile = await base44.auth.loginViaEmailPassword(email, password);
+      const profile = await withTimeout(
+        base44.auth.loginViaEmailPassword(email, password),
+        10000,
+        null,
+      );
+      if (!profile) throw new Error('O servidor demorou para responder. Tente novamente.');
       setUser(profile);
       setIsAuthenticated(true);
       setAuthChecked(true);
@@ -266,6 +328,7 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(false);
     setAuthChecked(true);
     try {
+      clearPersistedAuthSession();
       await supabase.auth.signOut();
     } catch { /* silencioso — sessão local já foi limpa */ }
     if (shouldRedirect) {

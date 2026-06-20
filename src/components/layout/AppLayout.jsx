@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, PlusCircle, LogOut, AlertOctagon, Zap,
-  LineChart, Boxes, Users, Gauge, HardHat, TimerOff,
-  ClipboardList, TrendingUp, Trophy, Sun, Moon, Menu, X,
-  ChevronLeft
+  LineChart, Boxes, Users, Gauge, HardHat,
+  ClipboardList, Trophy, Sun, Moon, Menu, X,
+  ChevronLeft, Layers, Plug, Shield, HardDrive,
+  BrainCircuit,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { KioskProvider, useKiosk } from '@/lib/KioskContext';
@@ -20,21 +21,29 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { motion, AnimatePresence } from 'framer-motion';
 import NotificationCenter from '@/components/layout/NotificationCenter';
+import LeoAssistantChat from '@/components/assistant/LeoAssistantChat';
 
 const nav = [
+  // ─── Produção Principal ──────────────────────────────────────────────
   { to: '/',                    label: 'Painéis',             icon: LayoutDashboard },
   { to: '/entrada',             label: 'Entrada de Produção', icon: PlusCircle },
   { to: '/resumo-diario',       label: 'Resumo Diário',       icon: ClipboardList },
   { to: '/oee',                 label: 'OEE',                 icon: Gauge },
   { to: '/celulas-metas',       label: 'Células e Metas',     icon: Boxes },
   { to: '/operadores',          label: 'Operadores',          icon: HardHat },
+  // ─── Rastreabilidade MES ──────────────────────────────────────────
+  { to: '/rastreabilidade',     label: 'Rastreabilidade',     icon: Layers },
+  { to: '/integracoes/promob',  label: 'Integração Promob',   icon: Plug },
+  // ─── Qualidade e Relatórios ─────────────────────────────────────
   { to: '/ocorrencias',         label: 'Ocorrências',         icon: AlertOctagon },
-  { to: '/analise-paradas',     label: 'Análise de Paradas',  icon: TimerOff },
-  { to: '/analise-tendencia',   label: 'Análise de Tendência',icon: TrendingUp },
   { to: '/gamificacao',         label: 'Gamificação',         icon: Trophy },
   { to: '/relatorios',          label: 'Relatórios',          icon: LineChart },
+  { to: '/ia-operacional',      label: 'IA Operacional',      icon: BrainCircuit },
   { to: '/automacoes',          label: 'Automações',          icon: Zap },
-  { to: '/usuarios',            label: 'Usuários',            icon: Users, adminOnly: true },
+  // ─── Administração ─────────────────────────────────────────────────
+  { to: '/usuarios',            label: 'Usuários',            icon: Users,     adminOnly: true },
+  { to: '/logs-sistema',        label: 'Logs do Sistema',     icon: Shield,    adminOnly: true },
+  { to: '/downloads-backups',   label: 'Downloads & Backups', icon: HardDrive, adminOnly: true },
 ];
 
 export default function AppLayout() {
@@ -83,6 +92,7 @@ function AppShell() {
     '/analise-tendencia': 'view_dashboards',
     '/gamificacao': 'view_dashboards',
     '/relatorios': 'view_reports',
+    '/ia-operacional': 'ai_operations',
     '/automacoes': 'manage_automations',
   };
 
@@ -93,6 +103,9 @@ function AppShell() {
     
     const requiredPermission = pathPermissionMap[item.to];
     if (requiredPermission) {
+      if (requiredPermission === 'ai_operations') {
+        return !!(user.permissions.ai_operations || user.permissions.view_reports || user.permissions.manage_automations);
+      }
       return !!user.permissions[requiredPermission];
     }
     return true;
@@ -364,6 +377,7 @@ function AppShell() {
           <Outlet />
         </main>
       </div>
+      {user && <LeoAssistantChat user={user} />}
     </div>
   );
 }

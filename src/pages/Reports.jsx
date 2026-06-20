@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { base44 } from '@/lib/localDb';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { Download, LineChart } from 'lucide-react';
+import { Download, LineChart, ScanLine } from 'lucide-react';
 import { toast } from 'sonner';
 import { monthlySeries, monthlyByCell, monthOverMonth, seasonalityAlerts, executiveSummary, nextMonthProjection, cellBenchmark } from '@/lib/reportMetrics';
 import { exportProductionCsv } from '@/lib/exportReports';
@@ -15,6 +15,8 @@ import MonthSummary from '@/components/reports/MonthSummary';
 import MonthlyTrendChart from '@/components/reports/MonthlyTrendChart';
 import CellTrendChart from '@/components/reports/CellTrendChart';
 import PageHeader from '@/components/ui/PageHeader';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import TraceabilityReadingsReport from '@/components/reports/TraceabilityReadingsReport';
 
 export default function Reports() {
   const [range, setRange] = useState({ from: '', to: '' });
@@ -60,23 +62,29 @@ export default function Reports() {
           </Button>
         }
       />
-      <DateRangeFilter range={range} setRange={setRange} />
-
-      {filtered.length === 0 ? (
-        <div className="text-center py-20 text-muted-foreground border border-dashed border-border rounded-2xl">
-          Nenhum dado de produção para o período selecionado.
-        </div>
-      ) : (
-        <>
-          <ExecutiveDashboard summary={summary} />
-          <SeasonalityAlerts alerts={alerts} />
-          <MonthSummary mom={mom} />
-          <MonthlyTrendChart series={series} />
-          <NextMonthForecast forecast={forecast} />
-          <CellBenchmark benchmark={benchmark} />
-          <CellTrendChart cells={byCell.cells} rows={byCell.rows} />
-        </>
-      )}
+      <Tabs defaultValue="production" className="space-y-5">
+        <TabsList className="h-auto p-1 bg-card border border-border rounded-md">
+          <TabsTrigger value="production" className="h-9 gap-2"><LineChart className="w-4 h-4" /> Produção</TabsTrigger>
+          <TabsTrigger value="traceability" className="h-9 gap-2"><ScanLine className="w-4 h-4" /> Rastreabilidade</TabsTrigger>
+        </TabsList>
+        <TabsContent value="production" className="space-y-5">
+          <DateRangeFilter range={range} setRange={setRange} />
+          {filtered.length === 0 ? (
+            <div className="text-center py-20 text-muted-foreground border border-dashed border-border rounded-2xl">Nenhum dado de produção para o período selecionado.</div>
+          ) : (
+            <>
+              <ExecutiveDashboard summary={summary} />
+              <SeasonalityAlerts alerts={alerts} />
+              <MonthSummary mom={mom} />
+              <MonthlyTrendChart series={series} />
+              <NextMonthForecast forecast={forecast} />
+              <CellBenchmark benchmark={benchmark} />
+              <CellTrendChart cells={byCell.cells} rows={byCell.rows} />
+            </>
+          )}
+        </TabsContent>
+        <TabsContent value="traceability"><TraceabilityReadingsReport /></TabsContent>
+      </Tabs>
     </div>
   );
 }

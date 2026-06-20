@@ -1,0 +1,13 @@
+import { useState } from 'react';
+import { Loader2, Plus, Trash2, UserRoundCog } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { IndustrialEmptyState, IndustrialSectionCard } from '@/components/industrial';
+
+export default function AiRecipientsManager({ items = [], warning = '', canManage, saving, onSave, onDelete }) {
+  const [form, setForm] = useState({ name: '', email: '', roleLabel: 'Gestor', recipientGroup: 'manager' });
+  const submit = async (event) => { event.preventDefault(); await onSave(form); setForm({ name: '', email: '', roleLabel: 'Gestor', recipientGroup: 'manager' }); };
+  return <div className="grid grid-cols-1 xl:grid-cols-[minmax(280px,380px)_1fr] gap-5">{canManage && <IndustrialSectionCard title="Novo destinatário" subtitle="Gestores autorizados a receber relatórios." icon={Plus}><form onSubmit={submit} className="space-y-4"><div className="space-y-2"><Label>Nome</Label><Input required value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></div><div className="space-y-2"><Label>E-mail</Label><Input type="email" required value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} /></div><div className="space-y-2"><Label>Função</Label><Input value={form.roleLabel} onChange={(event) => setForm((current) => ({ ...current, roleLabel: event.target.value }))} /></div><Button type="submit" disabled={saving} className="w-full gap-2">{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}Cadastrar</Button></form></IndustrialSectionCard>}<IndustrialSectionCard title="Gestores e destinatários" subtitle="A lista é protegida por perfil e registrada no Supabase." icon={UserRoundCog}>{warning && <p className="mb-4 text-sm text-amber-700 dark:text-amber-400">{warning}</p>}{!items.length ? <IndustrialEmptyState title="Nenhum destinatário" description="Cadastre um gestor para habilitar envios." icon={UserRoundCog} /> : <div className="divide-y divide-border">{items.map((item) => <div key={item.id} className="flex items-center justify-between gap-4 py-3"><div className="min-w-0"><strong className="block text-sm truncate">{item.name}</strong><span className="text-sm text-muted-foreground truncate">{item.email} · {item.role_label || item.recipient_group}</span></div>{canManage && <Button variant="ghost" size="icon" onClick={() => onDelete(item.id)} title="Excluir destinatário"><Trash2 className="w-4 h-4 text-destructive" /></Button>}</div>)}</div>}</IndustrialSectionCard></div>;
+}
+

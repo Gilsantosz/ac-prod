@@ -10,7 +10,7 @@
  * - A SERVICE_ROLE_KEY nunca é exposta no frontend
  */
 
-import { supabase } from './supabaseClient';
+import { clearPersistedAuthSession, persistAuthSession, supabase } from './supabaseClient';
 
 // ─── Mapeamento de nomes de entidade para tabelas Supabase ───────────────────
 const TABLE_MAP = {
@@ -24,9 +24,39 @@ const TABLE_MAP = {
   AlertLog: 'alert_logs',
   MonthlyGoal: 'monthly_goals',
   Manager: 'profiles',
-  WorkdayCalendar: 'production_entries', // fallback
+  WorkdayCalendar: 'workday_calendar', // tabela real (migration 007)
   NotificationConfig: 'notification_configs',
+  // ─── Rastreabilidade MES Leo Madeiras ───────────────────────────────
+  ProductionOrder: 'production_orders',
+  ProductionLot: 'production_lots',
+  ProductionOrderItem: 'production_order_items',
+  ProductionLotItem: 'production_lot_items',
+  ProductionRoute: 'production_routes',
+  ProductionTag: 'production_tags',
+  ProductionStageReading: 'production_stage_readings',
+  ProductionSearchIndex: 'production_search_index',
+  ReaderDevice: 'reader_devices',
+  TraceabilityLog: 'traceability_logs',
+  LotItem: 'lot_items',
+  PieceInstance: 'piece_instances',
+  RoutingStep: 'routing_steps',
+  RouteTemplate: 'route_templates',
+  RouteTemplateStep: 'route_template_steps',
+  LotStepEvent: 'lot_step_events',
+  Package: 'packages',
+  PackageItem: 'package_items',
+  Shipment: 'shipments',
+  PromobIntegration: 'promob_integrations',
+  PromobImportBatch: 'promob_import_batches',
+  PromobImportDifference: 'promob_import_differences',
+  OfflineEventQueue: 'offline_event_queue',
+  SystemAuditLog: 'system_audit_logs',
+  ReportSchedule: 'report_schedules',
+  ReportDeliveryLog: 'report_delivery_logs',
+  BackupPolicy: 'backup_policies',
+  BackupFile: 'backup_files',
 };
+
 
 // ─── Normalização de dados do Supabase para o formato legado ─────────────────
 // O Supabase usa snake_case; alguns componentes esperam camelCase ou campos específicos
@@ -207,10 +237,12 @@ const createEntityClient = (entityName) => {
           JSON.stringify(enriched.cells || [])
         );
         // Sincroniza com o Resend
-        base44.functions.invoke('syncResendContact', {
-          action: 'create',
-          email: enriched.email,
-          name: enriched.name
+        supabase.functions.invoke('syncResendContact', {
+          body: {
+            action: 'create',
+            email: enriched.email,
+            name: enriched.name
+          }
         }).catch(err => console.error('Erro ao sincronizar contato com Resend no create:', err));
 
         // Atualiza a coluna active, se necessário, já que inviteUser não a define
@@ -231,13 +263,21 @@ const createEntityClient = (entityName) => {
         delete enriched.dailyClosureEnabled;
       }
 
-      let q;
-      if (entityName === 'DailyGoal') {
-        q = supabase.from(table).upsert(enriched, { onConflict: 'date,shift,cell' }).select().single();
-      } else {
-        q = supabase.from(table).insert(enriched).select().single();
+      if (entityName === 'ProductionEntry') {
+        const compatible = { ...enriched };
+        for (let attempt = 0; attempt < 30; attempt += 1) {
+          const { data, error } = await supabase.from(table).insert(compatible).select().single();
+          if (!error) return normalizeFromDb(entityName, data);
+          const missingColumn = String(error.message || '').match(/(?:Could not find the|column)\s+['"]?([a-zA-Z0-9_]+)['"]?\s+(?:column|of)/i)?.[1];
+          if (error.code !== 'PGRST204' || !missingColumn || !(missingColumn in compatible)) throw error;
+          delete compatible[missingColumn];
+        }
+        throw new Error('Não foi possível adaptar o apontamento ao schema disponível.');
       }
 
+      const q = entityName === 'DailyGoal'
+        ? supabase.from(table).upsert(enriched, { onConflict: 'date,shift,cell' }).select().single()
+        : supabase.from(table).insert(enriched).select().single();
       const { data, error } = await q;
       if (error) throw error;
       return normalizeFromDb(entityName, data);
@@ -312,11 +352,13 @@ const createEntityClient = (entityName) => {
         });
 
         // Sincroniza com o Resend
-        base44.functions.invoke('syncResendContact', {
-          action: 'update',
-          email: clean.email,
-          oldEmail: oldEmail,
-          name: clean.name
+        supabase.functions.invoke('syncResendContact', {
+          body: {
+            action: 'update',
+            email: clean.email,
+            oldEmail: oldEmail,
+            name: clean.name
+          }
         }).catch(err => console.error('Erro ao sincronizar contato com Resend no update:', err));
 
         if (clean.active !== undefined) {
@@ -450,18 +492,23 @@ const auth = {
       err.status = 401;
       throw err;
     }
+    persistAuthSession(data.session);
 
-    // Retorna dados básicos do usuário direto da resposta do signIn (sem chamada extra de rede).
-    // O onAuthStateChange SIGNED_IN vai buscar o perfil completo em background.
     const user = data.user;
     const meta = user.user_metadata || {};
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
     return {
       id: user.id,
       email: user.email,
-      name: meta.name || user.email?.split('@')[0] || '',
-      role: meta.role || 'operator',
-      cell: meta.cell || '',
-      permissions: meta.permissions || {
+      name: profile?.name || meta.name || user.email?.split('@')[0] || '',
+      role: profile?.role || meta.role || 'operator',
+      cell: profile?.cell || meta.cell || '',
+      permissions: profile?.permissions || meta.permissions || {
         view_dashboards: true,
         register_production: true,
         manage_occurrences: true,
@@ -471,7 +518,7 @@ const auth = {
         manage_automations: false,
         manage_users: false,
       },
-      dashboard_layout: null,
+      dashboard_layout: profile?.dashboard_layout || null,
     };
   },
 
@@ -501,6 +548,7 @@ const auth = {
   },
 
   logout: async () => {
+    clearPersistedAuthSession();
     await supabase.auth.signOut();
   },
 
@@ -640,5 +688,34 @@ export const base44 = {
     Manager: createEntityClient('Manager'),
     WorkdayCalendar: createEntityClient('WorkdayCalendar'),
     NotificationConfig: createEntityClient('NotificationConfig'),
+    // ─── Rastreabilidade MES Leo Madeiras ──────────────────────────
+    ProductionOrder: createEntityClient('ProductionOrder'),
+    ProductionLot: createEntityClient('ProductionLot'),
+    ProductionOrderItem: createEntityClient('ProductionOrderItem'),
+    ProductionLotItem: createEntityClient('ProductionLotItem'),
+    ProductionRoute: createEntityClient('ProductionRoute'),
+    ProductionTag: createEntityClient('ProductionTag'),
+    ProductionStageReading: createEntityClient('ProductionStageReading'),
+    ProductionSearchIndex: createEntityClient('ProductionSearchIndex'),
+    ReaderDevice: createEntityClient('ReaderDevice'),
+    TraceabilityLog: createEntityClient('TraceabilityLog'),
+    LotItem: createEntityClient('LotItem'),
+    PieceInstance: createEntityClient('PieceInstance'),
+    RoutingStep: createEntityClient('RoutingStep'),
+    RouteTemplate: createEntityClient('RouteTemplate'),
+    RouteTemplateStep: createEntityClient('RouteTemplateStep'),
+    LotStepEvent: createEntityClient('LotStepEvent'),
+    Package: createEntityClient('Package'),
+    PackageItem: createEntityClient('PackageItem'),
+    Shipment: createEntityClient('Shipment'),
+    PromobIntegration: createEntityClient('PromobIntegration'),
+    PromobImportBatch: createEntityClient('PromobImportBatch'),
+    PromobImportDifference: createEntityClient('PromobImportDifference'),
+    OfflineEventQueue: createEntityClient('OfflineEventQueue'),
+    SystemAuditLog: createEntityClient('SystemAuditLog'),
+    ReportSchedule: createEntityClient('ReportSchedule'),
+    ReportDeliveryLog: createEntityClient('ReportDeliveryLog'),
+    BackupPolicy: createEntityClient('BackupPolicy'),
+    BackupFile: createEntityClient('BackupFile'),
   },
 };

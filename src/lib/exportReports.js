@@ -1,5 +1,6 @@
 // Exportação de dados de produção para CSV
 import { format } from 'date-fns';
+import { buildBrandedCsv, downloadBlob } from '@/lib/reportBranding';
 
 const HEADERS = [
   { key: 'date', label: 'Data' },
@@ -14,24 +15,27 @@ const HEADERS = [
   { key: 'notes', label: 'Observações' },
 ];
 
-function escapeCsv(value) {
-  const s = value == null ? '' : String(value);
-  if (/[";\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-}
+export function exportProductionCsv(entries, meta = {}) {
+  const produced = entries.reduce((sum, e) => sum + (Number(e.produced) || 0), 0);
+  const target = entries.reduce((sum, e) => sum + (Number(e.target) || 0), 0);
+  const scrap = entries.reduce((sum, e) => sum + (Number(e.scrap) || 0), 0);
+  const downtime = entries.reduce((sum, e) => sum + (Number(e.downtime) || 0), 0);
+  const csv = buildBrandedCsv({
+    title: meta.title || 'Relatorio Analitico de Producao',
+    subtitle: meta.subtitle || 'Historico filtrado',
+    summary: [
+      { label: 'Registros', value: entries.length },
+      { label: 'Produzido', value: produced },
+      { label: 'Meta', value: target },
+      { label: 'Refugo', value: scrap },
+      { label: 'Paradas (min)', value: downtime },
+    ],
+    columns: HEADERS,
+    rows: entries,
+  });
 
-export function exportProductionCsv(entries) {
-  const header = HEADERS.map((h) => h.label).join(';');
-  const rows = entries.map((e) => HEADERS.map((h) => escapeCsv(e[h.key])).join(';'));
-  const csv = '\uFEFF' + [header, ...rows].join('\n');
-
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `relatorio-producao-${format(new Date(), 'yyyy-MM-dd')}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  downloadBlob(
+    new Blob([csv], { type: 'text/csv;charset=utf-8;' }),
+    `relatorio-producao-${format(new Date(), 'yyyy-MM-dd')}.csv`
+  );
 }

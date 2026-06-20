@@ -27,6 +27,11 @@ import Gamification from '@/pages/Gamification';
 import Operators from '@/pages/Operators';
 import Reports from '@/pages/Reports';
 import Users from '@/pages/Users';
+import Traceability from '@/pages/Traceability';
+import PromobIntegration from '@/pages/PromobIntegration';
+import SystemLogs from '@/pages/SystemLogs';
+import DownloadsBackups from '@/pages/DownloadsBackups';
+import AiOperations from '@/pages/AiOperations';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, authError, navigateToLogin } = useAuth();
@@ -64,6 +69,7 @@ const AuthenticatedApp = () => {
           <Route path="/resumo-diario" element={<DailySummary />} />
           <Route path="/oee" element={<OEE />} />
           <Route path="/entrada" element={<Entry />} />
+          <Route path="/coleta-rastreabilidade" element={<Navigate to="/entrada?modo=coleta" replace />} />
           <Route path="/ocorrencias" element={<Occurrences />} />
           <Route path="/analise-paradas" element={<DowntimeAnalysis />} />
           <Route path="/analise-tendencia" element={<TrendAnalysis />} />
@@ -75,6 +81,15 @@ const AuthenticatedApp = () => {
           <Route path="/celulas" element={<Navigate to="/celulas-metas" replace />} />
           <Route path="/usuarios" element={<Users />} />
           <Route path="/relatorios" element={<Reports />} />
+          <Route path="/ia-operacional" element={<AiOperations />} />
+          {/* ── Novas rotas MES Leo Madeiras ── */}
+          <Route path="/rastreabilidade" element={<Traceability />} />
+          <Route path="/integracoes/promob" element={<PromobIntegration />} />
+          <Route path="/logs-sistema" element={<SystemLogs />} />
+          <Route path="/downloads-backups" element={<DownloadsBackups />} />
+          {/* Aliases de compatibilidade */}
+          <Route path="/analise-paradas" element={<Navigate to="/ocorrencias" replace />} />
+          <Route path="/analise-tendencia" element={<Navigate to="/relatorios" replace />} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />

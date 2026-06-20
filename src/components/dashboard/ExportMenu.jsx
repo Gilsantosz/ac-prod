@@ -17,13 +17,17 @@ export default function ExportMenu({ entries, allEntries, filters, chartsRef }) 
   const cellLabel = filters.cell === 'all' ? 'Todas as células' : filters.cell;
   const subtitle = `${filters.date || 'Todas as datas'} · ${shiftLabel} · ${cellLabel}`;
 
-  const run = (fn, data, name, msg) => {
+  const run = async (fn, data, name, msg) => {
     if (!data.length) {
       toast.error('Nenhum dado para exportar');
       return;
     }
-    fn(data, name);
-    toast.success(msg);
+    try {
+      await fn(data, name);
+      toast.success(msg);
+    } catch {
+      toast.error('Falha ao exportar relatório');
+    }
   };
 
   // Fechamento semanal: últimos 7 dias a partir da data filtrada
@@ -68,7 +72,7 @@ export default function ExportMenu({ entries, allEntries, filters, chartsRef }) 
 
         <DropdownMenuSeparator />
         <DropdownMenuLabel>Fechamento diário (filtros atuais)</DropdownMenuLabel>
-        <DropdownMenuItem onClick={() => run(exportCSV, entries, `producao-${filters.date}.csv`, 'CSV exportado')}>
+        <DropdownMenuItem onClick={() => run((d, n) => exportCSV(d, n, reportMeta), entries, `producao-${filters.date}.csv`, 'CSV exportado')}>
           <FileSpreadsheet className="w-4 h-4 mr-2" /> Exportar CSV
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => run((d, n) => exportPDF(d, { ...reportMeta, title: 'Fechamento Diário' }, n), entries, `producao-${filters.date}.pdf`, 'PDF exportado')}>
@@ -77,7 +81,7 @@ export default function ExportMenu({ entries, allEntries, filters, chartsRef }) 
 
         <DropdownMenuSeparator />
         <DropdownMenuLabel>Fechamento semanal (7 dias)</DropdownMenuLabel>
-        <DropdownMenuItem onClick={() => run(exportCSV, weeklyData(), `semanal-${filters.date}.csv`, 'CSV semanal exportado')}>
+        <DropdownMenuItem onClick={() => run((d, n) => exportCSV(d, n, { title: 'Fechamento Semanal', subtitle: `Semana até ${filters.date}` }), weeklyData(), `semanal-${filters.date}.csv`, 'CSV semanal exportado')}>
           <FileSpreadsheet className="w-4 h-4 mr-2" /> Exportar CSV
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => run((d, n) => exportPDF(d, { title: 'Fechamento Semanal', subtitle: `Semana até ${filters.date}` }, n), weeklyData(), `semanal-${filters.date}.pdf`, 'PDF semanal exportado')}>

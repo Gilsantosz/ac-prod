@@ -20,9 +20,15 @@ export default defineConfig({
         server.middlewares.use((req, res, next) => {
           const url = req.url || '';
 
-          // Redireciona "/" e "" para "/ac-prod/"
+          // Redireciona a raiz e o base path sem barra para a URL canônica.
           if (url === '/' || url === '' || url === '/index.html') {
             res.writeHead(302, { Location: '/ac-prod/' });
+            res.end();
+            return;
+          }
+          if (url === '/ac-prod' || url.startsWith('/ac-prod?')) {
+            const query = url.includes('?') ? url.slice(url.indexOf('?')) : '';
+            res.writeHead(302, { Location: `/ac-prod/${query}` });
             res.end();
             return;
           }
@@ -38,6 +44,18 @@ export default defineConfig({
             req.url = '/ac-prod/';
           }
 
+          next();
+        });
+      },
+      configurePreviewServer(server) {
+        server.middlewares.use((req, res, next) => {
+          const url = req.url || '';
+          if (url === '/ac-prod' || url.startsWith('/ac-prod?')) {
+            const query = url.includes('?') ? url.slice(url.indexOf('?')) : '';
+            res.writeHead(302, { Location: `/ac-prod/${query}` });
+            res.end();
+            return;
+          }
           next();
         });
       }

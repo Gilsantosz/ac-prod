@@ -1,22 +1,13 @@
 // Gera PDF do Resumo Diário com KPIs e tabelas (por célula e por turno).
 import { jsPDF } from 'jspdf';
+import { drawBrandedPdfFooter, drawBrandedPdfHeader } from '@/lib/reportBranding';
 
 const fmt = (n) => (Number(n) || 0).toLocaleString('pt-BR');
 const attain = (t) => (t.target > 0 ? Math.round((t.produced / t.target) * 100) : 0);
 
-export function exportDailySummaryPdf({ date, shift, cell, summary }) {
+export async function exportDailySummaryPdf({ date, shift, cell, summary }) {
   const doc = new jsPDF();
   const pageW = doc.internal.pageSize.getWidth();
-  let y = 18;
-
-  doc.setFontSize(16);
-  doc.setFont(undefined, 'bold');
-  doc.text('Resumo Diário de Produção', 14, y);
-
-  y += 7;
-  doc.setFontSize(9);
-  doc.setFont(undefined, 'normal');
-  doc.setTextColor(100);
 
   const shiftStr = Array.isArray(shift)
     ? (shift.length === 0 || shift.length === 3 ? 'Todos' : shift.join(', '))
@@ -26,11 +17,20 @@ export function exportDailySummaryPdf({ date, shift, cell, summary }) {
     ? (cell.length === 0 ? 'Todas' : cell.join(', '))
     : (cell === 'all' ? 'Todas' : cell);
 
-  doc.text(`Data: ${date}   |   Turnos: ${shiftStr}   |   Células: ${cellStr}`, 14, y);
-  doc.setTextColor(0);
+  const t = summary.total;
+  let y = await drawBrandedPdfHeader(doc, {
+    title: 'Resumo Diario de Producao',
+    subtitle: `Data: ${date} | Turnos: ${shiftStr} | Celulas: ${cellStr}`,
+    summary: [
+      { label: 'Meta diaria', value: fmt(t.target) },
+      { label: 'Produzido', value: fmt(t.produced) },
+      { label: 'Pecas boas', value: fmt(t.good) },
+      { label: 'Refugo', value: `${fmt(t.scrap)} (${t.scrapRate}%)` },
+      { label: 'Paradas (min)', value: fmt(t.downtime) },
+    ],
+  });
 
   // KPIs
-  const t = summary.total;
   const kpis = [
     ['Meta Diária', `${fmt(t.target)} (${attain(t)}%)`],
     ['Produzido', fmt(t.produced)],
@@ -101,5 +101,6 @@ export function exportDailySummaryPdf({ date, shift, cell, summary }) {
   drawTable('Produção por Célula', summary.byCell, 'cell', 'Célula');
   drawTable('Produção por Turno', summary.byShift, 'shift', 'Turno');
 
+  drawBrandedPdfFooter(doc);
   doc.save(`resumo-diario-${date}.pdf`);
 }
