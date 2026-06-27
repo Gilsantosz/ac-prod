@@ -6,10 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Upload, FileText, CheckCircle, AlertTriangle, Eye, ChevronDown, ChevronUp,
-  RefreshCw, X, User, Briefcase, FileCode, Edit3
+  RefreshCw, X, Edit3
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import * as XLSX from 'xlsx';
@@ -503,7 +502,7 @@ export default function XmlImportTab() {
           <h3 className="font-semibold text-foreground">Metadados da Entrada de Produção</h3>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="sourceType">Tipo de Origem</Label>
             <select
@@ -518,58 +517,15 @@ export default function XmlImportTab() {
             </select>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="clientName">Cliente</Label>
-            <div className="relative">
-              <User className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                id="clientName"
-                value={clientName}
-                onChange={e => setClientName(e.target.value)}
-                placeholder="Nome do cliente"
-                className="pl-9"
-              />
-            </div>
+          <div className="space-y-1.5 md:col-span-2">
+            <Label htmlFor="notes">Observação Técnica</Label>
+            <Input
+              id="notes"
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="Observações adicionais para a produção..."
+            />
           </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="projectName">Obra / Projeto</Label>
-            <div className="relative">
-              <Briefcase className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                id="projectName"
-                value={projectName}
-                onChange={e => setProjectName(e.target.value)}
-                placeholder="Identificador do projeto"
-                className="pl-9"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="externalOpCode">OP Externa / Pedido</Label>
-            <div className="relative">
-              <FileCode className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                id="externalOpCode"
-                value={externalOpCode}
-                onChange={e => setExternalOpCode(e.target.value)}
-                placeholder="Código do pedido"
-                className="pl-9"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="notes">Observação Técnica</Label>
-          <Textarea
-            id="notes"
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            placeholder="Observações adicionais para a produção..."
-            rows={2}
-          />
         </div>
       </div>
 
@@ -600,18 +556,41 @@ export default function XmlImportTab() {
             </p>
           </>
         ) : (
-          <div className="flex items-center justify-center gap-3">
-            <FileText className="w-6 h-6 text-[#2d9c4a] shrink-0" />
-            <div className="text-left">
-              <p className="font-semibold text-foreground text-sm truncate max-w-xs">{file.name}</p>
-              <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 py-2">
+            <div className="flex items-center gap-3">
+              <FileText className="w-6 h-6 text-[#2d9c4a] shrink-0" />
+              <div className="text-left">
+                <p className="font-semibold text-foreground text-sm truncate max-w-xs">{file.name}</p>
+                <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</p>
+              </div>
             </div>
-            <button
-              onClick={e => { e.stopPropagation(); handleClear(); }}
-              className="ml-4 p-1 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                id="btn-import-uploadzone"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleImport();
+                }}
+                disabled={importing || errors.length > 0 || !parsed}
+                className="gap-2 bg-[#2d9c4a] hover:bg-[#25813d] text-white h-9 px-4 text-xs font-semibold rounded-lg"
+              >
+                {importing ? (
+                  <><RefreshCw className="w-4 h-4 animate-spin" /> Importando…</>
+                ) : (
+                  <><CheckCircle className="w-4 h-4" /> Importar Arquivo</>
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={(e) => { e.stopPropagation(); handleClear(); }}
+                className="p-0 h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg inline-flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
         )}
       </div>
@@ -641,6 +620,22 @@ export default function XmlImportTab() {
               )}>
                 {validationStatus}
               </Badge>
+            </div>
+
+            {/* Dados do Projeto extraídos do arquivo */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-secondary/30 p-3 rounded-xl border border-border/40 text-xs">
+              <div>
+                <span className="text-muted-foreground font-semibold">Cliente:</span>{' '}
+                <span className="text-foreground font-medium">{clientName || '—'}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground font-semibold">Projeto:</span>{' '}
+                <span className="text-foreground font-medium">{projectName || '—'}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground font-semibold">OP Externa / Pedido:</span>{' '}
+                <span className="text-foreground font-medium font-mono">{externalOpCode || '—'}</span>
+              </div>
             </div>
 
             {/* Estatísticas e Informações do Arquivo */}
