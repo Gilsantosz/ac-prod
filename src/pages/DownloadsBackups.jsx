@@ -418,15 +418,18 @@ export default function DownloadsBackups() {
               <div className="grid sm:grid-cols-[1fr_auto] gap-3 items-end">
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    ID da pasta no Google Drive
+                    Pasta no Google Drive
                   </label>
                   <input
                     value={driveFolderId}
                     onChange={(event) => setDriveFolderId(event.target.value)}
-                    placeholder="Ex: 1AbCDefGhijk..."
+                    placeholder="ID, link ou Backups AC.Prod/Ordens de Produção"
                     disabled={!isAdmin}
                     className="w-full h-10 rounded-lg border border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-60"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Aceita ID, link da pasta ou caminho. Se for caminho, a pasta será criada no Drive.
+                  </p>
                 </div>
                 <Button
                   variant={driveEnabled ? 'default' : 'outline'}

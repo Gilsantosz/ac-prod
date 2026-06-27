@@ -13,6 +13,8 @@ import { corsHeaders, json, requireAiUser } from '../_shared/aiOperations.ts';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
+const DEFAULT_DRIVE_FOLDER_SEGMENTS = ['Backups AC.Prod', 'Ordens de Produção'];
+const DRIVE_FOLDER_ID_PATTERN = /^[A-Za-z0-9_-]{10,}$/;
 
 // ── OAuth2 helpers ──────────────────────────────────────────────
 
@@ -65,6 +67,66 @@ function escapeDriveQuery(value: string) {
   return value.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
 }
 
+function splitFolderPath(value = '') {
+  return String(value || '')
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function extractDriveFolderId(value = '') {
+  const input = String(value || '').trim();
+  if (!input) return '';
+
+  try {
+    const url = new URL(input);
+    const folderMatch = url.pathname.match(/\/folders\/([^/?#]+)/);
+    const id = folderMatch?.[1] || url.searchParams.get('id') || '';
+    if (DRIVE_FOLDER_ID_PATTERN.test(id)) return id;
+  } catch {
+    // Não é URL, então validamos abaixo como ID direto.
+  }
+
+  return DRIVE_FOLDER_ID_PATTERN.test(input) && !/[\\/\s]/.test(input) ? input : '';
+}
+
+function resolveConfiguredFolder(setting: Record<string, unknown> = {}) {
+  const envFolderId = extractDriveFolderId(Deno.env.get('GOOGLE_DRIVE_BACKUP_FOLDER_ID') || '');
+  const rawDriveFolder = String(setting.drive_folder_id || '').trim();
+  const rawFolderPath = String(setting.folder_path || '').trim();
+  const savedFolderId = extractDriveFolderId(rawDriveFolder);
+
+  if (savedFolderId) {
+    return { rootFolderId: savedFolderId, baseSegments: [] as string[] };
+  }
+
+  const configuredPaths = [rawDriveFolder, rawFolderPath]
+    .filter(Boolean)
+    .filter((value, index, values) => values.indexOf(value) === index);
+  const baseSegments = configuredPaths.flatMap(splitFolderPath);
+
+  return {
+    rootFolderId: envFolderId || 'root',
+    baseSegments: baseSegments.length ? baseSegments : (envFolderId ? [] : DEFAULT_DRIVE_FOLDER_SEGMENTS),
+  };
+}
+
+function statusFromErrorMessage(message: string) {
+  if (message === 'AUTH_REQUIRED') return 401;
+  if (message === 'ACCESS_DENIED' || message.includes('Apenas administradores')) return 403;
+  if (
+    message.includes('Ative a integração') ||
+    message.includes('Configure os segredos') ||
+    message.includes('Informe o ID')
+  ) {
+    return 422;
+  }
+  if (message.includes('Google Drive') || message.includes('oauth') || message.includes('invalid_grant')) {
+    return 502;
+  }
+  return 500;
+}
+
 async function driveFetch(token: string, path: string, init: RequestInit = {}) {
   const resp = await fetch(path, {
     ...init,
@@ -81,6 +143,12 @@ async function driveFetch(token: string, path: string, init: RequestInit = {}) {
     throw new Error(body?.error?.message || body?.error || body || 'Erro no Google Drive API.');
   }
   return body;
+}
+
+async function resolveRootFolderId(token: string, folderId: string) {
+  if (folderId !== 'root') return folderId;
+  const about = await driveFetch(token, `${DRIVE_API}/about?fields=rootFolderId`);
+  return about.rootFolderId || 'root';
 }
 
 async function findDriveFile(
@@ -181,6 +249,7 @@ async function uploadBackupFile(
   rootFolderId: string,
   backupFile: Record<string, unknown>,
   bytes: Uint8Array,
+  baseSegments: string[] = [],
 ) {
   const storagePath = String(backupFile.storage_path || backupFile.file_name || '');
   const segments = storagePath.split('/').filter(Boolean);
@@ -188,7 +257,7 @@ async function uploadBackupFile(
     (backupFile.file_name as string) ||
     segments.at(-1) ||
     `backup-${backupFile.id as string}.json`;
-  const folderSegments = segments.slice(0, -1);
+  const folderSegments = [...baseSegments, ...segments.slice(0, -1)];
   const folder = await ensureFolderPath(token, rootFolderId, folderSegments);
   const existing = backupFile.external_file_id
     ? { id: backupFile.external_file_id as string }
@@ -253,17 +322,7 @@ Deno.serve(async (req) => {
       throw new Error('Ative a integração Google Drive antes de sincronizar.');
     }
 
-    const rootFolderId =
-      Deno.env.get('GOOGLE_DRIVE_BACKUP_FOLDER_ID') ||
-      setting.drive_folder_id ||
-      (!String(setting.folder_path || '').includes('/')
-        ? String(setting.folder_path || '')
-        : '');
-    if (!rootFolderId) {
-      throw new Error(
-        'Informe o ID da pasta do Google Drive nas configurações ou no segredo GOOGLE_DRIVE_BACKUP_FOLDER_ID.',
-      );
-    }
+    const configuredFolder = resolveConfiguredFolder(setting || {});
 
     // Query backup files
     let query = admin
@@ -289,6 +348,7 @@ Deno.serve(async (req) => {
 
     // Get OAuth2 access token from stored refresh token
     const token = await getAccessToken();
+    const rootFolderId = await resolveRootFolderId(token, configuredFolder.rootFolderId);
 
     const results: Array<Record<string, unknown>> = [];
     for (const file of files) {
@@ -301,7 +361,7 @@ Deno.serve(async (req) => {
         const bytes = new Uint8Array(await blob.arrayBuffer());
 
         // Upload to Google Drive
-        const uploaded = await uploadBackupFile(token, rootFolderId, file, bytes);
+        const uploaded = await uploadBackupFile(token, rootFolderId, file, bytes, configuredFolder.baseSegments);
 
         // Optionally remove from Supabase Storage
         if (archiveLocal) {
@@ -391,8 +451,6 @@ Deno.serve(async (req) => {
         })
         .eq('id', settingId);
     }
-    const status =
-      message === 'AUTH_REQUIRED' ? 401 : message?.includes('Apenas administradores') ? 403 : 400;
-    return json({ success: false, error: message }, status);
+    return json({ success: false, error: message }, statusFromErrorMessage(message));
   }
 });
