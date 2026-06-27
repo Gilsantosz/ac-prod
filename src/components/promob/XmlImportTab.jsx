@@ -241,6 +241,7 @@ export default function XmlImportTab() {
   const [importing, setImporting] = useState(false);
   const [expandedItems, setExpandedItems] = useState({});
   const fileRef = useRef(null);
+  const [duplicateInfo, setDuplicateInfo] = useState(null);
 
   // Campos do PCP customizáveis
   const [sourceType, setSourceType] = useState('promob_xml'); // 'promob_xml' | 'csv_manual' | 'other_xml'
