@@ -64,7 +64,7 @@ export async function askLeoAssistant(question, context = {}) {
     return {
       content: buildInsightsAnswer(snapshot),
       actions: [
-        { label: 'Abrir Painéis', path: '/' },
+        { label: 'Abrir Painéis', path: '/painel' },
         { label: 'Ver Ocorrências', path: '/ocorrencias' },
       ],
     };
@@ -93,7 +93,7 @@ export async function askLeoAssistant(question, context = {}) {
   if (/\beficiencia\b/.test(normalized)) {
     return {
       content: 'A eficiência compara o total produzido com a meta do período. Quando ela cai, cruze o resultado com paradas, refugo, célula e turno para encontrar a causa.',
-      actions: [{ label: 'Abrir Painéis', path: '/' }],
+      actions: [{ label: 'Abrir Painéis', path: '/painel' }],
     };
   }
 

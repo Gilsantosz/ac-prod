@@ -42,6 +42,7 @@ export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthe
 
   const pathPermissionMap = {
     '/': 'view_dashboards',
+    '/painel': 'view_dashboards',
     '/entrada': 'register_production',
     '/resumo-diario': 'view_dashboards',
     '/oee': 'view_dashboards',
@@ -75,7 +76,7 @@ export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthe
           requiredPermissionLabel = `Permissão requerida: ${permissionLabels[requiredPermission]}`;
         }
       } else {
-        const allowedPathsForOperators = ['/', '/entrada', '/resumo-diario'];
+        const allowedPathsForOperators = ['/', '/painel', '/entrada', '/resumo-diario'];
         if (!allowedPathsForOperators.includes(cleanPath)) {
           hasPermission = false;
           requiredPermissionLabel = 'Acesso Reservado para Administradores';
@@ -118,7 +119,7 @@ export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthe
 
           <div className="flex flex-col gap-2.5 pt-2">
             <button
-              onClick={() => window.location.replace(import.meta.env.BASE_URL || '/ac-prod/')}
+              onClick={() => window.location.replace(`${(import.meta.env.BASE_URL || '/ac-prod/').replace(/\/$/, '')}/painel`)}
               className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-sm py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/10 hover:translate-y-[-1px] active:translate-y-0"
             >
               <ArrowLeft className="w-4 h-4" /> Voltar para o Painel Principal

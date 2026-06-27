@@ -43,7 +43,7 @@ const EVENT_LABELS = {
 };
 
 export const NAVIGATION_TOPICS = [
-  { path: '/', label: 'Painéis', description: 'indicadores gerais, produtividade e alertas', keywords: ['painel', 'dashboard', 'indicador', 'produtividade', 'inicio'], permission: 'view_dashboards' },
+  { path: '/painel', label: 'Painéis', description: 'indicadores gerais, produtividade e alertas', keywords: ['painel', 'dashboard', 'indicador', 'produtividade', 'inicio'], permission: 'view_dashboards' },
   { path: '/entrada', label: 'Entrada de Produção', description: 'registrar produção, refugo e horas trabalhadas', keywords: ['entrada', 'lancar producao', 'registrar producao', 'registro producao', 'apontar producao', 'apontamento'], permission: 'register_production' },
   { path: '/resumo-diario', label: 'Resumo Diário', description: 'consultar o fechamento diário por célula e turno', keywords: ['resumo', 'fechamento diario', 'producao do dia'], permission: 'view_dashboards' },
   { path: '/oee', label: 'OEE', description: 'acompanhar disponibilidade, performance e qualidade', keywords: ['oee', 'disponibilidade', 'performance', 'qualidade'], permission: 'view_dashboards' },

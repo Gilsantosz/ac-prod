@@ -74,7 +74,7 @@ export default defineConfig({
         display_override: ['fullscreen', 'standalone'],
         orientation: 'portrait',
         scope: '/ac-prod/',
-        start_url: '/ac-prod/',
+        start_url: '/ac-prod/painel',
         lang: 'pt-BR',
         icons: [
           {

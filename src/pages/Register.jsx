@@ -38,7 +38,7 @@ export default function Register() {
     setLoading(true);
     try {
       await base44.auth.verifyOtp({ email, otpCode: otp });
-      navigate('/', { replace: true });
+      navigate('/painel', { replace: true });
     } catch (err) {
       setError(err?.message || 'Código inválido.');
       setLoading(false);
@@ -50,7 +50,7 @@ export default function Register() {
     try { await base44.auth.resendOtp(email); } catch (err) { setError(err?.message || 'Erro ao reenviar.'); }
   };
 
-  const handleGoogle = () => base44.auth.loginWithProvider('google', '/');
+  const handleGoogle = () => base44.auth.loginWithProvider('google', '/painel');
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
