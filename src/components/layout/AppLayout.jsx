@@ -25,7 +25,7 @@ import LeoAssistantChat from '@/components/assistant/LeoAssistantChat';
 
 const nav = [
   // ─── Produção Principal ──────────────────────────────────────────────
-  { to: '/painel',              label: 'Painéis',             icon: LayoutDashboard },
+  { to: '/',                    label: 'Painéis',             icon: LayoutDashboard },
   { to: '/entrada',             label: 'Entrada de Produção', icon: PlusCircle },
   { to: '/resumo-diario',       label: 'Resumo Diário',       icon: ClipboardList },
   { to: '/oee',                 label: 'OEE',                 icon: Gauge },

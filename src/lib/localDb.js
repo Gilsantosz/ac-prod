@@ -589,7 +589,7 @@ const auth = {
     return { success: true };
   },
 
-  loginWithProvider: async (provider, path = '/painel') => {
+  loginWithProvider: async (provider, path = '/') => {
     const base = (import.meta.env.BASE_URL || '/ac-prod/').replace(/\/$/, '');
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
     const { error } = await supabase.auth.signInWithOAuth({

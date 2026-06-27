@@ -66,7 +66,7 @@ export default function AiOperations() {
   });
   const emailMutation = useMutation({
     mutationFn: sendReportEmail,
-    onSuccess: () => { setEmailOpen(false); queryClient.invalidateQueries({ queryKey: ['ai-email-logs'] }); toast.success('Relatório enviado e registrado.'); },
+    onSuccess: (response) => { setEmailOpen(false); queryClient.invalidateQueries({ queryKey: ['ai-email-logs'] }); toast.success(response?.message || 'Relatório enviado e registrado.'); },
     onError: (error) => toast.error(error.message),
   });
   const scheduleMutation = useMutation({

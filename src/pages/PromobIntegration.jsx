@@ -15,6 +15,14 @@ import {
   RefreshCw, Trash2, Check, Lock, Cloud
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 // ─── Sub-componentes ──────────────────────────────────────────
 import XmlImportTab from '@/components/promob/XmlImportTab';
@@ -33,6 +41,12 @@ export default function PromobIntegration() {
   const [batchSearch, setBatchSearch] = useState('');
   const [batchStatusFilter, setBatchStatusFilter] = useState('');
   const [loadingBatches, setLoadingBatches] = useState(false);
+
+  // Estados para Exclusão de Lotes de Importação
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [batchToDelete, setBatchToDelete] = useState(null);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [isDeletingBatch, setIsDeletingBatch] = useState(false);
 
   // Estados para as Ordens de Produção Geradas
   const [orders, setOrders] = useState([]);
@@ -123,6 +137,93 @@ export default function PromobIntegration() {
       toast.success('Arquivo baixado com sucesso!');
     } catch (err) {
       toast.error(`Falha ao baixar arquivo: ${err.message}`);
+    }
+  };
+
+  const requestBatchDelete = (batch) => {
+    const isAuthorized = user?.role === 'admin' || user?.role === 'manager';
+    if (!isAuthorized) {
+      toast.error('Apenas usuários com perfil de Administrador ou Gestor podem excluir importações.');
+      return;
+    }
+    setBatchToDelete(batch);
+    setDeletePassword('');
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmBatchDelete = async (e) => {
+    e.preventDefault();
+    if (!batchToDelete) return;
+    if (!deletePassword) {
+      toast.error('Por favor, digite sua senha para confirmar.');
+      return;
+    }
+
+    setIsDeletingBatch(true);
+    try {
+      // 1. Validar a senha do usuário logado reautenticando no Supabase Auth
+      const { error: authErr } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: deletePassword,
+      });
+
+      if (authErr) {
+        throw new Error('Senha incorreta. Ação negada.');
+      }
+
+      // 2. Excluir o arquivo no storage
+      if (batchToDelete.raw_xml_storage_path) {
+        const { error: storageErr } = await supabase.storage
+          .from('productive-backups')
+          .remove([batchToDelete.raw_xml_storage_path]);
+
+        if (storageErr) {
+          console.warn('Erro ao remover arquivo físico do storage:', storageErr);
+        }
+      }
+
+      // 3. Deletar backup correspondente se existir indexado em backup_files
+      await supabase
+        .from('backup_files')
+        .delete()
+        .eq('import_batch_id', batchToDelete.id);
+
+      // 4. Excluir a ordem de produção (OP) associada se houver generated_op_id (o cascade cuidará dos lotes/roteiros)
+      if (batchToDelete.generated_op_id) {
+        const { error: opErr } = await supabase
+          .from('production_orders')
+          .delete()
+          .eq('id', batchToDelete.generated_op_id);
+
+        if (opErr) throw opErr;
+      } else if (batchToDelete.order_code) {
+        const { error: opErr } = await supabase
+          .from('production_orders')
+          .delete()
+          .eq('order_code', batchToDelete.order_code);
+
+        if (opErr) {
+          console.warn('Erro ao remover OP via código de pedido:', opErr);
+        }
+      }
+
+      // 5. Excluir o lote de importação em promob_import_batches
+      const { error: batchErr } = await supabase
+        .from('promob_import_batches')
+        .delete()
+        .eq('id', batchToDelete.id);
+
+      if (batchErr) throw batchErr;
+
+      toast.success('Importação e seus dados associados excluídos com sucesso!');
+      setIsDeleteModalOpen(false);
+      setBatchToDelete(null);
+      setDeletePassword('');
+      fetchBatches();
+    } catch (err) {
+      toast.error(`Falha ao excluir importação: ${err.message}`);
+    } finally {
+      setIsDeletingBatch(false);
     }
   };
 
@@ -473,16 +574,28 @@ export default function PromobIntegration() {
                         <td className="px-4 py-3 text-[10px] text-muted-foreground">
                           {batch.retention_until ? new Date(batch.retention_until).toLocaleDateString('pt-BR') : '—'}
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-right">
+                        <td className="px-4 py-3 whitespace-nowrap text-right space-x-1">
                           <Button
                             variant="ghost"
                             size="sm"
                             id={`btn-download-${batch.id}`}
-                            className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground inline-flex items-center justify-center"
                             onClick={() => downloadOriginalFile(batch.raw_xml_storage_path, batch.file_name)}
                           >
                             <Download className="w-4 h-4" />
                           </Button>
+                          {(user?.role === 'admin' || user?.role === 'manager') && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              id={`btn-delete-${batch.id}`}
+                              className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50/50 inline-flex items-center justify-center"
+                              onClick={() => requestBatchDelete(batch)}
+                              title="Excluir importação e dados gerados"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -944,6 +1057,72 @@ export default function PromobIntegration() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Dialog de Confirmação de Exclusão com Senha */}
+      <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="text-red-600 flex items-center gap-2">
+              <Trash2 className="w-5 h-5" /> Excluir Importação PCP
+            </DialogTitle>
+            <DialogDescription>
+              Atenção: Esta ação é irreversível. Ela excluirá o arquivo original do storage e a Ordem de Produção (OP) com todos os seus lotes e roteiros gerados.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={confirmBatchDelete} className="space-y-4 py-2">
+            <div className="space-y-2">
+              <div className="text-xs font-semibold text-muted-foreground">
+                Arquivo a ser excluído:
+              </div>
+              <div className="bg-secondary/40 p-2.5 rounded-lg border border-border/40 text-xs break-all font-mono">
+                {batchToDelete?.file_name}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="delete-password">Sua Senha de Confirmação</Label>
+              <Input
+                id="delete-password"
+                type="password"
+                required
+                placeholder="Digite sua senha para autorizar"
+                value={deletePassword}
+                onChange={e => setDeletePassword(e.target.value)}
+                autoComplete="current-password"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Apenas usuários Admins ou Gestores podem autorizar esta exclusão.
+              </p>
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsDeleteModalOpen(false)}
+                disabled={isDeletingBatch}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                variant="destructive"
+                disabled={isDeletingBatch}
+                className="gap-2"
+              >
+                {isDeletingBatch ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" /> Excluindo...
+                  </>
+                ) : (
+                  'Confirmar Exclusão'
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

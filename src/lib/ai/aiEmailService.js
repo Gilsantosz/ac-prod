@@ -49,12 +49,23 @@ export async function listEmailLogs(limit = 100) {
   throw error;
 }
 
+async function getFunctionErrorMessage(error, fallback) {
+  const response = error?.context;
+  if (!response) return error?.message || fallback;
+  try {
+    const payload = await (response.clone?.() || response).json();
+    return payload?.error || payload?.message || error?.message || fallback;
+  } catch {
+    return error?.message || fallback;
+  }
+}
+
 export async function sendReportEmail({ reportJobId, recipientIds, templateCode, subject, message }) {
   if (!recipientIds?.length) throw new Error('Selecione pelo menos um destinatário.');
   const { data, error } = await supabase.functions.invoke('send-report-email', {
     body: { reportJobId, recipientIds, templateCode, subject, message },
   });
-  if (error) throw new Error(error.message || 'O serviço de e-mail não respondeu.');
-  if (!data?.success) throw new Error(data?.error || 'O envio não foi concluído.');
+  if (error) throw new Error(await getFunctionErrorMessage(error, 'O serviço de e-mail não respondeu.'));
+  if (!data?.success) throw new Error(data?.error || data?.message || 'O envio não foi concluído.');
   return data;
 }

@@ -65,7 +65,7 @@ export default function Login() {
     setLoading(true);
     try {
       await login(email, password);
-      navigate('/painel', { replace: true });
+      navigate('/', { replace: true });
     } catch (err) {
       setError(err?.message || 'Falha ao entrar. Verifique suas credenciais.');
       setLoading(false);
