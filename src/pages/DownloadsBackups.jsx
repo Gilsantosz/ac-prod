@@ -1,7 +1,14 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
 import { auditLog, AUDIT_ACTIONS } from '@/lib/auditLog';
+import { useAuth } from '@/lib/AuthContext';
+import {
+  fetchGoogleDriveArchiveStatus,
+  saveGoogleDriveArchiveSettings,
+  syncGoogleDriveArchive,
+} from '@/lib/googleDriveArchiveService';
 import { toast } from 'sonner';
 import PageHeader from '@/components/ui/PageHeader';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -9,8 +16,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   HardDrive, Download, RefreshCw, FileText, FileJson, Archive,
-  Shield, Clock, CheckCircle, XCircle, Calendar, Database,
-  AlertCircle, Eye, Folder, FilePlus, Trash2,
+  Shield, CheckCircle, Database, Cloud, CloudUpload,
+  ExternalLink, Save,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -24,10 +31,19 @@ const FILE_TYPE_INFO = {
 };
 
 export default function DownloadsBackups() {
-  const qc = useQueryClient();
+  const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [driveEnabled, setDriveEnabled] = useState(false);
+  const [driveFolderId, setDriveFolderId] = useState('');
+  const [savingDrive, setSavingDrive] = useState(false);
+  const [syncingDrive, setSyncingDrive] = useState(false);
+  const [archivingDrive, setArchivingDrive] = useState(false);
+  const requestedTab = searchParams.get('tab');
+  const activeTab = ['files', 'policies', 'drive'].includes(requestedTab) ? requestedTab : 'files';
+  const isAdmin = user?.role === 'admin';
 
   const { data: backupFiles = [], isLoading, refetch } = useQuery({
     queryKey: ['backup-files', search, typeFilter],
@@ -60,6 +76,13 @@ export default function DownloadsBackups() {
     queryKey: ['backup-policies'],
     queryFn: () => supabase.from('backup_policies').select('*').order('created_at').then(r => r.data || []),
     initialData: [],
+  });
+
+  const { data: driveStatus, refetch: refetchDriveStatus } = useQuery({
+    queryKey: ['google-drive-archive-status'],
+    queryFn: fetchGoogleDriveArchiveStatus,
+    initialData: { setting: {}, totals: { total: 0, pending: 0, synced: 0, archived: 0, error: 0, available: 0 }, latestFiles: [] },
+    retry: false,
   });
 
   // ─── Download de arquivo ──────────────────────────────────────
@@ -97,6 +120,7 @@ export default function DownloadsBackups() {
       if (resp.data?.success) {
         toast.success('✅ Backup completo gerado com sucesso!');
         refetch();
+        refetchDriveStatus();
       } else {
         throw new Error(resp.data?.error || 'Falha ao gerar backup');
       }
@@ -120,6 +144,70 @@ export default function DownloadsBackups() {
     const diff = new Date(expiresAt) - new Date();
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
   };
+
+  const handleTabChange = (value) => {
+    setSearchParams(value === 'files' ? {} : { tab: value }, { replace: true });
+  };
+
+  const saveDriveSettings = async () => {
+    if (!isAdmin) {
+      toast.error('Apenas administradores podem alterar a integração Google Drive.');
+      return;
+    }
+    setSavingDrive(true);
+    try {
+      const saved = await saveGoogleDriveArchiveSettings({
+        enabled: driveEnabled,
+        driveFolderId: driveFolderId.trim(),
+      });
+      setDriveEnabled(saved.enabled === true);
+      setDriveFolderId(saved.drive_folder_id || saved.folder_path || '');
+      toast.success('Configuração do Google Drive salva.');
+      refetchDriveStatus();
+    } catch (error) {
+      toast.error(`Falha ao salvar Drive: ${error.message}`);
+    } finally {
+      setSavingDrive(false);
+    }
+  };
+
+  const runDriveSync = async (archiveLocal = false) => {
+    if (!driveStatus.setting?.enabled) {
+      toast.error('Ative o Google Drive antes de sincronizar.');
+      return;
+    }
+    if (archiveLocal) setArchivingDrive(true);
+    else setSyncingDrive(true);
+    try {
+      const result = await syncGoogleDriveArchive({ archiveLocal, limit: 50 });
+      toast.success(result.message || 'Google Drive atualizado.');
+      refetch();
+      refetchDriveStatus();
+    } catch (error) {
+      toast.error(`Falha no Google Drive: ${error.message}`);
+    } finally {
+      setSyncingDrive(false);
+      setArchivingDrive(false);
+    }
+  };
+
+  const openExternalFile = (url) => {
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const driveBadge = (file) => {
+    if (file.external_sync_status === 'error') return { label: 'Erro Drive', className: 'border-red-300 text-red-700 dark:text-red-400' };
+    if (file.status === 'archived') return { label: 'Arquivado Drive', className: 'border-emerald-300 text-emerald-700 dark:text-emerald-400' };
+    if (file.external_storage_provider === 'google_drive') return { label: 'No Drive', className: 'border-blue-300 text-blue-700 dark:text-blue-400' };
+    return { label: 'Local', className: 'border-muted-foreground/30 text-muted-foreground' };
+  };
+
+  useEffect(() => {
+    const setting = driveStatus.setting || {};
+    setDriveEnabled(setting.enabled === true);
+    setDriveFolderId(setting.drive_folder_id || setting.folder_path || '');
+  }, [driveStatus.setting]);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-5 sm:space-y-6">
@@ -147,16 +235,19 @@ export default function DownloadsBackups() {
         <StatCard icon={HardDrive}   label="Total Arquivos" value={backupFiles.length} />
         <StatCard icon={Archive}     label="Espaço Usado"   value={formatSize(totalSize)} />
         <StatCard icon={CheckCircle} label="Disponíveis"    value={backupFiles.filter(f => f.status === 'available').length} accent="green" />
-        <StatCard icon={Calendar}    label="Retenção"       value="4 anos" accent="blue" />
+        <StatCard icon={Cloud}        label="Google Drive"   value={driveStatus.totals.synced + driveStatus.totals.archived} accent="blue" />
       </div>
 
-      <Tabs defaultValue="files" className="space-y-5">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-5">
         <TabsList className="bg-card border border-border/60">
           <TabsTrigger value="files" className="gap-2">
             <HardDrive className="w-4 h-4" /> Arquivos
           </TabsTrigger>
           <TabsTrigger value="policies" className="gap-2">
             <Shield className="w-4 h-4" /> Políticas
+          </TabsTrigger>
+          <TabsTrigger value="drive" className="gap-2">
+            <Cloud className="w-4 h-4" /> Google Drive
           </TabsTrigger>
         </TabsList>
 
@@ -201,7 +292,7 @@ export default function DownloadsBackups() {
                 <table className="w-full text-sm">
                   <thead className="bg-secondary/30 border-b border-border/60">
                     <tr>
-                      {['Arquivo', 'Pedido', 'Data', 'Tamanho', 'Expira', 'Status', ''].map(h => (
+                      {['Arquivo', 'Pedido', 'Data', 'Tamanho', 'Expira', 'Status', 'Drive', ''].map(h => (
                         <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                           {h}
                         </th>
@@ -255,27 +346,167 @@ export default function DownloadsBackups() {
                           <td className="px-4 py-3">
                             <Badge variant={file.status === 'available' ? 'outline' : 'secondary'} className="text-[10px]">
                               {file.status === 'available' ? '✓ Disponível'
+                               : file.status === 'archived' ? 'Arquivado'
                                : file.status === 'expired' ? 'Expirado'
                                : file.status}
                             </Badge>
                           </td>
                           <td className="px-4 py-3">
-                            {file.status === 'available' && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 w-7 p-0"
-                                onClick={() => downloadFile(file)}
-                              >
-                                <Download className="w-3.5 h-3.5" />
-                              </Button>
-                            )}
+                            <Badge variant="outline" className={cn('text-[10px]', driveBadge(file).className)}>
+                              {driveBadge(file).label}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1">
+                              {file.status === 'available' && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0"
+                                  onClick={() => downloadFile(file)}
+                                  title="Baixar arquivo local"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+                              {file.external_web_url && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0"
+                                  onClick={() => openExternalFile(file.external_web_url)}
+                                  title="Abrir no Google Drive"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        {/* ── Aba: Google Drive ─────────────────────────────────── */}
+        <TabsContent value="drive" className="space-y-5">
+          <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-5">
+            <div className="bg-card border border-border/60 rounded-2xl p-5 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-bold text-foreground flex items-center gap-2">
+                    <Cloud className="w-5 h-5 text-[#2d9c4a]" /> Arquivo Google Drive
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Envie backups e ordens de produção para uma pasta do Drive. A credencial fica protegida na função do Supabase.
+                  </p>
+                </div>
+                <Badge variant="outline" className={cn(
+                  'shrink-0',
+                  driveStatus.setting?.enabled
+                    ? 'border-emerald-300 text-emerald-700 dark:text-emerald-400'
+                    : 'border-muted-foreground/30 text-muted-foreground'
+                )}>
+                  {driveStatus.setting?.enabled ? 'Ativo' : 'Inativo'}
+                </Badge>
+              </div>
+
+              <div className="grid sm:grid-cols-[1fr_auto] gap-3 items-end">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    ID da pasta no Google Drive
+                  </label>
+                  <input
+                    value={driveFolderId}
+                    onChange={(event) => setDriveFolderId(event.target.value)}
+                    placeholder="Ex: 1AbCDefGhijk..."
+                    disabled={!isAdmin}
+                    className="w-full h-10 rounded-lg border border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-60"
+                  />
+                </div>
+                <Button
+                  variant={driveEnabled ? 'default' : 'outline'}
+                  onClick={() => setDriveEnabled((current) => !current)}
+                  disabled={!isAdmin}
+                  className={cn(driveEnabled && 'bg-[#2d9c4a] hover:bg-[#25813d] text-white')}
+                >
+                  {driveEnabled ? 'Ativo' : 'Ativar'}
+                </Button>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={saveDriveSettings} disabled={!isAdmin || savingDrive} className="gap-2 bg-[#2d9c4a] hover:bg-[#25813d] text-white">
+                  {savingDrive ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Salvar Configuração
+                </Button>
+                <Button variant="outline" onClick={() => runDriveSync(false)} disabled={!isAdmin || syncingDrive || archivingDrive} className="gap-2">
+                  {syncingDrive ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CloudUpload className="w-4 h-4" />}
+                  Sincronizar Pendentes
+                </Button>
+                <Button variant="outline" onClick={() => runDriveSync(true)} disabled={!isAdmin || syncingDrive || archivingDrive} className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/20">
+                  {archivingDrive ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
+                  Arquivar Local Após Drive
+                </Button>
+              </div>
+
+              {!isAdmin && (
+                <p className="text-xs text-muted-foreground">
+                  Somente administradores podem alterar ou executar o arquivamento externo.
+                </p>
+              )}
+              {driveStatus.setting?.last_sync_error && (
+                <div className="text-sm text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/60 rounded-lg p-3">
+                  Última falha: {driveStatus.setting.last_sync_error}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <StatCard icon={HardDrive} label="Arquivos locais" value={driveStatus.totals.available} />
+              <StatCard icon={Cloud} label="Sincronizados" value={driveStatus.totals.synced} accent="blue" />
+              <StatCard icon={Archive} label="Arquivados" value={driveStatus.totals.archived} accent="green" />
+              <StatCard icon={Shield} label="Pendentes" value={driveStatus.totals.pending} />
+            </div>
+          </div>
+
+          <div className="bg-card border border-border/60 rounded-2xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-border/60 flex items-center justify-between gap-3">
+              <h4 className="font-semibold text-sm text-foreground">Últimos arquivos rastreados</h4>
+              {driveStatus.setting?.last_sync_at && (
+                <span className="text-xs text-muted-foreground">
+                  Última sincronização: {new Date(driveStatus.setting.last_sync_at).toLocaleString('pt-BR')}
+                </span>
+              )}
+            </div>
+            {driveStatus.latestFiles.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                Nenhum backup encontrado para sincronizar.
+              </div>
+            ) : (
+              <div className="divide-y divide-border/40">
+                {driveStatus.latestFiles.map((file) => {
+                  const badge = driveBadge(file);
+                  return (
+                    <div key={file.id} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">{file.file_name}</p>
+                        <p className="text-xs text-muted-foreground truncate">{file.external_storage_path || file.storage_path}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge variant="outline" className={cn('text-[10px]', badge.className)}>{badge.label}</Badge>
+                        {file.external_web_url && (
+                          <Button size="sm" variant="ghost" className="h-8 gap-1.5" onClick={() => openExternalFile(file.external_web_url)}>
+                            <ExternalLink className="w-3.5 h-3.5" /> Abrir
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

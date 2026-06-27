@@ -6,6 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { AlertTriangle, Plus, Replace, ClipboardList, X } from 'lucide-react';
 
+function formatHour(hour) {
+  if (!hour) return '—';
+  return String(hour).includes(':') ? hour : `${hour}:00`;
+}
+
 export default function EntryDuplicateDialog({
   open = false,
   onOpenChange = null,
@@ -16,13 +21,13 @@ export default function EntryDuplicateDialog({
 
   if (!duplicateEntry) return null;
 
-  const isOperator = userRole === 'operator';
   const isManager = userRole === 'manager';
   const isAdmin = userRole === 'admin';
 
   // Permissões
   const canReplace = isAdmin || isManager;
   const canRegisterNewSeparated = isAdmin || isManager;
+  const displayHour = formatHour(duplicateEntry.hour);
 
   const handleResolve = (action) => {
     if (!onResolve) return;
@@ -32,14 +37,14 @@ export default function EntryDuplicateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px] rounded-2xl">
+      <DialogContent className="sm:max-w-[520px] rounded-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base font-bold text-amber-600 dark:text-amber-500">
             <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
             Lançamento Duplicado Detectado
           </DialogTitle>
           <DialogDescription className="text-xs">
-            Já existe um registro de produção nesta hora ({duplicateEntry.hour}:00) com os mesmos dados de rastreabilidade (Lote/OP/Etapa).
+            Já existe um registro de produção nesta hora ({displayHour}) com os mesmos dados de rastreabilidade (Lote/OP/Etapa).
           </DialogDescription>
         </DialogHeader>
 
@@ -47,15 +52,15 @@ export default function EntryDuplicateDialog({
           {/* Detalhes do registro existente */}
           <div className="bg-secondary/40 border border-border/50 rounded-xl p-3.5 text-xs space-y-2">
             <h4 className="font-bold text-foreground">Registro Existente no Sistema:</h4>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-muted-foreground">
-              <p>Lote: <strong className="font-mono text-foreground">{duplicateEntry.lot_code || 'SEM_LOTE'}</strong></p>
-              <p>OP: <strong className="font-mono text-foreground">{duplicateEntry.order_number || 'MANUAL'}</strong></p>
-              <p>Hora: <strong className="text-foreground">{duplicateEntry.hour}:00</strong></p>
-              <p>Etapa: <strong className="text-foreground">{duplicateEntry.process_step || 'Apontamento Manual'}</strong></p>
-              <p>Produzido: <strong className="text-foreground text-sm font-bold text-emerald-600">+{duplicateEntry.produced}</strong></p>
-              <p>Refugo: <strong className="text-foreground text-sm font-bold text-red-500">-{duplicateEntry.scrap || 0}</strong></p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-muted-foreground">
+              <p className="min-w-0">Lote: <strong className="font-mono text-foreground break-all">{duplicateEntry.lot_code || 'SEM_LOTE'}</strong></p>
+              <p className="min-w-0">OP: <strong className="font-mono text-foreground break-all">{duplicateEntry.order_number || 'MANUAL'}</strong></p>
+              <p className="min-w-0">Hora: <strong className="text-foreground break-words">{displayHour}</strong></p>
+              <p className="min-w-0">Etapa: <strong className="text-foreground break-words">{duplicateEntry.process_step || 'Apontamento Manual'}</strong></p>
+              <p className="min-w-0">Produzido: <strong className="text-sm font-bold text-emerald-600">+{duplicateEntry.produced}</strong></p>
+              <p className="min-w-0">Refugo: <strong className="text-sm font-bold text-red-500">-{duplicateEntry.scrap || 0}</strong></p>
             </div>
-            <p className="text-[10px] text-muted-foreground pt-1.5 border-t border-border/40">
+            <p className="text-[10px] text-muted-foreground pt-1.5 border-t border-border/40 break-words">
               Registrado por: {duplicateEntry.operator}
             </p>
           </div>

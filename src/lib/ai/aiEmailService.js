@@ -21,13 +21,25 @@ export async function saveReportRecipient(recipient) {
     ? supabase.from('report_recipients').update(payload).eq('id', recipient.id)
     : supabase.from('report_recipients').insert(payload);
   const { data, error } = await query.select().single();
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (error.code === 'PGRST116' || error.message?.includes('single') || error.message?.includes('no rows')) {
+      throw new Error('Acesso negado: apenas administradores ou gestores podem salvar destinatários (bloqueado por RLS).');
+    }
+    throw new Error(error.message);
+  }
   return data;
 }
 
 export async function deleteReportRecipient(id) {
-  const { error } = await supabase.from('report_recipients').delete().eq('id', id);
+  const { data, error } = await supabase
+    .from('report_recipients')
+    .delete()
+    .eq('id', id)
+    .select();
   if (error) throw new Error(error.message);
+  if (!data || data.length === 0) {
+    throw new Error('Acesso negado ou destinatário não encontrado (bloqueado por RLS).');
+  }
 }
 
 export async function listEmailLogs(limit = 100) {

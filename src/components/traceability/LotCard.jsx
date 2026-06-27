@@ -2,16 +2,14 @@ import { useState } from 'react';
 import { STAGE_NEXT, KANBAN_STAGES } from '@/hooks/useTraceability';
 import { Button } from '@/components/ui/button';
 import {
-  ChevronRight, AlertCircle, Lock, Unlock, Package,
-  Calendar, Wrench, User, Clock, MoreHorizontal,
-  Scissors, Layers, Box,
+  ChevronRight, AlertCircle, Lock, Unlock,
+  Calendar, Wrench, Clock, Layers,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export default function LotCard({ lot, stage, onAdvance, onBlock, onUnblock }) {
+export default function LotCard({ lot, _stage, onAdvance, onBlock, onUnblock }) {
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [blockReason, setBlockReason] = useState('');
-  const [expanded, setExpanded] = useState(false);
 
   const order = lot.production_orders;
   const items = lot.lot_items || [];

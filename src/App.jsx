@@ -19,12 +19,9 @@ import DailySummary from '@/pages/DailySummary';
 import OEE from '@/pages/OEE';
 import Entry from '@/pages/Entry';
 import Occurrences from '@/pages/Occurrences';
-import DowntimeAnalysis from '@/pages/DowntimeAnalysis';
-import TrendAnalysis from '@/pages/TrendAnalysis';
 import Automations from '@/pages/Automations';
 import CellsAndGoals from '@/pages/CellsAndGoals';
 import Gamification from '@/pages/Gamification';
-import Operators from '@/pages/Operators';
 import Reports from '@/pages/Reports';
 import Users from '@/pages/Users';
 import Traceability from '@/pages/Traceability';
@@ -71,12 +68,12 @@ const AuthenticatedApp = () => {
           <Route path="/entrada" element={<Entry />} />
           <Route path="/coleta-rastreabilidade" element={<Navigate to="/entrada?modo=coleta" replace />} />
           <Route path="/ocorrencias" element={<Occurrences />} />
-          <Route path="/analise-paradas" element={<DowntimeAnalysis />} />
-          <Route path="/analise-tendencia" element={<TrendAnalysis />} />
+          <Route path="/analise-paradas" element={<Navigate to="/ocorrencias" replace />} />
+          <Route path="/analise-tendencia" element={<Navigate to="/relatorios?tab=trend" replace />} />
           <Route path="/automacoes" element={<Automations />} />
           <Route path="/celulas-metas" element={<CellsAndGoals />} />
           <Route path="/gamificacao" element={<Gamification />} />
-          <Route path="/operadores" element={<Operators />} />
+          <Route path="/operadores" element={<Navigate to="/usuarios?tab=operators" replace />} />
           <Route path="/metas" element={<Navigate to="/celulas-metas" replace />} />
           <Route path="/celulas" element={<Navigate to="/celulas-metas" replace />} />
           <Route path="/usuarios" element={<Users />} />
@@ -87,9 +84,10 @@ const AuthenticatedApp = () => {
           <Route path="/integracoes/promob" element={<PromobIntegration />} />
           <Route path="/logs-sistema" element={<SystemLogs />} />
           <Route path="/downloads-backups" element={<DownloadsBackups />} />
+          <Route path="/backups" element={<Navigate to="/downloads-backups" replace />} />
+          <Route path="/ordens-producao" element={<Navigate to="/integracoes/promob?tab=orders" replace />} />
           {/* Aliases de compatibilidade */}
-          <Route path="/analise-paradas" element={<Navigate to="/ocorrencias" replace />} />
-          <Route path="/analise-tendencia" element={<Navigate to="/relatorios" replace />} />
+          <Route path="/coleta-codigo-rfid" element={<Navigate to="/entrada?modo=coleta" replace />} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />

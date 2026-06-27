@@ -64,8 +64,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icons/*.png'],
       manifest: {
-        name: 'AC.Prod — Controle de Produção',
-        short_name: 'AC.Prod',
+        name: 'Leo Flow — Controle de Produção',
+        short_name: 'Leo Flow',
         description: 'Sistema MES de controle e apontamento de produção industrial',
         theme_color: '#0f172a',
         background_color: '#0f172a',
@@ -92,6 +92,7 @@ export default defineConfig({
       workbox: {
         // Cache estático
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        maximumFileSizeToCacheInBytes: 3000000,
         // Estratégia network-first para API calls Supabase
         runtimeCaching: [
           {

@@ -84,6 +84,45 @@ async function byOrderColumn(column, value, matchedBy) {
   return normalizeContext({ ...context, productionOrder: order, matchedBy, contextFound: true });
 }
 
+async function byOrderColumns(columns, value, matchedBy) {
+  const clean = cleanValue(value);
+  let order = null;
+  for (const column of columns) {
+    const result = await supabase.from('production_orders').select('*').ilike(column, clean).order('created_at', { ascending: false }).limit(1).maybeSingle();
+    if (!result.error && result.data) { order = result.data; break; }
+    if (result.error && !isSchemaError(result.error)) throw result.error;
+  }
+  if (!order) return normalizeContext({ warnings: [`${matchedBy} ${clean} não localizado.`] });
+  const context = await byOrder(order.order_number || order.order_code);
+  return normalizeContext({ ...context, productionOrder: order, matchedBy, contextFound: true });
+}
+
+async function lookupByProduct(value) {
+  const clean = cleanValue(value);
+  let item = null;
+  for (const column of ['product_code', 'product_name']) {
+    const result = await supabase.from('production_order_items').select('*').ilike(column, clean).order('created_at', { ascending: false }).limit(1).maybeSingle();
+    if (!result.error && result.data) { item = result.data; break; }
+    if (result.error && !isSchemaError(result.error)) throw result.error;
+  }
+  if (!item) return normalizeContext({ warnings: [`Produto ${clean} não localizado.`] });
+  const { data: lot } = item.lot_id
+    ? await supabase.from('production_lots').select('*').eq('id', item.lot_id).maybeSingle()
+    : { data: null };
+  if (lot) {
+    const context = await hydrateLot(lot, 'product');
+    return normalizeContext({ ...context, item, matchedBy: 'product', contextFound: true });
+  }
+  const { data: productionOrder } = await supabase.from('production_orders').select('*').eq('id', item.production_order_id).maybeSingle();
+  return normalizeContext({ productionOrder, item, matchedBy: 'product', contextFound: true });
+}
+
+const lookupByCustomer = (value) => byOrderColumns(
+  ['customer_code', 'customer_legal_name', 'customer_trade_name', 'customer_name'],
+  value,
+  'customer',
+);
+
 export const lookupByPedido = byOrder;
 export const lookupByLote = byLot;
 export const lookupByCarga = (value) => byOrderColumn('load_number', value, 'load');
@@ -122,12 +161,14 @@ export async function lookupByTagValue(value) {
 }
 
 async function fallbackResolve(value, hint) {
-  const attempts = hint === 'tag' ? [lookupByTagValue, lookupByLote, lookupByPedido, lookupByPallet, lookupByCarga]
+  const attempts = hint === 'tag' ? [lookupByTagValue, lookupByLote, lookupByPedido, lookupByPallet, lookupByCarga, lookupByProduct, lookupByCustomer]
     : hint === 'lot' ? [lookupByLote]
       : hint === 'order' ? [lookupByPedido]
         : hint === 'load' ? [lookupByCarga]
           : hint === 'pallet' ? [lookupByPallet]
-            : [lookupByTagValue, lookupByLote, lookupByPedido, lookupByPallet, lookupByCarga];
+            : hint === 'product' ? [lookupByProduct]
+              : hint === 'customer' ? [lookupByCustomer]
+                : [lookupByTagValue, lookupByLote, lookupByPedido, lookupByPallet, lookupByCarga, lookupByProduct, lookupByCustomer];
   const warnings = [];
   for (const lookup of attempts) {
     try {

@@ -79,9 +79,6 @@ export default function ProductionKpiPreview({
   const status = getStatusConfig(stats.efficiency, stats.target > 0);
   const StatusIcon = status.icon;
 
-  const hourStatus = getStatusConfig(stats.hourEfficiency, stats.currentHourTarget > 0);
-  const HourStatusIcon = hourStatus.icon;
-
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
       

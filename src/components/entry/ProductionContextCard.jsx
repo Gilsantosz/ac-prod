@@ -1,6 +1,5 @@
 import { 
-  User, Layers, Clock, Calendar, Wifi, WifiOff, 
-  CloudLightning, DatabaseBackup, Settings 
+  User, Layers, Clock, Calendar, Wifi, WifiOff, DatabaseBackup 
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';

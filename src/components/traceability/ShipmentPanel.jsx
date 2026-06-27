@@ -6,8 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  Truck, CheckCircle, RefreshCw, Package, Clock, User,
-  MapPin, Hash, Plus, AlertCircle, CalendarDays,
+  Truck, CheckCircle, RefreshCw, Package, Clock, User, Hash, CalendarDays,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 

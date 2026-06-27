@@ -2,6 +2,7 @@ import { fetchAiContext } from './aiContextService';
 import { analyzeProductionContext, formatInsightAnswer } from './aiInsightService';
 import { normalizeText } from '@/lib/assistant/assistantEngine';
 import { recordAiRequest } from './aiAuditService';
+import { executeOperationalCommand, parseOperationalCommand } from './aiOperationalCommandService';
 
 function filtersFromQuestion(question) {
   const normalized = normalizeText(question);
@@ -32,6 +33,9 @@ export function isOperationalAiQuestion(question) {
 export async function askOperationalCopilot(question, { user }) {
   const started = performance.now();
   const normalized = normalizeText(question);
+  if (parseOperationalCommand(question)) {
+    return executeOperationalCommand(question, { user });
+  }
   if (/\b(relatorio|pdf|excel|csv|enviar por email|agendar)\b/.test(normalized)) {
     const content = 'Posso montar, exportar, enviar e agendar esse relatório na área IA Operacional. Os filtros e destinatários ficam registrados para auditoria.';
     await recordAiRequest({ user, requestType: 'navigation', prompt: question, intent: 'report_request', responseSummary: content, sourceTables: [], durationMs: Math.round(performance.now() - started) });

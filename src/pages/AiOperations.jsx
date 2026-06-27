@@ -35,7 +35,9 @@ export default function AiOperations() {
   const [report, setReport] = useState(null);
   const [emailOpen, setEmailOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  const canManage = user?.role === 'admin' || user?.role === 'manager' || user?.permissions?.manage_automations;
+  // canManage: admin e manager podem gerenciar destinatários/agendamentos (alinhado com RLS do banco)
+  // canManage NÃO inclui operadores com manage_automations, pois a RLS bloqueia INSERT/DELETE em report_recipients para não-admin/manager
+  const canManage = user?.role === 'admin' || user?.role === 'manager';
 
   const metadataQuery = useQuery({ queryKey: ['ai-metadata', user?.id], queryFn: () => fetchAiMetadata(user), enabled: !!user });
   const historyQuery = useQuery({ queryKey: ['ai-report-jobs'], queryFn: () => listReportJobs(), enabled: tab === 'history' });
@@ -81,7 +83,7 @@ export default function AiOperations() {
   return (
     <IndustrialPageShell maxWidth="max-w-[1600px]">
       <header className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
-        <div><div className="flex items-center gap-2 text-xs font-bold uppercase text-emerald-700 dark:text-emerald-400"><Bot className="w-4 h-4" />Análise contextual e auditável</div><h1 className="text-3xl sm:text-4xl font-extrabold text-foreground mt-1">AC.Prod Copilot Industrial</h1><p className="text-sm text-muted-foreground mt-2 max-w-3xl">Consulte a operação, gere relatórios Leo Madeiras, envie aos gestores e acompanhe cada execução.</p></div>
+        <div><div className="flex items-center gap-2 text-xs font-bold uppercase text-emerald-700 dark:text-emerald-400"><Bot className="w-4 h-4" />Análise contextual e auditável</div><h1 className="text-3xl sm:text-4xl font-extrabold text-foreground mt-1">Leo Flow Copilot Industrial</h1><p className="text-sm text-muted-foreground mt-2 max-w-3xl">Consulte a operação, gere relatórios Leo Madeiras, envie aos gestores e acompanhe cada execução.</p></div>
         {report && <Button variant="outline" onClick={() => setScheduleOpen(true)} disabled={!canManage} className="gap-2"><CalendarClock className="w-4 h-4" />Agendar relatório</Button>}
       </header>
       <IndustrialModeTabs items={tabs} value={tab} onChange={setTab} />

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, PlusCircle, LogOut, AlertOctagon, Zap,
-  LineChart, Boxes, Users, Gauge, HardHat,
+  LineChart, Boxes, Users, Gauge,
   ClipboardList, Trophy, Sun, Moon, Menu, X,
   ChevronLeft, Layers, Plug, Shield, HardDrive,
   BrainCircuit,
@@ -30,7 +30,6 @@ const nav = [
   { to: '/resumo-diario',       label: 'Resumo Diário',       icon: ClipboardList },
   { to: '/oee',                 label: 'OEE',                 icon: Gauge },
   { to: '/celulas-metas',       label: 'Células e Metas',     icon: Boxes },
-  { to: '/operadores',          label: 'Operadores',          icon: HardHat },
   // ─── Rastreabilidade MES ──────────────────────────────────────────
   { to: '/rastreabilidade',     label: 'Rastreabilidade',     icon: Layers },
   { to: '/integracoes/promob',  label: 'Integração Promob',   icon: Plug },
@@ -41,9 +40,9 @@ const nav = [
   { to: '/ia-operacional',      label: 'IA Operacional',      icon: BrainCircuit },
   { to: '/automacoes',          label: 'Automações',          icon: Zap },
   // ─── Administração ─────────────────────────────────────────────────
-  { to: '/usuarios',            label: 'Usuários',            icon: Users,     adminOnly: true },
+  { to: '/usuarios',            label: 'Usuários',            icon: Users },
   { to: '/logs-sistema',        label: 'Logs do Sistema',     icon: Shield,    adminOnly: true },
-  { to: '/downloads-backups',   label: 'Downloads & Backups', icon: HardDrive, adminOnly: true },
+  { to: '/downloads-backups',   label: 'Backups & Drive',     icon: HardDrive, adminOnly: true },
 ];
 
 export default function AppLayout() {
@@ -86,7 +85,7 @@ function AppShell() {
     '/resumo-diario': 'view_dashboards',
     '/oee': 'view_dashboards',
     '/celulas-metas': 'manage_cells',
-    '/operadores': 'manage_operators',
+    '/usuarios': 'manage_operators',
     '/ocorrencias': 'manage_occurrences',
     '/analise-paradas': 'manage_occurrences',
     '/analise-tendencia': 'view_dashboards',
@@ -143,7 +142,7 @@ function AppShell() {
               <LeoLogo size="sm" className="shrink-0" />
               {!collapsed && (
                 <span className="font-extrabold text-lg leading-none tracking-tight select-none font-display text-foreground">
-                  Leo
+                  Leo Flow
                 </span>
               )}
             </div>
@@ -272,7 +271,7 @@ function AppShell() {
             </button>
             <div className="flex items-center gap-2">
               <LeoLogo size="sm" className="shrink-0" />
-              <span className="font-bold text-base leading-tight text-foreground font-display">Leo</span>
+              <span className="font-bold text-base leading-tight text-foreground font-display">Leo Flow</span>
             </div>
           </div>
 
@@ -313,7 +312,7 @@ function AppShell() {
                 <div className="flex items-center justify-between pb-4 border-b border-border/60 mb-4 shrink-0">
                   <div className="flex items-center gap-2">
                     <LeoLogo size="sm" className="shrink-0" />
-                    <span className="font-bold text-base text-foreground font-display">Leo</span>
+                    <span className="font-bold text-base text-foreground font-display">Leo Flow</span>
                   </div>
                   <button
                     onClick={() => setMobileOpen(false)}

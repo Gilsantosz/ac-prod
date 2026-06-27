@@ -1,9 +1,10 @@
 // Edge Function: promob-parse-order
-// Parseia XML do Promob e retorna JSON normalizado
+// Parseia XML do Promob e planilhas XLSX, CSV, TSV e retorna JSON normalizado
 // Esta função é usada internamente pelas outras Edge Functions
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { XMLParser } from "npm:fast-xml-parser@4.5.0";
+import * as XLSX from "npm:xlsx@0.18.5";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -14,10 +15,22 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
-    const { xmlContent } = await req.json();
-    if (!xmlContent) throw new Error("xmlContent é obrigatório");
+    const body = await req.json();
+    const xmlContent = body.xmlContent || body.fileContent;
+    const fileType = body.fileType || "xml";
+    const fileName = body.fileName || "";
 
-    const parsed = parsePromobXml(xmlContent);
+    if (!xmlContent) throw new Error("fileContent ou xmlContent é obrigatório");
+
+    let parsed;
+    const isXml = fileType === "xml" || (!body.fileType && (xmlContent.trim().startsWith("<") || fileName.toLowerCase().endsWith(".xml")));
+
+    if (isXml) {
+      parsed = parsePromobXml(xmlContent);
+    } else {
+      parsed = parseSheetContent(xmlContent, fileType);
+    }
+
     return new Response(JSON.stringify({ success: true, data: parsed }), {
       headers: { ...CORS, "Content-Type": "application/json" },
     });
@@ -28,6 +41,7 @@ serve(async (req) => {
     });
   }
 });
+
 
 function stringify(value) {
   if (value == null) return "";
@@ -389,3 +403,221 @@ function collectNodes(source, names) {
 function firstObjectValue(obj) {
   return Object.values(obj || {}).find((value) => value && typeof value === "object");
 }
+
+function base64ToUint8Array(base64: string): Uint8Array {
+  const clean = base64.replace(/^data:.*;base64,/, "");
+  const binary = atob(clean);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function parseSheetContent(content: string, fileType: string) {
+  let workbook;
+  if (fileType === "xlsx") {
+    const bytes = base64ToUint8Array(content);
+    workbook = XLSX.read(bytes, { type: "array" });
+  } else {
+    // csv ou tsv
+    workbook = XLSX.read(content, { type: "string" });
+  }
+
+  // Pega a primeira aba da planilha
+  const firstSheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[firstSheetName];
+  
+  // Converte para JSON array de objetos (linhas)
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+  return parseRowsToNormalizedJson(rows);
+}
+
+function parseRowsToNormalizedJson(rows: any[]) {
+  if (rows.length === 0) {
+    throw new Error("A planilha está vazia");
+  }
+
+  // Estabelece o mapeamento de colunas da primeira linha
+  const sampleRow = rows[0];
+  const keys = Object.keys(sampleRow);
+  
+  const mapping: { [normalizedKey: string]: string } = {};
+
+  const colMaps: { [key: string]: string[] } = {
+    orderCode: ["pedido", "ordem", "ordem de producao", "ordem de produção", "order", "order code", "order_code", "op"],
+    customer: ["cliente", "customer", "customer name", "customer_name", "razao social", "razao_social", "razaosocial", "razao_social_cliente", "nome_fantasia_cliente"],
+    projectName: ["projeto", "project", "project name", "project_name"],
+    environmentName: ["ambiente", "environment", "room", "environment_name"],
+    moduleName: ["modulo", "módulo", "module", "module_name", "celula_destino"],
+    pieceCode: ["codigo", "código", "codigo peca", "código peça", "code", "part code", "piece code", "piece_code", "item_code", "id", "peca_id"],
+    pieceName: ["nome", "nome peca", "nome peça", "descricao", "descrição", "description", "name", "piece_name", "piece name", "item_name", "peca_name", "peca_nome"],
+    material: ["material", "board", "chapa"],
+    color: ["cor", "color", "padrao", "padrão", "grain", "cor_padrao"],
+    thickness: ["espessura", "esp", "thickness", "espessura_mm"],
+    width: ["comprimento", "comp", "length", "comprimento (mm)", "length_mm", "width", "comprimento_mm"],
+    height: ["largura", "larg", "height", "largura (mm)", "height_mm", "largura_mm"],
+    quantity: ["quantidade", "qtd", "quantity", "qty", "qtde"],
+    edgeFront: ["frente", "borda frente", "fita frente", "edge front", "borda 1", "borda_frontal", "frontal", "fita_borda_frente"],
+    edgeBack: ["tras", "trás", "traseira", "borda tras", "borda trás", "fita tras", "fita trás", "edge back", "borda 2", "borda_traseira", "fita_borda_tras"],
+    edgeLeft: ["esquerda", "borda esquerda", "fita esquerda", "edge left", "borda 3", "borda_esquerda", "fita_borda_esquerda"],
+    edgeRight: ["direita", "borda direita", "fita direita", "edge right", "borda 4", "borda_direita", "fita_borda_direita"],
+    requiresCut: ["corte", "requires cut", "cut", "corte_obrigatorio"],
+    requiresEdge: ["bordo", "requires edge", "edge", "bordo_obrigatorio"],
+    requiresCnc: ["usinagem", "requires cnc", "cnc", "usinagem_obrigatoria", "usinagem_cnc"],
+    requiresJoinery: ["marcenaria", "requires joinery", "joinery", "marcenaria_obrigatoria"]
+  };
+
+  // Encontra mapeamento para cada chave
+  for (const [normKey, aliases] of Object.entries(colMaps)) {
+    for (const key of keys) {
+      const cleanKey = key.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (aliases.some(alias => {
+        const cleanAlias = alias.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        return cleanKey === cleanAlias;
+      })) {
+        mapping[normKey] = key;
+        break;
+      }
+    }
+  }
+
+  const getValue = (row: any, normKey: string, fallback: any = "") => {
+    const key = mapping[normKey];
+    if (key === undefined) return fallback;
+    return row[key] ?? fallback;
+  };
+
+  const firstRow = rows[0];
+  const orderCode = String(getValue(firstRow, "orderCode") || `OP-${Date.now()}`);
+  const customer = String(getValue(firstRow, "customer") || "Cliente Geral");
+  const projectName = String(getValue(firstRow, "projectName") || `Importação Planilha ${orderCode}`);
+  const projectCode = String(getValue(firstRow, "orderCode") || orderCode);
+  const date = new Date().toISOString().split("T")[0];
+  const deliveryDate = "";
+
+  const project = { code: projectCode, name: projectName, customer, orderCode, date, deliveryDate };
+
+  const environmentsMap = new Map();
+  const allItems = [];
+
+  for (const row of rows) {
+    const pieceCode = String(getValue(row, "pieceCode") || "").trim();
+    const pieceName = String(getValue(row, "pieceName") || "").trim();
+    if (!pieceCode && !pieceName) continue;
+
+    const finalPieceCode = pieceCode || `PEC-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+    const finalPieceName = pieceName || finalPieceCode;
+
+    const envName = String(getValue(row, "environmentName") || "Ambiente Geral").trim();
+    const modName = String(getValue(row, "moduleName") || "Módulo Geral").trim();
+
+    const material = String(getValue(row, "material") || "").trim();
+    const color = String(getValue(row, "color") || "").trim();
+    
+    const thickness = parseFloat(String(getValue(row, "thickness") || "0").replace(",", ".")) || 0;
+    const width = parseFloat(String(getValue(row, "width") || "0").replace(",", ".")) || 0;
+    const height = parseFloat(String(getValue(row, "height") || "0").replace(",", ".")) || 0;
+    const quantity = parseInt(String(getValue(row, "quantity") || "1")) || 1;
+
+    const cleanEdge = (val: any) => {
+      const s = String(val ?? "").trim();
+      return (s.toUpperCase() === "SEM FITA" || s === "0" || s === "-") ? "" : s;
+    };
+    const edgeFront = cleanEdge(getValue(row, "edgeFront"));
+    const edgeBack = cleanEdge(getValue(row, "edgeBack"));
+    const edgeLeft = cleanEdge(getValue(row, "edgeLeft"));
+    const edgeRight = cleanEdge(getValue(row, "edgeRight"));
+
+    const hasEdge = [edgeFront, edgeBack, edgeLeft, edgeRight].some(e => !!e);
+
+    const getBool = (val: any, fallback: boolean) => {
+      if (val === undefined || val === "") return fallback;
+      const s = String(val).trim().toUpperCase();
+      return s === "S" || s === "SIM" || s === "T" || s === "TRUE" || s === "1";
+    };
+
+    const requiresCut = getBool(getValue(row, "requiresCut", undefined), true);
+    const requiresEdge = getBool(getValue(row, "requiresEdge", undefined), hasEdge);
+    const requiresCnc = getBool(getValue(row, "requiresCnc", undefined), false);
+    const requiresJoinery = getBool(getValue(row, "requiresJoinery", undefined), false);
+
+    const item = {
+      code: finalPieceCode,
+      name: finalPieceName,
+      material,
+      color,
+      thickness,
+      width,
+      height,
+      quantity,
+      edgeFront,
+      edgeBack,
+      edgeLeft,
+      edgeRight,
+      requiresCut,
+      requiresEdge,
+      requiresCnc,
+      requiresJoinery,
+      requiresSeparation: true,
+      requiresPackaging: true,
+      requiresShipping: true,
+      environmentName: envName,
+      moduleName: modName,
+      rawAttributes: {}
+    };
+
+    if (!environmentsMap.has(envName)) {
+      environmentsMap.set(envName, new Map());
+    }
+    const modulesMap = environmentsMap.get(envName);
+    if (!modulesMap.has(modName)) {
+      modulesMap.set(modName, []);
+    }
+    modulesMap.get(modName).push(item);
+    allItems.push(item);
+  }
+
+  const environments = [];
+  for (const [envName, modulesMap] of environmentsMap.entries()) {
+    const modules = [];
+    for (const [modName, items] of modulesMap.entries()) {
+      modules.push({
+        id: modName,
+        name: modName,
+        items
+      });
+    }
+    environments.push({
+      id: envName,
+      name: envName,
+      modules
+    });
+  }
+
+  let totalPieces = 0;
+  let requiresJoinery = false;
+
+  for (const item of allItems) {
+    totalPieces += item.quantity || 1;
+    if (item.requiresJoinery) requiresJoinery = true;
+  }
+
+  return {
+    project,
+    environments,
+    allItems,
+    summary: {
+      totalPieces,
+      totalItems: allItems.length,
+      requiresJoinery,
+      requiresCnc: allItems.some(i => i.requiresCnc),
+      requiresEdge: allItems.some(i => i.requiresEdge),
+      environments: environments.length,
+      modules: environments.reduce((a, e) => a + e.modules.length, 0)
+    }
+  };
+}
+

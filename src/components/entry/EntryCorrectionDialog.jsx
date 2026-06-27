@@ -6,7 +6,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ShieldAlert, AlertTriangle, AlertOctagon, HelpCircle } from 'lucide-react';
+import { ShieldAlert } from 'lucide-react';
+
+function formatHour(hour) {
+  if (!hour) return '—';
+  return String(hour).includes(':') ? hour : `${hour}:00`;
+}
 
 export default function EntryCorrectionDialog({
   open = false,
@@ -51,10 +56,11 @@ export default function EntryCorrectionDialog({
   };
 
   if (!entry) return null;
+  const displayHour = formatHour(entry.hour);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px] rounded-2xl">
+      <DialogContent className="sm:max-w-[520px] rounded-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base font-bold">
             <ShieldAlert className="w-5 h-5 text-sky-500 shrink-0" />
@@ -67,20 +73,26 @@ export default function EntryCorrectionDialog({
 
         <form onSubmit={handleSubmit} className="space-y-4 py-1">
           {/* Informações resumidas do registro */}
-          <div className="bg-secondary/40 border border-border/50 rounded-xl p-3 text-xs space-y-1.5 font-mono">
-            <p>Lote: <strong className="text-foreground">{entry.lot_code || 'SEM_LOTE'}</strong> | OP: <strong className="text-foreground">{entry.order_number || 'MANUAL'}</strong></p>
-            <p>Data: <strong className="text-foreground">{entry.date}</strong> | Hora: <strong className="text-foreground">{entry.hour}:00</strong></p>
-            <p>Produzido: <strong className="text-emerald-600">+{entry.produced}</strong> | Refugo: <strong className="text-red-500">-{entry.scrap || 0}</strong> | Parada: <strong className="text-amber-600">{entry.downtime || 0}m</strong></p>
+          <div className="bg-secondary/40 border border-border/50 rounded-xl p-3 text-xs font-mono">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-muted-foreground">
+              <p className="min-w-0">Lote: <strong className="text-foreground break-all">{entry.lot_code || 'SEM_LOTE'}</strong></p>
+              <p className="min-w-0">OP: <strong className="text-foreground break-all">{entry.order_number || 'MANUAL'}</strong></p>
+              <p className="min-w-0">Data: <strong className="text-foreground break-words">{entry.date}</strong></p>
+              <p className="min-w-0">Hora: <strong className="text-foreground break-words">{displayHour}</strong></p>
+              <p className="min-w-0">Produzido: <strong className="text-emerald-600">+{entry.produced}</strong></p>
+              <p className="min-w-0">Refugo: <strong className="text-red-500">-{entry.scrap || 0}</strong></p>
+              <p className="min-w-0 sm:col-span-2">Parada: <strong className="text-amber-600">{entry.downtime || 0}m</strong></p>
+            </div>
           </div>
 
           {/* Tipo de Ação */}
-          <div className="space-y-1.5">
-            <Label htmlFor="correction-action-type" className="text-xs font-bold text-muted-foreground">Tipo de Ação</Label>
+          <div className="grid gap-2 min-w-0">
+            <Label htmlFor="correction-action-type" className="flex min-h-5 items-center text-xs font-bold leading-none text-muted-foreground">Tipo de Ação</Label>
             <select
               id="correction-action-type"
               value={actionType}
               onChange={(e) => setActionType(e.target.value)}
-              className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm font-medium leading-none text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
               required
             >
               {canDirectlyModify ? (
@@ -96,8 +108,8 @@ export default function EntryCorrectionDialog({
           </div>
 
           {/* Justificativa */}
-          <div className="space-y-1.5">
-            <Label htmlFor="correction-reason" className="text-xs font-bold text-muted-foreground">Justificativa / Motivo da Alteração</Label>
+          <div className="grid gap-2 min-w-0">
+            <Label htmlFor="correction-reason" className="flex min-h-5 items-center text-xs font-bold leading-none text-muted-foreground">Justificativa / Motivo da Alteração</Label>
             <Textarea
               id="correction-reason"
               placeholder="Descreva o motivo desta correção operacional em detalhes..."

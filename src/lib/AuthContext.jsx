@@ -32,7 +32,7 @@ const resolveSessionUser = async (session) => {
   }
 
   if (userResult?.error?.message === 'Timeout') {
-    console.warn('[AC.Prod] Validação remota da sessão demorou; usando sessão local.');
+    console.warn('[Leo Flow] Validação remota da sessão demorou; usando sessão local.');
     return { user: session.user, shouldSignOut: false };
   }
 
@@ -62,7 +62,7 @@ export const AuthProvider = ({ children }) => {
       );
 
       if (error && error.code !== 'PGRST116') {
-        console.warn('[AC.Prod] Erro ao buscar perfil:', error);
+        console.warn('[Leo Flow] Erro ao buscar perfil:', error);
       }
 
       const meta = supabaseUser.user_metadata || {};
@@ -87,7 +87,7 @@ export const AuthProvider = ({ children }) => {
         managed_cells: profile?.managed_cells || [],
       };
     } catch (err) {
-      console.error('[AC.Prod] Erro no catch de fetchProfile:', err);
+      console.error('[Leo Flow] Erro no catch de fetchProfile:', err);
       const meta = supabaseUser.user_metadata || {};
       return {
         id: supabaseUser.id,
@@ -173,7 +173,7 @@ export const AuthProvider = ({ children }) => {
           setIsAuthenticated(false);
         }
       } catch (err) {
-        console.error('[AC.Prod] Erro ao inicializar sessão:', err);
+        console.error('[Leo Flow] Erro ao inicializar sessão:', err);
         if (isMounted) {
           setUser(null);
           setIsAuthenticated(false);
@@ -209,7 +209,7 @@ export const AuthProvider = ({ children }) => {
             setIsAuthenticated(true);
             setAuthError(null);
           } catch (err) {
-            console.error('[AC.Prod] Erro ao carregar perfil após login:', err);
+            console.error('[Leo Flow] Erro ao carregar perfil após login:', err);
           }
         } else if (event === 'SIGNED_OUT') {
           clearPersistedAuthSession();
@@ -269,7 +269,7 @@ export const AuthProvider = ({ children }) => {
         setIsAuthenticated(false);
       }
     } catch (error) {
-      console.error('[AC.Prod] checkUserAuth error:', error);
+      console.error('[Leo Flow] checkUserAuth error:', error);
       setUser(null);
       setIsAuthenticated(false);
     } finally {

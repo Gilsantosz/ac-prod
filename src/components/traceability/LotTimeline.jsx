@@ -4,11 +4,10 @@ import { supabase } from '@/lib/supabaseClient';
 import { KANBAN_STAGES } from '@/hooks/useTraceability';
 import { cn } from '@/lib/utils';
 import {
-  GitBranch, ChevronRight, Clock, User, Package,
+  GitBranch, Clock, User, Package,
   CheckCircle, XCircle, AlertCircle, ArrowRightLeft,
   Play, Square, RefreshCw,
 } from 'lucide-react';
-import { base44 } from '@/lib/localDb';
 
 const EVENT_ICONS = {
   start:    { icon: Play,          color: 'text-blue-500',   bg: 'bg-blue-100 dark:bg-blue-900/30' },
@@ -108,7 +107,7 @@ export default function LotTimeline({ trace }) {
                 {/* Linha vertical */}
                 <div className="absolute left-3 top-2 bottom-2 w-px bg-border/60" />
 
-                {events.map((event, idx) => {
+                {events.map((event) => {
                   const config = EVENT_ICONS[event.event_type] || EVENT_ICONS.note;
                   const Icon = config.icon;
                   const stageName = stageInfo(event.step_code)?.label || event.step_code;

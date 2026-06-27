@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { KANBAN_STAGES, STAGE_NEXT } from '@/hooks/useTraceability';
 import LotCard from './LotCard';
-import { ChevronRight, AlertCircle } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function LotKanban({ trace }) {
@@ -12,10 +12,7 @@ export default function LotKanban({ trace }) {
   const toggleStage = (code) =>
     setExpandedStages(p => ({ ...p, [code]: !p[code] }));
 
-  // Exibe apenas estágios com lotes (ou todos se quiser visão completa)
-  const activeStages = KANBAN_STAGES.filter(
-    s => (trace.lotsByStage[s.code]?.length > 0) || s.code === 'released'
-  );
+
 
   if (trace.lots.isLoading) {
     return (

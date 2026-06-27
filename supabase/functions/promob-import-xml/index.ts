@@ -13,6 +13,10 @@ const CORS = {
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
+  let importBatchId: string | null = null;
+  let supabaseClient: any = null;
+  let userId: string | null = null;
+
   try {
     // ─── Auth ─────────────────────────────────────────────────
     const authHeader = req.headers.get("Authorization");
@@ -23,12 +27,14 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       { auth: { persistSession: false } }
     );
+    supabaseClient = supabase;
 
     // Verifica token do usuário
     const { data: { user }, error: authError } = await supabase.auth.getUser(
       authHeader.replace("Bearer ", "")
     );
     if (authError || !user) throw new Error("Token inválido");
+    userId = user.id;
 
     // Verifica permissão (apenas admin e manager)
     const { data: profile } = await supabase
@@ -38,38 +44,58 @@ serve(async (req) => {
       .single();
 
     if (!["admin", "manager"].includes(profile?.role)) {
-      throw new Error("Permissão insuficiente para importar XML Promob");
+      throw new Error("Permissão insuficiente para importar arquivos no Portal PCP");
     }
 
     // ─── Recebe payload ───────────────────────────────────────
     const body = await req.json();
-    const { xmlContent, fileName, integrationId } = body;
+    const { 
+      xmlContent: legacyXmlContent, 
+      fileContent, 
+      fileType = "xml", 
+      fileName, 
+      integrationId, 
+      parsedData,
+      totalErrors = 0,
+      totalWarnings = 0
+    } = body;
+    const xmlContent = fileContent || legacyXmlContent;
 
-    if (!xmlContent) throw new Error("xmlContent é obrigatório");
+    if (!xmlContent) throw new Error("fileContent ou xmlContent é obrigatório");
 
-    // ─── Parse do XML ─────────────────────────────────────────
-    // Chama a Edge Function promob-parse-order internamente
-    const parseResp = await fetch(
-      `${Deno.env.get("SUPABASE_URL")}/functions/v1/promob-parse-order`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ xmlContent }),
-      }
-    );
-    const parseResult = await parseResp.json();
-    if (!parseResult.success) throw new Error(`Falha no parse: ${parseResult.error}`);
+    // ─── Parse do XML/Planilha ─────────────────────────────────────────
+    let parsed = parsedData;
+    if (!parsed) {
+      // Chama a Edge Function promob-parse-order internamente
+      const parseResp = await fetch(
+        `${Deno.env.get("SUPABASE_URL")}/functions/v1/promob-parse-order`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ fileContent: xmlContent, fileType, fileName }),
+        }
+      );
+      const parseResult = await parseResp.json();
+      if (!parseResult.success) throw new Error(`Falha no parse: ${parseResult.error}`);
+      parsed = parseResult.data;
+    }
 
-    const parsed = parseResult.data;
     const { project, allItems, summary } = parsed;
 
-    // ─── Hash do arquivo para detecção de duplicidade ─────────
+    // Calcular tamanho em bytes
     const encoder = new TextEncoder();
-    const data = encoder.encode(xmlContent);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const fileSize = fileType === "xlsx" 
+      ? base64ToUint8Array(xmlContent).length 
+      : encoder.encode(xmlContent).length;
+
+    // Calcular total de peças
+    const totalParts = allItems.reduce((acc: number, item: any) => acc + (item.quantity || 1), 0);
+
+    // ─── Hash do arquivo para detecção de duplicidade ─────────
+    const hashBuffer = await crypto.subtle.digest("SHA-256", encoder.encode(xmlContent));
     const fileHash = Array.from(new Uint8Array(hashBuffer))
       .map(b => b.toString(16).padStart(2, "0")).join("");
 
@@ -82,7 +108,6 @@ serve(async (req) => {
       .single();
 
     if (existing) {
-      // Detectar diferenças vs. importação anterior
       const { data: existingOrder } = await supabase
         .from("production_orders")
         .select("id")
@@ -122,19 +147,36 @@ serve(async (req) => {
       }), { headers: { ...CORS, "Content-Type": "application/json" } });
     }
 
-    // ─── Salvar XML no storage ────────────────────────────────
+    // ─── Salvar no storage ────────────────────────────────
     const now = new Date();
+    const ext = fileType === "xlsx" ? "xlsx" : fileType === "csv" ? "csv" : fileType === "tsv" ? "tsv" : "xml";
     const storagePath = `${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,'0')}` +
-      `/${project.orderCode || 'sem-pedido'}/v1/promob-original.xml`;
+      `/${project.orderCode || 'sem-pedido'}/v1/promob-original.${ext}`;
+
+    const contentTypes: Record<string, string> = {
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      csv: "text/csv",
+      tsv: "text/tab-separated-values",
+      xml: "application/xml"
+    };
+    const contentType = contentTypes[fileType] || "application/octet-stream";
+
+    let uploadData: Uint8Array | string;
+    if (fileType === "xlsx") {
+      uploadData = base64ToUint8Array(xmlContent);
+    } else {
+      uploadData = xmlContent;
+    }
 
     await supabase.storage
       .from("productive-backups")
-      .upload(storagePath, xmlContent, {
-        contentType: "application/xml",
+      .upload(storagePath, uploadData, {
+        contentType,
         upsert: false,
       });
 
     // ─── Registrar lote de importação ─────────────────────────
+    const retentionUntil = new Date(Date.now() + 4 * 365.25 * 24 * 60 * 60 * 1000).toISOString();
     const { data: importBatch, error: batchError } = await supabase
       .from("promob_import_batches")
       .insert({
@@ -149,12 +191,61 @@ serve(async (req) => {
         raw_xml_storage_path:  storagePath,
         status:                "parsed",
         imported_by:           user.id,
-        imported_at:           new Date().toISOString(),
+        imported_at:           now.toISOString(),
+        file_size:             fileSize,
+        total_parts:           totalParts,
+        total_errors:          totalErrors,
+        total_warnings:        totalWarnings,
+        validated_at:          now.toISOString(),
+        retention_until:       retentionUntil,
+        backup_status:         "pending",
       })
       .select()
       .single();
 
     if (batchError) throw batchError;
+    importBatchId = importBatch.id;
+
+    // Registrar logs de importação iniciais
+    await supabase.from("pcp_import_logs").insert([
+      {
+        import_file_id: importBatchId,
+        user_id: user.id,
+        action: "upload_started",
+        message: "Upload do arquivo iniciado no Portal PCP",
+        severity: "info"
+      },
+      {
+        import_file_id: importBatchId,
+        user_id: user.id,
+        action: "upload_completed",
+        message: `Upload concluído: ${fileName} (${(fileSize / 1024).toFixed(1)} KB)`,
+        severity: "info"
+      },
+      {
+        import_file_id: importBatchId,
+        user_id: user.id,
+        action: "validation_started",
+        message: "Iniciando pré-validação do arquivo",
+        severity: "info"
+      },
+      {
+        import_file_id: importBatchId,
+        user_id: user.id,
+        action: totalErrors > 0 ? "validation_failed" : "validation_completed",
+        message: totalErrors > 0 
+          ? `Validação concluída com erros: ${totalErrors} erros e ${totalWarnings} alertas.`
+          : `Validação concluída com sucesso: ${totalParts} peças encontradas.`,
+        severity: totalErrors > 0 ? "error" : totalWarnings > 0 ? "warning" : "info"
+      },
+      {
+        import_file_id: importBatchId,
+        user_id: user.id,
+        action: "import_confirmed",
+        message: "Importação confirmada pelo usuário",
+        severity: "info"
+      }
+    ]);
 
     // ─── Criar Ordem de Produção ──────────────────────────────
     const orderCode = project.orderCode || `OP-${Date.now()}`;
@@ -229,8 +320,20 @@ serve(async (req) => {
     // ─── Atualizar batch como processado ─────────────────────
     await supabase
       .from("promob_import_batches")
-      .update({ status: "processed" })
-      .eq("id", importBatch.id);
+      .update({ 
+        status: totalErrors > 0 ? "error" : "processed",
+        generated_op_id: productionOrder.id
+      })
+      .eq("id", importBatchId);
+
+    // Gravar log de conclusão
+    await supabase.from("pcp_import_logs").insert({
+      import_file_id: importBatchId,
+      user_id: user.id,
+      action: "import_completed",
+      message: `Importação concluída com sucesso. OP ${orderCode} criada com ${totalParts} peças.`,
+      severity: "info"
+    });
 
     // ─── Registrar evento de importação no audit log ──────────
     await supabase.from("system_audit_logs").insert({
@@ -241,7 +344,7 @@ serve(async (req) => {
       entity_id:   productionOrder.id,
       entity_label: orderCode,
       new_value:   { orderCode, lotCode, totalItems: allItems.length, summary },
-      metadata:    { batchId: importBatch.id, fileName },
+      metadata:    { batchId: importBatchId, fileName },
       success:     true,
     });
 
@@ -257,9 +360,10 @@ serve(async (req) => {
         body: JSON.stringify({
           orderId:      productionOrder.id,
           lotId:        lot.id,
-          batchId:      importBatch.id,
+          batchId:      importBatchId,
           xmlContent,
           parsedData:   parsed,
+          requestedBy:  user.id
         }),
       }
     ).catch(e => console.warn("Backup assíncrono falhou:", e.message));
@@ -267,7 +371,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({
       success: true,
       data: {
-        importBatchId:    importBatch.id,
+        importBatchId:    importBatchId,
         productionOrderId: productionOrder.id,
         lotId:            lot.id,
         orderCode,
@@ -279,9 +383,37 @@ serve(async (req) => {
 
   } catch (err) {
     console.error("[promob-import-xml]", err);
+    
+    // Se falhar e o lote de importação já foi criado, atualizar para 'error'
+    if (supabaseClient && importBatchId) {
+      await supabaseClient
+        .from("promob_import_batches")
+        .update({ status: "error" })
+        .eq("id", importBatchId);
+
+      await supabaseClient.from("pcp_import_logs").insert({
+        import_file_id: importBatchId,
+        user_id: userId,
+        action: "validation_failed",
+        message: `Falha crítica durante processamento: ${err.message}`,
+        severity: "critical"
+      });
+    }
+
     return new Response(JSON.stringify({ success: false, error: err.message }), {
       status: 400,
       headers: { ...CORS, "Content-Type": "application/json" },
     });
   }
 });
+
+function base64ToUint8Array(base64: string): Uint8Array {
+  const clean = base64.replace(/^data:.*;base64,/, "");
+  const binary = atob(clean);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}

@@ -9,7 +9,7 @@ export default function ManagersManager() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState(null);
 
-  const { data: managers = [], isLoading } = useQuery({
+  const { data: managers = [] } = useQuery({
     queryKey: ['managers'],
     queryFn: () => base44.entities.Manager.filter({ role: 'manager' }, '-created_date', 500),
     initialData: [],

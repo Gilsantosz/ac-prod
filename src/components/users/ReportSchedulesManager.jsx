@@ -181,7 +181,7 @@ export default function ReportSchedulesManager() {
     setTestingId(id);
     try {
       // Invoca a edge function de envio de relatórios em modo de teste
-      const { data, error } = await base44.functions.invoke('send-scheduled-reports', {
+      const { error } = await base44.functions.invoke('send-scheduled-reports', {
         body: { scheduleId: id, test: true }
       });
       if (error) throw error;

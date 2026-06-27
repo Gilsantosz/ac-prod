@@ -16,7 +16,7 @@ export default function ForgotPassword() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    try { await base44.auth.resetPasswordRequest(email); } catch (_) { /* ignore */ }
+    try { await base44.auth.resetPasswordRequest(email); } catch { /* ignore */ }
     setSent(true);
     setLoading(false);
   };

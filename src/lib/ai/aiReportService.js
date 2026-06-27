@@ -4,6 +4,7 @@ import { analyzeProductionContext } from './aiInsightService';
 import { isAiSchemaUnavailable, recordAiEvent, recordAiRequest } from './aiAuditService';
 
 export const REPORT_TYPES = [
+  { value: 'oee', label: 'OEE - Eficiência Global' },
   { value: 'production_summary', label: 'Resumo de Produção' },
   { value: 'cell_performance', label: 'Desempenho por Célula' },
   { value: 'lot_traceability', label: 'Rastreabilidade de Lotes' },
@@ -11,11 +12,40 @@ export const REPORT_TYPES = [
   { value: 'executive', label: 'Resumo Executivo' },
 ];
 
+export function calculateOeeSummary(entries = []) {
+  const sum = (key) => entries.reduce((total, entry) => total + (Number(entry[key]) || 0), 0);
+  const produced = sum('produced');
+  const target = sum('target');
+  const scrap = sum('scrap');
+  const downtime = sum('downtime');
+  const shifts = new Map();
+  entries.forEach((entry) => {
+    const key = `${entry.date || ''}|${entry.cell || ''}|${entry.shift || ''}`;
+    if (!shifts.has(key)) shifts.set(key, Math.max(1, Number(entry.hours) || 8) * 60);
+  });
+  const planned = [...shifts.values()].reduce((total, minutes) => total + minutes, 0);
+  const availability = planned > 0 ? Math.max(planned - downtime, 0) / planned : 0;
+  const performance = target > 0 ? Math.min(produced / target, 1.5) : 0;
+  const quality = produced > 0 ? Math.max(produced - scrap, 0) / produced : 0;
+  return {
+    oee: availability * performance * quality * 100,
+    availability: availability * 100,
+    performance: performance * 100,
+    quality: quality * 100,
+    plannedMinutes: planned,
+    downtimeMinutes: downtime,
+    produced,
+    target,
+    scrap,
+  };
+}
+
 export async function generateOperationalReport({ user, reportType, format, title, filters, options = {} }) {
   const started = performance.now();
   const traceId = crypto.randomUUID();
   const context = await fetchAiContext(filters, user);
   const analysis = analyzeProductionContext(context);
+  if (reportType === 'oee') analysis.oee = calculateOeeSummary(context.entries);
   const resolvedTitle = title?.trim() || REPORT_TYPES.find((item) => item.value === reportType)?.label || 'Relatório Industrial';
   const report = {
     id: crypto.randomUUID(),
@@ -28,7 +58,7 @@ export async function generateOperationalReport({ user, reportType, format, titl
     context,
     analysis,
     generatedAt: new Date().toISOString(),
-    generatedBy: user?.name || user?.email || 'Usuário AC.Prod',
+    generatedBy: user?.name || user?.email || 'Usuário Leo Flow',
   };
 
   const { data: job, error } = await supabase.from('report_jobs').insert({
@@ -85,4 +115,3 @@ export async function createScheduledReport(payload, user) {
   if (error) throw new Error(error.message || 'Não foi possível criar o agendamento.');
   return data;
 }
-

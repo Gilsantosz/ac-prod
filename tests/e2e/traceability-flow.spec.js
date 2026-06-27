@@ -245,16 +245,16 @@ test('fluxo principal de entrada e rastreabilidade produtiva', async ({ page }) 
   await page.getByLabel('E-mail').fill('operador.teste@leo.com.br');
   await page.getByLabel('Senha').fill('SenhaTeste123!');
   await page.getByRole('button', { name: 'Entrar' }).click();
-  await expect(page).toHaveURL(/\/ac-prod\/$/);
+  await expect(page).toHaveURL(/\/ac-prod\/?$/);
 
   await page.goto('entrada');
-  await expect(page.getByRole('heading', { name: 'Entrada de Produção' })).toBeVisible();
-  await page.locator('#produzido-main').fill('10');
+  await expect(page.getByRole('heading', { name: 'Apontamento MES' })).toBeVisible();
+  await page.locator('#quick-produced').fill('10');
   await page.getByRole('button', { name: 'Registrar Produção' }).click();
   await expect(page.getByText('Produção registrada')).toBeVisible();
   expect(state.entries).toHaveLength(1);
 
-  await page.getByRole('tab', { name: 'Coleta Código/RFID' }).click();
+  await page.getByRole('tab', { name: 'Coleta Código / RFID' }).click();
   const scanner = page.getByLabel('Identificação produtiva');
   await expect(scanner).toBeFocused();
   await scanner.fill('LSM-TEST-001-P001');
@@ -273,10 +273,10 @@ test('fluxo principal de entrada e rastreabilidade produtiva', async ({ page }) 
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByLabel('Observação').fill('Avaria identificada no teste E2E');
   await page.getByRole('button', { name: 'Reprovar e criar ocorrência' }).click();
-  await expect(page.getByText('Ocorrência registrada')).toBeVisible();
+  await expect(page.getByText('Ocorrência registrada e peça bloqueada.').first()).toBeVisible();
   expect(state.occurrenceCreated).toBe(true);
 
-  await expect(page.getByText('LSM-TEST-001', { exact: true })).toBeVisible();
+  await expect(page.getByText('LSM-TEST-001', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Últimas leituras')).toBeVisible();
   await expect(page.getByText('Leituras hoje')).toBeVisible();
   await expect(page.getByText('Reprovadas')).toBeVisible();

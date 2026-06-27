@@ -18,7 +18,7 @@ export default function CloseShiftButton({ date, disabled }) {
         try {
           const body = await res.error.context?.json();
           detailedError = body?.error;
-        } catch (_) {}
+        } catch {}
         
         toast.error(detailedError || res.error.message || 'Falha ao enviar o fechamento.');
         return;

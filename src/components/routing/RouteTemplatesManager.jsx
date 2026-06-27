@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Loader2, Plus, ArrowUp, ArrowDown, Trash2, Edit3, Save, X, GitCommit, ListOrdered, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Loader2, Plus, ArrowUp, ArrowDown, Trash2, Edit3, X, GitCommit, ListOrdered, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function RouteTemplatesManager() {
   const qc = useQueryClient();
@@ -24,7 +24,7 @@ export default function RouteTemplatesManager() {
     initialData: [],
   });
 
-  const { data: routingSteps = [], isLoading: loadingSteps } = useQuery({
+  const { data: routingSteps = [] } = useQuery({
     queryKey: ['routingSteps'],
     queryFn: () => base44.entities.RoutingStep.list('sequence'),
     initialData: [],

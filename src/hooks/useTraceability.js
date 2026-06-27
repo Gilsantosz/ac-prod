@@ -1,5 +1,5 @@
 /**
- * Hook principal de Rastreabilidade — AC.Prod MES Leo Madeiras
+ * Hook principal de Rastreabilidade — Leo Flow MES Leo Madeiras
  * Centraliza queries, mutations e lógica de negócio do Kanban de lotes.
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -37,7 +37,7 @@ export const STAGE_NEXT = {
 };
 
 // ─── Hook principal ──────────────────────────────────────────
-export function useTraceability({ stageFilter = null, searchQuery = '', dateRange = null } = {}) {
+export function useTraceability({ stageFilter = null, searchQuery = '', dateRange: _dateRange = null } = {}) {
   const qc = useQueryClient();
 
   // ─── Ordens de Produção ─────────────────────────────────────

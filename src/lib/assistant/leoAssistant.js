@@ -85,7 +85,7 @@ export async function askLeoAssistant(question, context = {}) {
 
   if (/\boee\b/.test(normalized)) {
     return {
-      content: 'O OEE mede a efetividade do processo combinando disponibilidade, performance e qualidade. No AC.Prod, ele ajuda a identificar se a perda vem de parada, ritmo abaixo do esperado ou refugo.',
+      content: 'O OEE mede a efetividade do processo combinando disponibilidade, performance e qualidade. No Leo Flow, ele ajuda a identificar se a perda vem de parada, ritmo abaixo do esperado ou refugo.',
       actions: [{ label: 'Abrir OEE', path: '/oee' }],
     };
   }

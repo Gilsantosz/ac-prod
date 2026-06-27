@@ -8,7 +8,7 @@ import { askOperationalCopilot, isOperationalAiQuestion } from '@/lib/ai/aiPromp
 
 const initialMessage = {
   role: 'assistant',
-  content: 'Sou o Copilot Industrial do AC.Prod. Posso consultar lotes, analisar produção real, explicar indicadores e preparar relatórios auditáveis.',
+  content: 'Sou o Copilot Industrial do Leo Flow. Posso consultar lotes, analisar produção real, explicar indicadores e gerar ou enviar relatórios auditáveis para gestores cadastrados.',
 };
 
 export default function AiAssistantPanel({ user }) {
@@ -44,7 +44,7 @@ export default function AiAssistantPanel({ user }) {
             const Icon = message.role === 'assistant' ? Bot : UserRound;
             return <div key={`${message.role}-${index}`} className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}><div className={`w-8 h-8 rounded-md flex items-center justify-center shrink-0 ${message.role === 'assistant' ? 'bg-[#00522d] text-[#fff200]' : 'bg-secondary text-foreground'}`}><Icon className="w-4 h-4" /></div><div className={`max-w-[82%] border rounded-md p-3 text-sm whitespace-pre-line ${message.role === 'user' ? 'bg-foreground text-background border-foreground' : 'bg-card border-border'}`}>{message.content}{message.actions?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{message.actions.map((action) => <Button key={action.path} variant="outline" size="sm" asChild><a href={`${import.meta.env.BASE_URL.replace(/\/$/, '')}${action.path}`}>{action.label}</a></Button>)}</div>}</div></div>;
           })}
-          {loading && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" />Consultando registros do AC.Prod...</div>}
+          {loading && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" />Consultando registros do Leo Flow...</div>}
         </div>
         <div className="border-t border-border pt-3 mt-3">
           <div className="flex flex-wrap gap-2 mb-3">{['Situação do lote LOTE-001', 'Analise os últimos 7 dias', 'Prepare um relatório executivo'].map((prompt) => <Button key={prompt} type="button" variant="outline" size="sm" onClick={() => ask(prompt)} disabled={loading}>{prompt}</Button>)}</div>
@@ -54,4 +54,3 @@ export default function AiAssistantPanel({ user }) {
     </IndustrialSectionCard>
   );
 }
-

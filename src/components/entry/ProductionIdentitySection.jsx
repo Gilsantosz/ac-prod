@@ -20,7 +20,11 @@ const DETAIL_FIELDS = [
   { key: 'finalization_date', label: 'Finalização', type: 'date' },
 ];
 
-export default function ProductionIdentitySection({ value, onChange }) {
+const FIELD_CLASS = 'grid gap-2 min-w-0';
+const LABEL_CLASS = 'flex min-h-5 items-center text-xs font-semibold leading-none text-muted-foreground';
+const INPUT_CLASS = 'h-11 rounded-xl text-sm';
+
+export default function ProductionIdentitySection({ value, onChange, idPrefix = 'identity' }) {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(value.traceability_status === 'resolved' ? 'resolved' : 'idle');
   const [warnings, setWarnings] = useState([]);
@@ -75,16 +79,16 @@ export default function ProductionIdentitySection({ value, onChange }) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         {PRIMARY_FIELDS.map((field) => (
-          <div key={field.key} className="space-y-1.5">
-            <Label htmlFor={`identity-${field.key}`} className="text-xs">{field.label}</Label>
+          <div key={field.key} className={FIELD_CLASS}>
+            <Label htmlFor={`${idPrefix}-${field.key}`} className={LABEL_CLASS}>{field.label}</Label>
             <Input
-              id={`identity-${field.key}`}
+              id={`${idPrefix}-${field.key}`}
               value={value[field.key] || ''}
               onChange={(event) => set(field.key, event.target.value)}
               onBlur={() => value[field.key] && resolve(field.key)}
               onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); resolve(field.key); } }}
               placeholder={field.placeholder}
-              className="font-mono"
+              className={`${INPUT_CLASS} font-mono`}
             />
           </div>
         ))}
@@ -92,9 +96,9 @@ export default function ProductionIdentitySection({ value, onChange }) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
         {DETAIL_FIELDS.map((field) => (
-          <div key={field.key} className="space-y-1.5">
-            <Label htmlFor={`identity-${field.key}`} className="text-xs">{field.label}</Label>
-            <Input id={`identity-${field.key}`} type={field.type || 'text'} value={value[field.key] || ''} onChange={(event) => set(field.key, event.target.value)} />
+          <div key={field.key} className={FIELD_CLASS}>
+            <Label htmlFor={`${idPrefix}-${field.key}`} className={LABEL_CLASS}>{field.label}</Label>
+            <Input id={`${idPrefix}-${field.key}`} type={field.type || 'text'} value={value[field.key] || ''} onChange={(event) => set(field.key, event.target.value)} className={INPUT_CLASS} />
           </div>
         ))}
       </div>
@@ -113,4 +117,3 @@ export default function ProductionIdentitySection({ value, onChange }) {
     </section>
   );
 }
-

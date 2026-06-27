@@ -1,5 +1,5 @@
 /**
- * AC.Prod — Audit Log Helper
+ * Leo Flow — Audit Log Helper
  *
  * Helper para registrar ações do usuário em system_audit_logs.
  * Chamado no frontend para eventos que NÃO são cobertos pelos triggers do banco.
@@ -109,6 +109,7 @@ export const AUDIT_ACTIONS = {
   // Relatórios
   REPORT_EXPORT:            'report_export',
   BACKUP_DOWNLOAD:          'backup_download',
+  GOOGLE_DRIVE_ARCHIVE_SYNC: 'google_drive_archive_sync',
 
   // Admin
   USER_UPDATE:              'user_update',

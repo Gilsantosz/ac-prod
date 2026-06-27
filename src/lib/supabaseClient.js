@@ -121,7 +121,7 @@ if (authStorage && !authStorage.getItem(FALLBACK_SESSION_KEY)) {
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error(
-    '[AC.Prod] Supabase não configurado. Crie um arquivo .env com VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.'
+    '[Leo Flow] Supabase não configurado. Crie um arquivo .env com VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.'
   );
 }
 

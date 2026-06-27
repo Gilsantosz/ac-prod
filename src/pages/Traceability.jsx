@@ -1,7 +1,6 @@
-import { useState, useMemo } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import PageHeader from '@/components/ui/PageHeader';
-import { useTraceability, KANBAN_STAGES } from '@/hooks/useTraceability';
+import { useTraceability } from '@/hooks/useTraceability';
 import LotKanban      from '@/components/traceability/LotKanban';
 import LotSearch      from '@/components/traceability/LotSearch';
 import LotTimeline    from '@/components/traceability/LotTimeline';
@@ -10,18 +9,14 @@ import PackageManager from '@/components/traceability/PackageManager';
 import ShipmentPanel  from '@/components/traceability/ShipmentPanel';
 import TraceabilityTestPanel from '@/components/traceability/TraceabilityTestPanel';
 import {
-  Layers, Search, GitBranch, Wrench, Box, Truck, RefreshCw,
-  AlertCircle, Clock, CheckCircle, Lock, Play,
+  Layers, Search, GitBranch, Wrench, Box, Truck, RefreshCw, Clock, CheckCircle, Lock, Play,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 export default function Traceability() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [stageFilter, setStageFilter] = useState('all');
-
-  const trace = useTraceability({ stageFilter, searchQuery });
+  const trace = useTraceability();
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-5 sm:space-y-6">

@@ -23,6 +23,7 @@ const ACTION_LABELS = {
   shipment_dispatch:  { label: 'Expedição',         color: 'text-purple-600', bg: 'bg-purple-100 dark:bg-purple-900/30' },
   report_export:      { label: 'Relatório',         color: 'text-amber-600',  bg: 'bg-amber-100 dark:bg-amber-900/30' },
   backup_download:    { label: 'Backup',            color: 'text-cyan-600',   bg: 'bg-cyan-100 dark:bg-cyan-900/30' },
+  google_drive_archive_sync: { label: 'Arquivo Drive', color: 'text-emerald-600', bg: 'bg-emerald-100 dark:bg-emerald-900/30' },
   user_update:        { label: 'Usuário',           color: 'text-pink-600',   bg: 'bg-pink-100 dark:bg-pink-900/30' },
   permission_change:  { label: 'Permissão',         color: 'text-red-600',    bg: 'bg-red-100 dark:bg-red-900/30' },
   api_config_change:  { label: 'Config. API',       color: 'text-amber-600',  bg: 'bg-amber-100 dark:bg-amber-900/30' },

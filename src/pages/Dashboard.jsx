@@ -8,6 +8,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { runSeedTestData } from '@/lib/seedTestData';
 import PageHeader from '@/components/ui/PageHeader';
 import { useKiosk } from '@/lib/KioskContext';
+import { useCells } from '@/hooks/useCells';
 import KioskCellControl from '@/components/dashboard/KioskCellControl';
 import KpiCard from '@/components/dashboard/KpiCard';
 import HourlyChart from '@/components/dashboard/HourlyChart';
@@ -75,7 +76,10 @@ export default function Dashboard() {
     initialData: [],
   });
 
-  const cells = useMemo(() => [...new Set(all.map((e) => e.cell).filter(Boolean))], [all]);
+  const { activeCells } = useCells();
+  const validCellNames = useMemo(() => activeCells.map(c => c.name), [activeCells]);
+
+  const cells = useMemo(() => validCellNames, [validCellNames]);
 
   const { kiosk, toggleKiosk } = useKiosk();
   const [kioskCell, setKioskCell] = useState('all');
@@ -90,11 +94,12 @@ export default function Dashboard() {
   const activeCell = kiosk && kioskCell !== 'all' ? kioskCell : filters.cell;
 
   const filtered = useMemo(() => all.filter((e) => {
+    if (!validCellNames.includes(e.cell)) return false;
     if (filters.date && e.date !== filters.date) return false;
     if (filters.shift !== 'all' && e.shift !== filters.shift) return false;
     if (activeCell !== 'all' && e.cell !== activeCell) return false;
     return true;
-  }), [all, filters, activeCell]);
+  }), [all, filters, activeCell, validCellNames]);
 
   const totalProduced = sumBy(filtered, 'produced');
   const totalTarget = sumBy(filtered, 'target');
@@ -109,10 +114,12 @@ export default function Dashboard() {
   const projection = useMemo(() => projectGoal(filtered, 3), [filtered]);
   const effDrop = useMemo(() => detectEfficiencyDrop(filtered, 3, 10), [filtered]);
   const monthlyTracking = useMemo(() => {
-    const cellEntries = activeCell === 'all' ? all : all.filter(e => e.cell === activeCell);
-    const cellGoals = activeCell === 'all' ? goals : goals.filter(g => g.cell === activeCell);
+    const validEntries = all.filter(e => validCellNames.includes(e.cell));
+    const validGoals = goals.filter(g => validCellNames.includes(g.cell));
+    const cellEntries = activeCell === 'all' ? validEntries : validEntries.filter(e => e.cell === activeCell);
+    const cellGoals = activeCell === 'all' ? validGoals : validGoals.filter(g => g.cell === activeCell);
     return monthlyGoalTracking(cellEntries, cellGoals);
-  }, [all, goals, activeCell]);
+  }, [all, goals, activeCell, validCellNames]);
 
   const cellMonthlyTrackings = useMemo(() => {
     if (activeCell !== 'all') return [];
@@ -130,25 +137,27 @@ export default function Dashboard() {
     
     const trackings = [];
     for (const [cellName, data] of Object.entries(cellMap)) {
+      if (!validCellNames.includes(cellName)) continue;
       const tr = monthlyGoalTracking(data.entries, data.goals);
       if (tr && tr.target > 0) trackings.push({ cell: cellName, ...tr });
     }
     return trackings.sort((a, b) => b.completedPct - a.completedPct);
-  }, [all, goals, activeCell]);
+  }, [all, goals, activeCell, validCellNames]);
   const ranking = useMemo(
-    () => weeklyRanking(all, goals, filters.date ? new Date(filters.date + 'T00:00:00') : new Date()),
-    [all, goals, filters.date]
+    () => weeklyRanking(all.filter(e => validCellNames.includes(e.cell)), goals.filter(g => validCellNames.includes(g.cell)), filters.date ? new Date(filters.date + 'T00:00:00') : new Date()),
+    [all, goals, filters.date, validCellNames]
   );
 
   const weeklyTrend = useMemo(
-    () => efficiencyTrend(all, filters.cell, 7, filters.date ? new Date(filters.date + 'T00:00:00') : new Date()),
-    [all, filters.cell, filters.date]
+    () => efficiencyTrend(all.filter(e => validCellNames.includes(e.cell)), filters.cell, 7, filters.date ? new Date(filters.date + 'T00:00:00') : new Date()),
+    [all, filters.cell, filters.date, validCellNames]
   );
   const weeklyTrendLabel = filters.cell === 'all' ? 'Todas as células' : filters.cell;
 
   const goalProgress = useMemo(() => {
     return goals
       .filter((g) => {
+        if (!validCellNames.includes(g.cell)) return false;
         if (filters.date && g.date !== filters.date) return false;
         if (filters.shift !== 'all' && g.shift !== filters.shift) return false;
         if (filters.cell !== 'all' && g.cell !== filters.cell) return false;

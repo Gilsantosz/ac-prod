@@ -5,12 +5,16 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { base44 } from '@/lib/localDb';
-import { supabase } from '@/lib/supabaseClient';
 import { format } from 'date-fns';
 import { useCells } from '@/hooks/useCells';
-import { Loader2, Save, Factory, AlertCircle, Sparkles } from 'lucide-react';
+import { Loader2, Save, Factory, AlertCircle } from 'lucide-react';
+import ProductionIdentitySection from '@/components/entry/ProductionIdentitySection';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
+const FIELD_CLASS = 'grid gap-2 min-w-0';
+const FIELD_LABEL_CLASS = 'flex min-h-5 items-center gap-1.5 text-xs font-semibold leading-none text-muted-foreground';
+const SELECT_CLASS = 'h-11 w-full rounded-xl border border-input bg-background px-3 text-sm font-medium leading-none text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-[#2d9c4a]';
+const INPUT_CLASS = 'h-11 text-sm rounded-xl';
 
 function getCurrentShift() {
   const h = new Date().getHours();
@@ -39,12 +43,7 @@ export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, sa
   const [hours, setHours] = useState('');
   const [target, setTarget] = useState('');
   
-  // Novos campos MES/Rastreabilidade
-  const [orderNumber, setOrderNumber] = useState('');
-  const [lotCode, setLotCode] = useState('');
-  const [productCode, setProductCode] = useState('');
-  const [productName, setProductName] = useState('');
-  const [customerName, setCustomerName] = useState('');
+  const [productionIdentity, setProductionIdentity] = useState({ traceability_status: 'limited' });
   const [processStep, setProcessStep] = useState('');
   const [stationName, setStationName] = useState('');
   
@@ -122,7 +121,7 @@ export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, sa
         cell,
       });
       if (ignore) return;
-      const goal = goals[0];
+      const goal = goals?.[0];
       if (goal && Number(goal.target) > 0 && numericHours > 0) {
         const perHour = Math.round(Number(goal.target) / numericHours);
         setTarget(String(perHour));
@@ -133,39 +132,10 @@ export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, sa
     return () => { ignore = true; };
   }, [cell, shift, date, hours]);
 
-  // Ao preencher lote, tenta buscar meta do lote se já existir no banco (MES)
-  useEffect(() => {
-    if (!lotCode || lotCode === 'SEM_LOTE') return;
-    
-    async function fetchLotInfo() {
-      const { data, error } = await supabase
-        .from('production_lots')
-        .select('*, production_orders(order_code, customer_name)')
-        .eq('lot_code', lotCode)
-        .maybeSingle();
-
-      if (!error && data) {
-        setOrderNumber(data.production_orders?.order_code || '');
-        setCustomerName(data.production_orders?.customer_name || '');
-        
-        // Puxa o primeiro item deste lote para preencher produto se houver
-        const { data: items } = await supabase
-          .from('production_lot_items')
-          .select('*')
-          .eq('lot_id', data.id)
-          .limit(1);
-        
-        if (items && items[0]) {
-          setProductCode(items[0].product_code || '');
-          setProductName(items[0].product_name || 'Não informado');
-          setProcessStep(items[0].current_step || cell || 'APONTAMENTO_MANUAL');
-        }
-      }
-    }
-
-    const timer = setTimeout(fetchLotInfo, 400); // Debounce
-    return () => clearTimeout(timer);
-  }, [lotCode]);
+  const handleProductionIdentityChange = (nextIdentity) => {
+    setProductionIdentity(nextIdentity);
+    if (nextIdentity.process_step) setProcessStep(nextIdentity.process_step);
+  };
 
   const handleAdjustProduced = (val) => {
     const curr = parseInt(produced) || 0;
@@ -177,6 +147,7 @@ export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, sa
     if (!onSubmit) return;
 
     onSubmit({
+      ...productionIdentity,
       date,
       shift,
       cell,
@@ -188,13 +159,14 @@ export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, sa
       downtime: Number(downtime) || 0,
       notes: notes.trim(),
       operator: operator.trim() || user.name || user.email || 'Operador Manual',
-      order_number: orderNumber.trim() || 'MANUAL',
-      lot_code: lotCode.trim() || 'SEM_LOTE',
-      product_code: productCode.trim(),
-      product_name: productName.trim() || 'Não informado',
-      customer_name: customerName.trim() || 'Não informado',
+      order_number: productionIdentity.order_number?.trim() || 'MANUAL',
+      lot_code: productionIdentity.lot_code?.trim() || 'SEM_LOTE',
+      product_code: productionIdentity.product_code?.trim() || '',
+      product_name: productionIdentity.product_name?.trim() || 'Não informado',
+      customer_name: productionIdentity.customer_name?.trim() || productionIdentity.customer_trade_name?.trim() || 'Não informado',
       process_step: processStep.trim() || cell || 'APONTAMENTO_MANUAL',
       station_name: stationName.trim(),
+      traceability_status: productionIdentity.traceability_status || 'limited',
       entry_mode: 'manual',
       source: 'manual_entry',
       _duplicateAction: duplicateAction
@@ -207,7 +179,7 @@ export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, sa
     setNotes('');
   };
 
-  const hasLimitedTraceability = !lotCode || lotCode === 'SEM_LOTE' || !orderNumber || orderNumber === 'MANUAL';
+  const hasLimitedTraceability = productionIdentity.traceability_status !== 'resolved';
 
   return (
     <Card className="border-border/60 shadow-sm bg-card">
@@ -226,27 +198,27 @@ export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, sa
           {/* Grid 1: Informações Básicas */}
           <div>
             <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2.5">1. Contexto Operacional</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
               
-              <div className="space-y-1.5">
-                <Label htmlFor="complete-date" className="text-xs font-semibold text-muted-foreground">Data</Label>
+              <div className={FIELD_CLASS}>
+                <Label htmlFor="complete-date" className={FIELD_LABEL_CLASS}>Data</Label>
                 <Input
                   id="complete-date"
                   type="date"
                   value={date}
                   onChange={(e) => { setDate(e.target.value); setDateEdited(true); }}
-                  className="text-foreground bg-transparent font-medium [color-scheme:light] dark:[color-scheme:dark]"
+                  className={`${INPUT_CLASS} text-foreground bg-transparent font-medium [color-scheme:light] dark:[color-scheme:dark]`}
                   required
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="complete-shift" className="text-xs font-semibold text-muted-foreground">Turno</Label>
+              <div className={FIELD_CLASS}>
+                <Label htmlFor="complete-shift" className={FIELD_LABEL_CLASS}>Turno</Label>
                 <select
                   id="complete-shift"
                   value={shift}
                   onChange={(e) => { setShift(e.target.value); setShiftEdited(true); }}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm focus:outline-none"
+                  className={SELECT_CLASS}
                   required
                 >
                   <option value="1º Turno">1º Turno</option>
@@ -255,13 +227,13 @@ export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, sa
                 </select>
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="complete-cell" className="text-xs font-semibold text-muted-foreground">Célula</Label>
+              <div className={FIELD_CLASS}>
+                <Label htmlFor="complete-cell" className={FIELD_LABEL_CLASS}>Célula</Label>
                 <select
                   id="complete-cell"
                   value={cell}
                   onChange={(e) => setCell(e.target.value)}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm focus:outline-none"
+                  className={SELECT_CLASS}
                   required
                 >
                   <option value="">Selecione</option>
@@ -271,13 +243,13 @@ export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, sa
                 </select>
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="complete-hour" className="text-xs font-semibold text-muted-foreground">Hora</Label>
+              <div className={FIELD_CLASS}>
+                <Label htmlFor="complete-hour" className={FIELD_LABEL_CLASS}>Hora</Label>
                 <select
                   id="complete-hour"
                   value={hour}
                   onChange={(e) => { setHour(e.target.value); setHourEdited(true); }}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm focus:outline-none"
+                  className={SELECT_CLASS}
                   required
                 >
                   {HOURS.map((h) => <option key={h} value={h}>{h}</option>)}
@@ -287,88 +259,32 @@ export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, sa
             </div>
           </div>
 
-          {/* Grid 2: Rastreabilidade (MES) */}
-          <div>
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2.5 flex items-center gap-1"><Sparkles className="w-3.5 h-3.5 text-[#2d9c4a]" /> 2. Rastreabilidade (OP / Lote / Produto)</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              
-              <div className="space-y-1.5">
-                <Label htmlFor="complete-lot" className="text-xs font-semibold text-muted-foreground">Lote Produtivo (Opcional)</Label>
-                <Input
-                  id="complete-lot"
-                  placeholder="Ex: LOTE-TEST-4A8F"
-                  value={lotCode}
-                  onChange={(e) => setLotCode(e.target.value)}
-                  className="h-10 text-sm font-mono"
-                />
-              </div>
+          <ProductionIdentitySection
+            idPrefix="complete-identity"
+            value={productionIdentity}
+            onChange={handleProductionIdentityChange}
+          />
 
-              <div className="space-y-1.5">
-                <Label htmlFor="complete-op" className="text-xs font-semibold text-muted-foreground">Ordem de Produção (OP / Opcional)</Label>
-                <Input
-                  id="complete-op"
-                  placeholder="Ex: ORDEM-TEST-4A8F"
-                  value={orderNumber}
-                  onChange={(e) => setOrderNumber(e.target.value)}
-                  className="h-10 text-sm font-mono"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="complete-step" className="text-xs font-semibold text-muted-foreground">Etapa / Processo</Label>
-                <Input
-                  id="complete-step"
-                  placeholder="Ex: Corte, Bordo, Usinagem"
-                  value={processStep}
-                  onChange={(e) => setProcessStep(e.target.value)}
-                  className="h-10 text-sm"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="complete-prod-code" className="text-xs font-semibold text-muted-foreground">Código do Produto (Opcional)</Label>
-                <Input
-                  id="complete-prod-code"
-                  placeholder="Código do produto"
-                  value={productCode}
-                  onChange={(e) => setProductCode(e.target.value)}
-                  className="h-10 text-sm"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="complete-prod-name" className="text-xs font-semibold text-muted-foreground">Descrição do Produto (Opcional)</Label>
-                <Input
-                  id="complete-prod-name"
-                  placeholder="Ex: Painel MDF 18mm"
-                  value={productName}
-                  onChange={(e) => setProductName(e.target.value)}
-                  className="h-10 text-sm"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="complete-customer" className="text-xs font-semibold text-muted-foreground">Cliente (Opcional)</Label>
-                <Input
-                  id="complete-customer"
-                  placeholder="Nome do cliente"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  className="h-10 text-sm"
-                />
-              </div>
-
-              <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
-                <Label htmlFor="complete-station" className="text-xs font-semibold text-muted-foreground">Estação / Posto de Trabalho</Label>
-                <Input
-                  id="complete-station"
-                  placeholder="Ex: Seccionadora A"
-                  value={stationName}
-                  onChange={(e) => setStationName(e.target.value)}
-                  className="h-10 text-sm"
-                />
-              </div>
-
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+            <div className={FIELD_CLASS}>
+              <Label htmlFor="complete-step" className={FIELD_LABEL_CLASS}>Etapa / Processo</Label>
+              <Input
+                id="complete-step"
+                placeholder="Ex: Corte, Bordo, Usinagem"
+                value={processStep}
+                onChange={(e) => setProcessStep(e.target.value)}
+                className={INPUT_CLASS}
+              />
+            </div>
+            <div className={FIELD_CLASS}>
+              <Label htmlFor="complete-station" className={FIELD_LABEL_CLASS}>Estação / Posto de Trabalho</Label>
+              <Input
+                id="complete-station"
+                placeholder="Ex: Seccionadora A"
+                value={stationName}
+                onChange={(e) => setStationName(e.target.value)}
+                className={INPUT_CLASS}
+              />
             </div>
           </div>
 
@@ -420,10 +336,10 @@ export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, sa
           {/* Grid 3: Dados de Paradas, Metas e Refugos */}
           <div>
             <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2.5">3. Produtividade & Perdas</p>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
               
-              <div className="space-y-1.5">
-                <Label htmlFor="complete-shift-hours" className="text-xs font-semibold text-muted-foreground">Horas do Turno</Label>
+              <div className={FIELD_CLASS}>
+                <Label htmlFor="complete-shift-hours" className={FIELD_LABEL_CLASS}>Horas do Turno</Label>
                 <Input
                   id="complete-shift-hours"
                   type="number"
@@ -431,24 +347,24 @@ export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, sa
                   value={hours}
                   onChange={(e) => setHours(e.target.value)}
                   placeholder="8"
-                  className="h-10 text-sm"
+                  className={INPUT_CLASS}
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="complete-target" className="text-xs font-semibold text-muted-foreground">Meta / hora</Label>
+              <div className={FIELD_CLASS}>
+                <Label htmlFor="complete-target" className={FIELD_LABEL_CLASS}>Meta / hora</Label>
                 <Input
                   id="complete-target"
                   type="number"
                   value={target}
                   onChange={(e) => setTarget(e.target.value)}
                   placeholder="0"
-                  className="h-10 text-sm"
+                  className={INPUT_CLASS}
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="complete-scrap" className="text-xs font-semibold text-muted-foreground">Refugos (Peças Ruins)</Label>
+              <div className={FIELD_CLASS}>
+                <Label htmlFor="complete-scrap" className={FIELD_LABEL_CLASS}>Refugos (Peças Ruins)</Label>
                 <Input
                   id="complete-scrap"
                   type="number"
@@ -456,12 +372,12 @@ export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, sa
                   value={scrap}
                   onChange={(e) => setScrap(e.target.value)}
                   placeholder="0"
-                  className="h-10 text-sm"
+                  className={INPUT_CLASS}
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="complete-downtime" className="text-xs font-semibold text-muted-foreground">Tempo de Parada (min)</Label>
+              <div className={FIELD_CLASS}>
+                <Label htmlFor="complete-downtime" className={FIELD_LABEL_CLASS}>Tempo de Parada (min)</Label>
                 <Input
                   id="complete-downtime"
                   type="number"
@@ -469,7 +385,7 @@ export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, sa
                   value={downtime}
                   onChange={(e) => setDowntime(e.target.value)}
                   placeholder="0"
-                  className="h-10 text-sm"
+                  className={INPUT_CLASS}
                 />
               </div>
 
@@ -477,22 +393,22 @@ export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, sa
           </div>
 
           {/* Grid 4: Operador e Observações */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
             
-            <div className="space-y-1.5">
-              <Label htmlFor="complete-operator" className="text-xs font-semibold text-muted-foreground">Operador</Label>
+            <div className={FIELD_CLASS}>
+              <Label htmlFor="complete-operator" className={FIELD_LABEL_CLASS}>Operador</Label>
               <Input
                 id="complete-operator"
                 placeholder="Nome do operador"
                 value={operator}
                 onChange={(e) => setOperator(e.target.value)}
-                className="h-10 text-sm"
+                className={INPUT_CLASS}
                 required
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="complete-notes" className="text-xs font-semibold text-muted-foreground">Observações</Label>
+            <div className={FIELD_CLASS}>
+              <Label htmlFor="complete-notes" className={FIELD_LABEL_CLASS}>Observações</Label>
               <Textarea
                 id="complete-notes"
                 placeholder="Anotações gerais..."
@@ -507,13 +423,13 @@ export default function ManualCompleteEntryForm({ user = {}, onSubmit = null, sa
 
           {/* Configuração de Duplicidade (Admin/Gestores) */}
           {canReplaceOrNew && (
-            <div className="space-y-1.5 border-t border-border/60 pt-3">
-              <Label htmlFor="complete-dup-action" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Opção para Conflitos (Se duplicado)</Label>
+            <div className={`${FIELD_CLASS} border-t border-border/60 pt-3`}>
+              <Label htmlFor="complete-dup-action" className={`${FIELD_LABEL_CLASS} text-[10px] font-bold uppercase tracking-wider`}>Opção para Conflitos (Se duplicado)</Label>
               <select
                 id="complete-dup-action"
                 value={duplicateAction}
                 onChange={(e) => setDuplicateAction(e.target.value)}
-                className="w-full h-10 rounded-md border border-input bg-background px-3 text-xs focus:outline-none"
+                className={`${SELECT_CLASS} h-10 text-xs`}
               >
                 <option value="sum">Somar à quantidade existente</option>
                 <option value="replace">Substituir valor anterior</option>

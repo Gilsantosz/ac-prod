@@ -29,7 +29,7 @@ function userHasCellAccess(user, cellName) {
     } else if (user.cells && Array.isArray(user.cells)) {
       userCells = user.cells;
     }
-  } catch (e) {
+  } catch {
     userCells = [user.cell];
   }
 

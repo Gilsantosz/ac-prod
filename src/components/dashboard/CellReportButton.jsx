@@ -54,7 +54,7 @@ export default function CellReportButton({ cells, allEntries, date }) {
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-xl gap-5">
+        <DialogContent className="sm:max-w-xl gap-5">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -67,10 +67,10 @@ export default function CellReportButton({ cells, allEntries, date }) {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>Célula</Label>
+            <div className="grid gap-2 min-w-0">
+              <Label className="flex min-h-5 items-center text-sm leading-none">Célula</Label>
               <Select value={cell} onValueChange={setCell}>
-                <SelectTrigger>
+                <SelectTrigger className="h-11 rounded-xl">
                   <SelectValue placeholder="Selecione a célula" />
                 </SelectTrigger>
                 <SelectContent>

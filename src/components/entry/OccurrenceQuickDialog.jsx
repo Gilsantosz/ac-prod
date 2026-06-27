@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { AlertTriangle, AlertOctagon, HelpCircle, ArrowRight } from 'lucide-react';
+import { AlertTriangle, AlertOctagon, HelpCircle } from 'lucide-react';
 
 const REASONS = [
   'Falta de Material',
@@ -62,11 +62,10 @@ export default function OccurrenceQuickDialog({
 
   const isScrap = suggestion.type === 'quality';
   const isDowntime = suggestion.type === 'downtime';
-  const isLowEfficiency = suggestion.type === 'low_efficiency';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px] rounded-2xl">
+      <DialogContent className="sm:max-w-[520px] rounded-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base font-bold">
             {isScrap ? (
@@ -95,11 +94,11 @@ export default function OccurrenceQuickDialog({
           
           {/* Informações preenchidas */}
           <div className="bg-secondary/40 rounded-xl p-3 text-xs space-y-1.5 border border-border/40">
-            <div className="grid grid-cols-2 gap-2">
-              <p><span className="text-muted-foreground">Célula:</span> <strong className="text-foreground font-semibold">{suggestion.cell}</strong></p>
-              <p><span className="text-muted-foreground">Turno:</span> <strong className="text-foreground font-semibold">{suggestion.shift}</strong></p>
-              <p><span className="text-muted-foreground">Data:</span> <strong className="text-foreground font-semibold">{suggestion.date}</strong></p>
-              <p><span className="text-muted-foreground">Operador:</span> <strong className="text-foreground font-semibold">{suggestion.operator}</strong></p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <p className="min-w-0"><span className="text-muted-foreground">Célula:</span> <strong className="text-foreground font-semibold break-words">{suggestion.cell}</strong></p>
+              <p className="min-w-0"><span className="text-muted-foreground">Turno:</span> <strong className="text-foreground font-semibold break-words">{suggestion.shift}</strong></p>
+              <p className="min-w-0"><span className="text-muted-foreground">Data:</span> <strong className="text-foreground font-semibold break-words">{suggestion.date}</strong></p>
+              <p className="min-w-0"><span className="text-muted-foreground">Operador:</span> <strong className="text-foreground font-semibold break-words">{suggestion.operator}</strong></p>
             </div>
             {suggestion.quantity > 0 && (
               <p className="pt-1 border-t border-border/50 text-red-600 dark:text-red-400 font-bold">
@@ -109,13 +108,13 @@ export default function OccurrenceQuickDialog({
           </div>
 
           {/* Seleção do Motivo */}
-          <div className="space-y-1.5">
-            <Label htmlFor="occurrence-reason" className="text-xs font-bold text-muted-foreground">Motivo / Causa Raiz</Label>
+          <div className="grid gap-2 min-w-0">
+            <Label htmlFor="occurrence-reason" className="flex min-h-5 items-center text-xs font-bold leading-none text-muted-foreground">Motivo / Causa Raiz</Label>
             <select
               id="occurrence-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+              className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm font-medium leading-none text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
               required
             >
               {REASONS.map(r => (
@@ -126,23 +125,23 @@ export default function OccurrenceQuickDialog({
 
           {/* Tempo de Parada */}
           {(isDowntime || !isScrap) && (
-            <div className="space-y-1.5">
-              <Label htmlFor="occurrence-downtime" className="text-xs font-bold text-muted-foreground">Tempo de Parada (minutos)</Label>
+            <div className="grid gap-2 min-w-0">
+              <Label htmlFor="occurrence-downtime" className="flex min-h-5 items-center text-xs font-bold leading-none text-muted-foreground">Tempo de Parada (minutos)</Label>
               <Input
                 id="occurrence-downtime"
                 type="number"
                 min="0"
                 value={downtime}
                 onChange={(e) => setDowntime(Math.max(0, parseInt(e.target.value) || 0))}
-                className="h-10 text-sm"
+                className="h-11 rounded-xl text-sm"
                 required
               />
             </div>
           )}
 
           {/* Observações / Descrição */}
-          <div className="space-y-1.5">
-            <Label htmlFor="occurrence-notes" className="text-xs font-bold text-muted-foreground">Detalhamento / Ação Corretiva</Label>
+          <div className="grid gap-2 min-w-0">
+            <Label htmlFor="occurrence-notes" className="flex min-h-5 items-center text-xs font-bold leading-none text-muted-foreground">Detalhamento / Ação Corretiva</Label>
             <Textarea
               id="occurrence-notes"
               placeholder="Descreva o que ocorreu e a ação imediata..."

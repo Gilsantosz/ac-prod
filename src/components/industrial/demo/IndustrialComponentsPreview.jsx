@@ -84,7 +84,7 @@ export default function IndustrialComponentsPreview() {
       {/* Cabeçalho da Página */}
       <PageHeader
         title="Catálogo de Componentes Industriais"
-        subtitle="Biblioteca de componentes reutilizáveis, seguros e responsivos para o chão de fábrica do AC.Prod."
+        subtitle="Biblioteca de componentes reutilizáveis, seguros e responsivos para o chão de fábrica do Leo Flow."
         icon={Wrench}
         actions={
           <div className="flex gap-2">

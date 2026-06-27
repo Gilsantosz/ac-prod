@@ -17,7 +17,8 @@ export default function TraceabilityScannerPanel({ mode, onModeChange, onRead, l
       const activeElement = document.activeElement;
       const userIsUsingAnotherControl = activeElement
         && activeElement !== document.body
-        && activeElement !== inputRef.current;
+        && activeElement !== inputRef.current
+        && ['INPUT', 'SELECT', 'TEXTAREA'].includes(activeElement.tagName);
       if (!userIsUsingAnotherControl) inputRef.current?.focus();
     }, 40);
   }, [mode]);

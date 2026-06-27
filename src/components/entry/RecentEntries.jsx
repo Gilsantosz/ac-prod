@@ -23,7 +23,6 @@ export default function RecentEntries({ entries = [], onDelete = null, onCorrect
 
   const userRole = user?.role || 'operator';
   const isAdmin = userRole === 'admin';
-  const isManager = userRole === 'manager';
 
   const todayStr = format(new Date(), 'yyyy-MM-dd');
 

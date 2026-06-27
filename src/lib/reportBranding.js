@@ -2,7 +2,7 @@ import leoLogoUrl from '@/assets/leo-madeiras-logo.jpg';
 
 export const REPORT_BRAND = {
   company: 'Leo Madeiras',
-  system: 'AC.Prod',
+  system: 'Leo Flow',
   primary: [0, 82, 45],
   yellow: [255, 237, 0],
   ink: [15, 23, 42],

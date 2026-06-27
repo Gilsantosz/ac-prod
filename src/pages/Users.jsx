@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { base44 } from '@/lib/localDb';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ShieldAlert, Users as UsersIcon, HardHat, Shield, Clock, Mail, Plus, Trash2, Edit3, Check, X, ShieldCheck } from 'lucide-react';
+import { ShieldAlert, Users as UsersIcon, HardHat, Shield, Clock, Mail, Trash2, Edit3, ShieldCheck } from 'lucide-react';
 import InviteUserForm from '@/components/users/InviteUserForm';
 import UserList from '@/components/users/UserList';
 import ManagersManager from '@/components/managers/ManagersManager';
+import OperatorsManager from '@/components/operators/OperatorsManager';
 import ReportSchedulesManager from '@/components/users/ReportSchedulesManager';
 import PageHeader from '@/components/ui/PageHeader';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,6 +19,7 @@ import { Button } from '@/components/ui/button';
 
 export default function Users() {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [saving, setSaving] = useState(false);
   const [emailGroups, setEmailGroups] = useState([]);
   const [editingGroup, setEditingGroup] = useState(null);
@@ -38,16 +42,30 @@ export default function Users() {
     localStorage.setItem('acprod_email_groups', JSON.stringify(groups));
   };
 
-  const { data: me } = useQuery({
+  const { data: me, isLoading: loadingMe } = useQuery({
     queryKey: ['me'],
     queryFn: () => base44.auth.me(),
   });
+
+  const canManageUsers = me?.role === 'admin';
+  const canManageOperators = canManageUsers || me?.permissions?.manage_operators;
+  const allowedTabs = canManageUsers
+    ? ['users', 'operators', 'managers', 'permissions', 'reports', 'email_groups']
+    : canManageOperators
+      ? ['operators']
+      : [];
+  const defaultTab = canManageUsers ? 'users' : 'operators';
+  const requestedTab = searchParams.get('tab');
+  const activeTab = allowedTabs.includes(requestedTab) ? requestedTab : defaultTab;
+  const handleTabChange = (value) => {
+    setSearchParams(value === 'users' ? {} : { tab: value }, { replace: true });
+  };
 
   const { data: users = [], isError } = useQuery({
     queryKey: ['users'],
     queryFn: () => base44.entities.User.list('-created_date', 200),
     initialData: [],
-    enabled: me?.role === 'admin',
+    enabled: canManageUsers,
   });
 
   const invite = useMutation({
@@ -150,13 +168,21 @@ export default function Users() {
     }
   };
 
-  if (me && me.role !== 'admin') {
+  if (loadingMe) {
+    return (
+      <div className="p-6 lg:p-8 max-w-3xl mx-auto">
+        <div className="py-20 text-center text-muted-foreground">Carregando permissões...</div>
+      </div>
+    );
+  }
+
+  if (me && !canManageUsers && !canManageOperators) {
     return (
       <div className="p-6 lg:p-8 max-w-3xl mx-auto">
         <div className="flex flex-col items-center text-center gap-3 py-20 text-muted-foreground border border-dashed border-border rounded-2xl">
           <ShieldAlert className="w-10 h-10" />
           <p className="font-medium text-foreground">Acesso restrito</p>
-          <p>Apenas administradores podem gerenciar usuários e acessos.</p>
+          <p>Apenas administradores ou perfis autorizados podem gerenciar usuários e operadores.</p>
         </div>
       </div>
     );
@@ -170,13 +196,14 @@ export default function Users() {
         icon={UsersIcon}
       />
 
-      <Tabs defaultValue="users" className="space-y-6">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
         <TabsList className="flex flex-wrap gap-1 bg-muted/60 p-1 rounded-xl w-fit">
-          <TabsTrigger value="users" className="gap-2 rounded-lg"><UsersIcon className="w-4 h-4" /> Usuários</TabsTrigger>
-          <TabsTrigger value="managers" className="gap-2 rounded-lg"><HardHat className="w-4 h-4" /> Gestores</TabsTrigger>
-          <TabsTrigger value="permissions" className="gap-2 rounded-lg"><Shield className="w-4 h-4" /> Permissões</TabsTrigger>
-          <TabsTrigger value="reports" className="gap-2 rounded-lg"><Clock className="w-4 h-4" /> Relatórios Automáticos</TabsTrigger>
-          <TabsTrigger value="email_groups" className="gap-2 rounded-lg"><Mail className="w-4 h-4" /> Grupos de E-mail</TabsTrigger>
+          {canManageUsers && <TabsTrigger value="users" className="gap-2 rounded-lg"><UsersIcon className="w-4 h-4" /> Usuários</TabsTrigger>}
+          {canManageOperators && <TabsTrigger value="operators" className="gap-2 rounded-lg"><HardHat className="w-4 h-4" /> Operadores</TabsTrigger>}
+          {canManageUsers && <TabsTrigger value="managers" className="gap-2 rounded-lg"><HardHat className="w-4 h-4" /> Gestores</TabsTrigger>}
+          {canManageUsers && <TabsTrigger value="permissions" className="gap-2 rounded-lg"><Shield className="w-4 h-4" /> Permissões</TabsTrigger>}
+          {canManageUsers && <TabsTrigger value="reports" className="gap-2 rounded-lg"><Clock className="w-4 h-4" /> Relatórios Automáticos</TabsTrigger>}
+          {canManageUsers && <TabsTrigger value="email_groups" className="gap-2 rounded-lg"><Mail className="w-4 h-4" /> Grupos de E-mail</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="users" className="space-y-6">
@@ -198,6 +225,10 @@ export default function Users() {
               onResendInvite={handleResendInvite}
             />
           )}
+        </TabsContent>
+
+        <TabsContent value="operators" className="space-y-6">
+          <OperatorsManager />
         </TabsContent>
 
         <TabsContent value="managers">

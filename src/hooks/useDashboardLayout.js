@@ -45,7 +45,7 @@ export function useDashboardLayout(defaultIds) {
       })
       .catch(() => {});
     return () => { active = false; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   const saveLayout = useCallback(async (newLayout) => {
     setSaving(true);

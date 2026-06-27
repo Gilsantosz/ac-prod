@@ -6,15 +6,14 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  Box, Plus, CheckCircle, RefreshCw, Package, Layers,
-  Lock, Unlock, ChevronRight, AlertCircle, Trash2,
+  Box, Plus, CheckCircle, RefreshCw, Package,
+  Lock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function PackageManager({ trace }) {
   const qc = useQueryClient();
   const [selectedOrderId, setSelectedOrderId] = useState(null);
-  const [creatingPackage, setCreatingPackage] = useState(false);
 
   // ─── Ordens prontas para embalar ─────────────────────────────
   const readyOrders = trace.lots.data.filter(l =>

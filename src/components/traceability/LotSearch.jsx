@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
 import { KANBAN_STAGES } from '@/hooks/useTraceability';
-import { Search, Package, RefreshCw, FileText, Layers, QrCode } from 'lucide-react';
+import { Search, RefreshCw, FileText, Layers, QrCode } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function LotSearch() {

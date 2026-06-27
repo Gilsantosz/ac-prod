@@ -7,8 +7,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { useCells } from '@/hooks/useCells';
 import { format } from 'date-fns';
 import { Loader2, Save, Clock, Factory } from 'lucide-react';
+import ProductionIdentitySection from '@/components/entry/ProductionIdentitySection';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
+const FIELD_CLASS = 'grid gap-2 min-w-0';
+const FIELD_LABEL_CLASS = 'flex min-h-5 items-center gap-1.5 text-xs font-bold leading-none text-muted-foreground';
+const SELECT_CLASS = 'h-11 w-full rounded-xl border border-input bg-background px-3 text-sm font-medium leading-none text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-[#2d9c4a]';
+const INPUT_CLASS = 'h-11 text-sm rounded-xl';
 
 function getCurrentShift() {
   const h = new Date().getHours();
@@ -35,6 +40,7 @@ export default function ManualQuickEntryForm({ user = {}, onSubmit = null, savin
   const [scrap, setScrap] = useState('0');
   const [downtime, setDowntime] = useState('0');
   const [notes, setNotes] = useState('');
+  const [productionIdentity, setProductionIdentity] = useState({ traceability_status: 'limited' });
   const [duplicateAction, setDuplicateAction] = useState('sum'); // 'sum', 'replace', 'new'
 
   const userRole = user.role || 'operator';
@@ -80,6 +86,7 @@ export default function ManualQuickEntryForm({ user = {}, onSubmit = null, savin
     if (!onSubmit) return;
 
     onSubmit({
+      ...productionIdentity,
       date: getTodayStr(),
       shift: getCurrentShift(),
       cell,
@@ -89,9 +96,12 @@ export default function ManualQuickEntryForm({ user = {}, onSubmit = null, savin
       downtime: Number(downtime) || 0,
       notes: notes.trim(),
       operator: user.name || user.email || 'Operador Manual',
-      lot_code: 'SEM_LOTE',
-      order_number: 'MANUAL',
-      process_step: cell || 'APONTAMENTO_MANUAL',
+      lot_code: productionIdentity.lot_code?.trim() || 'SEM_LOTE',
+      order_number: productionIdentity.order_number?.trim() || 'MANUAL',
+      customer_name: productionIdentity.customer_name || productionIdentity.customer_trade_name || 'Não informado',
+      product_name: productionIdentity.product_name || 'Não informado',
+      process_step: productionIdentity.process_step || cell || 'APONTAMENTO_MANUAL',
+      traceability_status: productionIdentity.traceability_status || 'limited',
       entry_mode: 'manual',
       source: 'manual_entry',
       _duplicateAction: duplicateAction
@@ -110,14 +120,14 @@ export default function ManualQuickEntryForm({ user = {}, onSubmit = null, savin
         <form onSubmit={handleSubmit} className="space-y-5">
           
           {/* Célula e Hora */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="quick-cell" className="text-xs font-bold text-muted-foreground">Célula</Label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+            <div className={FIELD_CLASS}>
+              <Label htmlFor="quick-cell" className={FIELD_LABEL_CLASS}>Célula</Label>
               <select
                 id="quick-cell"
                 value={cell}
                 onChange={(e) => setCell(e.target.value)}
-                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm focus:ring-1 focus:ring-[#2d9c4a] focus:outline-none"
+                className={SELECT_CLASS}
                 required
               >
                 <option value="">Selecione a célula</option>
@@ -127,22 +137,28 @@ export default function ManualQuickEntryForm({ user = {}, onSubmit = null, savin
               </select>
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="quick-hour" className="text-xs font-bold text-muted-foreground flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+            <div className={FIELD_CLASS}>
+              <Label htmlFor="quick-hour" className={FIELD_LABEL_CLASS}>
+                <Clock className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
                 Hora do Apontamento
               </Label>
               <select
                 id="quick-hour"
                 value={hour}
                 onChange={(e) => setHour(e.target.value)}
-                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm focus:outline-none"
+                className={SELECT_CLASS}
                 required
               >
                 {HOURS.map((h) => <option key={h} value={h}>{h}</option>)}
               </select>
             </div>
           </div>
+
+          <ProductionIdentitySection
+            idPrefix="quick-identity"
+            value={productionIdentity}
+            onChange={setProductionIdentity}
+          />
 
           {/* Campo Principal: Produzido com botões de atalho */}
           <div className="rounded-2xl border-2 border-[#2d9c4a]/50 bg-gradient-to-br from-[#76FB91]/8 via-[#76FB91]/3 to-transparent p-4 sm:p-5 shadow-sm">
@@ -191,9 +207,9 @@ export default function ManualQuickEntryForm({ user = {}, onSubmit = null, savin
           </div>
 
           {/* Refugo e Paradas */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="quick-scrap" className="text-xs font-bold text-muted-foreground">Refugos (Defeitos)</Label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+            <div className={FIELD_CLASS}>
+              <Label htmlFor="quick-scrap" className={FIELD_LABEL_CLASS}>Refugos (Defeitos)</Label>
               <Input
                 id="quick-scrap"
                 type="number"
@@ -201,11 +217,11 @@ export default function ManualQuickEntryForm({ user = {}, onSubmit = null, savin
                 value={scrap}
                 onChange={(e) => setScrap(e.target.value)}
                 placeholder="0"
-                className="h-10 text-sm"
+                className={INPUT_CLASS}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="quick-downtime" className="text-xs font-bold text-muted-foreground">Parada (minutos)</Label>
+            <div className={FIELD_CLASS}>
+              <Label htmlFor="quick-downtime" className={FIELD_LABEL_CLASS}>Parada (minutos)</Label>
               <Input
                 id="quick-downtime"
                 type="number"
@@ -213,14 +229,14 @@ export default function ManualQuickEntryForm({ user = {}, onSubmit = null, savin
                 value={downtime}
                 onChange={(e) => setDowntime(e.target.value)}
                 placeholder="0"
-                className="h-10 text-sm"
+                className={INPUT_CLASS}
               />
             </div>
           </div>
 
           {/* Observações */}
-          <div className="space-y-1.5">
-            <Label htmlFor="quick-notes" className="text-xs font-bold text-muted-foreground">Observações / Motivos</Label>
+          <div className={FIELD_CLASS}>
+            <Label htmlFor="quick-notes" className={FIELD_LABEL_CLASS}>Observações / Motivos</Label>
             <Textarea
               id="quick-notes"
               value={notes}
@@ -233,13 +249,13 @@ export default function ManualQuickEntryForm({ user = {}, onSubmit = null, savin
 
           {/* Modo de Lançamento se houver duplicidade pré-definido pelo perfil */}
           {canReplaceOrNew && (
-            <div className="space-y-1.5 border-t border-border/60 pt-3">
-              <Label htmlFor="quick-dup-action" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Opção para Conflitos (Se duplicado)</Label>
+            <div className={`${FIELD_CLASS} border-t border-border/60 pt-3`}>
+              <Label htmlFor="quick-dup-action" className={`${FIELD_LABEL_CLASS} text-[10px] uppercase tracking-wider`}>Opção para Conflitos (Se duplicado)</Label>
               <select
                 id="quick-dup-action"
                 value={duplicateAction}
                 onChange={(e) => setDuplicateAction(e.target.value)}
-                className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs focus:outline-none"
+                className={`${SELECT_CLASS} h-10 text-xs`}
               >
                 <option value="sum">Somar à quantidade existente</option>
                 <option value="replace">Substituir valor anterior</option>

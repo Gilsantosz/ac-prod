@@ -23,7 +23,7 @@ export default function CriticalIssueDialog({ open, onOpenChange, entry, onCreat
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl gap-5">
+      <DialogContent className="sm:max-w-xl gap-5">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3 text-foreground">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
@@ -38,7 +38,7 @@ export default function CriticalIssueDialog({ open, onOpenChange, entry, onCreat
 
         {entry && (
           <div className="bg-background/60 border border-border/70 rounded-xl p-4 text-sm space-y-1 shadow-sm">
-            <p><strong>{entry.cell}</strong> · {entry.shift} · {entry.hour}</p>
+            <p className="break-words"><strong>{entry.cell}</strong> · {entry.shift} · {entry.hour}</p>
             <p className="text-muted-foreground">
               Produzido {entry.produced} de meta {entry.target || '—'} · Parada {entry.downtime || 0}min
             </p>
@@ -47,7 +47,7 @@ export default function CriticalIssueDialog({ open, onOpenChange, entry, onCreat
 
         <p className="text-sm text-muted-foreground">Criar uma issue no GitHub para acompanhar esta falha:</p>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-2">
             <Label>Owner / Org</Label>
             <Input value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="minha-empresa" />

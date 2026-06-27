@@ -86,7 +86,7 @@ export default function Login() {
               <LeoLogo size="lg" className="border-0 shadow-lg" />
               <div>
                 <p className="text-xl xl:text-2xl font-extrabold text-black leading-none">Leo Sob Medidas</p>
-                <p className="text-sm xl:text-base text-slate-600 mt-2">Sistema AC.Prod</p>
+                <p className="text-sm xl:text-base text-slate-600 mt-2">Sistema Leo Flow</p>
               </div>
             </div>
 
@@ -229,7 +229,7 @@ export default function Login() {
 
           <div className="lg:hidden mt-8 pt-6 border-t border-slate-200 flex items-center justify-center gap-3 text-slate-600">
             <PackageCheck className="w-5 h-5 text-[#00552f]" />
-            <span className="text-xs">Leo Sob Medidas · Sistema AC.Prod</span>
+            <span className="text-xs">Leo Sob Medidas · Sistema Leo Flow</span>
             <ScanLine className="w-5 h-5 text-[#00552f]" />
           </div>
         </div>

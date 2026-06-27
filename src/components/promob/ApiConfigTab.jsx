@@ -102,10 +102,7 @@ export default function ApiConfigTab() {
     },
   });
 
-  const toggleActive = useMutation({
-    mutationFn: ({ id, active }) => base44.entities.PromobIntegration.update(id, { active }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['promob-integrations'] }),
-  });
+
 
   const resetForm = () => {
     setForm({ name: '', mode: 'hybrid', api_url: '', token: '', sync_interval_minutes: 60, environment: 'production', active: true });

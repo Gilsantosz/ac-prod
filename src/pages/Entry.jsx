@@ -347,7 +347,7 @@ export default function Entry() {
         shift: activeContext.shift,
         cell: activeContext.cell,
       });
-      const goal = goals[0];
+      const goal = goals?.[0];
       const h = getShiftHours(activeContext.cell, activeContext.shift) || 8;
       if (goal && Number(goal.target) > 0 && h > 0) {
         setSuggestedTarget(Math.round(Number(goal.target) / h));

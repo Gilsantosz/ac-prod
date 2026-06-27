@@ -1,5 +1,5 @@
 /**
- * Workbench de Marcenaria — AC.Prod MES Leo Madeiras
+ * Workbench de Marcenaria — Leo Flow MES Leo Madeiras
  * Regra crítica: peças que exigem Marcenaria não podem avançar para Separação
  * antes que a Marcenaria esteja concluída.
  */
@@ -11,14 +11,13 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  Wrench, CheckCircle, Clock, AlertCircle, RefreshCw,
-  ChevronRight, Package, User, Filter,
+  Wrench, CheckCircle, Clock, RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export default function JoineryWorkbench({ trace }) {
+export default function JoineryWorkbench({ _trace }) {
   const qc = useQueryClient();
-  const [lotFilter, setLotFilter] = useState('pending');
+  const [lotFilter] = useState('pending');
   const [selectedLotId, setSelectedLotId] = useState(null);
 
   // ─── Lotes com itens de Marcenaria ────────────────────────────

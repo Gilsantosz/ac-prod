@@ -1,22 +1,27 @@
-import { Clock, Check, ShieldAlert, AlertTriangle, AlertOctagon, HelpCircle } from 'lucide-react';
+import { Clock, Check, ShieldAlert, AlertTriangle } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
-export default function HourSummaryCard({ 
-  date = '', 
-  shift = '', 
-  cell = '', 
-  hour = '', 
-  lotCode = 'SEM_LOTE', 
-  orderNumber = 'MANUAL', 
+function formatHour(hour) {
+  if (!hour) return '—';
+  return String(hour).includes(':') ? hour : `${hour}:00`;
+}
+
+export default function HourSummaryCard({
+  _date = '',
+  _shift = '',
+  _cell = '',
+  hour = '',
+  lotCode = 'SEM_LOTE',
+  orderNumber = 'MANUAL',
   processStep = 'APONTAMENTO_MANUAL',
-  produced = 0, 
-  target = 0, 
-  efficiency = 100, 
-  scrap = 0, 
-  downtime = 0, 
+  produced = 0,
+  target = 0,
+  efficiency = 100,
+  scrap = 0,
+  downtime = 0,
   entriesCount = 0,
   onCorrect = null,
   onAddOccurrence = null,
@@ -31,6 +36,7 @@ export default function HourSummaryCard({
     if (eff >= 70) return 'border-amber-200 bg-amber-50/50 text-amber-700 dark:border-amber-900/30 dark:bg-amber-950/10 dark:text-amber-400';
     return 'border-red-200 bg-red-50/50 text-red-700 dark:border-red-900/30 dark:bg-red-950/10 dark:text-red-400';
   };
+  const displayHour = formatHour(hour);
 
   return (
     <Card className="border border-border/80 shadow-sm bg-card overflow-hidden">
@@ -39,7 +45,7 @@ export default function HourSummaryCard({
           <div className="flex items-center gap-2">
             <Clock className="w-5 h-5 text-[#2d9c4a]" />
             <div>
-              <CardTitle className="text-sm font-bold text-foreground">Resumo da Hora {hour}:00</CardTitle>
+              <CardTitle className="text-sm font-bold text-foreground">Resumo da Hora {displayHour}</CardTitle>
               <CardDescription className="text-xs">Contexto ativo de apontamento</CardDescription>
             </div>
           </div>
@@ -61,15 +67,15 @@ export default function HourSummaryCard({
         <div className="grid grid-cols-2 gap-2.5 text-xs pb-3 border-b border-border/60">
           <div>
             <span className="text-muted-foreground block font-medium">Lote:</span>
-            <span className="font-mono text-foreground font-semibold truncate block">{lotCode}</span>
+            <span className="font-mono text-foreground font-semibold break-all block">{lotCode}</span>
           </div>
           <div>
             <span className="text-muted-foreground block font-medium">OP / Pedido:</span>
-            <span className="font-mono text-foreground font-semibold truncate block">{orderNumber}</span>
+            <span className="font-mono text-foreground font-semibold break-all block">{orderNumber}</span>
           </div>
           <div className="col-span-2">
             <span className="text-muted-foreground block font-medium">Etapa / Processo:</span>
-            <span className="text-foreground font-semibold truncate block">{processStep}</span>
+            <span className="text-foreground font-semibold break-words block">{processStep}</span>
           </div>
         </div>
 

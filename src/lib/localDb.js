@@ -1,5 +1,5 @@
 /**
- * AC.Prod — Database Client
+ * Leo Flow — Database Client
  *
  * Este módulo mantém a mesma API do emulador local (base44.entities.X.list/create/update/delete/filter)
  * mas agora usa o Supabase real como backend.
@@ -141,6 +141,12 @@ const normalizeFromDb = (entity, row) => {
       dailyClosureEnabled: row.daily_closure_enabled === true,
     };
   }
+  if (entity === 'WorkdayCalendar') {
+    return {
+      ...base,
+      isWorkday: row.is_workday,
+    };
+  }
   return base;
 };
 
@@ -263,6 +269,11 @@ const createEntityClient = (entityName) => {
         delete enriched.dailyClosureEnabled;
       }
 
+      if (entityName === 'WorkdayCalendar') {
+        enriched.is_workday = enriched.isWorkday;
+        delete enriched.isWorkday;
+      }
+
       if (entityName === 'ProductionEntry') {
         const compatible = { ...enriched };
         for (let attempt = 0; attempt < 30; attempt += 1) {
@@ -376,6 +387,11 @@ const createEntityClient = (entityName) => {
         delete clean.webhookEnabled;
         delete clean.emailEnabled;
         delete clean.dailyClosureEnabled;
+      }
+
+      if (entityName === 'WorkdayCalendar') {
+        clean.is_workday = clean.isWorkday;
+        delete clean.isWorkday;
       }
 
       const { data, error } = await supabase

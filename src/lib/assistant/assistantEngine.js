@@ -48,7 +48,7 @@ export const NAVIGATION_TOPICS = [
   { path: '/resumo-diario', label: 'Resumo Diário', description: 'consultar o fechamento diário por célula e turno', keywords: ['resumo', 'fechamento diario', 'producao do dia'], permission: 'view_dashboards' },
   { path: '/oee', label: 'OEE', description: 'acompanhar disponibilidade, performance e qualidade', keywords: ['oee', 'disponibilidade', 'performance', 'qualidade'], permission: 'view_dashboards' },
   { path: '/celulas-metas', label: 'Células e Metas', description: 'configurar células, turnos e metas produtivas', keywords: ['celula', 'meta', 'turno', 'configurar meta'], permission: 'manage_cells' },
-  { path: '/operadores', label: 'Operadores', description: 'consultar e gerenciar operadores', keywords: ['operador', 'colaborador da producao'], permission: 'manage_operators' },
+  { path: '/usuarios?tab=operators', label: 'Operadores', description: 'consultar e gerenciar operadores dentro de Usuários', keywords: ['operador', 'colaborador da producao'], permission: 'manage_operators' },
   { path: '/rastreabilidade', label: 'Rastreabilidade', description: 'localizar lotes e acompanhar rota, embalagem e expedição', keywords: ['rastreabilidade', 'lote', 'rota', 'marcenaria', 'embalagem', 'expedicao'] },
   { path: '/integracoes/promob', label: 'Integração Promob', description: 'importar pedidos e acompanhar sincronizações do Promob', keywords: ['promob', 'xml', 'integracao', 'sincronizacao'] },
   { path: '/ocorrencias', label: 'Ocorrências', description: 'registrar e analisar paradas, falhas e motivos', keywords: ['ocorrencia', 'parada', 'falha', 'gargalo'], permission: 'manage_occurrences' },
@@ -58,7 +58,7 @@ export const NAVIGATION_TOPICS = [
   { path: '/automacoes', label: 'Automações', description: 'configurar regras e alertas automáticos', keywords: ['automacao', 'alerta automatico', 'regra'], permission: 'manage_automations' },
   { path: '/usuarios', label: 'Usuários', description: 'gerenciar usuários, permissões e relatórios automáticos', keywords: ['usuario', 'permissao', 'acesso'], adminOnly: true },
   { path: '/logs-sistema', label: 'Logs do Sistema', description: 'consultar o histórico de alterações e auditoria', keywords: ['log', 'auditoria', 'alteracao'], adminOnly: true },
-  { path: '/downloads-backups', label: 'Downloads e Backups', description: 'gerenciar arquivos e cópias de segurança', keywords: ['download', 'backup', 'copia de seguranca'], adminOnly: true },
+  { path: '/downloads-backups?tab=drive', label: 'Backups & Drive', description: 'gerenciar arquivos, cópias de segurança e arquivamento no Google Drive', keywords: ['download', 'backup', 'copia de seguranca', 'google drive', 'drive', 'arquivar'], adminOnly: true },
 ];
 
 export function normalizeText(value = '') {

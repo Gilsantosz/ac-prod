@@ -58,7 +58,10 @@ export class CameraScannerAdapter extends ReaderAdapter {
       let formats = DEFAULT_FORMATS;
       if (window.BarcodeDetector.getSupportedFormats) {
         const supported = await window.BarcodeDetector.getSupportedFormats();
-        formats = DEFAULT_FORMATS.filter((format) => supported.includes(format));
+        if (Array.isArray(supported) && supported.length > 0) {
+          const compatibleFormats = DEFAULT_FORMATS.filter((format) => supported.includes(format));
+          formats = compatibleFormats.length > 0 ? compatibleFormats : DEFAULT_FORMATS;
+        }
       }
       this.detector = new window.BarcodeDetector({ formats });
       this.scanNative();
@@ -98,12 +101,10 @@ export class CameraScannerAdapter extends ReaderAdapter {
   scanNative = async () => {
     if (this.paused || !this.detector || !this.videoElement) return;
     try {
-      if (this.videoElement.readyState >= 2) {
-        const detections = await this.detector.detect(this.videoElement);
-        const result = detections[0];
-        if (result?.rawValue) this.emitValue(result.rawValue, result.format);
-        else this.markNoDetection();
-      }
+      const detections = await this.detector.detect(this.videoElement);
+      const result = detections[0];
+      if (result?.rawValue) this.emitValue(result.rawValue, result.format);
+      else this.markNoDetection();
     } catch {
       // Quadros sem leitura são esperados; a captura continua.
     }

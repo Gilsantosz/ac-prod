@@ -140,7 +140,7 @@ export default function ProductionForm({ onSubmit, saving }) {
         cell: data.cell,
       });
       if (ignore) return;
-      const goal = goals[0];
+      const goal = goals?.[0];
       if (goal && Number(goal.target) > 0 && hours > 0) {
         const perHour = Math.round(Number(goal.target) / hours);
         setData((d) => ({ ...d, target: String(perHour) }));

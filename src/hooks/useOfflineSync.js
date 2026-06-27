@@ -32,7 +32,7 @@ export function useOfflineSync(createFn, onSynced) {
   }, [sync, refresh]);
 
   // Tenta sincronizar ao montar (caso tenha ficado pendente de sessão anterior)
-  useEffect(() => { sync(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { sync(); }, []);  
 
   // Salva: online cria direto; offline enfileira
   const save = useCallback(async (data) => {
