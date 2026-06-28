@@ -68,8 +68,8 @@ export default function Users() {
   });
 
   const invite = useMutation({
-    mutationFn: ({ email, role, name, permissions, cell }) =>
-      base44.users.inviteUser(email, role, name, '', permissions, cell),
+    mutationFn: ({ email, role, name, password, permissions, cell }) =>
+      base44.users.inviteUser(email, role, name, password, permissions, cell),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success('Colaborador criado com sucesso!');
@@ -111,10 +111,10 @@ export default function Users() {
     onError: () => toast.error('Falha ao excluir colaborador'),
   });
 
-  const handleInvite = async (email, role, name, permissions, cell, extraData) => {
+  const handleInvite = async (email, role, name, password, permissions, cell, extraData) => {
     setSaving(true);
     try {
-      await invite.mutateAsync({ email, role, name, permissions, cell });
+      await invite.mutateAsync({ email, role, name, password, permissions, cell });
       
       if (extraData && extraData.registration) {
         const opResult = await base44.entities.Operator.create({

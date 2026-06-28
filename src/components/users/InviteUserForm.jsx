@@ -25,6 +25,7 @@ export default function InviteUserForm({ onInvite, saving }) {
   const { activeCells } = useCells();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [role, setRole] = useState('operator');
   const [cell, setCell] = useState('none');
   const [registration, setRegistration] = useState('');
@@ -93,7 +94,12 @@ export default function InviteUserForm({ onInvite, saving }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim() || !email.trim()) return;
+    if (!name.trim() || !email.trim() || !password.trim()) return;
+
+    if (password.trim().length < 6) {
+      alert("A senha de acesso deve ter pelo menos 6 caracteres.");
+      return;
+    }
 
     const extraData = role === 'operator' && createOperator ? {
       registration: registration.trim(),
@@ -101,12 +107,13 @@ export default function InviteUserForm({ onInvite, saving }) {
       login_enabled: true
     } : null;
     
-    // Passando a célula vinculada. Caso seja 'none', passa vazio.
-    await onInvite(email.trim(), role, name.trim(), permissions, cell === 'none' ? '' : cell, extraData);
+    // Passando a senha informada
+    await onInvite(email.trim(), role, name.trim(), password.trim(), permissions, cell === 'none' ? '' : cell, extraData);
     
     // Limpar campos
     setName('');
     setEmail('');
+    setPassword('');
     setRole('operator');
     setCell('none');
     setRegistration('');
@@ -133,7 +140,7 @@ export default function InviteUserForm({ onInvite, saving }) {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div className="space-y-2 md:col-span-1">
             <Label htmlFor="name">Nome Completo</Label>
             <Input id="name" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="ex: Carlos Silva" required />
@@ -141,6 +148,10 @@ export default function InviteUserForm({ onInvite, saving }) {
           <div className="space-y-2 md:col-span-1">
             <Label htmlFor="email">E-mail (Login)</Label>
             <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ex: carlos@empresa.com" required />
+          </div>
+          <div className="space-y-2 md:col-span-1">
+            <Label htmlFor="password">Senha de Acesso</Label>
+            <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="mínimo 6 caracteres" required />
           </div>
           <div className="space-y-2 md:col-span-1">
             <Label htmlFor="role">Papel</Label>
