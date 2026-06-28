@@ -28,6 +28,17 @@ export function useOperatorSession() {
     return () => clearInterval(id);
   }, [session]);
 
+  // Sincronizar com mudanças globais de sessão
+  useEffect(() => {
+    const handleSessionChange = () => {
+      setSession(getOperatorSession());
+    };
+    window.addEventListener('operator-session-changed', handleSessionChange);
+    return () => {
+      window.removeEventListener('operator-session-changed', handleSessionChange);
+    };
+  }, []);
+
   // Renovar TTL a cada 5 minutos de uso
   useEffect(() => {
     if (!session) return;

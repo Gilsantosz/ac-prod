@@ -70,11 +70,18 @@ export async function loginOperator(name, registration) {
     _memorySession = session;
   }
 
+  notifySessionChange();
   return session;
 }
 
 // Fallback em memória quando sessionStorage está bloqueado
 let _memorySession = null;
+
+function notifySessionChange() {
+  try {
+    window.dispatchEvent(new CustomEvent('operator-session-changed'));
+  } catch (_) { /* ignore */ }
+}
 
 /**
  * Retorna a sessão operacional ativa, ou null se não há sessão válida.
@@ -83,7 +90,7 @@ let _memorySession = null;
 export function getOperatorSession() {
   // Memória primeiro
   if (_memorySession && _memorySession.expires_at > Date.now()) return _memorySession;
-  if (_memorySession) { _memorySession = null; return null; }
+  if (_memorySession) { _memorySession = null; notifySessionChange(); return null; }
 
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
@@ -91,6 +98,7 @@ export function getOperatorSession() {
     const session = JSON.parse(raw);
     if (!session?.expires_at || session.expires_at < Date.now()) {
       sessionStorage.removeItem(SESSION_KEY);
+      notifySessionChange();
       return null;
     }
     return session;
@@ -112,6 +120,7 @@ export function isOperatorLoggedIn() {
 export function clearOperatorSession() {
   try { sessionStorage.removeItem(SESSION_KEY); } catch (_) { /* ignore */ }
   _memorySession = null;
+  notifySessionChange();
 }
 
 /**
@@ -126,4 +135,5 @@ export function refreshOperatorSessionTTL() {
   } catch (_) {
     _memorySession = renewed;
   }
+  notifySessionChange();
 }
