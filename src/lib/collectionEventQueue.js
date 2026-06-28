@@ -97,16 +97,16 @@ function notifyChange() {
  */
 export async function enqueueCollectionEvent(payload) {
   const now = new Date().toISOString();
+  const clientEventId = payload.client_event_id || generateClientEventId();
   const event = {
-    client_event_id: generateClientEventId(),
+    client_event_id: clientEventId,
     status: 'pending',
     retries: 0,
     created_at_client: now,
     updated_at: now,
     raw_value: payload.rawValue ?? payload.raw_value ?? '',
     ...payload,
-    // Garantir que client_event_id do payload não sobreescreva o gerado
-    client_event_id: payload.client_event_id || generateClientEventId(),
+    client_event_id: clientEventId,
   };
   // Idempotência: se já existe, não duplica
   const existing = await dbGet(event.client_event_id);
@@ -139,6 +139,45 @@ export async function getEventsByStatus(status) {
 }
 
 /**
+ * Processa um evento especifico da fila e devolve o resultado persistido.
+ * Mantem o evento na fila se houver falha para permitir nova tentativa.
+ */
+export async function processCollectionEvent(clientEventId, processFn, opts = {}) {
+  const { maxRetries = 3 } = opts;
+  const event = await dbGet(clientEventId);
+  if (!event) throw new Error('Evento de coleta não localizado na fila local.');
+  if (event.status === 'synced') return event.result;
+
+  const processing = { ...event, status: 'processing', updated_at: new Date().toISOString() };
+  await dbPut(processing);
+  notifyChange();
+
+  try {
+    const result = await processFn(processing);
+    await dbPut({
+      ...processing,
+      status: 'synced',
+      result,
+      updated_at: new Date().toISOString(),
+      processed_at: new Date().toISOString(),
+    });
+    notifyChange();
+    return result;
+  } catch (err) {
+    const retries = (event.retries || 0) + 1;
+    await dbPut({
+      ...event,
+      status: retries >= maxRetries ? 'error' : 'pending',
+      retries,
+      last_error: err?.message || String(err),
+      updated_at: new Date().toISOString(),
+    });
+    notifyChange();
+    throw err;
+  }
+}
+
+/**
  * Processa a fila: 1 evento por vez (FIFO), com idempotência garantida por client_event_id.
  * @param {function} processFn — (event) => Promise<result>
  * @param {{ onProgress?: function, maxRetries?: number }} opts
@@ -154,33 +193,13 @@ export async function flushCollectionQueue(processFn, opts = {}) {
   let errors = 0;
 
   for (const event of pending) {
-    // Marcar como processando
-    await dbPut({ ...event, status: 'processing', updated_at: new Date().toISOString() });
-    notifyChange();
-
     try {
-      const result = await processFn(event);
-      await dbPut({
-        ...event,
-        status: 'synced',
-        result,
-        updated_at: new Date().toISOString(),
-        processed_at: new Date().toISOString(),
-      });
+      await processCollectionEvent(event.client_event_id, processFn, { maxRetries });
       synced++;
     } catch (err) {
-      const retries = (event.retries || 0) + 1;
-      await dbPut({
-        ...event,
-        status: retries >= maxRetries ? 'error' : 'pending',
-        retries,
-        last_error: err?.message || String(err),
-        updated_at: new Date().toISOString(),
-      });
       errors++;
     }
 
-    notifyChange();
     onProgress?.({ synced, errors, current: event.client_event_id });
   }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertOctagon, RadioTower, ScanLine } from 'lucide-react';
 import { toast } from 'sonner';
@@ -75,7 +75,7 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   const { data: readings = [], isFetching: readingsLoading } = useQuery({
     queryKey: ['production-stage-readings'],
-    queryFn: () => fetchRecentReadings(100),
+    queryFn: () => fetchRecentReadings(1000),
     initialData: [],
     retry: false,
     refetchInterval: 15000,
@@ -125,7 +125,7 @@ export default function TraceabilityCollection({ embedded = false }) {
   }, [cellName, shift, operator, operatorId, refreshData]);
 
   // ─── Fila de coleta ─────────────────────────────────────────────────────────
-  const { stats: queueStats, flushing, enqueue, retryQueueErrors } = useCollectionQueue(processEvent);
+  const { stats: queueStats, flushing, enqueue, processNow, retryQueueErrors } = useCollectionQueue(processEvent);
 
   // ─── Handler principal de leitura — enfileira e processa ────────────────────
   const handleRead = useCallback(async (payload) => {
@@ -152,15 +152,14 @@ export default function TraceabilityCollection({ embedded = false }) {
     };
 
     // Enfileirar (IndexedDB) — nunca descarta
-    await enqueue(eventPayload);
+    const clientEventId = await enqueue(eventPayload, { autoFlush: false });
 
     // Feedback imediato otimista
     if (navigator.onLine) {
-      // O flush é disparado automaticamente pelo hook
-      // Aguardar resultado da fila para dar feedback visual
+      // Processa o mesmo evento persistido na fila local.
       try {
-        const result = await processEvent(eventPayload);
-        setFeedback(result);
+        const result = await processNow(clientEventId);
+        setFeedback({ ...result, client_event_id: clientEventId });
         if (result?.success) {
           toast.success(result.message || 'Leitura aprovada');
           navigator.vibrate?.([70, 40, 70]);
@@ -171,16 +170,23 @@ export default function TraceabilityCollection({ embedded = false }) {
         }
         return result;
       } catch (error) {
-        const result = { success: false, status: 'error', message: error?.message || 'Leitura enfileirada para reenvio.' };
+        const result = {
+          success: false,
+          status: 'error',
+          client_event_id: clientEventId,
+          message: error?.message || 'Leitura enfileirada para reenvio.',
+        };
         setFeedback(result);
         toast.error('Falha ao processar leitura. Enfileirada para reenvio automático.');
         return result;
       }
     } else {
       toast.info('Sem conexão. Leitura salva na fila local.');
-      return { success: false, status: 'queued', message: 'Leitura salva na fila local.' };
+      const result = { success: false, status: 'queued', client_event_id: clientEventId, message: 'Leitura salva na fila local.' };
+      setFeedback(result);
+      return result;
     }
-  }, [cellName, shift, operator, operatorId, enqueue, processEvent]);
+  }, [cellName, shift, operator, operatorId, enqueue, processNow]);
 
   const handleReject = async (form) => {
     if (!feedback?.item?.id) return;
@@ -322,7 +328,10 @@ export default function TraceabilityCollection({ embedded = false }) {
       {scanner}
 
       <div className="grid lg:grid-cols-2 gap-5 items-start">
-        <CollectionContextSummary feedback={feedback} />
+        <CollectionContextSummary
+          feedback={feedback}
+          refreshToken={`${feedback?.reading?.id || feedback?.client_event_id || ''}-${queueStats.synced}-${readings[0]?.id || ''}`}
+        />
         <PieceRouteTimeline route={route} currentStep={feedback?.item?.current_step} />
       </div>
 

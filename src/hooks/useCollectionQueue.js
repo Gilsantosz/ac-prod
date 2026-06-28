@@ -3,6 +3,7 @@ import {
   enqueueCollectionEvent,
   flushCollectionQueue,
   getQueueStats,
+  processCollectionEvent,
   retryErrors,
 } from '@/lib/collectionEventQueue';
 
@@ -40,16 +41,6 @@ export function useCollectionQueue(processFn) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const enqueue = useCallback(async (payload) => {
-    const id = await enqueueCollectionEvent(payload);
-    await refreshStats();
-    // Tenta processar imediatamente se online
-    if (navigator.onLine) {
-      flush(); // não aguarda
-    }
-    return id;
-  }, [refreshStats]);
-
   const flush = useCallback(async () => {
     if (flushing || !navigator.onLine) return;
     setFlushing(true);
@@ -61,6 +52,21 @@ export function useCollectionQueue(processFn) {
     }
   }, [flushing, refreshStats]);
 
+  const enqueue = useCallback(async (payload, options = {}) => {
+    const id = await enqueueCollectionEvent(payload);
+    await refreshStats();
+    if (navigator.onLine && options.autoFlush !== false) {
+      flush();
+    }
+    return id;
+  }, [flush, refreshStats]);
+
+  const processNow = useCallback(async (clientEventId) => {
+    const result = await processCollectionEvent(clientEventId, processFnRef.current);
+    await refreshStats();
+    return result;
+  }, [refreshStats]);
+
   const retryQueueErrors = useCallback(async () => {
     const count = await retryErrors();
     await refreshStats();
@@ -68,5 +74,5 @@ export function useCollectionQueue(processFn) {
     return count;
   }, [refreshStats, flush]);
 
-  return { stats, flushing, enqueue, flush, retryQueueErrors };
+  return { stats, flushing, enqueue, flush, processNow, retryQueueErrors };
 }

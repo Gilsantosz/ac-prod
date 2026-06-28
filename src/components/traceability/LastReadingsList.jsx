@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Ban, CheckCircle2, Clock3, Copy, XCircle, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
