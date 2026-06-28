@@ -422,7 +422,9 @@ function parseSheetContent(content: string, fileType: string) {
     workbook = XLSX.read(bytes, { type: "array" });
   } else {
     // csv ou tsv
-    workbook = XLSX.read(content, { type: "string" });
+    const firstLine = String(content || "").split(/\r?\n/).find(Boolean) || "";
+    const separator = fileType === "tsv" ? "\t" : (firstLine.includes(";") ? ";" : ",");
+    workbook = XLSX.read(content, { type: "string", FS: separator });
   }
 
   // Pega a primeira aba da planilha
@@ -445,6 +447,12 @@ function parseRowsToNormalizedJson(rows: any[]) {
   const keys = Object.keys(sampleRow);
   
   const mapping: { [normalizedKey: string]: string } = {};
+  const cleanColumnName = (value: string) => String(value || "")
+    .replace(/^\uFEFF/, "")
+    .toLowerCase()
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 
   const colMaps: { [key: string]: string[] } = {
     orderCode: ["pedido", "ordem", "ordem de producao", "ordem de produção", "order", "order code", "order_code", "op"],
@@ -453,6 +461,8 @@ function parseRowsToNormalizedJson(rows: any[]) {
     environmentName: ["ambiente", "environment", "room", "environment_name"],
     moduleName: ["modulo", "módulo", "module", "module_name", "celula_destino"],
     pieceCode: ["codigo", "código", "codigo peca", "código peça", "code", "part code", "piece code", "piece_code", "item_code", "id", "peca_id"],
+    barcode: ["codigo de barras", "código de barras", "cod barras", "cod. barras", "barcode", "bar code", "ean", "ean13", "tag", "tag_value", "etiqueta"],
+    qrCode: ["qr", "qr code", "qrcode", "codigo qr", "código qr"],
     pieceName: ["nome", "nome peca", "nome peça", "descricao", "descrição", "description", "name", "piece_name", "piece name", "item_name", "peca_name", "peca_nome"],
     material: ["material", "board", "chapa"],
     color: ["cor", "color", "padrao", "padrão", "grain", "cor_padrao"],
@@ -473,15 +483,19 @@ function parseRowsToNormalizedJson(rows: any[]) {
   // Encontra mapeamento para cada chave
   for (const [normKey, aliases] of Object.entries(colMaps)) {
     for (const key of keys) {
-      const cleanKey = key.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const cleanKey = cleanColumnName(key);
       if (aliases.some(alias => {
-        const cleanAlias = alias.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const cleanAlias = cleanColumnName(alias);
         return cleanKey === cleanAlias;
       })) {
         mapping[normKey] = key;
         break;
       }
     }
+  }
+
+  if (!mapping.pieceCode && !mapping.pieceName && !mapping.barcode && !mapping.qrCode) {
+    throw new Error('Não encontrei coluna de peça ou código de barras. Use cabeçalhos como "codigo", "descricao" ou "codigo de barras".');
   }
 
   const getValue = (row: any, normKey: string, fallback: any = "") => {
@@ -504,7 +518,9 @@ function parseRowsToNormalizedJson(rows: any[]) {
   const allItems = [];
 
   for (const row of rows) {
-    const pieceCode = String(getValue(row, "pieceCode") || "").trim();
+    const barcode = String(getValue(row, "barcode") || "").trim();
+    const qrCode = String(getValue(row, "qrCode") || "").trim();
+    const pieceCode = String(getValue(row, "pieceCode") || barcode || qrCode || "").trim();
     const pieceName = String(getValue(row, "pieceName") || "").trim();
     if (!pieceCode && !pieceName) continue;
 
@@ -553,6 +569,8 @@ function parseRowsToNormalizedJson(rows: any[]) {
       width,
       height,
       quantity,
+      barcode,
+      qrCode,
       edgeFront,
       edgeBack,
       edgeLeft,
@@ -578,6 +596,10 @@ function parseRowsToNormalizedJson(rows: any[]) {
     }
     modulesMap.get(modName).push(item);
     allItems.push(item);
+  }
+
+  if (allItems.length === 0) {
+    throw new Error('Nenhuma peça foi encontrada no arquivo. Confira se há linhas preenchidas e colunas de código/descrição.');
   }
 
   const environments = [];
@@ -620,4 +642,3 @@ function parseRowsToNormalizedJson(rows: any[]) {
     }
   };
 }
-

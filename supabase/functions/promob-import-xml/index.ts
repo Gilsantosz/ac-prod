@@ -10,6 +10,124 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function isMissingSchemaError(error: any) {
+  return Boolean(error && (
+    ["PGRST202", "PGRST204", "PGRST205", "42P01", "42703"].includes(error.code)
+    || /schema cache|could not find|does not exist/i.test(error.message || "")
+  ));
+}
+
+function normalizeTagValue(value: unknown) {
+  return String(value ?? "").replace(/[\r\n\t\s]/g, "").trim().toUpperCase();
+}
+
+function tagKind(value: string, preferredType = "barcode") {
+  const upper = normalizeTagValue(value);
+  if (preferredType === "qrcode") return { tagType: "qrcode", tagFormat: "qrcode" };
+  if (/^\]D2/.test(upper) || /^(01|10|21)\d{8,}/.test(upper)) return { tagType: "datamatrix", tagFormat: "datamatrix" };
+  if (/^[A-F0-9]{24}$/.test(upper) || /^EPC[-:_]/.test(upper)) return { tagType: "rfid_epc", tagFormat: /^[A-F0-9]{24}$/.test(upper) ? "epc96" : "custom" };
+  if (/^https?:\/\//i.test(String(value)) || /^[{[]/.test(String(value).trim()) || /^QR[:_-]/i.test(String(value))) return { tagType: "qrcode", tagFormat: "qrcode" };
+  if (/^\d{13}$/.test(upper)) return { tagType: "barcode", tagFormat: "ean13" };
+  return { tagType: "barcode", tagFormat: "custom" };
+}
+
+function routePayloadForImport(lotId: string, allItems: any[]) {
+  const has = (key: string) => allItems.some((item) => item[key] !== false);
+  return [
+    { step_order: 1, step_name: "Corte", required: true },
+    { step_order: 2, step_name: "Bordo", required: allItems.some((item) => item.requiresEdge) },
+    { step_order: 3, step_name: "Usinagem", required: allItems.some((item) => item.requiresCnc) },
+    { step_order: 4, step_name: "Marcenaria", required: allItems.some((item) => item.requiresJoinery) },
+    { step_order: 5, step_name: "Separação", required: has("requiresSeparation") },
+    { step_order: 6, step_name: "Embalagem", required: has("requiresPackaging") },
+    { step_order: 7, step_name: "Expedição", required: has("requiresShipping") },
+  ]
+    .filter((step) => step.required)
+    .map((step) => ({ lot_id: lotId, ...step, cell_name: null }));
+}
+
+async function createCollectionArtifacts(supabase: any, lot: any, lotItems: any[], parsedItems: any[]) {
+  if (!lot?.id || !lotItems.length) return;
+
+  const routesPayload = routePayloadForImport(lot.id, parsedItems);
+  const { error: routesError } = await supabase
+    .from("production_routes")
+    .upsert(routesPayload, { onConflict: "lot_id,step_order" });
+  if (routesError) {
+    if (isMissingSchemaError(routesError)) return;
+    throw routesError;
+  }
+
+  const firstStep = routesPayload[0]?.step_name || "Corte";
+  const parsedByCode = new Map(parsedItems.map((item) => [String(item.code || "").trim(), item]));
+  const productionItemsPayload = lotItems.map((lotItem) => ({
+    lot_id: lot.id,
+    source_lot_item_id: lotItem.id,
+    item_code: String(lotItem.piece_code || lotItem.id).trim(),
+    product_code: lotItem.piece_code,
+    product_name: lotItem.piece_name || "Peca sem descricao",
+    current_step: firstStep,
+    current_cell: null,
+    status: ["completed", "blocked", "rework", "scrap", "cancelled"].includes(lotItem.status) ? lotItem.status : "pending",
+    created_at: lotItem.created_at,
+    updated_at: lotItem.updated_at,
+  }));
+
+  const { data: productionItems, error: productionItemsError } = await supabase
+    .from("production_lot_items")
+    .upsert(productionItemsPayload, { onConflict: "lot_id,item_code" })
+    .select("id,lot_id,item_code,source_lot_item_id");
+  if (productionItemsError) {
+    if (isMissingSchemaError(productionItemsError)) return;
+    throw productionItemsError;
+  }
+
+  const itemBySource = new Map((productionItems || []).map((item: any) => [item.source_lot_item_id, item]));
+  const tagsPayload: any[] = [];
+  const seenTags = new Set<string>();
+
+  lotItems.forEach((lotItem) => {
+    const productionItem = itemBySource.get(lotItem.id);
+    if (!productionItem) return;
+
+    const parsedItem = parsedByCode.get(String(lotItem.piece_code || "").trim()) || {};
+    const explicitTags = [
+      { value: parsedItem.barcode, preferredType: "barcode" },
+      { value: parsedItem.qrCode, preferredType: "qrcode" },
+    ].filter((tag) => normalizeTagValue(tag.value));
+    const candidates = explicitTags.length
+      ? explicitTags
+      : [{ value: lotItem.piece_code, preferredType: "barcode" }];
+
+    for (const candidate of candidates) {
+      const tagValue = normalizeTagValue(candidate.value);
+      if (!tagValue || seenTags.has(tagValue)) continue;
+      seenTags.add(tagValue);
+      const kind = tagKind(tagValue, candidate.preferredType);
+      tagsPayload.push({
+        lot_id: lot.id,
+        item_id: productionItem.id,
+        tag_value: tagValue,
+        tag_type: kind.tagType,
+        tag_format: kind.tagFormat,
+        barcode_value: kind.tagType === "barcode" ? tagValue : null,
+        qr_value: kind.tagType === "qrcode" ? tagValue : null,
+        epc_code: kind.tagType === "rfid_epc" ? tagValue : null,
+        active: true,
+      });
+    }
+  });
+
+  if (!tagsPayload.length) return;
+  const { error: tagsError } = await supabase
+    .from("production_tags")
+    .upsert(tagsPayload, { onConflict: "tag_value", ignoreDuplicates: true });
+  if (tagsError) {
+    if (isMissingSchemaError(tagsError)) return;
+    throw tagsError;
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
@@ -310,12 +428,17 @@ serve(async (req) => {
       status:             "pending",
     }));
 
+    let insertedLotItems: any[] = [];
     if (lotItemsPayload.length > 0) {
-      const { error: itemsError } = await supabase
+      const { data: lotItems, error: itemsError } = await supabase
         .from("lot_items")
-        .insert(lotItemsPayload);
+        .insert(lotItemsPayload)
+        .select("id,lot_id,piece_code,piece_name,status,created_at,updated_at");
       if (itemsError) throw itemsError;
+      insertedLotItems = lotItems || [];
     }
+
+    await createCollectionArtifacts(supabase, lot, insertedLotItems, allItems);
 
     // ─── Atualizar batch como processado ─────────────────────
     await supabase

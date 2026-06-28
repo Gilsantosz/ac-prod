@@ -39,7 +39,9 @@ function parseSheetOnClient(content, fileType) {
       cellNF: false
     });
   } else {
-    workbook = XLSX.read(content, { type: "string" });
+    const firstLine = String(content || "").split(/\r?\n/).find(Boolean) || "";
+    const separator = fileType === "tsv" ? "\t" : (firstLine.includes(";") ? ";" : ",");
+    workbook = XLSX.read(content, { type: "string", FS: separator });
   }
 
   const firstSheetName = workbook.SheetNames[0];
@@ -57,6 +59,12 @@ function parseRowsToNormalizedJson(rows) {
   const sampleRow = rows[0];
   const keys = Object.keys(sampleRow);
   const mapping = {};
+  const cleanColumnName = (value) => String(value || "")
+    .replace(/^\uFEFF/, "")
+    .toLowerCase()
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 
   const colMaps = {
     orderCode: ["pedido", "ordem", "ordem de producao", "ordem de produção", "order", "order code", "order_code", "op"],
@@ -65,6 +73,8 @@ function parseRowsToNormalizedJson(rows) {
     environmentName: ["ambiente", "environment", "room", "environment_name"],
     moduleName: ["modulo", "módulo", "module", "module_name", "celula_destino"],
     pieceCode: ["codigo", "código", "codigo peca", "código peça", "code", "part code", "piece code", "piece_code", "item_code", "id", "peca_id"],
+    barcode: ["codigo de barras", "código de barras", "cod barras", "cod. barras", "barcode", "bar code", "ean", "ean13", "tag", "tag_value", "etiqueta"],
+    qrCode: ["qr", "qr code", "qrcode", "codigo qr", "código qr"],
     pieceName: ["nome", "nome peca", "nome peça", "descricao", "descrição", "description", "name", "piece_name", "piece name", "item_name", "peca_name", "peca_nome"],
     material: ["material", "board", "chapa"],
     color: ["cor", "color", "padrao", "padrão", "grain", "cor_padrao"],
@@ -84,15 +94,19 @@ function parseRowsToNormalizedJson(rows) {
 
   for (const [normKey, aliases] of Object.entries(colMaps)) {
     for (const key of keys) {
-      const cleanKey = key.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const cleanKey = cleanColumnName(key);
       if (aliases.some(alias => {
-        const cleanAlias = alias.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const cleanAlias = cleanColumnName(alias);
         return cleanKey === cleanAlias;
       })) {
         mapping[normKey] = key;
         break;
       }
     }
+  }
+
+  if (!mapping.pieceCode && !mapping.pieceName && !mapping.barcode && !mapping.qrCode) {
+    throw new Error('Não encontrei coluna de peça ou código de barras. Use cabeçalhos como "codigo", "descricao" ou "codigo de barras".');
   }
 
   const getValue = (row, normKey, fallback = "") => {
@@ -115,7 +129,9 @@ function parseRowsToNormalizedJson(rows) {
   const allItems = [];
 
   for (const row of rows) {
-    const pieceCode = String(getValue(row, "pieceCode") || "").trim();
+    const barcode = String(getValue(row, "barcode") || "").trim();
+    const qrCode = String(getValue(row, "qrCode") || "").trim();
+    const pieceCode = String(getValue(row, "pieceCode") || barcode || qrCode || "").trim();
     const pieceName = String(getValue(row, "pieceName") || "").trim();
     if (!pieceCode && !pieceName) continue;
 
@@ -164,6 +180,8 @@ function parseRowsToNormalizedJson(rows) {
       width,
       height,
       quantity,
+      barcode,
+      qrCode,
       edgeFront,
       edgeBack,
       edgeLeft,
@@ -189,6 +207,10 @@ function parseRowsToNormalizedJson(rows) {
     }
     modulesMap.get(modName).push(item);
     allItems.push(item);
+  }
+
+  if (allItems.length === 0) {
+    throw new Error('Nenhuma peça foi encontrada no arquivo. Confira se há linhas preenchidas e colunas de código/descrição.');
   }
 
   const environments = [];
@@ -230,6 +252,17 @@ function parseRowsToNormalizedJson(rows) {
       modules: environments.reduce((a, e) => a + e.modules.length, 0)
     }
   };
+}
+
+async function getFunctionErrorMessage(error, fallback) {
+  const response = error?.context;
+  if (!response) return error?.message || fallback;
+  try {
+    const payload = await (response.clone?.() || response).json();
+    return payload?.error || payload?.message || error?.message || fallback;
+  } catch {
+    return error?.message || fallback;
+  }
 }
 
 export default function XmlImportTab() {
@@ -394,7 +427,8 @@ export default function XmlImportTab() {
         const resp = await supabase.functions.invoke('promob-parse-order', {
           body: { fileContent: content, fileType: type, fileName: name },
         });
-        if (resp.error) throw new Error(resp.error.message);
+        if (resp.error) throw new Error(await getFunctionErrorMessage(resp.error, 'Falha ao ler XML.'));
+        if (resp.data?.success === false) throw new Error(resp.data?.error || 'Falha ao ler XML.');
         result = resp.data?.data;
       } else {
         // XLSX, CSV, TSV: parse local rápido para evitar limite de CPU na Edge Function
