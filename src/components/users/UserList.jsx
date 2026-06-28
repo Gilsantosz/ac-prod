@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { User as UserIcon, Edit3, Trash2, Save, X, LayoutDashboard, PlusCircle, AlertOctagon, Boxes, HardHat, LineChart, Zap, Users, KeyRound, Send, BrainCircuit } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCells } from '@/hooks/useCells';
+import { Switch } from '@/components/ui/switch';
+import { useQuery } from '@tanstack/react-query';
+import { base44 } from '@/lib/localDb';
 
 const PERMISSION_LABELS = {
   view_dashboards: 'Painéis',
@@ -33,7 +36,7 @@ const PERMISSION_METADATA = [
   { key: 'manage_users', label: 'Usuários', icon: Users, warning: true },
 ];
 
-export default function UserList({ users, currentUserId, onUpdate, onDelete }) {
+export default function UserList({ users, currentUserId, onUpdate, onDelete, onResetPassword, onResendInvite }) {
   if (!users.length) {
     return (
       <div className="text-center py-16 text-muted-foreground border border-dashed border-border rounded-2xl">
@@ -53,6 +56,8 @@ export default function UserList({ users, currentUserId, onUpdate, onDelete }) {
             currentUserId={currentUserId}
             onUpdate={onUpdate}
             onDelete={onDelete}
+            onResetPassword={onResetPassword}
+            onResendInvite={onResendInvite}
           />
         ))}
       </div>
@@ -80,6 +85,31 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
     manage_users: false,
   });
 
+  const [editRegistration, setEditRegistration] = useState('');
+  const [editShift, setEditShift] = useState('');
+  const [editLoginEnabled, setEditLoginEnabled] = useState(true);
+  const [editActive, setEditActive] = useState(true);
+
+  // Buscar operador correspondente pelo nome se for operador
+  const { data: operator } = useQuery({
+    queryKey: ['operator-by-name', user.name],
+    queryFn: async () => {
+      if (!user.name) return null;
+      const list = await base44.entities.Operator.list();
+      return list.find(op => op.name?.toLowerCase() === user.name?.toLowerCase()) || null;
+    },
+    enabled: isEditing && editRole === 'operator',
+  });
+
+  useEffect(() => {
+    if (operator) {
+      setEditRegistration(operator.registration || '');
+      setEditShift(operator.shift || '');
+      setEditLoginEnabled(operator.login_enabled !== false);
+      setEditActive(operator.active !== false);
+    }
+  }, [operator]);
+
   const isSelf = user.id === currentUserId;
 
   const togglePermission = (key) => {
@@ -91,12 +121,38 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
 
   const handleSave = async () => {
     if (!editName.trim()) return;
+    
+    // 1. Atualizar Usuário
     await onUpdate(user.id, {
       name: editName.trim(),
       role: editRole,
       cell: editCell === 'none' ? '' : editCell, // Enviando a célula vinculada no payload
       permissions: editPermissions,
     });
+
+    // 2. Se for operador, atualizar ou criar na tabela operators
+    if (editRole === 'operator') {
+      const opPayload = {
+        name: editName.trim(),
+        registration: editRegistration.trim(),
+        primary_cell: editCell === 'none' ? null : editCell,
+        cells: editCell === 'none' ? [] : [editCell],
+        shift: editShift || '',
+        login_enabled: editLoginEnabled,
+        active: editActive,
+      };
+
+      try {
+        if (operator?.id) {
+          await base44.entities.Operator.update(operator.id, opPayload);
+        } else {
+          await base44.entities.Operator.create(opPayload);
+        }
+      } catch (err) {
+        console.error('Erro ao integrar cadastro de operador:', err);
+      }
+    }
+    
     setIsEditing(false);
   };
 
@@ -116,6 +172,17 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
       manage_automations: false,
       manage_users: false,
     });
+    if (operator) {
+      setEditRegistration(operator.registration || '');
+      setEditShift(operator.shift || '');
+      setEditLoginEnabled(operator.login_enabled !== false);
+      setEditActive(operator.active !== false);
+    } else {
+      setEditRegistration('');
+      setEditShift('');
+      setEditLoginEnabled(true);
+      setEditActive(true);
+    }
     setIsEditing(false);
   };
 
@@ -171,6 +238,45 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
               </Select>
             </div>
           </div>
+
+          {editRole === 'operator' && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-muted/40 border border-border/50 rounded-xl">
+              <div className="space-y-2">
+                <Label>Matrícula (Senha Operacional)</Label>
+                <Input
+                  value={editRegistration}
+                  onChange={(e) => setEditRegistration(e.target.value)}
+                  placeholder="Ex: 00123"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Turno do Operador</Label>
+                <Select value={editShift || ''} onValueChange={setEditShift}>
+                  <SelectTrigger><SelectValue placeholder="Selecione o turno" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1º Turno">1º Turno</SelectItem>
+                    <SelectItem value="2º Turno">2º Turno</SelectItem>
+                    <SelectItem value="3º Turno">3º Turno</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center justify-between border border-border/60 rounded-xl px-4 py-2 bg-card">
+                <div>
+                  <p className="font-medium text-xs">Login habilitado</p>
+                  <p className="text-[10px] text-muted-foreground">Acesso ao MES.</p>
+                </div>
+                <Switch checked={editLoginEnabled} onCheckedChange={setEditLoginEnabled} />
+              </div>
+              <div className="flex items-center justify-between border border-border/60 rounded-xl px-4 py-2 bg-card">
+                <div>
+                  <p className="font-medium text-xs">Operador ativo</p>
+                  <p className="text-[10px] text-muted-foreground">Filtros da fábrica.</p>
+                </div>
+                <Switch checked={editActive} onCheckedChange={setEditActive} />
+              </div>
+            </div>
+          )}
 
           <div className="space-y-3">
             <Label className="text-sm font-semibold text-foreground">Permissões de Acesso</Label>

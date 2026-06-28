@@ -7,7 +7,6 @@ import { ShieldAlert, Users as UsersIcon, HardHat, Shield, Clock, Mail, Trash2, 
 import InviteUserForm from '@/components/users/InviteUserForm';
 import UserList from '@/components/users/UserList';
 import ManagersManager from '@/components/managers/ManagersManager';
-import OperatorsManager from '@/components/operators/OperatorsManager';
 import ReportSchedulesManager from '@/components/users/ReportSchedulesManager';
 import PageHeader from '@/components/ui/PageHeader';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -50,11 +49,11 @@ export default function Users() {
   const canManageUsers = me?.role === 'admin';
   const canManageOperators = canManageUsers || me?.permissions?.manage_operators;
   const allowedTabs = canManageUsers
-    ? ['users', 'operators', 'managers', 'permissions', 'reports', 'email_groups']
+    ? ['users', 'managers', 'permissions', 'reports', 'email_groups']
     : canManageOperators
-      ? ['operators']
+      ? ['users']
       : [];
-  const defaultTab = canManageUsers ? 'users' : 'operators';
+  const defaultTab = 'users';
   const requestedTab = searchParams.get('tab');
   const activeTab = allowedTabs.includes(requestedTab) ? requestedTab : defaultTab;
   const handleTabChange = (value) => {
@@ -65,7 +64,7 @@ export default function Users() {
     queryKey: ['users'],
     queryFn: () => base44.entities.User.list('-created_date', 200),
     initialData: [],
-    enabled: canManageUsers,
+    enabled: canManageUsers || canManageOperators,
   });
 
   const invite = useMutation({
@@ -89,10 +88,25 @@ export default function Users() {
   });
 
   const deleteUser = useMutation({
-    mutationFn: (id) => base44.entities.User.delete(id),
+    mutationFn: async (id) => {
+      const userToDelete = users.find(u => u.id === id);
+      if (userToDelete?.name) {
+        try {
+          const list = await base44.entities.Operator.list();
+          const op = list.find(o => o.name?.toLowerCase() === userToDelete.name?.toLowerCase());
+          if (op?.id) {
+            await base44.entities.Operator.delete(op.id);
+          }
+        } catch (err) {
+          console.error('Erro ao deletar operador integrado:', err);
+        }
+      }
+      return base44.entities.User.delete(id);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      toast.success('Colaborador excluído do sistema.');
+      queryClient.invalidateQueries({ queryKey: ['operators'] });
+      toast.success('Colaborador e operador integrado excluídos.');
     },
     onError: () => toast.error('Falha ao excluir colaborador'),
   });
@@ -231,8 +245,7 @@ export default function Users() {
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
         <TabsList className="flex flex-wrap gap-1 bg-muted/60 p-1 rounded-xl w-fit">
-          {canManageUsers && <TabsTrigger value="users" className="gap-2 rounded-lg"><UsersIcon className="w-4 h-4" /> Usuários</TabsTrigger>}
-          {canManageOperators && <TabsTrigger value="operators" className="gap-2 rounded-lg"><HardHat className="w-4 h-4" /> Operadores</TabsTrigger>}
+          {(canManageUsers || canManageOperators) && <TabsTrigger value="users" className="gap-2 rounded-lg"><UsersIcon className="w-4 h-4" /> Usuários</TabsTrigger>}
           {canManageUsers && <TabsTrigger value="managers" className="gap-2 rounded-lg"><HardHat className="w-4 h-4" /> Gestores</TabsTrigger>}
           {canManageUsers && <TabsTrigger value="permissions" className="gap-2 rounded-lg"><Shield className="w-4 h-4" /> Permissões</TabsTrigger>}
           {canManageUsers && <TabsTrigger value="reports" className="gap-2 rounded-lg"><Clock className="w-4 h-4" /> Relatórios Automáticos</TabsTrigger>}
@@ -258,10 +271,6 @@ export default function Users() {
               onResendInvite={handleResendInvite}
             />
           )}
-        </TabsContent>
-
-        <TabsContent value="operators" className="space-y-6">
-          <OperatorsManager />
         </TabsContent>
 
         <TabsContent value="managers">
