@@ -63,6 +63,29 @@ export default function DownloadsBackups() {
     }
     setResetting(true);
     try {
+      // 1. Obter os caminhos de todos os arquivos de backup para remoção física
+      const { data: filesToDelete, error: fetchFilesError } = await supabase
+        .from('backup_files')
+        .select('storage_path');
+
+      if (!fetchFilesError && filesToDelete && filesToDelete.length > 0) {
+        const paths = filesToDelete.map(f => f.storage_path).filter(Boolean);
+        if (paths.length > 0) {
+          // Remover em lotes de 100
+          const chunkSize = 100;
+          for (let i = 0; i < paths.length; i += chunkSize) {
+            const chunk = paths.slice(i, i + chunkSize);
+            const { error: storageError } = await supabase.storage
+              .from('productive-backups')
+              .remove(chunk);
+            if (storageError) {
+              console.warn('Erro ao remover arquivos físicos do bucket:', storageError.message);
+            }
+          }
+        }
+      }
+
+      // 2. Chamar a RPC para deletar o histórico e metadados no banco
       const { data, error } = await supabase.rpc('reset_production_data');
       if (error) throw error;
       if (data?.success) {

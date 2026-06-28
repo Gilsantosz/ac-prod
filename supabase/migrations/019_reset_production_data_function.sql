@@ -14,9 +14,6 @@ BEGIN
     RAISE EXCEPTION 'Permissão insuficiente. Apenas administradores podem zerar os dados de produção.';
   END IF;
 
-  -- 1. Limpar arquivos do Storage Bucket
-  DELETE FROM storage.objects WHERE bucket_id = 'productive-backups';
-
   -- 2. Limpar tabelas na ordem de dependência
   DELETE FROM public.alert_logs;
   DELETE FROM public.promob_import_differences;
