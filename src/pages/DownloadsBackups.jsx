@@ -15,9 +15,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
+  Dialog, DialogContent, DialogDescription, DialogFooter,
+  DialogHeader, DialogTitle
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
   HardDrive, Download, RefreshCw, FileText, FileJson, Archive,
   Shield, CheckCircle, Database, Cloud, CloudUpload,
-  ExternalLink, Save,
+  ExternalLink, Save, AlertOctagon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -44,6 +50,36 @@ export default function DownloadsBackups() {
   const requestedTab = searchParams.get('tab');
   const activeTab = ['files', 'policies', 'drive'].includes(requestedTab) ? requestedTab : 'files';
   const isAdmin = user?.role === 'admin';
+
+  // Estados para zerar o sistema
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+  const [resetting, setResetting] = useState(false);
+
+  const handleResetSystemData = async () => {
+    if (confirmText !== 'ZERAR') {
+      toast.error('Digite ZERAR para confirmar a exclusão.');
+      return;
+    }
+    setResetting(true);
+    try {
+      const { data, error } = await supabase.rpc('reset_production_data');
+      if (error) throw error;
+      if (data?.success) {
+        toast.success(data.message || 'Sistema de peças zerado com sucesso.');
+        setResetDialogOpen(false);
+        setConfirmText('');
+        refetch();
+        refetchDriveStatus();
+      } else {
+        throw new Error(data?.error || 'Falha ao zerar dados de produção.');
+      }
+    } catch (e) {
+      toast.error(`Erro ao zerar: ${e.message}`);
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const { data: backupFiles = [], isLoading, refetch } = useQuery({
     queryKey: ['backup-files', search, typeFilter],
@@ -553,6 +589,85 @@ export default function DownloadsBackups() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* ── Danger Zone / Zerar Sistema (Apenas Admin) ──────────────── */}
+      {isAdmin && (
+        <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/60 rounded-2xl p-5 space-y-3">
+          <h3 className="font-bold text-red-700 dark:text-red-400 flex items-center gap-2">
+            <AlertOctagon className="w-5 h-5 text-red-600" /> Zona de Perigo (Ações Administrativas)
+          </h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="max-w-2xl">
+              <p className="text-sm font-semibold text-foreground">Zerar registro de peças e produção</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Apaga permanentemente todas as OPs (Ordens de Produção), lotes, itens de lote, tags vinculadas, histórico de leituras/coletas, ocorrências registradas e arquivos de backup do Storage. 
+                Os perfis de usuários, logins dos operadores, histórico de acessos e cadastro de células serão **preservados intactos**. Esta ação não pode ser desfeita.
+              </p>
+            </div>
+            <Button
+              variant="destructive"
+              className="shrink-0 gap-2 font-semibold"
+              onClick={() => setResetDialogOpen(true)}
+            >
+              Zerar Registro de Peças
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Dialog de Confirmação de Reset */}
+      <Dialog open={resetDialogOpen} onOpenChange={(open) => { if (!open) setConfirmText(''); setResetDialogOpen(open); }}>
+        <DialogContent className="sm:max-w-[480px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-red-600">
+              <AlertOctagon className="w-5 h-5" /> Confirmar reinicialização de dados?
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Esta ação removerá de forma imutável e irreversível todos os dados de peças, OPs, leituras, eventos de fila e recontagens do banco de dados. Os cadastros de usuários, operadores e células não serão afetados.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="confirm-reset-text" className="text-xs font-bold text-muted-foreground">
+                Para prosseguir, digite <span className="font-mono text-red-600 select-all font-bold">ZERAR</span> no campo abaixo:
+              </Label>
+              <Input
+                id="confirm-reset-text"
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="Digite ZERAR"
+                autoComplete="off"
+                className="h-11 rounded-xl text-center font-bold tracking-widest"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setResetDialogOpen(false)}
+              disabled={resetting}
+              className="text-xs"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={handleResetSystemData}
+              disabled={resetting || confirmText !== 'ZERAR'}
+              className="text-xs font-semibold gap-1.5"
+            >
+              {resetting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
+              {resetting ? 'Limpando dados...' : 'Sim, Apagar Tudo'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
