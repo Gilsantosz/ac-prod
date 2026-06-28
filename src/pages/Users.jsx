@@ -101,7 +101,7 @@ export default function Users() {
           console.error('Erro ao deletar operador integrado:', err);
         }
       }
-      return base44.entities.User.delete(id);
+      return base44.users.deleteUser(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });

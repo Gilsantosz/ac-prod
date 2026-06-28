@@ -686,7 +686,7 @@ const users = {
   },
 
   deleteUser: async (id) => {
-    const { error } = await supabase.from('profiles').delete().eq('id', id);
+    const { error } = await supabase.rpc('delete_user_from_auth', { target_user_id: id });
     if (error) throw error;
     return { success: true };
   },
