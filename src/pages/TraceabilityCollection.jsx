@@ -309,8 +309,8 @@ export default function TraceabilityCollection({ embedded = false }) {
           </select>
         </div>
         <div className="space-y-1.5 flex-1">
-          <p className="text-xs font-semibold text-muted-foreground">Operador</p>
-          <div className="h-10 rounded-md border border-border bg-secondary/50 px-3 flex items-center text-sm font-medium truncate">
+          <label className="text-xs font-semibold text-muted-foreground">Operador</label>
+          <div className="h-10 rounded-md border border-input bg-secondary/50 px-3 flex items-center text-sm font-medium truncate">
             {operator || 'Não identificado'}
           </div>
         </div>
