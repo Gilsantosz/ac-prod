@@ -14,6 +14,9 @@ BEGIN
     RAISE EXCEPTION 'Permissão insuficiente. Apenas administradores podem zerar os dados de produção.';
   END IF;
 
+  -- 1. Desativar trigger de retenção de backups temporariamente
+  ALTER TABLE public.backup_files DISABLE TRIGGER trg_backup_files_no_early_delete;
+
   -- 2. Limpar tabelas na ordem de dependência
   DELETE FROM public.alert_logs WHERE true;
   DELETE FROM public.promob_import_differences WHERE true;
@@ -39,8 +42,17 @@ BEGIN
   DELETE FROM public.piece_instances WHERE true;
   DELETE FROM public.production_search_index WHERE true;
 
+  -- 3. Reativar o trigger de retenção de backups
+  ALTER TABLE public.backup_files ENABLE TRIGGER trg_backup_files_no_early_delete;
+
   RETURN jsonb_build_object('success', true, 'message', 'Dados de peças e produção zerados com sucesso. Usuários, operadores e células mantidos.');
 EXCEPTION WHEN OTHERS THEN
+  -- Tentar reativar o trigger caso ocorra alguma falha antes do rollback
+  BEGIN
+    ALTER TABLE public.backup_files ENABLE TRIGGER trg_backup_files_no_early_delete;
+  EXCEPTION WHEN OTHERS THEN
+    NULL;
+  END;
   RETURN jsonb_build_object('success', false, 'error', SQLERRM);
 END;
 $$;
