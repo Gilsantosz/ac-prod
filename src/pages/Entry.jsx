@@ -24,6 +24,8 @@ import CriticalIssueDialog from '@/components/entry/CriticalIssueDialog';
 import SyncStatus from '@/components/entry/SyncStatus';
 import PageHeader from '@/components/ui/PageHeader';
 import TraceabilityCollection from '@/pages/TraceabilityCollection';
+import OperationalLoginGate from '@/components/entry/OperationalLoginGate';
+import OperatorSessionBanner from '@/components/entry/OperatorSessionBanner';
 
 // Servicos
 import { processManualProductionEntry } from '@/lib/productionEntryService';
@@ -385,33 +387,37 @@ export default function Entry() {
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-5 sm:space-y-6">
-      <PageHeader
-        title="Apontamento MES"
-        subtitle="Painel de lançamento manual, coletores, ocorrências e auditoria."
-        icon={PlusCircle}
-        actions={<SyncStatus online={online} pending={pending} syncing={syncing} />}
-      />
+    <OperationalLoginGate>
+      <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-5 sm:space-y-6">
+        <PageHeader
+          title="Apontamento MES"
+          subtitle="Painel de lançamento manual, coletores, ocorrências e auditoria."
+          icon={PlusCircle}
+          actions={<SyncStatus online={online} pending={pending} syncing={syncing} />}
+        />
 
-      {/* Card de Contexto Ativo */}
-      <ProductionContextCard
-        user={user || {}}
-        cellName={activeContext.cell}
-        shift={activeContext.shift}
-        date={activeContext.date}
-        online={online}
-        pendingCount={pending}
-        activeTab={activeMode}
-      />
+        {/* Banner de sessão operacional */}
+        <OperatorSessionBanner />
 
-      <Tabs value={activeMode} onValueChange={handleModeChange} className="space-y-5">
-        <ManualProductionTabs />
+        {/* Card de Contexto Ativo */}
+        <ProductionContextCard
+          user={user || {}}
+          cellName={activeContext.cell}
+          shift={activeContext.shift}
+          date={activeContext.date}
+          online={online}
+          pendingCount={pending}
+          activeTab={activeMode}
+        />
 
-        {/* Tab: Manual Rápido */}
-        <TabsContent value="quick" className="space-y-5">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
-              <ManualQuickEntryForm
+        <Tabs value={activeMode} onValueChange={handleModeChange} className="space-y-5">
+          <ManualProductionTabs />
+
+          {/* Tab: Manual Rápido */}
+          <TabsContent value="quick" className="space-y-5">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <ManualQuickEntryForm
                 user={user || {}}
                 onSubmit={handleSubmit}
                 saving={false}
@@ -513,12 +519,13 @@ export default function Entry() {
         loading={occurrenceLoading}
       />
 
-      <CriticalIssueDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        entry={criticalEntry}
-        onCreateIssue={createIssue}
-      />
-    </div>
+        <CriticalIssueDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          entry={criticalEntry}
+          onCreateIssue={createIssue}
+        />
+      </div>
+    </OperationalLoginGate>
   );
 }

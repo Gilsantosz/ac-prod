@@ -5,17 +5,35 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { UserPlus, Save, X } from 'lucide-react';
+import { UserPlus, Save, X, AlertCircle } from 'lucide-react';
 
 const SHIFTS = ['1º Turno', '2º Turno', '3º Turno'];
 
-const empty = { name: '', registration: '', cells: [], shift: '', active: true };
+const empty = {
+  name: '',
+  registration: '',
+  cells: [],
+  shift: '',
+  primary_cell: '',
+  login_enabled: true,
+  active: true,
+};
 
 export default function OperatorForm({ operator, cells = [], onSubmit, onCancel, saving }) {
   const [form, setForm] = useState(empty);
 
   useEffect(() => {
-    setForm(operator ? { ...empty, ...operator, cells: operator.cells || [] } : empty);
+    setForm(
+      operator
+        ? {
+            ...empty,
+            ...operator,
+            cells: operator.cells || [],
+            primary_cell: operator.primary_cell || '',
+            login_enabled: operator.login_enabled !== false,
+          }
+        : empty
+    );
   }, [operator]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -27,14 +45,20 @@ export default function OperatorForm({ operator, cells = [], onSubmit, onCancel,
     }));
   };
 
+  const missingReg = form.login_enabled && !form.registration?.trim();
+  const missingCell = form.login_enabled && !form.primary_cell;
+
   const submit = (e) => {
     e.preventDefault();
     if (!form.name.trim()) return;
+    if (missingReg || missingCell) return;
     onSubmit({
       name: form.name.trim(),
       registration: form.registration?.trim() || '',
       cells: form.cells,
+      primary_cell: form.primary_cell || null,
       shift: form.shift || undefined,
+      login_enabled: form.login_enabled,
       active: form.active,
     });
   };
@@ -49,27 +73,58 @@ export default function OperatorForm({ operator, cells = [], onSubmit, onCancel,
       <form onSubmit={submit} className="space-y-4">
         <div className="grid sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label className="text-xs">Nome *</Label>
-            <Input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Ex: Carlos Silva" />
+            <Label className="text-xs">Nome * <span className="text-muted-foreground">(usado como login)</span></Label>
+            <Input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Ex: Carlos Silva" required />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Matrícula</Label>
-            <Input value={form.registration} onChange={(e) => set('registration', e.target.value)} placeholder="Ex: 00123" />
+            <Label className="text-xs">
+              Matrícula {form.login_enabled && <span className="text-red-500">*</span>}
+              <span className="text-muted-foreground ml-1">(senha operacional)</span>
+            </Label>
+            <Input
+              value={form.registration}
+              onChange={(e) => set('registration', e.target.value)}
+              placeholder="Ex: 00123"
+              required={form.login_enabled}
+            />
+            {missingReg && (
+              <p className="text-xs text-red-500 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" /> Matrícula obrigatória para login habilitado.
+              </p>
+            )}
           </div>
         </div>
 
-        <div className="space-y-1.5">
-          <Label className="text-xs">Turno de trabalho</Label>
-          <Select value={form.shift || ''} onValueChange={(v) => set('shift', v)}>
-            <SelectTrigger><SelectValue placeholder="Selecione o turno" /></SelectTrigger>
-            <SelectContent>
-              {SHIFTS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-            </SelectContent>
-          </Select>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Turno de trabalho</Label>
+            <Select value={form.shift || ''} onValueChange={(v) => set('shift', v)}>
+              <SelectTrigger><SelectValue placeholder="Selecione o turno" /></SelectTrigger>
+              <SelectContent>
+                {SHIFTS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">
+              Célula principal {form.login_enabled && <span className="text-red-500">*</span>}
+            </Label>
+            <Select value={form.primary_cell || ''} onValueChange={(v) => set('primary_cell', v)}>
+              <SelectTrigger><SelectValue placeholder="Selecione a célula" /></SelectTrigger>
+              <SelectContent>
+                {cells.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {missingCell && (
+              <p className="text-xs text-red-500 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" /> Célula obrigatória para login habilitado.
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="space-y-2">
-          <Label className="text-xs">Células associadas</Label>
+          <Label className="text-xs">Células associadas (todas)</Label>
           {cells.length === 0 ? (
             <p className="text-xs text-muted-foreground">Nenhuma célula cadastrada ainda.</p>
           ) : (
@@ -87,6 +142,16 @@ export default function OperatorForm({ operator, cells = [], onSubmit, onCancel,
           )}
         </div>
 
+        {/* Login habilitado */}
+        <div className="flex items-center justify-between border border-border/60 rounded-xl px-4 py-3">
+          <div>
+            <p className="font-medium text-sm">Login habilitado</p>
+            <p className="text-xs text-muted-foreground">Permite acesso à tela de produção com nome e matrícula.</p>
+          </div>
+          <Switch checked={form.login_enabled} onCheckedChange={(v) => set('login_enabled', v)} />
+        </div>
+
+        {/* Ativo */}
         <div className="flex items-center justify-between border border-border/60 rounded-xl px-4 py-3">
           <div>
             <p className="font-medium text-sm">Operador ativo</p>
@@ -96,7 +161,7 @@ export default function OperatorForm({ operator, cells = [], onSubmit, onCancel,
         </div>
 
         <div className="flex gap-2">
-          <Button type="submit" disabled={saving} className="gap-2">
+          <Button type="submit" disabled={saving || missingReg || missingCell} className="gap-2">
             <Save className="w-4 h-4" /> {saving ? 'Salvando...' : 'Salvar'}
           </Button>
           {operator && (

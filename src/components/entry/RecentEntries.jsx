@@ -8,11 +8,12 @@ import {
 } from '@/components/ui/table';
 import { 
   Trash2, AlertTriangle, ChevronDown, Clock, Filter, 
-  ShieldAlert,
+  ShieldAlert, FileSpreadsheet, FileText,
 } from 'lucide-react';
 import { efficiency, isCritical, scrapRate } from '@/lib/productionMetrics';
 import { useAuth } from '@/lib/AuthContext';
 import { format } from 'date-fns';
+import { exportRecentEntriesCSV, exportRecentEntriesPDF } from '@/lib/exportRecentEntries';
 
 const PAGE_SIZE = 8;
 
@@ -25,6 +26,25 @@ export default function RecentEntries({ entries = [], onDelete = null, onCorrect
   const isAdmin = userRole === 'admin';
 
   const todayStr = format(new Date(), 'yyyy-MM-dd');
+
+  const filterLabels = {
+    all: 'Todos',
+    today: 'Hoje',
+    my_cell: 'Minha Célula',
+    my_lot: 'Com Lote',
+    critical: 'Críticos',
+    scrap: 'Com Refugo',
+    downtime: 'Com Parada',
+    audited: 'Auditados / Estornos',
+  };
+
+  const handleExportCSV = () => {
+    exportRecentEntriesCSV(filteredEntries, filterLabels[activeFilter] || 'Todos');
+  };
+
+  const handleExportPDF = () => {
+    exportRecentEntriesPDF(filteredEntries, filterLabels[activeFilter] || 'Todos');
+  };
 
   // Aplicar filtros nos apontamentos
   const filteredEntries = useMemo(() => {
@@ -86,13 +106,38 @@ export default function RecentEntries({ entries = [], onDelete = null, onCorrect
       
       {/* ── Header ── */}
       <div className="px-5 py-4 border-b border-border/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-secondary/10">
-        <div className="flex items-center gap-2">
-          <Clock className="w-4 h-4 text-muted-foreground" />
-          <h3 className="font-bold text-sm text-foreground">Central de Apontamentos Recentes</h3>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-muted-foreground" />
+            <h3 className="font-bold text-sm text-foreground">Central de Apontamentos Recentes</h3>
+          </div>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            Mostrando {Math.min(visibleCount, filteredEntries.length)} de {filteredEntries.length} registros
+          </span>
         </div>
-        <span className="text-xs text-muted-foreground tabular-nums">
-          Mostrando {Math.min(visibleCount, filteredEntries.length)} de {filteredEntries.length} registros
-        </span>
+        
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportCSV}
+            disabled={filteredEntries.length === 0}
+            className="h-8 gap-1.5 text-xs bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-lg shadow-sm"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            Exportar CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportPDF}
+            disabled={filteredEntries.length === 0}
+            className="h-8 gap-1.5 text-xs bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-lg shadow-sm"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            Exportar PDF
+          </Button>
+        </div>
       </div>
 
       {/* ── Filtros Rápidos ── */}

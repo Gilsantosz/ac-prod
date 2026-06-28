@@ -6,12 +6,16 @@ import PageHeader from '@/components/ui/PageHeader';
 import { Button } from '@/components/ui/button';
 import TraceabilityScannerPanel from '@/components/traceability/TraceabilityScannerPanel';
 import TraceabilityKpiCards from '@/components/traceability/TraceabilityKpiCards';
-import LotProgressCard from '@/components/traceability/LotProgressCard';
+import CollectionContextSummary from '@/components/traceability/CollectionContextSummary';
 import PieceRouteTimeline from '@/components/traceability/PieceRouteTimeline';
 import LastReadingsList from '@/components/traceability/LastReadingsList';
 import RejectionOccurrenceDialog from '@/components/traceability/RejectionOccurrenceDialog';
 import RfidReadinessPanel from '@/components/traceability/RfidReadinessPanel';
+import OccurrenceQuickDialog from '@/components/entry/OccurrenceQuickDialog';
+import CollectionQueuePanel from '@/components/entry/CollectionQueuePanel';
 import { useAuth } from '@/lib/AuthContext';
+import { useOperatorSession } from '@/hooks/useOperatorSession';
+import { useCollectionQueue } from '@/hooks/useCollectionQueue';
 import { useCells } from '@/hooks/useCells';
 import { base44 } from '@/lib/localDb';
 import {
@@ -20,6 +24,7 @@ import {
   processProductionReading,
   registerTraceabilityRejection,
 } from '@/lib/traceabilityService';
+import { registerReadingOccurrence } from '@/lib/productionHistoryService';
 
 function currentShift() {
   const hour = new Date().getHours();
@@ -30,24 +35,37 @@ function currentShift() {
 
 export default function TraceabilityCollection({ embedded = false }) {
   const { user } = useAuth();
+  const { session: opSession } = useOperatorSession();
   const { activeCells, isLoading: cellsLoading } = useCells();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState('scanner');
+  const [feedback, setFeedback] = useState(null);
+  const [rejectionOpen, setRejectionOpen] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+
+  // Ocorrência por leitura específica
+  const [readingOccurrenceOpen, setReadingOccurrenceOpen] = useState(false);
+  const [readingOccurrenceSuggestion, setReadingOccurrenceSuggestion] = useState(null);
+  const [readingOccurrenceLoading, setReadingOccurrenceLoading] = useState(false);
+
+  // Operador e célula: preferir sessão operacional, fallback para auth
+  const operator = opSession?.name || user?.name || user?.email || '';
+  const operatorId = opSession?.id || null;
+
   const [cellName, setCellName] = useState(() => {
+    // Célula da sessão operacional tem prioridade
+    if (opSession?.primary_cell) return opSession.primary_cell;
     try { return user?.cell || localStorage.getItem('traceability-cell') || ''; }
     catch { return user?.cell || ''; }
   });
-  const [shift, setShift] = useState(currentShift());
-  const [feedback, setFeedback] = useState(null);
-  const [processing, setProcessing] = useState(false);
-  const [rejectionOpen, setRejectionOpen] = useState(false);
-  const [rejecting, setRejecting] = useState(false);
-  const processingRef = useRef(false);
-  const operator = user?.name || user?.email || '';
 
+  const [shift, setShift] = useState(() => opSession?.shift || currentShift());
+
+  // Sincronizar célula e turno quando a sessão operacional mudar
   useEffect(() => {
-    if (!cellName && user?.cell) setCellName(user.cell);
-  }, [cellName, user?.cell]);
+    if (opSession?.primary_cell) setCellName(opSession.primary_cell);
+    if (opSession?.shift) setShift(opSession.shift);
+  }, [opSession?.primary_cell, opSession?.shift]);
 
   useEffect(() => {
     if (!cellName) return;
@@ -57,7 +75,7 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   const { data: readings = [], isFetching: readingsLoading } = useQuery({
     queryKey: ['production-stage-readings'],
-    queryFn: () => fetchRecentReadings(30),
+    queryFn: () => fetchRecentReadings(100),
     initialData: [],
     retry: false,
     refetchInterval: 15000,
@@ -88,10 +106,29 @@ export default function TraceabilityCollection({ embedded = false }) {
     queryClient.invalidateQueries({ queryKey: ['occurrences'] });
   }, [queryClient]);
 
+  // ─── Função que processa um evento da fila ──────────────────────────────────
+
+  const processEvent = useCallback(async (event) => {
+    if (!event.cellName && !cellName) throw new Error('Célula não definida.');
+    const result = await processProductionReading({
+      rawValue: event.raw_value || event.rawValue,
+      cellName: event.cellName || cellName,
+      shift: event.shift || shift,
+      operator: event.operator || operator,
+      operatorId: event.operatorId || operatorId,
+      client_event_id: event.client_event_id,
+      readerType: event.readerType || 'keyboard_barcode',
+      ...event,
+    });
+    refreshData();
+    return result;
+  }, [cellName, shift, operator, operatorId, refreshData]);
+
+  // ─── Fila de coleta ─────────────────────────────────────────────────────────
+  const { stats: queueStats, flushing, enqueue, retryQueueErrors } = useCollectionQueue(processEvent);
+
+  // ─── Handler principal de leitura — enfileira e processa ────────────────────
   const handleRead = useCallback(async (payload) => {
-    if (processingRef.current) {
-      return { success: false, status: 'processing', message: 'Aguarde a leitura atual terminar.' };
-    }
     if (!cellName) {
       const result = { success: false, status: 'invalid_context', message: 'Selecione a célula antes de processar a leitura.' };
       setFeedback(result);
@@ -99,42 +136,51 @@ export default function TraceabilityCollection({ embedded = false }) {
       return result;
     }
     if (!operator) {
-      const result = { success: false, status: 'invalid_context', message: 'Não foi possível identificar o operador conectado.' };
+      const result = { success: false, status: 'invalid_context', message: 'Não foi possível identificar o operador.' };
       setFeedback(result);
       toast.error(result.message);
       return result;
     }
 
-    processingRef.current = true;
-    setProcessing(true);
-    try {
-      const result = await processProductionReading({
-        ...payload,
-        cellName,
-        shift,
-        operator,
-      });
-      setFeedback(result);
-      if (result?.success) {
-        toast.success(result.message || 'Leitura aprovada');
-        navigator.vibrate?.([70, 40, 70]);
-      } else if (['wrong_step', 'wrong_cell', 'duplicated'].includes(result?.status)) {
-        toast.warning(result.message || 'Leitura bloqueada');
-      } else {
-        toast.error(result?.message || 'Leitura não aprovada');
+    const eventPayload = {
+      ...payload,
+      raw_value: payload.rawValue ?? payload.raw_value ?? '',
+      cellName,
+      shift,
+      operator,
+      operatorId,
+    };
+
+    // Enfileirar (IndexedDB) — nunca descarta
+    await enqueue(eventPayload);
+
+    // Feedback imediato otimista
+    if (navigator.onLine) {
+      // O flush é disparado automaticamente pelo hook
+      // Aguardar resultado da fila para dar feedback visual
+      try {
+        const result = await processEvent(eventPayload);
+        setFeedback(result);
+        if (result?.success) {
+          toast.success(result.message || 'Leitura aprovada');
+          navigator.vibrate?.([70, 40, 70]);
+        } else if (['wrong_step', 'wrong_cell', 'duplicated'].includes(result?.status)) {
+          toast.warning(result.message || 'Leitura bloqueada');
+        } else {
+          toast.error(result?.message || 'Leitura não aprovada');
+        }
+        return result;
+      } catch (error) {
+        const result = { success: false, status: 'error', message: error?.message || 'Leitura enfileirada para reenvio.' };
+        setFeedback(result);
+        toast.error('Falha ao processar leitura. Enfileirada para reenvio automático.');
+        return result;
       }
-      refreshData();
-      return result;
-    } catch (error) {
-      const result = { success: false, status: 'error', message: error?.message || 'Falha ao processar leitura.' };
-      setFeedback(result);
-      toast.error(result.message);
-      return result;
-    } finally {
-      processingRef.current = false;
-      setProcessing(false);
+    } else {
+      toast.info('Sem conexão. Leitura salva na fila local.');
+      return { success: false, status: 'queued', message: 'Leitura salva na fila local.' };
     }
-  }, [cellName, operator, refreshData, shift]);
+  }, [cellName, shift, operator, operatorId, enqueue, processEvent]);
 
   const handleReject = async (form) => {
     if (!feedback?.item?.id) return;
@@ -150,7 +196,8 @@ export default function TraceabilityCollection({ embedded = false }) {
         stationName: feedback.reading?.station_name,
         stepName: feedback.route?.step_name || feedback.item.current_step,
         cellName: feedback.reading?.cell_name || cellName,
-        operator: user?.name || user?.email,
+        operator: operator,
+        operatorId,
         shift,
       });
       setFeedback(result);
@@ -164,6 +211,46 @@ export default function TraceabilityCollection({ embedded = false }) {
     }
   };
 
+  // ─── Ocorrência vinculada a uma leitura específica ──────────────────────────
+  const handleOpenReadingOccurrence = useCallback((reading) => {
+    const now = new Date();
+    setReadingOccurrenceSuggestion({
+      type: reading.status === 'rejected' ? 'quality' : 'low_efficiency',
+      cell: reading.cell_name || cellName,
+      cell_name: reading.cell_name || cellName,
+      shift: reading.shift || shift,
+      date: reading.date || now.toISOString().slice(0, 10),
+      operator: reading.operator || operator,
+      stage_reading_id: reading.id,
+      tag_value: reading.tag_value,
+      lot_id: reading.lot_id || null,
+      lot_code: null,
+      severity: reading.status === 'rejected' ? 'high' : 'medium',
+      reason: reading.status === 'rejected' ? 'Qualidade / Refugo' : 'Outros',
+      notes: '',
+      quantity: 0,
+      downtime: 0,
+    });
+    setReadingOccurrenceOpen(true);
+  }, [cellName, shift, operator]);
+
+  const handleReadingOccurrenceSubmit = async (form) => {
+    setReadingOccurrenceLoading(true);
+    try {
+      await registerReadingOccurrence({
+        ...form,
+        cell_name: form.cell || form.cell_name,
+      });
+      toast.success('Ocorrência registrada com sucesso.');
+      setReadingOccurrenceOpen(false);
+      refreshData();
+    } catch (error) {
+      toast.error(error?.message || 'Falha ao registrar ocorrência.');
+    } finally {
+      setReadingOccurrenceLoading(false);
+    }
+  };
+
   const pageClass = embedded ? 'space-y-5' : 'p-4 sm:p-6 lg:p-8 max-w-[1500px] mx-auto space-y-5 sm:space-y-6';
 
   const scanner = useMemo(() => (
@@ -171,13 +258,15 @@ export default function TraceabilityCollection({ embedded = false }) {
       mode={mode}
       onModeChange={setMode}
       onRead={handleRead}
-      loading={processing}
+      loading={false}
       feedback={feedback}
       cellName={cellName}
       shift={shift}
       operator={operator}
     />
-  ), [mode, handleRead, processing, feedback, cellName, shift, operator]);
+  ), [mode, handleRead, feedback, cellName, shift, operator]);
+
+  const isCellLocked = !!(opSession?.primary_cell);
 
   return (
     <div className={pageClass}>
@@ -185,43 +274,97 @@ export default function TraceabilityCollection({ embedded = false }) {
         <PageHeader title="Coleta por Código / RFID" subtitle="Baixa produtiva por lote, peça, etapa e célula." icon={ScanLine} />
       )}
 
+      {/* Contexto de coleta (célula, turno, operador) */}
       <div className="flex flex-col sm:flex-row gap-3 sm:items-end bg-card border border-border rounded-md p-4">
         <div className="space-y-1.5 flex-1">
           <label htmlFor="traceability-cell" className="text-xs font-semibold text-muted-foreground">Célula da coleta</label>
-          <select id="traceability-cell" value={cellName} onChange={(event) => setCellName(event.target.value)} disabled={processing || cellsLoading} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm disabled:opacity-60" required>
-            <option value="">{cellsLoading ? 'Carregando células...' : activeCells.length ? 'Selecione a célula' : 'Nenhuma célula ativa cadastrada'}</option>
+          <select
+            id="traceability-cell"
+            value={cellName}
+            onChange={(e) => setCellName(e.target.value)}
+            disabled={cellsLoading || isCellLocked}
+            className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm disabled:opacity-60"
+            required
+          >
+            <option value="">{cellsLoading ? 'Carregando células...' : activeCells.length ? 'Selecione a célula' : 'Nenhuma célula ativa'}</option>
             {activeCells.map((cell) => <option key={cell.id} value={cell.name}>{cell.name}</option>)}
           </select>
+          {isCellLocked && <p className="text-[11px] text-muted-foreground">Célula definida pelo login operacional.</p>}
         </div>
         <div className="space-y-1.5 flex-1">
           <label htmlFor="traceability-shift" className="text-xs font-semibold text-muted-foreground">Turno</label>
-          <select id="traceability-shift" value={shift} onChange={(event) => setShift(event.target.value)} disabled={processing} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm disabled:opacity-60">
+          <select
+            id="traceability-shift"
+            value={shift}
+            onChange={(e) => setShift(e.target.value)}
+            className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+          >
             {['1º Turno', '2º Turno', '3º Turno'].map((item) => <option key={item}>{item}</option>)}
           </select>
         </div>
-        <div className="space-y-1.5 flex-1"><p className="text-xs font-semibold text-muted-foreground">Operador</p><div className="h-10 rounded-md border border-border bg-secondary/50 px-3 flex items-center text-sm font-medium truncate">{operator || 'Não identificado'}</div></div>
+        <div className="space-y-1.5 flex-1">
+          <p className="text-xs font-semibold text-muted-foreground">Operador</p>
+          <div className="h-10 rounded-md border border-border bg-secondary/50 px-3 flex items-center text-sm font-medium truncate">
+            {operator || 'Não identificado'}
+          </div>
+        </div>
       </div>
+
+      {/* Painel de status da fila */}
+      <CollectionQueuePanel
+        stats={queueStats}
+        flushing={flushing}
+        onRetry={retryQueueErrors}
+        online={navigator.onLine}
+      />
 
       <TraceabilityKpiCards kpis={kpis} />
       {scanner}
 
       <div className="grid lg:grid-cols-2 gap-5 items-start">
-        <LotProgressCard lot={feedback?.lot} item={feedback?.item} tagValue={feedback?.reading?.tag_value} />
+        <CollectionContextSummary feedback={feedback} />
         <PieceRouteTimeline route={route} currentStep={feedback?.item?.current_step} />
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
         <RfidReadinessPanel />
-        <Button variant="destructive" className="gap-2 shrink-0" disabled={!feedback?.item?.id} onClick={() => setRejectionOpen(true)}>
+        <Button
+          variant="destructive"
+          className="gap-2 shrink-0"
+          disabled={!feedback?.item?.id}
+          onClick={() => setRejectionOpen(true)}
+        >
           <AlertOctagon /> Registrar Ocorrência / Reprovar Peça
         </Button>
       </div>
 
-      <LastReadingsList readings={readings} loading={readingsLoading} />
+      <LastReadingsList
+        readings={readings}
+        loading={readingsLoading}
+        onOccurrence={handleOpenReadingOccurrence}
+      />
 
-      <div className="text-xs text-muted-foreground flex items-center gap-2"><RadioTower className="w-4 h-4" /> Câmeras exigem HTTPS em produção. Scanner físico e modo manual continuam disponíveis sem câmera.</div>
+      <div className="text-xs text-muted-foreground flex items-center gap-2">
+        <RadioTower className="w-4 h-4" />
+        Câmeras exigem HTTPS em produção. Scanner físico e modo manual continuam disponíveis sem câmera.
+      </div>
 
-      <RejectionOccurrenceDialog open={rejectionOpen} onOpenChange={setRejectionOpen} context={feedback} onSubmit={handleReject} loading={rejecting} />
+      {/* Diálogos */}
+      <RejectionOccurrenceDialog
+        open={rejectionOpen}
+        onOpenChange={setRejectionOpen}
+        context={feedback}
+        onSubmit={handleReject}
+        loading={rejecting}
+      />
+
+      <OccurrenceQuickDialog
+        open={readingOccurrenceOpen}
+        onOpenChange={setReadingOccurrenceOpen}
+        suggestion={readingOccurrenceSuggestion}
+        onSubmit={handleReadingOccurrenceSubmit}
+        loading={readingOccurrenceLoading}
+      />
     </div>
   );
 }

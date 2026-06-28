@@ -94,7 +94,7 @@ export default defineConfig({
       workbox: {
         // Cache estático
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        maximumFileSizeToCacheInBytes: 3000000,
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         // Estratégia network-first para API calls Supabase
         runtimeCaching: [
           {

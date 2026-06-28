@@ -99,20 +99,31 @@ const normalizeFromDb = (entity, row) => {
     };
   }
   if (entity === 'Operator') {
-    let extra = {};
-    if (row.role) {
+    // Migration 018: colunas reais (registration, primary_cell, cells, shift, login_enabled)
+    // Fallback legacy: se role ainda for JSON (registros não migrados), extrair de lá
+    let legacyRole = 'operator';
+    let legacyReg = '';
+    let legacyShift = '';
+    let legacyCells = [];
+    if (row.role && row.role.trim().startsWith('{')) {
       try {
-        extra = JSON.parse(row.role);
-      } catch (e) {
-        extra = { role: row.role };
-      }
+        const parsed = JSON.parse(row.role);
+        legacyRole  = parsed.role || 'operator';
+        legacyReg   = parsed.registration || '';
+        legacyShift = parsed.shift || '';
+        legacyCells = Array.isArray(parsed.cells) ? parsed.cells : [];
+      } catch (_) { /* manter defaults */ }
+    } else {
+      legacyRole = row.role || 'operator';
     }
     return {
       ...base,
-      registration: extra.registration || '',
-      shift: extra.shift || '',
-      cells: extra.cells || [],
-      role: extra.role || 'operator',
+      registration:  row.registration  || legacyReg,
+      primary_cell:  row.primary_cell  || null,
+      shift:         row.shift         || legacyShift,
+      cells:         Array.isArray(row.cells) && row.cells.length > 0 ? row.cells : legacyCells,
+      login_enabled: row.login_enabled !== false,
+      role:          legacyRole,
     };
   }
   if (entity === 'Manager') {
@@ -221,16 +232,19 @@ const createEntityClient = (entityName) => {
       }
 
       if (entityName === 'Operator') {
-        const roleData = {
-          registration: enriched.registration || '',
-          shift: enriched.shift || '',
-          cells: enriched.cells || [],
-          role: enriched.role || 'operator',
-        };
-        enriched.role = JSON.stringify(roleData);
-        delete enriched.registration;
-        delete enriched.shift;
-        delete enriched.cells;
+        // Migration 018: usar colunas reais em vez de JSON em role
+        // role é apenas o papel (operator/admin); registration, cells, shift, primary_cell são colunas diretas
+        if (enriched.role && !enriched.role.startsWith('{')) {
+          // role já é uma string simples — manter
+        } else if (enriched.role?.startsWith('{')) {
+          try { enriched.role = JSON.parse(enriched.role).role || 'operator'; } catch (_) { enriched.role = 'operator'; }
+        } else {
+          enriched.role = 'operator';
+        }
+        // Garantir login_name = name para que a RPC de login funcione
+        enriched.login_name = enriched.login_name || enriched.name || '';
+        // Normalizar cells como array postgres
+        if (!Array.isArray(enriched.cells)) enriched.cells = [];
       }
 
       if (entityName === 'Manager') {
@@ -333,16 +347,12 @@ const createEntityClient = (entityName) => {
       }
 
       if (entityName === 'Operator') {
-        const roleData = {
-          registration: clean.registration || '',
-          shift: clean.shift || '',
-          cells: clean.cells || [],
-          role: clean.role || 'operator',
-        };
-        clean.role = JSON.stringify(roleData);
-        delete clean.registration;
-        delete clean.shift;
-        delete clean.cells;
+        // Migration 018: usar colunas reais
+        if (clean.role && clean.role.startsWith('{')) {
+          try { clean.role = JSON.parse(clean.role).role || 'operator'; } catch (_) { clean.role = 'operator'; }
+        }
+        clean.login_name = clean.login_name || clean.name || '';
+        if (!Array.isArray(clean.cells)) clean.cells = [];
       }
 
       if (entityName === 'Manager') {
