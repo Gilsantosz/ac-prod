@@ -57,7 +57,7 @@ CREATE INDEX IF NOT EXISTS idx_operators_registration ON operators(registration)
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION operator_login(p_name text, p_registration text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = public AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER VOLATILE SET search_path = public AS $$
 DECLARE
   v_name text := LOWER(TRIM(COALESCE(p_name, '')));
   v_reg  text := TRIM(COALESCE(p_registration, ''));
