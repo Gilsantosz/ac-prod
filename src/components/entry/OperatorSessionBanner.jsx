@@ -1,4 +1,4 @@
-import { User2, Building2, ChevronDown, LogOut } from 'lucide-react';
+import { User2, Building2, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useOperatorSession } from '@/hooks/useOperatorSession';

@@ -306,28 +306,86 @@ export async function registerTraceabilityRejection(payload) {
   return standardResult(data || {});
 }
 
-export async function fetchRecentReadings(limit = 30) {
-  const { data, error } = await supabase
+export async function fetchRecentReadings(params = {}) {
+  const limit = typeof params === 'number' ? params : (params.limit || 30);
+  const cellName = typeof params === 'object' ? params.cellName : null;
+  const date = typeof params === 'object' ? params.date : null;
+
+  let query = supabase
     .from('production_stage_readings')
-    .select('*')
+    .select('*');
+    
+  if (cellName) {
+    query = query.eq('cell_name', cellName);
+  }
+  if (date) {
+    query = query.eq('date', date);
+  }
+
+  const { data, error } = await query
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) throw error;
   return data || [];
 }
 
-export async function fetchCollectionKpis(date = new Date().toISOString().slice(0, 10)) {
-  const { data, error } = await supabase
+export async function fetchCollectionKpis(params = {}) {
+  const date = typeof params === 'string' ? params : (params.date || new Date().toISOString().slice(0, 10));
+  const cellName = typeof params === 'object' ? params.cellName : null;
+  const shift = typeof params === 'object' ? params.shift : null;
+  const lotId = typeof params === 'object' ? params.lotId : null;
+  const loadNumber = typeof params === 'object' ? params.loadNumber : null;
+  const orderNumber = typeof params === 'object' ? params.orderNumber : null;
+
+  if (lotId || loadNumber || orderNumber) {
+    let query = supabase.from('production_cell_progress').select('*');
+    if (lotId) query = query.eq('lot_id', lotId);
+    if (loadNumber) query = query.eq('load_number', loadNumber);
+    if (orderNumber) query = query.eq('order_number', orderNumber);
+    if (cellName) query = query.eq('cell_name', cellName);
+    
+    const { data, error } = await query;
+    if (error) throw error;
+    
+    const rows = data || [];
+    const planned = rows.reduce((sum, row) => sum + (Number(row.planned_quantity) || 0), 0);
+    const approved = rows.reduce((sum, row) => sum + (Number(row.approved_quantity) || 0), 0);
+    const rejected = rows.reduce((sum, row) => sum + (Number(row.rejected_quantity) || 0), 0);
+    const blocked = rows.reduce((sum, row) => sum + (Number(row.blocked_quantity) || 0), 0);
+    const pending = rows.reduce((sum, row) => sum + (Number(row.pending_quantity) || 0), 0);
+    
+    return {
+      total: planned,
+      planned,
+      approved,
+      rejected,
+      blocked,
+      pending,
+      progressPercent: planned > 0 ? Math.min(Math.round((approved / planned) * 100), 100) : 0
+    };
+  }
+
+  let query = supabase
     .from('production_stage_readings')
     .select('status,event_type,quantity,step_name,cell_name,created_at')
-    .eq('date', date)
-    .order('created_at', { ascending: false });
+    .eq('date', date);
+    
+  if (cellName) query = query.eq('cell_name', cellName);
+  if (shift) query = query.eq('shift', shift);
+  
+  const { data, error } = await query.order('created_at', { ascending: false });
   if (error) throw error;
   const rows = data || [];
+  
+  const approved = rows.filter((row) => row.status === 'approved').reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
+  const rejected = rows.filter((row) => row.status === 'rejected').reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
+  const blocked = rows.filter((row) => ['blocked', 'duplicated'].includes(row.status)).reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
+  
   return {
-    total: rows.reduce((sum, row) => sum + (Number(row.quantity) || 0), 0),
-    approved: rows.filter((row) => row.status === 'approved').reduce((sum, row) => sum + (Number(row.quantity) || 0), 0),
-    rejected: rows.filter((row) => row.status === 'rejected').reduce((sum, row) => sum + (Number(row.quantity) || 0), 0),
-    blocked: rows.filter((row) => ['blocked', 'duplicated'].includes(row.status)).length,
+    total: approved + rejected + blocked,
+    approved,
+    rejected,
+    blocked,
+    pending: 0
   };
 }

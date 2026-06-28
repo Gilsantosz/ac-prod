@@ -71,6 +71,11 @@ async function createCollectionArtifacts(supabase: any, lot: any, lotItems: any[
     status: ["completed", "blocked", "rework", "scrap", "cancelled"].includes(lotItem.status) ? lotItem.status : "pending",
     created_at: lotItem.created_at,
     updated_at: lotItem.updated_at,
+    lot_code: lot.lot_code,
+    load_number: lotItem.load_number,
+    order_number: lotItem.order_number,
+    customer_name: lotItem.customer_name,
+    environment_name: lotItem.environment_name,
   }));
 
   const { data: productionItems, error: productionItemsError } = await supabase
@@ -385,7 +390,7 @@ serve(async (req) => {
     if (orderError) throw orderError;
 
     // ─── Criar Lote ───────────────────────────────────────────
-    const lotCode = `LOTE-${orderCode}-001`;
+    const lotCode = project.lotCode || `LOTE-${orderCode}-001`;
     const { data: lot, error: lotError } = await supabase
       .from("production_lots")
       .insert({
@@ -426,6 +431,9 @@ serve(async (req) => {
       environment_name:   item.environmentName,
       module_name:        item.moduleName,
       status:             "pending",
+      load_number:        item.loadNumber || null,
+      order_number:       item.orderCode || orderCode || null,
+      customer_name:      item.customer || project.customer || null,
     }));
 
     let insertedLotItems: any[] = [];
@@ -433,7 +441,7 @@ serve(async (req) => {
       const { data: lotItems, error: itemsError } = await supabase
         .from("lot_items")
         .insert(lotItemsPayload)
-        .select("id,lot_id,piece_code,piece_name,status,created_at,updated_at");
+        .select("id,lot_id,piece_code,piece_name,status,created_at,updated_at,load_number,order_number,customer_name,environment_name");
       if (itemsError) throw itemsError;
       insertedLotItems = lotItems || [];
     }

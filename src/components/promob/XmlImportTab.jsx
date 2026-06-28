@@ -44,6 +44,44 @@ function parseSheetOnClient(content, fileType) {
     workbook = XLSX.read(content, { type: "string", FS: separator });
   }
 
+  const sheetNames = workbook.SheetNames;
+  const hasPecasTab = sheetNames.includes("PCP_IMPORT_PECAS");
+  const hasPedidosTab = sheetNames.includes("PCP_IMPORT_PEDIDOS");
+
+  if (hasPecasTab) {
+    const pecasSheet = workbook.Sheets["PCP_IMPORT_PECAS"];
+    const pecasRows = XLSX.utils.sheet_to_json(pecasSheet, { defval: "" });
+
+    let pedidosRows = [];
+    if (hasPedidosTab) {
+      const pedidosSheet = workbook.Sheets["PCP_IMPORT_PEDIDOS"];
+      pedidosRows = XLSX.utils.sheet_to_json(pedidosSheet, { defval: "" });
+    }
+
+    const pedidosMap = new Map();
+    const cleanVal = (v) => String(v || "").trim().toLowerCase();
+    
+    pedidosRows.forEach(row => {
+      const pedidoKey = Object.keys(row).find(k => ["pedido", "order", "ordem", "order_code", "op"].includes(cleanVal(k)));
+      if (pedidoKey) {
+        pedidosMap.set(cleanVal(row[pedidoKey]), row);
+      }
+    });
+
+    const mergedRows = pecasRows.map(row => {
+      const pedidoKey = Object.keys(row).find(k => ["pedido", "order", "ordem", "order_code", "op"].includes(cleanVal(k)));
+      const pCode = pedidoKey ? cleanVal(row[pedidoKey]) : "";
+      const pedidoInfo = pedidosMap.get(pCode) || {};
+
+      return {
+        ...pedidoInfo,
+        ...row
+      };
+    });
+
+    return parseRowsToNormalizedJson(mergedRows);
+  }
+
   const firstSheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[firstSheetName];
   const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
@@ -67,15 +105,17 @@ function parseRowsToNormalizedJson(rows) {
     .replace(/[\u0300-\u036f]/g, "");
 
   const colMaps = {
-    orderCode: ["pedido", "ordem", "ordem de producao", "ordem de produção", "order", "order code", "order_code", "op"],
-    customer: ["cliente", "customer", "customer name", "customer_name", "razao social", "razao_social", "razaosocial", "razao_social_cliente", "nome_fantasia_cliente"],
+    lotCode: ["lote", "lot_code", "lot", "lote_codigo", "lote_code"],
+    loadNumber: ["carga", "load_number", "load", "carga_numero", "carga_number"],
+    orderCode: ["pedido", "ordem", "ordem de producao", "ordem de produção", "order", "order code", "order_code", "op", "numero_pedido", "codigo_pedido"],
+    customer: ["cliente", "customer", "customer name", "customer_name", "razao social", "razao_social", "razaosocial", "razao_social_cliente", "nome_fantasia_cliente", "nome_cliente"],
     projectName: ["projeto", "project", "project name", "project_name"],
-    environmentName: ["ambiente", "environment", "room", "environment_name"],
+    environmentName: ["ambiente", "environment", "room", "environment_name", "nome_ambiente"],
     moduleName: ["modulo", "módulo", "module", "module_name", "celula_destino"],
-    pieceCode: ["codigo", "código", "codigo peca", "código peça", "code", "part code", "piece code", "piece_code", "item_code", "id", "peca_id"],
-    barcode: ["codigo de barras", "código de barras", "cod barras", "cod. barras", "barcode", "bar code", "ean", "ean13", "tag", "tag_value", "etiqueta"],
-    qrCode: ["qr", "qr code", "qrcode", "codigo qr", "código qr"],
-    pieceName: ["nome", "nome peca", "nome peça", "descricao", "descrição", "description", "name", "piece_name", "piece name", "item_name", "peca_name", "peca_nome"],
+    pieceCode: ["codigo", "código", "codigo peca", "código peça", "code", "part code", "piece code", "piece_code", "item_code", "id", "peca_id", "codigo_peca"],
+    barcode: ["codigo de barras", "código de barras", "cod barras", "cod. barras", "barcode", "bar code", "ean", "ean13", "tag", "tag_value", "etiqueta", "codigo_barras"],
+    qrCode: ["qr", "qr code", "qrcode", "codigo qr", "código qr", "qr_code"],
+    pieceName: ["nome", "nome peca", "nome peça", "descricao", "descrição", "description", "name", "piece_name", "piece name", "item_name", "peca_name", "peca_nome", "produto"],
     material: ["material", "board", "chapa"],
     color: ["cor", "color", "padrao", "padrão", "grain", "cor_padrao"],
     thickness: ["espessura", "esp", "thickness", "espessura_mm"],
@@ -87,9 +127,9 @@ function parseRowsToNormalizedJson(rows) {
     edgeLeft: ["esquerda", "borda esquerda", "fita esquerda", "edge left", "borda 3", "borda_esquerda", "fita_borda_esquerda"],
     edgeRight: ["direita", "borda direita", "fita direita", "edge right", "borda 4", "borda_direita", "fita_borda_direita"],
     requiresCut: ["corte", "requires cut", "cut", "corte_obrigatorio"],
-    requiresEdge: ["bordo", "requires edge", "edge", "bordo_obrigatorio"],
-    requiresCnc: ["usinagem", "requires cnc", "cnc", "usinagem_obrigatoria", "usinagem_cnc"],
-    requiresJoinery: ["marcenaria", "requires joinery", "joinery", "marcenaria_obrigatoria"]
+    requiresEdge: ["bordo", "requires edge", "edge", "bordo_obrigatorio", "necessita_bordeamento", "bordeamento"],
+    requiresCnc: ["usinagem", "requires cnc", "cnc", "usinagem_obrigatoria", "usinagem_cnc", "necessita_usinagem"],
+    requiresJoinery: ["marcenaria", "requires joinery", "joinery", "marcenaria_obrigatoria", "necessita_marcenaria"]
   };
 
   for (const [normKey, aliases] of Object.entries(colMaps)) {
@@ -120,10 +160,12 @@ function parseRowsToNormalizedJson(rows) {
   const customer = String(getValue(firstRow, "customer") || "Cliente Geral");
   const projectName = String(getValue(firstRow, "projectName") || `Importação Planilha ${orderCode}`);
   const projectCode = String(getValue(firstRow, "orderCode") || orderCode);
+  const lotCode = String(getValue(firstRow, "lotCode") || `LOTE-${orderCode}-001`);
+  const loadNumber = String(getValue(firstRow, "loadNumber") || "");
   const date = new Date().toISOString().split("T")[0];
   const deliveryDate = "";
 
-  const project = { code: projectCode, name: projectName, customer, orderCode, date, deliveryDate };
+  const project = { code: projectCode, name: projectName, customer, orderCode, lotCode, loadNumber, date, deliveryDate };
 
   const environmentsMap = new Map();
   const allItems = [];
@@ -171,6 +213,11 @@ function parseRowsToNormalizedJson(rows) {
     const requiresCnc = getBool(getValue(row, "requiresCnc", undefined), false);
     const requiresJoinery = getBool(getValue(row, "requiresJoinery", undefined), false);
 
+    const itemLotCode = String(getValue(row, "lotCode") || lotCode).trim();
+    const itemLoadNumber = String(getValue(row, "loadNumber") || loadNumber).trim();
+    const itemOrderCode = String(getValue(row, "orderCode") || orderCode).trim();
+    const itemCustomer = String(getValue(row, "customer") || customer).trim();
+
     const item = {
       code: finalPieceCode,
       name: finalPieceName,
@@ -195,6 +242,10 @@ function parseRowsToNormalizedJson(rows) {
       requiresShipping: true,
       environmentName: envName,
       moduleName: modName,
+      lotCode: itemLotCode,
+      loadNumber: itemLoadNumber,
+      orderCode: itemOrderCode,
+      customer: itemCustomer,
       rawAttributes: {}
     };
 
