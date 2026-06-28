@@ -281,7 +281,7 @@ export default function TraceabilityCollection({ embedded = false }) {
       )}
 
       {/* Contexto de coleta (célula, turno, operador) */}
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-end bg-card border border-border rounded-md p-4">
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-start bg-card border border-border rounded-md p-4">
         <div className="space-y-1.5 flex-1">
           <label htmlFor="traceability-cell" className="text-xs font-semibold text-muted-foreground">Célula da coleta</label>
           <select
