@@ -15,29 +15,29 @@ BEGIN
   END IF;
 
   -- 2. Limpar tabelas na ordem de dependência
-  DELETE FROM public.alert_logs;
-  DELETE FROM public.promob_import_differences;
-  DELETE FROM public.occurrences;
-  DELETE FROM public.production_collection_events;
-  DELETE FROM public.lot_step_events;
-  DELETE FROM public.traceability_logs;
-  DELETE FROM public.package_items;
-  DELETE FROM public.packages;
-  DELETE FROM public.shipments;
-  DELETE FROM public.production_stage_readings;
-  DELETE FROM public.production_tags;
-  DELETE FROM public.production_lot_items;
-  DELETE FROM public.lot_items;
-  DELETE FROM public.production_routes;
-  DELETE FROM public.backup_files;
-  DELETE FROM public.promob_import_batches;
-  DELETE FROM public.pcp_import_logs;
-  DELETE FROM public.production_entries;
-  DELETE FROM public.production_lots;
-  DELETE FROM public.production_order_items;
-  DELETE FROM public.production_orders;
-  DELETE FROM public.piece_instances;
-  DELETE FROM public.production_search_index;
+  DELETE FROM public.alert_logs WHERE true;
+  DELETE FROM public.promob_import_differences WHERE true;
+  DELETE FROM public.occurrences WHERE true;
+  DELETE FROM public.production_collection_events WHERE true;
+  DELETE FROM public.lot_step_events WHERE true;
+  DELETE FROM public.traceability_logs WHERE true;
+  DELETE FROM public.package_items WHERE true;
+  DELETE FROM public.packages WHERE true;
+  DELETE FROM public.shipments WHERE true;
+  DELETE FROM public.production_stage_readings WHERE true;
+  DELETE FROM public.production_tags WHERE true;
+  DELETE FROM public.production_lot_items WHERE true;
+  DELETE FROM public.lot_items WHERE true;
+  DELETE FROM public.production_routes WHERE true;
+  DELETE FROM public.backup_files WHERE true;
+  DELETE FROM public.promob_import_batches WHERE true;
+  DELETE FROM public.pcp_import_logs WHERE true;
+  DELETE FROM public.production_entries WHERE true;
+  DELETE FROM public.production_lots WHERE true;
+  DELETE FROM public.production_order_items WHERE true;
+  DELETE FROM public.production_orders WHERE true;
+  DELETE FROM public.piece_instances WHERE true;
+  DELETE FROM public.production_search_index WHERE true;
 
   RETURN jsonb_build_object('success', true, 'message', 'Dados de peças e produção zerados com sucesso. Usuários, operadores e células mantidos.');
 EXCEPTION WHEN OTHERS THEN
