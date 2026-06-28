@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { base44 } from '@/lib/localDb';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { PlusCircle } from 'lucide-react';
+import { PlusCircle, LogOut } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { useCells } from '@/hooks/useCells';
 import { isCritical } from '@/lib/productionMetrics';
@@ -25,7 +25,8 @@ import SyncStatus from '@/components/entry/SyncStatus';
 import PageHeader from '@/components/ui/PageHeader';
 import TraceabilityCollection from '@/pages/TraceabilityCollection';
 import OperationalLoginGate from '@/components/entry/OperationalLoginGate';
-import OperatorSessionBanner from '@/components/entry/OperatorSessionBanner';
+import { useOperatorSession } from '@/hooks/useOperatorSession';
+import { Button } from '@/components/ui/button';
 
 // Servicos
 import { processManualProductionEntry } from '@/lib/productionEntryService';
@@ -49,9 +50,17 @@ function getTodayStr() {
 
 export default function Entry() {
   const { user } = useAuth();
+  const { isLoggedIn, logout } = useOperatorSession();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const { getShiftHours } = useCells();
+
+  // Ao sair da página (desmontar o componente), o login deve ser pedido novamente
+  useEffect(() => {
+    return () => {
+      logout();
+    };
+  }, [logout]);
 
   // Estados dos diálogos
   const [criticalEntry, setCriticalEntry] = useState(null);
@@ -393,11 +402,23 @@ export default function Entry() {
           title="Apontamento MES"
           subtitle="Painel de lançamento manual, coletores, ocorrências e auditoria."
           icon={PlusCircle}
-          actions={<SyncStatus online={online} pending={pending} syncing={syncing} />}
+          actions={
+            <div className="flex items-center gap-3">
+              <SyncStatus online={online} pending={pending} syncing={syncing} />
+              {isLoggedIn && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={logout}
+                  className="rounded-xl border-emerald-500/30 hover:bg-emerald-500/10 text-foreground gap-2 h-9"
+                >
+                  <LogOut className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>Trocar Operador</span>
+                </Button>
+              )}
+            </div>
+          }
         />
-
-        {/* Banner de sessão operacional */}
-        <OperatorSessionBanner />
 
         {/* Card de Contexto Ativo */}
         <ProductionContextCard

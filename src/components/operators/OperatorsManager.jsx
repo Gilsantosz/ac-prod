@@ -25,9 +25,27 @@ export default function OperatorsManager() {
       editing
         ? base44.entities.Operator.update(editing.id, payload)
         : base44.entities.Operator.create(payload),
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['operators'] });
       toast.success(editing ? 'Operador atualizado' : 'Operador cadastrado');
+      
+      // Se for um novo operador e login_enabled estiver ativo, pré-loga no sessionStorage
+      if (!editing && variables.login_enabled) {
+        const sessionPayload = {
+          id: data.id,
+          name: variables.name,
+          registration: variables.registration,
+          primary_cell: variables.primary_cell,
+          cells: variables.cells || [],
+          shift: variables.shift || '',
+          login_enabled: true,
+          expires_at: Date.now() + 8 * 60 * 60 * 1000 // 8 horas
+        };
+        sessionStorage.setItem('acprod_operator_session', JSON.stringify(sessionPayload));
+        window.dispatchEvent(new Event('operator-session-changed'));
+        toast.info(`Acesso imediato liberado para o operador ${variables.name}!`);
+      }
+      
       setEditing(null);
     },
     onError: () => toast.error('Falha ao salvar operador'),

@@ -97,10 +97,43 @@ export default function Users() {
     onError: () => toast.error('Falha ao excluir colaborador'),
   });
 
-  const handleInvite = async (email, role, name, permissions, cell) => {
+  const handleInvite = async (email, role, name, permissions, cell, extraData) => {
     setSaving(true);
-    await invite.mutateAsync({ email, role, name, permissions, cell }).catch(() => {});
-    setSaving(false);
+    try {
+      await invite.mutateAsync({ email, role, name, permissions, cell });
+      
+      if (extraData && extraData.registration) {
+        const opResult = await base44.entities.Operator.create({
+          name,
+          registration: extraData.registration,
+          primary_cell: cell || null,
+          cells: cell ? [cell] : [],
+          shift: extraData.shift || null,
+          login_enabled: true,
+          active: true
+        });
+
+        // Pré-logar este operador no sessionStorage
+        const sessionPayload = {
+          id: opResult.id,
+          name: name,
+          registration: extraData.registration,
+          primary_cell: cell || null,
+          cells: cell ? [cell] : [],
+          shift: extraData.shift || null,
+          login_enabled: true,
+          expires_at: Date.now() + 8 * 60 * 60 * 1000 // 8 horas
+        };
+        sessionStorage.setItem('acprod_operator_session', JSON.stringify(sessionPayload));
+        window.dispatchEvent(new Event('operator-session-changed'));
+        
+        toast.success(`Operador ${name} cadastrado e logado para a Entrada de Produção!`);
+      }
+    } catch (err) {
+      console.error('Erro ao integrar cadastro de operador:', err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleResetPassword = async (email) => {
