@@ -150,7 +150,7 @@ function ProgressBlock({ title, progress }) {
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <Metric label="Total" value={safe.total} />
-        <Metric label="Concluídas" value={safe.completed} color="text-emerald-600" icon={CheckCircle2} />
+        <Metric label="Coletadas" value={safe.completed} color="text-emerald-600" icon={CheckCircle2} />
         <Metric label="Faltam" value={safe.pending} color="text-amber-600" />
         <Metric label="Problema" value={safe.blocked} color="text-red-600" icon={XCircle} />
       </div>

@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { base44 } from '@/lib/localDb';
 import { supabase } from '@/lib/supabaseClient';
 import { auditLog, AUDIT_ACTIONS } from '@/lib/auditLog';
+import { fetchTraceabilityBoardLots } from '@/lib/productionHistoryService';
 
 // ─── Estágios do Kanban ──────────────────────────────────────
 export const KANBAN_STAGES = [
@@ -50,30 +51,7 @@ export function useTraceability({ stageFilter = null, searchQuery = '', dateRang
   // ─── Lotes (com filtros) ─────────────────────────────────────
   const lots = useQuery({
     queryKey: ['production-lots', stageFilter, searchQuery],
-    queryFn: async () => {
-      let query = supabase
-        .from('production_lots')
-        .select(`
-          *,
-          production_orders (id, order_code, customer_name, delivery_date, status),
-          lot_items (id, piece_name, status, requires_joinery, requires_cnc, requires_edge, quantity)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(200);
-
-      if (stageFilter && stageFilter !== 'all') {
-        query = query.eq('current_stage', stageFilter);
-      }
-      if (searchQuery) {
-        query = query.or(
-          `lot_code.ilike.%${searchQuery}%,production_orders.order_code.ilike.%${searchQuery}%`
-        );
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-      return data || [];
-    },
+    queryFn: () => fetchTraceabilityBoardLots({ stageFilter, searchQuery }),
     initialData: [],
     refetchInterval: 30000,  // atualiza a cada 30s (produção em tempo real)
   });
@@ -182,13 +160,14 @@ export function useTraceability({ stageFilter = null, searchQuery = '', dateRang
     total:      lots.data.length,
     blocked:    lots.data.filter(l => l.status === 'blocked').length,
     late:       lots.data.filter(l => {
-      if (!l.production_orders?.delivery_date) return false;
-      return new Date(l.production_orders.delivery_date) < new Date() &&
-             l.current_stage !== 'completed';
+      const due = l.production_orders?.delivery_date || l.production_orders?.finalization_date;
+      if (!due) return false;
+      return new Date(due) < new Date() && l.current_stage !== 'completed';
     }).length,
     completed:  lots.data.filter(l => l.current_stage === 'completed').length,
     withJoinery: lots.data.filter(l =>
-      l.lot_items?.some(i => i.requires_joinery)
+      l.production_routes?.some((route) => ['joinery', 'marcenaria'].includes(String(route.step_name || '').toLowerCase()))
+      || l.lot_items?.some(i => i.requires_joinery)
     ).length,
   };
 

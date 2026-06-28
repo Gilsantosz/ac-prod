@@ -3,7 +3,7 @@ import { STAGE_NEXT, KANBAN_STAGES } from '@/hooks/useTraceability';
 import { Button } from '@/components/ui/button';
 import {
   ChevronRight, AlertCircle, Lock, Unlock,
-  Calendar, Wrench, Clock, Layers,
+  Calendar, Wrench, Clock, Layers, CheckCircle2, MapPin,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -11,16 +11,25 @@ export default function LotCard({ lot, _stage, onAdvance, onBlock, onUnblock }) 
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [blockReason, setBlockReason] = useState('');
 
-  const order = lot.production_orders;
-  const items = lot.lot_items || [];
+  const order = lot.production_orders || {};
+  const items = lot.production_lot_items || lot.lot_items || [];
+  const progress = lot.traceability_progress || {};
+  const routeProgress = lot.route_progress || [];
   const isBlocked = lot.status === 'blocked';
-  const hasJoinery = items.some(i => i.requires_joinery);
-  const hasCnc = items.some(i => i.requires_cnc);
-  const isLate = order?.delivery_date && new Date(order.delivery_date) < new Date()
+  const hasJoinery = routeProgress.some(step => ['joinery', 'marcenaria'].includes(String(step.stage_code || step.step_name || '').toLowerCase()))
+    || items.some(i => i.requires_joinery);
+  const hasCnc = routeProgress.some(step => ['cnc', 'usinagem'].includes(String(step.stage_code || step.step_name || '').toLowerCase()))
+    || items.some(i => i.requires_cnc);
+  const dueDate = order?.delivery_date || order?.finalization_date;
+  const isLate = dueDate && new Date(dueDate) < new Date()
     && lot.current_stage !== 'completed';
 
   const nextStage = STAGE_NEXT[lot.current_stage];
   const nextStageLabel = KANBAN_STAGES.find(s => s.code === nextStage)?.label;
+  const total = Number(progress.total || items.length || lot.planned_quantity || 0);
+  const collected = Number(progress.completed || 0);
+  const pending = Number(progress.pending || Math.max(0, total - collected));
+  const percent = Math.max(0, Math.min(100, Number(progress.percent || 0)));
 
   const handleBlock = () => {
     if (!blockReason.trim()) return;
@@ -41,7 +50,7 @@ export default function LotCard({ lot, _stage, onAdvance, onBlock, onUnblock }) 
         <div className="min-w-0 flex-1">
           <p className="font-semibold text-sm text-foreground truncate">{lot.lot_code}</p>
           <p className="text-xs text-muted-foreground truncate">
-            {order?.customer_name || '—'} · {order?.order_code}
+            {order?.customer_trade_name || order?.customer_name || '—'} · {order?.order_number || order?.order_code || lot.order_number || '—'}
           </p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -63,9 +72,15 @@ export default function LotCard({ lot, _stage, onAdvance, onBlock, onUnblock }) 
           </span>
         )}
         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-secondary/60 text-muted-foreground">
-          {items.length} pç
+          {total} pç
         </span>
-        {order?.delivery_date && (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/25 dark:text-emerald-300 flex items-center gap-0.5">
+          <CheckCircle2 className="w-2.5 h-2.5" /> {collected} colet.
+        </span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/25 dark:text-amber-300">
+          {pending} faltam
+        </span>
+        {dueDate && (
           <span className={cn(
             'text-[10px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5',
             isLate
@@ -73,10 +88,44 @@ export default function LotCard({ lot, _stage, onAdvance, onBlock, onUnblock }) 
               : 'bg-secondary/60 text-muted-foreground'
           )}>
             <Calendar className="w-2.5 h-2.5" />
-            {new Date(order.delivery_date).toLocaleDateString('pt-BR')}
+            {new Date(dueDate).toLocaleDateString('pt-BR')}
           </span>
         )}
       </div>
+
+      <div className="space-y-1">
+        <div className="flex justify-between text-[11px] text-muted-foreground">
+          <span className="truncate">Atual: {lot.current_step || 'Sem etapa'}</span>
+          <strong className="text-foreground">{percent}%</strong>
+        </div>
+        <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+          <div className="h-full bg-[#2d9c4a]" style={{ width: `${percent}%` }} />
+        </div>
+        {lot.current_cell && (
+          <p className="text-[11px] text-muted-foreground flex items-center gap-1 truncate">
+            <MapPin className="w-3 h-3 shrink-0" /> {lot.current_cell}
+          </p>
+        )}
+      </div>
+
+      {routeProgress.length > 0 && (
+        <div className="space-y-1 border-t border-border/60 pt-2">
+          {routeProgress.slice(0, 4).map((step) => (
+            <div key={step.id || `${step.step_order}-${step.step_name}`} className="flex items-center justify-between gap-2 text-[11px]">
+              <span className="truncate text-muted-foreground">{step.step_name}</span>
+              <span className={cn(
+                'font-semibold shrink-0',
+                step.pending === 0 ? 'text-emerald-600' : step.collected > 0 ? 'text-amber-600' : 'text-muted-foreground'
+              )}>
+                {step.collected}/{step.total}
+              </span>
+            </div>
+          ))}
+          {routeProgress.length > 4 && (
+            <p className="text-[10px] text-muted-foreground">+ {routeProgress.length - 4} etapas na rota</p>
+          )}
+        </div>
+      )}
 
       {/* ── Aviso de bloqueio ─────────────────────────────────── */}
       {isBlocked && lot.blocked_reason && (

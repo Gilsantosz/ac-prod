@@ -24,6 +24,23 @@ export default function LotKanban({ trace }) {
     );
   }
 
+  if (trace.lots.isError) {
+    return (
+      <div className="border border-red-200 dark:border-red-900/50 bg-red-50/70 dark:bg-red-950/20 rounded-xl p-5 text-sm text-red-700 dark:text-red-300">
+        Não foi possível carregar o Kanban de rastreabilidade. Atualize a página ou tente novamente.
+      </div>
+    );
+  }
+
+  if (!trace.lots.data.length) {
+    return (
+      <div className="text-center py-12 text-muted-foreground border border-dashed border-border/40 rounded-xl">
+        <p className="font-medium text-foreground">Nenhum lote no Kanban</p>
+        <p className="text-sm mt-1">Os lotes importados aparecerão aqui após o processamento da integração.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="overflow-x-auto pb-4">
       <div className="flex gap-4 min-w-max">

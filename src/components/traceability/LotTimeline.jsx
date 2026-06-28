@@ -41,6 +41,18 @@ export default function LotTimeline({ trace }) {
 
   const selectedLot = trace.lots.data.find(l => l.id === selectedLotId);
   const stageInfo = (code) => KANBAN_STAGES.find(s => s.code === code);
+  const readingEvents = (selectedLot?.production_stage_readings || []).map((reading) => ({
+    id: `reading-${reading.id}`,
+    step_code: reading.step_name,
+    event_type: reading.status === 'approved' ? 'finish' : reading.status === 'rejected' ? 'scrap' : 'note',
+    notes: `${reading.status === 'approved' ? 'Baixa registrada' : 'Leitura registrada'} · ${reading.tag_value || 'sem tag'}`,
+    quantity: Number(reading.quantity) || 1,
+    created_at: reading.created_at,
+    operator: reading.operator,
+    source: 'reading',
+  }));
+  const combinedEvents = [...events, ...readingEvents]
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
@@ -97,7 +109,7 @@ export default function LotTimeline({ trace }) {
               <div className="flex items-center gap-3 p-4 text-sm text-muted-foreground">
                 <RefreshCw className="w-4 h-4 animate-spin" /> Carregando histórico…
               </div>
-            ) : events.length === 0 ? (
+            ) : combinedEvents.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <GitBranch className="w-6 h-6 mx-auto mb-2 opacity-40" />
                 <p className="text-sm">Nenhum evento registrado para este lote</p>
@@ -107,7 +119,7 @@ export default function LotTimeline({ trace }) {
                 {/* Linha vertical */}
                 <div className="absolute left-3 top-2 bottom-2 w-px bg-border/60" />
 
-                {events.map((event) => {
+                {combinedEvents.map((event) => {
                   const config = EVENT_ICONS[event.event_type] || EVENT_ICONS.note;
                   const Icon = config.icon;
                   const stageName = stageInfo(event.step_code)?.label || event.step_code;
@@ -141,10 +153,10 @@ export default function LotTimeline({ trace }) {
                             <Clock className="w-3 h-3" />
                             {new Date(event.created_at).toLocaleString('pt-BR')}
                           </span>
-                          {event.profiles?.name && (
+                          {(event.profiles?.name || event.operator) && (
                             <span className="flex items-center gap-1">
                               <User className="w-3 h-3" />
-                              {event.profiles.name}
+                              {event.profiles?.name || event.operator}
                             </span>
                           )}
                           {event.quantity > 0 && (
