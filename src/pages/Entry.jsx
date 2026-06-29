@@ -82,7 +82,7 @@ export default function Entry() {
   const modeParam = searchParams.get('modo');
   const activeMode = (modeParam === 'coleta' || modeParam === 'collection')
     ? 'collection'
-    : (modeParam || 'quick');
+    : (modeParam || 'collection');
 
   const handleModeChange = (mode) => {
     const nextParams = new URLSearchParams(searchParams);
