@@ -59,15 +59,24 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
 
     setLoadingGoal(true);
     try {
-      const { data, error } = await supabase
+      // Tenta primeiro com a unidade selecionada para ser preciso
+      const currentUnit = unit || inferred.unit;
+      let query = supabase
         .from('production_daily_goals')
         .select('*')
         .eq('date', date)
         .eq('shift', shift)
-        .eq('cell_name', finalCell)
-        .maybeSingle();
+        .eq('cell_name', finalCell);
+
+      if (currentUnit) {
+        query = query.eq('metric_unit', currentUnit);
+      }
+
+      const { data: rows, error } = await query.limit(1);
 
       if (error && !/does not exist/i.test(error.message)) throw error;
+
+      const data = rows && rows.length > 0 ? rows[0] : null;
 
       if (data) {
         setExistingGoalId(data.id);
@@ -76,7 +85,6 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
         setTarget(data.target != null ? String(data.target) : '');
       } else {
         setExistingGoalId(null);
-        // Apenas reseta se não houver dado
         setCapacity('');
         setTarget('');
         setUnit(getProductionMetricRule({ cell: finalCell }).unit);
@@ -86,7 +94,8 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
     } finally {
       setLoadingGoal(false);
     }
-  }, [date, shift, cellName, inferred.unit]);
+  }, [date, shift, cellName, unit, inferred.unit]);
+
 
   useEffect(() => {
     loadExistingGoal();

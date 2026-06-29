@@ -163,9 +163,9 @@ export default function CellsAndGoals() {
   }, [date]);
 
   const goalsByShift = useMemo(() => {
-    const map = { '1 Turno': [], '2 Turno': [], '3 Turno': [] };
+    const map = {};
     for (const g of goals) {
-      const key = g.shift || '1 Turno';
+      const key = g.shift || '1º Turno';
       if (!map[key]) map[key] = [];
       map[key].push(g);
     }
@@ -218,8 +218,7 @@ export default function CellsAndGoals() {
           </div>
         ) : (
           <div className="space-y-5">
-            {['1 Turno', '2 Turno', '3 Turno'].map((shift) => {
-              const sg = goalsByShift[shift] || [];
+            {Object.entries(goalsByShift).map(([shift, sg]) => {
               if (!sg.length) return null;
               return (
                 <div key={shift} className="space-y-2">
