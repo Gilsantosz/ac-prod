@@ -52,6 +52,15 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
 
   const selectedUnit = unit || inferred.unit;
 
+  // Sincroniza unidade ao trocar célula (antes de buscar no banco)
+  useEffect(() => {
+    setUnit(inferred.unit);
+    setCapacity('');
+    setTarget('');
+    setExistingGoalId(null);
+  }, [cellName]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+
   /* ── Auto-fill ao mudar data / turno / célula ──────────── */
   const loadExistingGoal = useCallback(async () => {
     const finalCell = clean(cellName);
@@ -59,20 +68,14 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
 
     setLoadingGoal(true);
     try {
-      // Tenta primeiro com a unidade selecionada para ser preciso
-      const currentUnit = unit || inferred.unit;
-      let query = supabase
+      // Busca sem filtrar por metric_unit — a unidade correta vem do registro salvo
+      const { data: rows, error } = await supabase
         .from('production_daily_goals')
         .select('*')
         .eq('date', date)
         .eq('shift', shift)
-        .eq('cell_name', finalCell);
-
-      if (currentUnit) {
-        query = query.eq('metric_unit', currentUnit);
-      }
-
-      const { data: rows, error } = await query.limit(1);
+        .eq('cell_name', finalCell)
+        .limit(1);
 
       if (error && !/does not exist/i.test(error.message)) throw error;
 
@@ -87,14 +90,16 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
         setExistingGoalId(null);
         setCapacity('');
         setTarget('');
-        setUnit(getProductionMetricRule({ cell: finalCell }).unit);
+        // unidade ja foi sincronizada pelo useEffect de cellName
       }
     } catch (err) {
       console.warn('Falha ao carregar meta existente:', err.message);
     } finally {
       setLoadingGoal(false);
     }
-  }, [date, shift, cellName, unit, inferred.unit]);
+  }, [date, shift, cellName, inferred.unit]);
+
+
 
 
   useEffect(() => {
