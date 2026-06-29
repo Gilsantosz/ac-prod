@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/lib/AuthContext';
 import {
   PRODUCTION_UNITS,
   getProductionMetricRule,
@@ -39,6 +40,7 @@ function pick(row, aliases) {
 }
 
 export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
+  const { user } = useAuth();
   const fileRef = useRef(null);
   const [shift, setShift] = useState(SHIFTS[0]);
   const [cellName, setCellName] = useState(activeCells[0]?.name || '');
@@ -108,6 +110,10 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
 
   /* ── Salvar / Atualizar ────────────────────────────────── */
   const saveGoal = async () => {
+    if (user?.role === 'operator') {
+      toast.warning('Acesso Restrito: Seu perfil operacional não permite cadastrar ou alterar metas.');
+      return;
+    }
     const finalCell = clean(cellName);
     if (!finalCell) {
       toast.error('Selecione uma célula para salvar a meta.');
@@ -134,7 +140,11 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
       onSaved?.();
       await loadExistingGoal();
     } catch (error) {
-      toast.error(`Não foi possível salvar a meta: ${error.message}`);
+      if (/row-level security policy|permission denied/i.test(error.message || '')) {
+        toast.error('Acesso Restrito: Seu perfil operacional não tem permissão para cadastrar ou alterar metas no sistema.');
+      } else {
+        toast.error(`Não foi possível salvar a meta: ${error.message}`);
+      }
     } finally {
       setSaving(false);
     }
@@ -142,6 +152,10 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
 
   /* ── Duplicar dia anterior ─────────────────────────────── */
   const duplicatePreviousDay = async () => {
+    if (user?.role === 'operator') {
+      toast.warning('Acesso Restrito: Seu perfil operacional não permite cadastrar ou alterar metas.');
+      return;
+    }
     setSaving(true);
     try {
       const previous = new Date(`${date}T12:00:00`);
@@ -167,7 +181,11 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
       onSaved?.();
       await loadExistingGoal();
     } catch (error) {
-      toast.error(`Falha ao duplicar metas: ${error.message}`);
+      if (/row-level security policy|permission denied/i.test(error.message || '')) {
+        toast.error('Acesso Restrito: Seu perfil operacional não tem permissão para cadastrar ou alterar metas no sistema.');
+      } else {
+        toast.error(`Falha ao duplicar metas: ${error.message}`);
+      }
     } finally {
       setSaving(false);
     }
@@ -175,6 +193,10 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
 
   /* ── Importar planilha ─────────────────────────────────── */
   const importGoals = async (event) => {
+    if (user?.role === 'operator') {
+      toast.warning('Acesso Restrito: Seu perfil operacional não permite cadastrar ou alterar metas.');
+      return;
+    }
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
@@ -215,7 +237,11 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
       onSaved?.();
       await loadExistingGoal();
     } catch (error) {
-      toast.error(`Falha ao importar metas: ${error.message}`);
+      if (/row-level security policy|permission denied/i.test(error.message || '')) {
+        toast.error('Acesso Restrito: Seu perfil operacional não tem permissão para cadastrar ou alterar metas no sistema.');
+      } else {
+        toast.error(`Falha ao importar metas: ${error.message}`);
+      }
     } finally {
       setSaving(false);
     }

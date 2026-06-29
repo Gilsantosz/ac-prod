@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/lib/localDb';
 import { supabase } from '@/lib/supabaseClient';
 import { Calendar, ClipboardList, ChevronDown } from 'lucide-react';
+import { useAuth } from '@/lib/AuthContext';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import PageHeader from '@/components/ui/PageHeader';
@@ -26,6 +27,7 @@ import ExportDailyButton from '@/components/daily/ExportDailyButton';
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
 export default function DailySummary() {
+  const { user } = useAuth();
   const [date, setDate] = useState(todayStr());
   const [selectedShifts, setSelectedShifts] = useState(['1º Turno', '2º Turno', '3º Turno']);
   const [selectedCells, setSelectedCells] = useState([]);
@@ -151,7 +153,9 @@ export default function DailySummary() {
         <CloseShiftButton date={date} disabled={filtered.length === 0 && filteredGoals.length === 0} />
       </div>
 
-      <DailyGoalEditor date={date} activeCells={activeCells} onSaved={refetchGoals} />
+      {user?.role !== 'operator' && (
+        <DailyGoalEditor date={date} activeCells={activeCells} onSaved={refetchGoals} />
+      )}
 
       <SummaryKpis total={summary.total} summary={summary} />
 
