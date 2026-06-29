@@ -73,8 +73,8 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
         .from('production_daily_goals')
         .select('*')
         .eq('date', date)
-        .eq('shift', shift)
-        .eq('cell_name', finalCell)
+        .ilike('shift', shift)
+        .ilike('cell_name', finalCell)
         .limit(1);
 
       if (error && !/does not exist/i.test(error.message)) throw error;
