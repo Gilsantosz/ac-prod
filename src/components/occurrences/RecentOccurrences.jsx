@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/lib/AuthContext';
+import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -54,11 +55,21 @@ export default function RecentOccurrences({ occurrences, onDelete }) {
                   <span className="flex items-center gap-1 text-sm font-semibold tabular-nums">
                     <Clock className="w-3.5 h-3.5 text-muted-foreground" /> {o.downtime} min
                   </span>
-                  {!cannotDelete && (
-                    <Button variant="ghost" size="icon" onClick={() => onDelete(o.id)}>
-                      <Trash2 className="w-4 h-4 text-destructive" />
-                    </Button>
-                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      if (cannotDelete) {
+                        toast.warning('Acesso Restrito: Seu perfil operacional não permite excluir ocorrências cadastradas por gestores ou administradores.');
+                      } else {
+                        onDelete(o.id);
+                      }
+                    }}
+                    title={cannotDelete ? 'Acesso Restrito' : 'Deletar ocorrência'}
+                    className={cannotDelete ? 'text-slate-400 opacity-40 cursor-not-allowed hover:bg-transparent' : ''}
+                  >
+                    <Trash2 className="w-4 h-4 text-destructive" />
+                  </Button>
                 </div>
               </div>
             );

@@ -15,6 +15,7 @@ import {
 import { efficiency, isCritical, scrapRate } from '@/lib/productionMetrics';
 import { useAuth } from '@/lib/AuthContext';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 import { exportRecentEntriesCSV, exportRecentEntriesPDF } from '@/lib/exportRecentEntries';
 
 const PAGE_SIZE = 8;
@@ -319,13 +320,19 @@ export default function RecentEntries({ entries = [], onDelete = null, onCorrect
                       )}
 
                       {/* Corrigir / Auditoria */}
-                      {onCorrect && (e.approval_status === 'valid' || !e.approval_status) && !cannotAlter && (
+                      {onCorrect && (e.approval_status === 'valid' || !e.approval_status) && (
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => onCorrect(e)}
-                          title="Auditoria / Estorno"
-                          className="h-7 w-7 text-sky-500 hover:bg-sky-500/10"
+                          onClick={() => {
+                            if (cannotAlter) {
+                              toast.warning('Acesso Restrito: Seu perfil operacional não permite alterar lançamentos efetuados por gestores ou administradores.');
+                            } else {
+                              onCorrect(e);
+                            }
+                          }}
+                          title={cannotAlter ? 'Acesso Restrito' : 'Auditoria / Estorno'}
+                          className={`h-7 w-7 ${cannotAlter ? 'text-slate-400 opacity-40 cursor-not-allowed hover:bg-transparent' : 'text-sky-500 hover:bg-sky-500/10'}`}
                         >
                           <ShieldAlert className="w-3.5 h-3.5" />
                         </Button>
