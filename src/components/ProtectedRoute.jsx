@@ -68,18 +68,25 @@ export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthe
 
   if (user && user.role !== 'admin') {
     const cleanPath = path.replace(/\/$/, '') || '/';
-    const requiredPermission = pathPermissionMap[cleanPath];
-    if (requiredPermission) {
-      if (user.permissions && user.permissions[requiredPermission] !== undefined) {
-        hasPermission = !!user.permissions[requiredPermission];
-        if (!hasPermission) {
-          requiredPermissionLabel = `Permissão requerida: ${permissionLabels[requiredPermission]}`;
-        }
-      } else {
-        const allowedPathsForOperators = ['/', '/painel', '/entrada', '/resumo-diario'];
-        if (!allowedPathsForOperators.includes(cleanPath)) {
-          hasPermission = false;
-          requiredPermissionLabel = 'Acesso Reservado para Administradores';
+    
+    // Bloquear nível operacional (operator) da página de Integração
+    if (cleanPath === '/integracoes/promob' && user.role === 'operator') {
+      hasPermission = false;
+      requiredPermissionLabel = 'Acesso Reservado para Gestores e Administradores';
+    } else {
+      const requiredPermission = pathPermissionMap[cleanPath];
+      if (requiredPermission) {
+        if (user.permissions && user.permissions[requiredPermission] !== undefined) {
+          hasPermission = !!user.permissions[requiredPermission];
+          if (!hasPermission) {
+            requiredPermissionLabel = `Permissão requerida: ${permissionLabels[requiredPermission]}`;
+          }
+        } else {
+          const allowedPathsForOperators = ['/', '/painel', '/entrada', '/resumo-diario'];
+          if (!allowedPathsForOperators.includes(cleanPath)) {
+            hasPermission = false;
+            requiredPermissionLabel = 'Acesso Reservado para Administradores';
+          }
         }
       }
     }
