@@ -30,9 +30,9 @@ export default function GoalForm({ onSubmit, saving, cells = [] }) {
   };
 
   return (
-    <Card className="p-6 border-border/60">
+    <div>
       <form onSubmit={handleSubmit} className="space-y-5">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Data</Label>
             <Input type="date" value={data.date} onChange={(e) => set('date', e.target.value)} required />
@@ -70,13 +70,13 @@ export default function GoalForm({ onSubmit, saving, cells = [] }) {
           </p>
         )}
 
-        <div className="flex justify-end">
+        <div className="flex justify-end pt-2">
           <Button type="submit" disabled={saving} className="gap-2">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Target className="w-4 h-4" />}
             Salvar meta
           </Button>
         </div>
       </form>
-    </Card>
+    </div>
   );
 }

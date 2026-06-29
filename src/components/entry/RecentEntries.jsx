@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabaseClient';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,6 +26,24 @@ export default function RecentEntries({ entries = [], onDelete = null, onCorrect
 
   const userRole = user?.role || 'operator';
   const isAdmin = userRole === 'admin';
+
+  const { data: profiles = [] } = useQuery({
+    queryKey: ['profiles-roles'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('profiles').select('id, role');
+      if (error) throw error;
+      return data || [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const profileRolesMap = useMemo(() => {
+    const map = {};
+    for (const p of profiles) {
+      map[p.id] = p.role;
+    }
+    return map;
+  }, [profiles]);
 
   const todayStr = format(new Date(), 'yyyy-MM-dd');
 
@@ -197,6 +217,10 @@ export default function RecentEntries({ entries = [], onDelete = null, onCorrect
             )}
 
             {visible.map((e) => {
+              const creatorRole = e.created_by ? profileRolesMap[e.created_by] : null;
+              const isCreatedByAdminOrManager = creatorRole === 'admin' || creatorRole === 'manager';
+              const cannotAlter = userRole === 'operator' && isCreatedByAdminOrManager;
+
               const eff = efficiency(e.produced, e.target);
               const crit = isCritical(e);
               const sRate = scrapRate(e.scrap, e.produced);
@@ -295,7 +319,7 @@ export default function RecentEntries({ entries = [], onDelete = null, onCorrect
                       )}
 
                       {/* Corrigir / Auditoria */}
-                      {onCorrect && (e.approval_status === 'valid' || !e.approval_status) && (
+                      {onCorrect && (e.approval_status === 'valid' || !e.approval_status) && !cannotAlter && (
                         <Button
                           variant="ghost"
                           size="icon"

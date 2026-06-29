@@ -98,7 +98,7 @@ function AppShell() {
 
   const visibleNav = nav.filter((item) => {
     if (item.adminOnly && user?.role !== 'admin') return false;
-    if (item.to === '/integracoes/promob' && user?.role === 'operator') return false;
+    if (user?.role === 'operator' && ['/integracoes/promob', '/celulas-metas', '/usuarios'].includes(item.to)) return false;
     if (user?.role === 'admin') return true;
     if (!user?.permissions) return false;
     

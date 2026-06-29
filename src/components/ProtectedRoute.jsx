@@ -69,8 +69,8 @@ export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthe
   if (user && user.role !== 'admin') {
     const cleanPath = path.replace(/\/$/, '') || '/';
     
-    // Bloquear nível operacional (operator) da página de Integração
-    if (cleanPath === '/integracoes/promob' && user.role === 'operator') {
+    // Bloquear nível operacional (operator) de páginas restritas (Integração, Células/Metas, Usuários/Operadores)
+    if (user.role === 'operator' && ['/integracoes/promob', '/celulas-metas', '/usuarios', '/operadores'].includes(cleanPath)) {
       hasPermission = false;
       requiredPermissionLabel = 'Acesso Reservado para Gestores e Administradores';
     } else {

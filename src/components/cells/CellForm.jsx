@@ -35,10 +35,10 @@ export default function CellForm({ onSubmit, saving, editing, onCancel }) {
   };
 
   return (
-    <Card className="p-6 border-border/60">
+    <div>
       <form onSubmit={handleSubmit} className="space-y-5">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="space-y-2 lg:col-span-1">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-2">
             <Label>Nome da célula</Label>
             <Input value={data.name} onChange={(e) => set('name', e.target.value)} placeholder="Ex: Célula A" required />
           </div>
@@ -60,7 +60,7 @@ export default function CellForm({ onSubmit, saving, editing, onCancel }) {
           <Input value={data.notes} onChange={(e) => set('notes', e.target.value)} placeholder="Opcional" />
         </div>
 
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-2 pt-2">
           {editing && (
             <Button type="button" variant="outline" onClick={onCancel} className="gap-2">
               <X className="w-4 h-4" /> Cancelar
@@ -72,6 +72,6 @@ export default function CellForm({ onSubmit, saving, editing, onCancel }) {
           </Button>
         </div>
       </form>
-    </Card>
+    </div>
   );
 }
