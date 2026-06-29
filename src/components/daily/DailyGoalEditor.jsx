@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
-import { Copy, Save, Upload } from 'lucide-react';
+import { Copy, Save, Upload, CheckCircle2, Loader2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -47,9 +47,52 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
   const [capacity, setCapacity] = useState('');
   const [target, setTarget] = useState('');
   const [saving, setSaving] = useState(false);
+  const [loadingGoal, setLoadingGoal] = useState(false);
+  const [existingGoalId, setExistingGoalId] = useState(null);
 
   const selectedUnit = unit || inferred.unit;
 
+  /* ── Auto-fill ao mudar data / turno / célula ──────────── */
+  const loadExistingGoal = useCallback(async () => {
+    const finalCell = clean(cellName);
+    if (!finalCell || !date || !shift) return;
+
+    setLoadingGoal(true);
+    try {
+      const { data, error } = await supabase
+        .from('production_daily_goals')
+        .select('*')
+        .eq('date', date)
+        .eq('shift', shift)
+        .eq('cell_name', finalCell)
+        .maybeSingle();
+
+      if (error && !/does not exist/i.test(error.message)) throw error;
+
+      if (data) {
+        setExistingGoalId(data.id);
+        setUnit(data.metric_unit || inferred.unit);
+        setCapacity(data.capacity != null ? String(data.capacity) : '');
+        setTarget(data.target != null ? String(data.target) : '');
+      } else {
+        setExistingGoalId(null);
+        // Apenas reseta se não houver dado
+        setCapacity('');
+        setTarget('');
+        setUnit(getProductionMetricRule({ cell: finalCell }).unit);
+      }
+    } catch (err) {
+      console.warn('Falha ao carregar meta existente:', err.message);
+    } finally {
+      setLoadingGoal(false);
+    }
+  }, [date, shift, cellName, inferred.unit]);
+
+  useEffect(() => {
+    loadExistingGoal();
+  }, [loadExistingGoal]);
+
+  /* ── Salvar / Atualizar ────────────────────────────────── */
   const saveGoal = async () => {
     const finalCell = clean(cellName);
     if (!finalCell) {
@@ -73,8 +116,9 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
         updated_at: new Date().toISOString(),
       }, { onConflict: 'date,shift,cell_name,metric_unit' });
       if (error) throw error;
-      toast.success('Meta diária salva.');
+      toast.success(existingGoalId ? 'Meta atualizada.' : 'Meta diária salva.');
       onSaved?.();
+      await loadExistingGoal();
     } catch (error) {
       toast.error(`Não foi possível salvar a meta: ${error.message}`);
     } finally {
@@ -82,6 +126,7 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
     }
   };
 
+  /* ── Duplicar dia anterior ─────────────────────────────── */
   const duplicatePreviousDay = async () => {
     setSaving(true);
     try {
@@ -106,6 +151,7 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
       if (upsertError) throw upsertError;
       toast.success('Metas do dia anterior duplicadas.');
       onSaved?.();
+      await loadExistingGoal();
     } catch (error) {
       toast.error(`Falha ao duplicar metas: ${error.message}`);
     } finally {
@@ -113,6 +159,7 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
     }
   };
 
+  /* ── Importar planilha ─────────────────────────────────── */
   const importGoals = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -152,6 +199,7 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
       if (error) throw error;
       toast.success(`${payload.length} meta(s) importada(s).`);
       onSaved?.();
+      await loadExistingGoal();
     } catch (error) {
       toast.error(`Falha ao importar metas: ${error.message}`);
     } finally {
@@ -159,10 +207,24 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
     }
   };
 
+  const isEditing = !!existingGoalId;
+
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Metas por célula e unidade</CardTitle>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <CardTitle className="text-base">Metas por célula e unidade</CardTitle>
+          {loadingGoal && (
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando meta…
+            </span>
+          )}
+          {!loadingGoal && isEditing && (
+            <span className="flex items-center gap-1.5 text-xs text-[#2d9c4a] font-medium">
+              <CheckCircle2 className="w-3.5 h-3.5" /> Meta cadastrada — editando
+            </span>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
         <div className="space-y-2">
@@ -174,7 +236,7 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
         </div>
         <div className="space-y-2 md:col-span-2">
           <Label>Célula</Label>
-          <Select value={cellName} onValueChange={(value) => { setCellName(value); setUnit(getProductionMetricRule({ cell: value }).unit); }}>
+          <Select value={cellName} onValueChange={(value) => { setCellName(value); }}>
             <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
             <SelectContent>
               {activeCells.map((cell) => <SelectItem key={cell.id || cell.name} value={cell.name}>{cell.name}</SelectItem>)}
@@ -190,20 +252,34 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
         </div>
         <div className="space-y-2">
           <Label>Capacidade</Label>
-          <Input type="number" min="0" value={capacity} onChange={(event) => setCapacity(event.target.value)} />
+          <Input
+            type="number"
+            min="0"
+            value={capacity}
+            onChange={(event) => setCapacity(event.target.value)}
+            placeholder="0"
+            className={isEditing ? 'border-[#2d9c4a]/50 bg-[#2d9c4a]/5' : ''}
+          />
         </div>
         <div className="space-y-2">
           <Label>Meta</Label>
-          <Input type="number" min="0" value={target} onChange={(event) => setTarget(event.target.value)} />
+          <Input
+            type="number"
+            min="0"
+            value={target}
+            onChange={(event) => setTarget(event.target.value)}
+            placeholder="0"
+            className={isEditing ? 'border-[#2d9c4a]/50 bg-[#2d9c4a]/5' : ''}
+          />
         </div>
         <div className="md:col-span-6 flex flex-wrap gap-2">
-          <Button onClick={saveGoal} disabled={saving} className="gap-2">
-            <Save className="w-4 h-4" /> Salvar meta
+          <Button onClick={saveGoal} disabled={saving || loadingGoal} className="gap-2">
+            <Save className="w-4 h-4" /> {isEditing ? 'Atualizar meta' : 'Salvar meta'}
           </Button>
-          <Button type="button" variant="outline" onClick={duplicatePreviousDay} disabled={saving} className="gap-2">
+          <Button type="button" variant="outline" onClick={duplicatePreviousDay} disabled={saving || loadingGoal} className="gap-2">
             <Copy className="w-4 h-4" /> Duplicar dia anterior
           </Button>
-          <Button type="button" variant="outline" onClick={() => fileRef.current?.click()} disabled={saving} className="gap-2">
+          <Button type="button" variant="outline" onClick={() => fileRef.current?.click()} disabled={saving || loadingGoal} className="gap-2">
             <Upload className="w-4 h-4" /> Importar planilha
           </Button>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={importGoals} />
@@ -212,3 +288,4 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
     </Card>
   );
 }
+
