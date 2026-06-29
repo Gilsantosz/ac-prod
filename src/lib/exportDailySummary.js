@@ -1,9 +1,9 @@
-// Gera PDF do Resumo Diário com KPIs e tabelas (por célula e por turno).
+// Gera PDF do Resumo Diário com KPIs e tabelas por unidade.
 import { jsPDF } from 'jspdf';
 import { drawBrandedPdfFooter, drawBrandedPdfHeader } from '@/lib/reportBranding';
 
 const fmt = (n) => (Number(n) || 0).toLocaleString('pt-BR');
-const attain = (t) => (t.target > 0 ? Math.round((t.produced / t.target) * 100) : 0);
+const attain = (t) => (Number(t.target) > 0 ? Math.round((Number(t.realized ?? t.produced) / Number(t.target)) * 100) : 0);
 
 export async function exportDailySummaryPdf({ date, shift, cell, summary }) {
   const doc = new jsPDF();
@@ -18,13 +18,16 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary }) {
     : (cell === 'all' ? 'Todas' : cell);
 
   const t = summary.total;
+  const totalsByUnit = summary.totalsByUnit || [];
+  const totalTarget = totalsByUnit.reduce((sum, row) => sum + (Number(row.target) || 0), 0);
+  const totalRealized = totalsByUnit.reduce((sum, row) => sum + (Number(row.realized) || 0), 0);
+  const totalAttainment = totalTarget > 0 ? Math.round((totalRealized / totalTarget) * 100) : 0;
   let y = await drawBrandedPdfHeader(doc, {
     title: 'Resumo Diario de Producao',
     subtitle: `Data: ${date} | Turnos: ${shiftStr} | Celulas: ${cellStr}`,
     summary: [
-      { label: 'Meta diaria', value: fmt(t.target) },
-      { label: 'Produzido', value: fmt(t.produced) },
-      { label: 'Pecas boas', value: fmt(t.good) },
+      { label: 'Atingimento', value: `${totalAttainment}%` },
+      ...totalsByUnit.slice(0, 3).map((row) => ({ label: `Realizado (${row.unitLabel})`, value: fmt(row.realized) })),
       { label: 'Refugo', value: `${fmt(t.scrap)} (${t.scrapRate}%)` },
       { label: 'Paradas (min)', value: fmt(t.downtime) },
     ],
@@ -32,12 +35,11 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary }) {
 
   // KPIs
   const kpis = [
-    ['Meta Diária', `${fmt(t.target)} (${attain(t)}%)`],
-    ['Produzido', fmt(t.produced)],
-    ['Peças Boas', fmt(t.good)],
+    ['Atingimento', `${totalAttainment}%`],
+    ...totalsByUnit.map((row) => [`Realizado (${row.unitLabel})`, fmt(row.realized)]),
     ['Refugo', `${fmt(t.scrap)} (${t.scrapRate}%)`],
     ['Paradas (min)', fmt(t.downtime)],
-  ];
+  ].slice(0, 6);
   y += 10;
   const colW = (pageW - 28) / kpis.length;
   kpis.forEach((k, i) => {
@@ -63,8 +65,8 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary }) {
     doc.text(title, 14, y);
     y += 6;
 
-    const cols = [keyLabel, 'Meta', 'Produzido', 'Boas', 'Refugo', '% Refugo', 'Paradas'];
-    const widths = [50, 25, 28, 25, 22, 22, 22];
+    const cols = [keyLabel, 'Unid.', 'Meta', 'Realizado', 'Dif.', 'Ef.', 'Paradas'];
+    const widths = [42, 20, 25, 28, 25, 22, 24];
     doc.setFontSize(8);
     doc.setFillColor(15, 23, 42);
     doc.setTextColor(255);
@@ -85,7 +87,15 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary }) {
     }
     rows.forEach((r) => {
       if (y > 280) { doc.addPage(); y = 18; }
-      const vals = [String(r[keyField]), fmt(r.target), fmt(r.produced), fmt(r.good), fmt(r.scrap), `${r.scrapRate}%`, fmt(r.downtime)];
+      const vals = [
+        String(r[keyField]),
+        r.unitLabel || '-',
+        fmt(r.target),
+        fmt(r.realized ?? r.produced),
+        fmt(r.differenceTarget ?? ((Number(r.realized ?? r.produced) || 0) - (Number(r.target) || 0))),
+        `${attain(r)}%`,
+        fmt(r.downtime),
+      ];
       let xx = 14;
       vals.forEach((v, i) => {
         doc.text(v, xx + 2, y + 5);
@@ -98,8 +108,8 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary }) {
     y += 8;
   };
 
-  drawTable('Produção por Célula', summary.byCell, 'cell', 'Célula');
-  drawTable('Produção por Turno', summary.byShift, 'shift', 'Turno');
+  drawTable('Producao por Celula', summary.byCell, 'cell', 'Celula');
+  drawTable('Producao por Turno', summary.byShift, 'shift', 'Turno');
 
   drawBrandedPdfFooter(doc);
   doc.save(`resumo-diario-${date}.pdf`);

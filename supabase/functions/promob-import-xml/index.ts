@@ -76,6 +76,10 @@ async function createCollectionArtifacts(supabase: any, lot: any, lotItems: any[
     order_number: lotItem.order_number,
     customer_name: lotItem.customer_name,
     environment_name: lotItem.environment_name,
+    sheet_count: lotItem.sheet_count,
+    edge_meters: lotItem.edge_meters,
+    pieces_quantity: lotItem.pieces_quantity,
+    covers_quantity: lotItem.covers_quantity,
   }));
 
   const { data: productionItems, error: productionItemsError } = await supabase
@@ -417,6 +421,10 @@ serve(async (req) => {
       width:              item.width,
       height:             item.height,
       quantity:           item.quantity,
+      sheet_count:        item.sheet_count || 0,
+      edge_meters:        item.edge_meters || 0,
+      pieces_quantity:    item.pieces_quantity || item.quantity || 1,
+      covers_quantity:    item.covers_quantity || 0,
       edge_front:         item.edgeFront,
       edge_back:          item.edgeBack,
       edge_left:          item.edgeLeft,
@@ -441,7 +449,7 @@ serve(async (req) => {
       const { data: lotItems, error: itemsError } = await supabase
         .from("lot_items")
         .insert(lotItemsPayload)
-        .select("id,lot_id,piece_code,piece_name,status,created_at,updated_at,load_number,order_number,customer_name,environment_name");
+        .select("id,lot_id,piece_code,piece_name,status,created_at,updated_at,load_number,order_number,customer_name,environment_name,sheet_count,edge_meters,pieces_quantity,covers_quantity");
       if (itemsError) throw itemsError;
       insertedLotItems = lotItems || [];
     }

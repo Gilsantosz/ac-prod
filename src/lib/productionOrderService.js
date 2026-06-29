@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabaseClient';
 
 const text = (value) => String(value ?? '').trim();
 const number = (value) => Math.max(0, Number(value) || 0);
+const firstNumber = (...values) => values.map(number).find((value) => value > 0) || 0;
 
 export function normalizeProductionOrder(raw = {}) {
   const orderNumber = text(raw.order_number || raw.orderNumber || raw.pedido || raw.order_code || raw.orderCode);
@@ -87,6 +88,10 @@ async function persistChildren(order, lots = [], items = []) {
     product_description: text(item.product_description || item.productDescription || item.descricao),
     quantity: number(item.quantity || item.quantidade),
     mirror_quantity: number(item.mirror_quantity || item.mirrorQuantity || item.espelhos),
+    sheet_count: firstNumber(item.sheet_count, item.sheetCount, item.qtd_chapas, item.chapas),
+    edge_meters: firstNumber(item.edge_meters, item.edgeMeters, item.metros_bordo, item.linear_meters),
+    pieces_quantity: firstNumber(item.pieces_quantity, item.piecesQuantity, item.qtd_pecas, item.quantity, item.quantidade),
+    covers_quantity: firstNumber(item.covers_quantity, item.coversQuantity, item.qtd_capas, item.capas),
     pallet_number: text(item.pallet_number || item.palletNumber || item.pallet),
     route_code: text(item.route_code || item.routeCode || item.codigo_roteiro),
     route_name: text(item.route_name || item.routeName || item.roteiro),

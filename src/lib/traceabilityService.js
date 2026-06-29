@@ -4,6 +4,7 @@ import {
   validateProductionStep as validateProductionStepRule,
 } from '@/lib/traceabilityRules';
 import { resolveProductionContext, productionContextToEntryFields } from '@/lib/productionLookupService';
+import { buildProductionMetric } from '@/lib/productionUnitRules';
 
 export { normalizeTagValue } from '@/lib/traceabilityRules';
 
@@ -114,13 +115,24 @@ export function detectDuplicateReading(payload = {}) {
 }
 
 export function buildProductionKpiUpdate(payload = {}) {
-  const quantity = Math.max(1, Number(payload.quantity) || 1);
+  const metric = buildProductionMetric({
+    ...payload.item,
+    ...payload,
+    quantity: payload.quantity ?? 1,
+    cell: payload.cellName || payload.cell || payload.item?.current_cell,
+    operation_name: payload.stepName || payload.route?.step_name || payload.operation_name,
+  });
+  const quantity = Math.max(0, Number(metric.realized_quantity) || 0);
   const status = payload.status || (payload.success ? 'approved' : 'blocked');
   return {
     date: payload.date || new Date().toISOString().slice(0, 10),
     shift: payload.shift || null,
     cellName: payload.cellName || null,
     stepName: payload.stepName || payload.route?.step_name || null,
+    metric_unit: metric.metric_unit,
+    metric_unit_label: metric.metric_unit_label,
+    metric_name: metric.metric_name,
+    realized_quantity: quantity,
     total: quantity,
     approved: status === 'approved' ? quantity : 0,
     rejected: status === 'rejected' ? quantity : 0,

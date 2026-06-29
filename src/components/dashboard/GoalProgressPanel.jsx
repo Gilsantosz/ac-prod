@@ -21,8 +21,9 @@ export default function GoalProgressPanel({ items = [] }) {
             const pct = Math.min(100, Math.round((it.produced / it.target) * 100));
             const done = it.produced >= it.target;
             const remaining = Math.max(0, it.target - it.produced);
+            const unitLabel = it.unitLabel || it.metric_unit_label || 'un.';
             return (
-              <div key={`${it.cell}-${it.shift}`} className="space-y-2">
+              <div key={`${it.cell}-${it.shift}-${it.metric_unit || unitLabel}`} className="space-y-2">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{it.cell}</span>
@@ -30,12 +31,12 @@ export default function GoalProgressPanel({ items = [] }) {
                     {done && <Badge className="gap-1 bg-emerald-600 hover:bg-emerald-600"><CheckCircle2 className="w-3 h-3" /> Meta batida</Badge>}
                   </div>
                   <span className="text-sm tabular-nums text-muted-foreground">
-                    {it.produced.toLocaleString('pt-BR')} / {it.target.toLocaleString('pt-BR')} ({pct}%)
+                    {it.produced.toLocaleString('pt-BR')} / {it.target.toLocaleString('pt-BR')} {unitLabel} ({pct}%)
                   </span>
                 </div>
                 <Progress value={pct} className={done ? '[&>div]:bg-emerald-600' : ''} />
                 {!done && (
-                  <p className="text-xs text-muted-foreground">Faltam {remaining.toLocaleString('pt-BR')} peças para bater a meta.</p>
+                  <p className="text-xs text-muted-foreground">Faltam {remaining.toLocaleString('pt-BR')} {unitLabel} para bater a meta.</p>
                 )}
               </div>
             );

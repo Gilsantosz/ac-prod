@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/lib/localDb';
+import { supabase } from '@/lib/supabaseClient';
 import { Calendar, ClipboardList, ChevronDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -17,6 +18,8 @@ import { buildDailySummary } from '@/lib/dailySummary';
 import { useCells } from '@/hooks/useCells';
 import SummaryKpis from '@/components/daily/SummaryKpis';
 import SummaryTable from '@/components/daily/SummaryTable';
+import DailyProductionMatrix from '@/components/daily/DailyProductionMatrix';
+import DailyGoalEditor from '@/components/daily/DailyGoalEditor';
 import CloseShiftButton from '@/components/daily/CloseShiftButton';
 import ExportDailyButton from '@/components/daily/ExportDailyButton';
 
@@ -31,6 +34,19 @@ export default function DailySummary() {
   const { data: entries = [] } = useQuery({
     queryKey: ['production', date],
     queryFn: () => base44.entities.ProductionEntry.filter({ date }, '-created_date', 1000),
+    initialData: [],
+  });
+
+  const { data: goals = [], refetch: refetchGoals } = useQuery({
+    queryKey: ['productionDailyGoals', date],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('production_daily_goals').select('*').eq('date', date);
+      if (error) {
+        if (/schema cache|does not exist|production_daily_goals/i.test(error.message || '')) return [];
+        throw error;
+      }
+      return data || [];
+    },
     initialData: [],
   });
 
@@ -64,13 +80,18 @@ export default function DailySummary() {
     [entries, selectedShifts, selectedCells]
   );
 
-  const summary = useMemo(() => buildDailySummary(filtered), [filtered]);
+  const filteredGoals = useMemo(
+    () => goals.filter((goal) => selectedShifts.includes(goal.shift) && (selectedCells.length === 0 || selectedCells.includes(goal.cell_name || goal.cell))),
+    [goals, selectedShifts, selectedCells]
+  );
+
+  const summary = useMemo(() => buildDailySummary(filtered, filteredGoals), [filtered, filteredGoals]);
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-5 sm:space-y-6">
       <PageHeader
         title="Resumo Diário"
-        subtitle="Acumulado do turno: produção, peças boas, refugos e paradas."
+        subtitle="Acumulado por turno, célula e unidade operacional."
         icon={ClipboardList}
         actions={
           <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 w-full sm:w-auto">
@@ -126,11 +147,15 @@ export default function DailySummary() {
       />
 
       <div className="flex flex-wrap items-center gap-2.5">
-        <ExportDailyButton date={date} shift={selectedShifts} cell={selectedCells} summary={summary} disabled={filtered.length === 0} />
-        <CloseShiftButton date={date} disabled={filtered.length === 0} />
+        <ExportDailyButton date={date} shift={selectedShifts} cell={selectedCells} summary={summary} disabled={filtered.length === 0 && filteredGoals.length === 0} />
+        <CloseShiftButton date={date} disabled={filtered.length === 0 && filteredGoals.length === 0} />
       </div>
 
-      <SummaryKpis total={summary.total} />
+      <DailyGoalEditor date={date} activeCells={activeCells} onSaved={refetchGoals} />
+
+      <SummaryKpis total={summary.total} summary={summary} />
+
+      <DailyProductionMatrix rows={summary.matrixByCell} shifts={summary.shifts} />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <SummaryTable title="Produção por Célula" rows={summary.byCell} keyLabel="Célula" keyField="cell" />

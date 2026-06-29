@@ -4,6 +4,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 const fmt = (n) => (Number(n) || 0).toLocaleString('pt-BR');
 
 export default function SummaryTable({ title, rows, keyLabel, keyField }) {
+  const hasUnit = rows.some((row) => row.unitLabel);
+  const colSpan = hasUnit ? 8 : 7;
+
   return (
     <Card>
       <CardHeader>
@@ -14,6 +17,7 @@ export default function SummaryTable({ title, rows, keyLabel, keyField }) {
           <TableHeader>
             <TableRow>
               <TableHead>{keyLabel}</TableHead>
+              {hasUnit && <TableHead>Unidade</TableHead>}
               <TableHead className="text-right">Meta</TableHead>
               <TableHead className="text-right">Produzido</TableHead>
               <TableHead className="text-right">Boas</TableHead>
@@ -25,12 +29,13 @@ export default function SummaryTable({ title, rows, keyLabel, keyField }) {
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground py-6">Sem dados</TableCell>
+                <TableCell colSpan={colSpan} className="text-center text-muted-foreground py-6">Sem dados</TableCell>
               </TableRow>
             ) : (
               rows.map((r) => (
-                <TableRow key={r[keyField]}>
+                <TableRow key={r.id || `${r[keyField]}-${r.metric_unit || ''}`}>
                   <TableCell className="font-medium">{r[keyField]}</TableCell>
+                  {hasUnit && <TableCell className="text-muted-foreground">{r.unitLabel || '—'}</TableCell>}
                   <TableCell className="text-right text-blue-700">{fmt(r.target)}</TableCell>
                   <TableCell className="text-right">{fmt(r.produced)}</TableCell>
                   <TableCell className="text-right text-green-700">{fmt(r.good)}</TableCell>

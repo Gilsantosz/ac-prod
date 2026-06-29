@@ -25,6 +25,49 @@ function base64ToUint8Array(base64) {
   return bytes;
 }
 
+const toOperationalNumber = (value) => {
+  const parsed = Number(String(value ?? '').replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const edgeApplied = (value) => {
+  const text = String(value ?? '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  return Boolean(text && !['0', 'false', 'nao', 'sem fita', '-', 'n'].includes(text));
+};
+
+const dimensionMeters = (value) => {
+  const raw = toOperationalNumber(value);
+  if (!raw) return 0;
+  return raw > 30 ? raw / 1000 : raw;
+};
+
+function calculateEdgeMeters(item) {
+  const direct = toOperationalNumber(item.edge_meters || item.edgeMeters || item.metros_bordo || item.linear_meters);
+  if (direct > 0) return direct;
+
+  const width = dimensionMeters(item.width);
+  const height = dimensionMeters(item.height);
+  let meters = 0;
+  if (edgeApplied(item.edgeFront)) meters += width;
+  if (edgeApplied(item.edgeBack)) meters += width;
+  if (edgeApplied(item.edgeLeft)) meters += height;
+  if (edgeApplied(item.edgeRight)) meters += height;
+  if (!meters && item.requiresEdge && (width || height)) meters = (width + height) * 2;
+  return Number((meters * Math.max(1, toOperationalNumber(item.quantity) || 1)).toFixed(3));
+}
+
+function enrichOperationalQuantities(item) {
+  item.pieces_quantity = Math.max(1, toOperationalNumber(item.pieces_quantity || item.piecesQuantity || item.qtd_pecas || item.quantity) || 1);
+  item.sheet_count = toOperationalNumber(item.sheet_count || item.sheetCount || item.qtd_chapas || item.chapas);
+  item.edge_meters = calculateEdgeMeters(item);
+  item.covers_quantity = toOperationalNumber(item.covers_quantity || item.coversQuantity || item.qtd_capas || item.capas);
+  return item;
+}
+
 // Parser client-side para planilhas para evitar timeouts na nuvem
 function parseSheetOnClient(content, fileType) {
   let workbook;
@@ -122,6 +165,10 @@ function parseRowsToNormalizedJson(rows) {
     width: ["comprimento", "comp", "length", "comprimento (mm)", "length_mm", "width", "comprimento_mm"],
     height: ["largura", "larg", "height", "largura (mm)", "height_mm", "largura_mm"],
     quantity: ["quantidade", "qtd", "quantity", "qty", "qtde"],
+    sheetCount: ["qtd_chapas", "chapas", "sheet_count", "sheet count", "sheets"],
+    edgeMeters: ["metros_bordo", "metro_bordo", "edge_meters", "edge meters", "linear_meters", "metros lineares"],
+    piecesQuantity: ["qtd_pecas", "qtd peças", "pieces_quantity", "pecas", "peças"],
+    coversQuantity: ["qtd_capas", "capas", "covers_quantity", "covers"],
     edgeFront: ["frente", "borda frente", "fita frente", "edge front", "borda 1", "borda_frontal", "frontal", "fita_borda_frente"],
     edgeBack: ["tras", "trás", "traseira", "borda tras", "borda trás", "fita tras", "fita trás", "edge back", "borda 2", "borda_traseira", "fita_borda_tras"],
     edgeLeft: ["esquerda", "borda esquerda", "fita esquerda", "edge left", "borda 3", "borda_esquerda", "fita_borda_esquerda"],
@@ -190,6 +237,10 @@ function parseRowsToNormalizedJson(rows) {
     const width = parseFloat(String(getValue(row, "width") || "0").replace(",", ".")) || 0;
     const height = parseFloat(String(getValue(row, "height") || "0").replace(",", ".")) || 0;
     const quantity = parseInt(String(getValue(row, "quantity") || "1")) || 1;
+    const sheetCount = toOperationalNumber(getValue(row, "sheetCount"));
+    const edgeMeters = toOperationalNumber(getValue(row, "edgeMeters"));
+    const piecesQuantity = toOperationalNumber(getValue(row, "piecesQuantity"));
+    const coversQuantity = toOperationalNumber(getValue(row, "coversQuantity"));
 
     const cleanEdge = (val) => {
       const s = String(val ?? "").trim();
@@ -218,7 +269,7 @@ function parseRowsToNormalizedJson(rows) {
     const itemOrderCode = String(getValue(row, "orderCode") || orderCode).trim();
     const itemCustomer = String(getValue(row, "customer") || customer).trim();
 
-    const item = {
+    const item = enrichOperationalQuantities({
       code: finalPieceCode,
       name: finalPieceName,
       material,
@@ -227,6 +278,10 @@ function parseRowsToNormalizedJson(rows) {
       width,
       height,
       quantity,
+      sheet_count: sheetCount,
+      edge_meters: edgeMeters,
+      pieces_quantity: piecesQuantity || quantity,
+      covers_quantity: coversQuantity,
       barcode,
       qrCode,
       edgeFront,
@@ -247,7 +302,7 @@ function parseRowsToNormalizedJson(rows) {
       orderCode: itemOrderCode,
       customer: itemCustomer,
       rawAttributes: {}
-    };
+    });
 
     if (!environmentsMap.has(envName)) {
       environmentsMap.set(envName, new Map());

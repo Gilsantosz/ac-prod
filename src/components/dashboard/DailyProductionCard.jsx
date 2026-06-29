@@ -8,7 +8,7 @@ import {
   CartesianGrid, Legend, Cell,
 } from 'recharts';
 import { Activity, Package, Target, TrendingUp, AlertTriangle } from 'lucide-react';
-import { efficiency, scrapRate, groupBy, sumBy } from '@/lib/productionMetrics';
+import { efficiency, scrapRate, groupByCellUnit, groupByShiftCellUnit, summarizeByUnit, sumBy } from '@/lib/productionMetrics';
 
 // Mini KPI card interno
 function MiniKpi({ label, value, unit, color = '' }) {
@@ -24,7 +24,7 @@ function MiniKpi({ label, value, unit, color = '' }) {
 }
 
 // Barra de progresso de célula/turno
-function ProgressRow({ name, produced, target, eff, scrap, highlight = false, compact = false }) {
+function ProgressRow({ name, produced, target, eff, scrap, unitLabel = '', highlight = false, compact = false }) {
   const pct = Math.min(100, Math.round((produced / (target || 1)) * 100));
   const color =
     eff >= 90 ? '[&>div]:bg-emerald-500' :
@@ -50,7 +50,7 @@ function ProgressRow({ name, produced, target, eff, scrap, highlight = false, co
         </div>
         <div className="flex items-center gap-2 shrink-0 text-sm">
           <span className="tabular-nums text-muted-foreground hidden sm:inline">
-            {produced.toLocaleString('pt-BR')} / {target.toLocaleString('pt-BR')}
+            {produced.toLocaleString('pt-BR')} / {target.toLocaleString('pt-BR')} {unitLabel}
           </span>
           <span className={`font-bold tabular-nums ${textColor}`}>{eff}%</span>
         </div>
@@ -84,11 +84,12 @@ export default function DailyProductionCard({
     else if (kiosk && kioskCell === 'all') setTab('general');
   }, [kiosk, kioskCell]);
 
-  const byCell = useMemo(() => groupBy(filtered, 'cell'), [filtered]);
-  const byShift = useMemo(() => groupBy(filtered, 'shift'), [filtered]);
+  const byCell = useMemo(() => groupByCellUnit(filtered), [filtered]);
+  const byShift = useMemo(() => groupByShiftCellUnit(filtered), [filtered]);
+  const totalsByUnit = useMemo(() => summarizeByUnit(filtered), [filtered]);
 
-  const totalProduced = sumBy(filtered, 'produced');
-  const totalTarget = sumBy(filtered, 'target');
+  const totalProduced = totalsByUnit.reduce((sum, row) => sum + (Number(row.realized) || 0), 0);
+  const totalTarget = totalsByUnit.reduce((sum, row) => sum + (Number(row.target) || 0), 0);
   const totalScrap = sumBy(filtered, 'scrap');
   const eff = efficiency(totalProduced, totalTarget);
   const scrap = scrapRate(totalScrap, totalProduced);
@@ -104,8 +105,8 @@ export default function DailyProductionCard({
 
   // Dados para gráfico de barras na aba Geral
   const cellChartData = byCell.map((g) => ({
-    name: g.key,
-    Produzido: g.produced,
+    name: `${g.cell} (${g.unitLabel})`,
+    Produzido: g.realized,
     Meta: g.target,
   }));
 
@@ -153,8 +154,9 @@ export default function DailyProductionCard({
         {/* === ABA GERAL === */}
         <TabsContent value="general" className="mt-0">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-            <MiniKpi label="Produzido" value={totalProduced.toLocaleString('pt-BR')} />
-            <MiniKpi label="Meta" value={totalTarget.toLocaleString('pt-BR')} />
+            {totalsByUnit.slice(0, 2).map((row) => (
+              <MiniKpi key={row.metric_unit} label={`Realizado (${row.unitLabel})`} value={row.realized.toLocaleString('pt-BR')} />
+            ))}
             <MiniKpi label="Eficiência" value={eff} unit="%" color={effColor} />
             <MiniKpi
               label="Refugo"
@@ -210,12 +212,13 @@ export default function DailyProductionCard({
               {byCell.map((g) => (
                 <ProgressRow
                   key={g.key}
-                  name={g.key}
-                  produced={g.produced}
+                  name={g.cell}
+                  produced={g.realized}
                   target={g.target}
                   eff={g.efficiency}
                   scrap={g.scrapRate}
-                  highlight={kiosk && kioskCell !== 'all' && g.key === kioskCell}
+                  unitLabel={g.unitLabel}
+                  highlight={kiosk && kioskCell !== 'all' && g.cell === kioskCell}
                 />
               ))}
             </div>
@@ -233,10 +236,11 @@ export default function DailyProductionCard({
               {byShift.map((g) => (
                 <ProgressRow
                   key={g.key}
-                  name={g.key}
-                  produced={g.produced}
+                  name={`${g.shift} · ${g.cell}`}
+                  produced={g.realized}
                   target={g.target}
                   eff={g.efficiency}
+                  unitLabel={g.unitLabel}
                 />
               ))}
               {/* Mini gráfico de turnos */}

@@ -1,4 +1,5 @@
 // Funções de cálculo de produtividade
+import { buildProductionMetric, getProductionMetricRule } from '@/lib/productionUnitRules';
 
 export function efficiency(produced, target) {
   if (!target) return 0;
@@ -13,6 +14,100 @@ export function scrapRate(scrap, produced) {
 
 export function sumBy(entries, key) {
   return entries.reduce((acc, e) => acc + (Number(e[key]) || 0), 0);
+}
+
+export function difference(realized, base) {
+  return (Number(realized) || 0) - (Number(base) || 0);
+}
+
+function unitAwareKey(entry, includeShift = false) {
+  const cell = entry.cell || entry.cellName || entry.cell_name || '—';
+  const shift = entry.shift || '—';
+  const rule = getProductionMetricRule(entry);
+  return {
+    key: includeShift ? `${shift}||${cell}||${rule.unit}` : `${cell}||${rule.unit}`,
+    shift,
+    cell,
+    unit: rule.unit,
+    unitLabel: rule.unitLabel,
+    metricName: rule.metricName,
+  };
+}
+
+function addUnitAware(map, entry, includeShift = false) {
+  const ctx = unitAwareKey(entry, includeShift);
+  const metric = buildProductionMetric(entry);
+  const current = map.get(ctx.key) || {
+    key: ctx.key,
+    shift: ctx.shift,
+    cell: ctx.cell,
+    metric_unit: ctx.unit,
+    unitLabel: ctx.unitLabel,
+    metricName: ctx.metricName,
+    realized: 0,
+    target: 0,
+    capacity: 0,
+    scrap: 0,
+    downtime: 0,
+    count: 0,
+  };
+  current.realized += Number(metric.realized_quantity) || 0;
+  current.target += Number(metric.planned_target) || Number(entry.target) || 0;
+  current.capacity += Number(metric.planned_capacity) || Number(entry.planned_capacity) || 0;
+  current.scrap += Number(entry.scrap) || 0;
+  current.downtime += Number(entry.downtime) || 0;
+  current.count += 1;
+  map.set(ctx.key, current);
+}
+
+function finalizeUnitAware(list) {
+  return list.map((row) => ({
+    ...row,
+    produced: row.realized,
+    good: Math.max(row.realized - row.scrap, 0),
+    differenceTarget: difference(row.realized, row.target),
+    differenceCapacity: difference(row.realized, row.capacity),
+    efficiency: efficiency(row.realized, row.target),
+    efficiencyCapacity: efficiency(row.realized, row.capacity),
+    scrapRate: scrapRate(row.scrap, row.realized),
+  }));
+}
+
+export function groupByCellUnit(entries = []) {
+  const map = new Map();
+  entries.forEach((entry) => addUnitAware(map, entry, false));
+  return finalizeUnitAware([...map.values()]);
+}
+
+export function groupByShiftCellUnit(entries = []) {
+  const map = new Map();
+  entries.forEach((entry) => addUnitAware(map, entry, true));
+  return finalizeUnitAware([...map.values()]);
+}
+
+export function summarizeByUnit(entries = []) {
+  const map = new Map();
+  groupByCellUnit(entries).forEach((row) => {
+    const current = map.get(row.metric_unit) || {
+      key: row.metric_unit,
+      metric_unit: row.metric_unit,
+      unitLabel: row.unitLabel,
+      realized: 0,
+      target: 0,
+      capacity: 0,
+      scrap: 0,
+      downtime: 0,
+      count: 0,
+    };
+    current.realized += row.realized;
+    current.target += row.target;
+    current.capacity += row.capacity;
+    current.scrap += row.scrap;
+    current.downtime += row.downtime;
+    current.count += row.count;
+    map.set(row.metric_unit, current);
+  });
+  return finalizeUnitAware([...map.values()]);
 }
 
 // Agrupa entradas por um campo e calcula totais

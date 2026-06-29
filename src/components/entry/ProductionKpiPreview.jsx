@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { buildProductionMetric, getProductionMetricRule } from '@/lib/productionUnitRules';
 
 export default function ProductionKpiPreview({ 
   entries = [], 
@@ -34,16 +35,18 @@ export default function ProductionKpiPreview({
     let downtime = 0;
     let currentHourProduced = 0;
     let currentHourTarget = 0;
+    const rule = getProductionMetricRule({ cell: cellName });
 
     shiftEntries.forEach(e => {
-      produced += Number(e.produced) || 0;
-      target += Number(e.target) || 0;
+      const metric = buildProductionMetric(e);
+      produced += Number(metric.realized_quantity) || 0;
+      target += Number(metric.planned_target) || Number(e.target) || 0;
       scrap += Number(e.scrap) || 0;
       downtime += Number(e.downtime) || 0;
 
       if (e.hour === currentHour) {
-        currentHourProduced += Number(e.produced) || 0;
-        currentHourTarget += Number(e.target) || 0;
+        currentHourProduced += Number(metric.realized_quantity) || 0;
+        currentHourTarget += Number(metric.planned_target) || Number(e.target) || 0;
       }
     });
 
@@ -64,9 +67,10 @@ export default function ProductionKpiPreview({
       currentHourProduced,
       currentHourTarget: currentHourTargetFinal,
       hourEfficiency,
-      pending: Math.max(0, finalTarget - produced)
+      pending: Math.max(0, finalTarget - produced),
+      unitLabel: rule.unitLabel,
     };
-  }, [shiftEntries, currentHour, targetPerHour]);
+  }, [shiftEntries, currentHour, targetPerHour, cellName]);
 
   // Indicador de status geral de eficiência
   const getStatusConfig = (eff, hasTarget) => {
@@ -108,10 +112,10 @@ export default function ProductionKpiPreview({
           </div>
           <div className="mt-2.5">
             <h4 className="text-2xl font-bold text-foreground leading-none">
-              {stats.produced} <span className="text-xs text-muted-foreground font-normal">/ {stats.target}</span>
+              {stats.produced} <span className="text-xs text-muted-foreground font-normal">/ {stats.target} {stats.unitLabel}</span>
             </h4>
             <p className="text-[10px] text-muted-foreground mt-1">
-              {stats.pending > 0 ? `Faltam ${stats.pending} peças para a meta` : 'Meta batida! 🎉'}
+              {stats.pending > 0 ? `Faltam ${stats.pending} ${stats.unitLabel} para a meta` : 'Meta batida'}
             </p>
           </div>
         </CardContent>

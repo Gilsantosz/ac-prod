@@ -1,4 +1,5 @@
 import { base44 } from './localDb';
+import { buildProductionMetric } from './productionUnitRules';
 
 /**
  * Normaliza e valida um apontamento manual de produção antes de salvar.
@@ -99,6 +100,17 @@ export function processManualProductionEntry(payload, context = {}) {
 
   // 4. Calcular eficiência
   const efficiency = target > 0 ? Math.round((produced / target) * 100) : 100;
+  const metric = buildProductionMetric({
+    ...payload,
+    cell,
+    process_step,
+    operation_name: payload.operation_name || process_step,
+    produced,
+    quantity: produced,
+    target,
+    planned_target: payload.planned_target ?? target,
+    planned_capacity: payload.planned_capacity ?? payload.capacity,
+  });
 
   // 5. Preparar alertas
   const alerts = [];
@@ -150,7 +162,8 @@ export function processManualProductionEntry(payload, context = {}) {
     approval_status,
     occurrence_id,
     correction_of,
-    hours
+    hours,
+    ...metric,
   };
 
   // 6. Preparar ocorrência automática quando necessário
