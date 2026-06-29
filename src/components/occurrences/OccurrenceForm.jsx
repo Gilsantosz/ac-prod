@@ -98,10 +98,10 @@ export default function OccurrenceForm({ onSubmit, saving }) {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-5">
-        {/* Linha 1: Data, Turno, Célula, Parada */}
+        {/* Linha 1: Data e Turno */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label className="flex items-center flex-wrap gap-1">
+            <Label className="flex items-center gap-1.5 h-5">
               <span>Data</span>
               <span className="text-[10px] text-muted-foreground font-normal">(automático)</span>
             </Label>
@@ -115,7 +115,7 @@ export default function OccurrenceForm({ onSubmit, saving }) {
           </div>
 
           <div className="space-y-2">
-            <Label className="flex items-center flex-wrap gap-1">
+            <Label className="flex items-center gap-1.5 h-5">
               <span>Turno</span>
               <span className="text-[10px] text-muted-foreground font-normal">(automático)</span>
             </Label>
@@ -131,9 +131,12 @@ export default function OccurrenceForm({ onSubmit, saving }) {
               </SelectContent>
             </Select>
           </div>
+        </div>
 
+        {/* Linha 2: Célula e Parada */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label className="flex items-center flex-wrap gap-1">
+            <Label className="flex items-center gap-1.5 h-5">
               <span>Célula</span>
               {user?.cell && <span className="text-[10px] text-primary font-normal">(do perfil)</span>}
             </Label>
@@ -151,7 +154,9 @@ export default function OccurrenceForm({ onSubmit, saving }) {
           </div>
 
           <div className="space-y-2">
-            <Label>Parada (min)</Label>
+            <Label className="flex items-center gap-1.5 h-5">
+              <span>Parada (min)</span>
+            </Label>
             <Input
               type="number"
               value={data.downtime}
@@ -163,10 +168,12 @@ export default function OccurrenceForm({ onSubmit, saving }) {
           </div>
         </div>
 
-        {/* Linha 2: Motivo e Operador */}
+        {/* Linha 3: Motivo e Operador */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label>Motivo da Parada</Label>
+            <Label className="flex items-center gap-1.5 h-5">
+              <span>Motivo da Parada</span>
+            </Label>
             <Select value={data.reason} onValueChange={(v) => set('reason', v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -175,7 +182,7 @@ export default function OccurrenceForm({ onSubmit, saving }) {
             </Select>
           </div>
           <div className="space-y-2">
-            <Label className="flex items-center flex-wrap gap-1">
+            <Label className="flex items-center gap-1.5 h-5">
               <span>Operador</span>
               {user?.role !== 'admin' && user?.name && (
                 <span className="text-[10px] text-primary font-normal">(do perfil)</span>
@@ -191,7 +198,9 @@ export default function OccurrenceForm({ onSubmit, saving }) {
 
         {/* Detalhes */}
         <div className="space-y-2">
-          <Label>Detalhes</Label>
+          <Label className="flex items-center gap-1.5 h-5">
+            <span>Detalhes</span>
+          </Label>
           <Textarea
             value={data.notes}
             onChange={(e) => set('notes', e.target.value)}
