@@ -47,11 +47,11 @@ export default function OperationalLoginGate({ children }) {
 
           {/* Nome */}
           <div className="space-y-1.5">
-            <Label htmlFor="op-login-name" className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
-              <User className="w-3.5 h-3.5" /> Nome do operador (login)
+            <Label htmlFor="op-name" className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+              <User className="w-3.5 h-3.5" /> Nome do operador
             </Label>
             <Input
-              id="op-login-name"
+              id="op-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Ex: Carlos Silva"
@@ -64,17 +64,17 @@ export default function OperationalLoginGate({ children }) {
 
           {/* Matrícula */}
           <div className="space-y-1.5">
-            <Label htmlFor="op-login-reg" className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
-              <Lock className="w-3.5 h-3.5" /> Matrícula (senha operacional)
+            <Label htmlFor="op-reg" className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5" /> Matrícula
             </Label>
             <Input
-              id="op-login-reg"
+              id="op-reg"
               type="password"
               value={registration}
               onChange={(e) => setRegistration(e.target.value)}
               placeholder="Ex: 00123"
               required
-              autoComplete="off"
+              autoComplete="one-time-code"
               className="h-11 rounded-xl"
             />
           </div>
