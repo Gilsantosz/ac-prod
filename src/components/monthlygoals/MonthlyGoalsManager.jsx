@@ -56,15 +56,30 @@ export default function MonthlyGoalsManager() {
     onError: () => toast.error('Falha ao atualizar calendário'),
   });
 
-  const handleSubmit = async (payload) => {
+  const updateGoal = useMutation({
+    mutationFn: ({ id, payload }) => base44.entities.MonthlyGoal.update(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['monthlyGoals'] });
+      toast.success('Meta mensal atualizada');
+    },
+    onError: () => toast.error('Falha ao atualizar meta'),
+  });
+
+  const handleSubmit = async ({ existingId, ...payload }) => {
     setSaving(true);
-    await createGoal.mutateAsync(payload);
+    if (existingId) {
+      await updateGoal.mutateAsync({ id: existingId, payload });
+    } else {
+      await createGoal.mutateAsync(payload);
+    }
     setSaving(false);
   };
 
+
   return (
     <div className="space-y-6">
-      <MonthlyGoalForm onSubmit={handleSubmit} saving={saving} cells={activeCells} workdays={workdays} dailyPreview={dailyPreview} />
+      <MonthlyGoalForm onSubmit={handleSubmit} saving={saving} cells={activeCells} workdays={workdays} dailyPreview={dailyPreview} goals={goals} />
+
       <WorkdayCalendarEditor entries={calendar} onToggle={(date, isWorkday) => toggleDay.mutate({ date, isWorkday })} />
       <MonthlyGoalList goals={goals} onDelete={(id) => removeGoal.mutate(id)} dailyPreview={dailyPreview} />
     </div>

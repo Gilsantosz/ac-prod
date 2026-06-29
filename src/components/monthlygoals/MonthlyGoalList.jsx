@@ -15,7 +15,6 @@ export default function MonthlyGoalList({ goals = [], onDelete, dailyPreview }) 
             <TableRow>
               <TableHead>Mês</TableHead>
               <TableHead>Célula</TableHead>
-              <TableHead>Turno</TableHead>
               <TableHead className="text-right">Meta Mensal</TableHead>
               <TableHead className="text-right">Meta Diária</TableHead>
               <TableHead className="w-12"></TableHead>
@@ -23,13 +22,12 @@ export default function MonthlyGoalList({ goals = [], onDelete, dailyPreview }) 
           </TableHeader>
           <TableBody>
             {goals.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">Nenhuma meta mensal</TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">Nenhuma meta mensal</TableCell></TableRow>
             ) : (
               goals.map((g) => (
                 <TableRow key={g.id}>
                   <TableCell>{g.month}</TableCell>
                   <TableCell className="font-medium">{g.cell}</TableCell>
-                  <TableCell>{g.shift}</TableCell>
                   <TableCell className="text-right">{fmt(g.monthlyTarget)}</TableCell>
                   <TableCell className="text-right font-medium text-blue-700">{fmt(dailyPreview(g.monthlyTarget, g.month))}</TableCell>
                   <TableCell>
