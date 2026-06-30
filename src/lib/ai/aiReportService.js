@@ -104,7 +104,7 @@ export async function listReportJobs(limit = 100) {
 }
 
 export async function listScheduledReports() {
-  const { data, error } = await supabase.from('scheduled_reports').select('*').order('created_at', { ascending: false });
+  const { data, error } = await supabase.from('report_schedules').select('*').order('created_at', { ascending: false });
   if (!error) return { data: data || [], warning: '' };
   if (isAiSchemaUnavailable(error)) return { data: [], warning: 'Agendamentos estarão disponíveis após publicar a migração 013.' };
   throw error;

@@ -15,6 +15,7 @@ const COLS = [
   { key: 'lot_code', label: 'Lote' },
   { key: 'product_name', label: 'Produto' },
   { key: 'process_step', label: 'Etapa' },
+  { key: 'origin', label: 'Origem' },
   { key: 'produced', label: 'Prod' },
   { key: 'target', label: 'Meta' },
   { key: 'efficiency', label: 'Efic.' },
@@ -33,6 +34,7 @@ export function exportRecentEntriesCSV(entries, filterLabel = 'Todos') {
     lot_code: e.lot_code || '—',
     product_name: e.product_name || '—',
     process_step: e.process_step || e.cell || '—',
+    origin: e.is_rework ? 'Retrabalho' : 'Normal',
     target: e.target || '—',
     efficiency: `${efficiency(e.produced, e.target)}%`,
     scrap: e.scrap || 0,
@@ -82,9 +84,12 @@ export async function exportRecentEntriesPDF(entries, filterLabel = 'Todos') {
   doc.setTextColor(255);
   doc.setFontSize(8.5);
 
-  // printable area = 297 - 28 = 269mm. Posições X
-  const xs = [14, 46, 68, 90, 125, 160, 210, 235, 247, 259, 271];
-  const widths = [32, 22, 22, 35, 35, 50, 25, 12, 12, 12, 12];
+  // printable area = 297 - 28 = 269mm.
+  const widths = [31, 20, 20, 32, 31, 41, 22, 18, 12, 12, 12, 12];
+  const xs = widths.reduce((acc, width, index) => {
+    acc.push(index === 0 ? margin : acc[index - 1] + widths[index - 1]);
+    return acc;
+  }, []);
 
   doc.rect(margin, y - 5, pageW - margin * 2, 7, 'F');
   COLS.forEach((c, i) => {
@@ -130,8 +135,9 @@ export async function exportRecentEntriesPDF(entries, filterLabel = 'Todos') {
       const shift = String(e.shift || '—');
       const op = String(e.order_number || '—');
       const lot = String(e.lot_code || '—');
-      const product = String(e.product_name || '—').slice(0, 24);
-      const step = String(e.process_step || e.cell || '—').slice(0, 13);
+      const product = String(e.product_name || '—').slice(0, 20);
+      const step = String(e.process_step || e.cell || '—').slice(0, 10);
+      const origin = e.is_rework ? 'Retrab.' : 'Normal';
       const produced = String(e.produced);
       const target = String(e.target || '—');
       const eff = `${efficiency(e.produced, e.target)}%`;
@@ -144,11 +150,12 @@ export async function exportRecentEntriesPDF(entries, filterLabel = 'Todos') {
       doc.text(lot, xs[4] + 1, y);
       doc.text(product, xs[5] + 1, y);
       doc.text(step, xs[6] + 1, y);
+      doc.text(origin, xs[7] + 1, y);
       
-      doc.text(produced, xs[7] + widths[7] - 2, y, { align: 'right' });
-      doc.text(target, xs[8] + widths[8] - 2, y, { align: 'right' });
-      doc.text(eff, xs[9] + widths[9] - 2, y, { align: 'right' });
-      doc.text(scrap, xs[10] + widths[10] - 2, y, { align: 'right' });
+      doc.text(produced, xs[8] + widths[8] - 2, y, { align: 'right' });
+      doc.text(target, xs[9] + widths[9] - 2, y, { align: 'right' });
+      doc.text(eff, xs[10] + widths[10] - 2, y, { align: 'right' });
+      doc.text(scrap, xs[11] + widths[11] - 2, y, { align: 'right' });
 
       y += 6;
     });

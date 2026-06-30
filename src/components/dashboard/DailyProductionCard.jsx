@@ -9,6 +9,7 @@ import {
 } from 'recharts';
 import { Activity, Package, Target, TrendingUp, AlertTriangle } from 'lucide-react';
 import { efficiency, scrapRate, groupByCellUnit, groupByShiftCellUnit, summarizeByUnit, sumBy } from '@/lib/productionMetrics';
+import { useCells } from '@/hooks/useCells';
 
 // Mini KPI card interno
 function MiniKpi({ label, value, unit, color = '' }) {
@@ -74,6 +75,9 @@ export default function DailyProductionCard({
   kiosk = false,
   kioskCell = 'all',
 }) {
+  const { activeCells } = useCells();
+  const validCellNames = useMemo(() => activeCells.map(c => c.name.trim()), [activeCells]);
+
   // Seleciona aba inicial: kiosk com célula → "Por Célula"
   const initialTab = kiosk && kioskCell !== 'all' ? 'cells' : 'general';
   const [tab, setTab] = useState(initialTab);
@@ -84,9 +88,90 @@ export default function DailyProductionCard({
     else if (kiosk && kioskCell === 'all') setTab('general');
   }, [kiosk, kioskCell]);
 
-  const byCell = useMemo(() => groupByCellUnit(filtered), [filtered]);
-  const byShift = useMemo(() => groupByShiftCellUnit(filtered), [filtered]);
-  const totalsByUnit = useMemo(() => summarizeByUnit(filtered), [filtered]);
+  const byCell = useMemo(() => {
+    const grouped = groupByCellUnit(filtered);
+    const result = [...grouped];
+    validCellNames.forEach(cellName => {
+      if (!grouped.some(g => (g.cell || '').toLowerCase().trim() === cellName.toLowerCase().trim())) {
+        result.push({
+          key: cellName,
+          cell: cellName,
+          realized: 0,
+          target: 0,
+          capacity: 0,
+          scrap: 0,
+          downtime: 0,
+          count: 0,
+          produced: 0,
+          good: 0,
+          differenceTarget: 0,
+          differenceCapacity: 0,
+          efficiency: 0,
+          efficiencyCapacity: 0,
+          scrapRate: 0,
+          unitLabel: 'peças'
+        });
+      }
+    });
+    return result;
+  }, [filtered, validCellNames]);
+
+  const byShift = useMemo(() => {
+    const grouped = groupByShiftCellUnit(filtered);
+    const result = [...grouped];
+    const shifts = ['1º Turno', '2º Turno', '3º Turno'];
+    shifts.forEach(shift => {
+      validCellNames.forEach(cellName => {
+        const key = `${shift} · ${cellName}`;
+        if (!grouped.some(g => g.shift === shift && (g.cell || '').toLowerCase().trim() === cellName.toLowerCase().trim())) {
+          result.push({
+            key,
+            shift,
+            cell: cellName,
+            realized: 0,
+            target: 0,
+            capacity: 0,
+            scrap: 0,
+            downtime: 0,
+            count: 0,
+            produced: 0,
+            good: 0,
+            differenceTarget: 0,
+            differenceCapacity: 0,
+            efficiency: 0,
+            efficiencyCapacity: 0,
+            scrapRate: 0,
+            unitLabel: 'peças'
+          });
+        }
+      });
+    });
+    return result;
+  }, [filtered, validCellNames]);
+
+  const totalsByUnit = useMemo(() => {
+    const list = summarizeByUnit(filtered);
+    if (!list.length) {
+      return [{
+        metric_unit: 'pieces',
+        unitLabel: 'peças',
+        realized: 0,
+        target: 0,
+        capacity: 0,
+        scrap: 0,
+        downtime: 0,
+        count: 0,
+        produced: 0,
+        good: 0,
+        differenceTarget: 0,
+        differenceCapacity: 0,
+        efficiency: 0,
+        efficiencyCapacity: 0,
+        scrapRate: 0
+      }];
+    }
+    return list;
+  }, [filtered]);
 
   const totalProduced = totalsByUnit.reduce((sum, row) => sum + (Number(row.realized) || 0), 0);
   const totalTarget = totalsByUnit.reduce((sum, row) => sum + (Number(row.target) || 0), 0);
@@ -109,8 +194,6 @@ export default function DailyProductionCard({
     Produzido: g.realized,
     Meta: g.target,
   }));
-
-  if (!filtered.length) return null;
 
   return (
     <Card className="p-5 border-border/60">

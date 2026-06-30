@@ -78,6 +78,36 @@ describe('traceabilityService', () => {
     expect(result.status).toBe('blocked');
   });
 
+  it('aprova recoleta de peça liberada para retrabalho e marca a origem', async () => {
+    const items = structuredClone(productionItemsFixture);
+    items[0].status = 'rework';
+    items[0].last_rejection_reading_id = 'reading-rejected-001';
+    items[0].last_rejection_reason = 'Falha de acabamento';
+
+    const repository = createTraceabilityTestRepository({
+      items,
+      readings: [{
+        id: 'reading-original-001',
+        item_id: items[0].id,
+        tag_value: items[0].barcode,
+        step_name: 'Corte',
+        status: 'pending_review',
+        created_at: '2026-06-19T10:55:00.000Z',
+      }],
+    });
+
+    const result = await processProductionReading(validReadingFixture, { repository, now: testNow });
+
+    expect(result).toMatchObject({ success: true, status: 'approved' });
+    expect(result.reading).toMatchObject({
+      is_rework: true,
+      rework_of_reading_id: 'reading-rejected-001',
+      rework_reason: 'Falha de acabamento',
+    });
+    expect(result.item.status).toBe('in_progress');
+    expect(result.item.current_step).toBe('Marcenaria');
+  });
+
   it('não baixa novamente uma peça finalizada', async () => {
     const items = structuredClone(productionItemsFixture);
     items[0].status = 'completed';

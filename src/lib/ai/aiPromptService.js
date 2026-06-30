@@ -2,7 +2,7 @@ import { fetchAiContext } from './aiContextService';
 import { analyzeProductionContext, formatInsightAnswer } from './aiInsightService';
 import { normalizeText } from '@/lib/assistant/assistantEngine';
 import { recordAiRequest } from './aiAuditService';
-import { executeOperationalCommand, parseOperationalCommand } from './aiOperationalCommandService';
+import { routeAction } from './aiActionRouter';
 
 function filtersFromQuestion(question) {
   const normalized = normalizeText(question);
@@ -27,19 +27,24 @@ function filtersFromQuestion(question) {
 
 export function isOperationalAiQuestion(question) {
   const text = normalizeText(question);
-  return /\b(relatorio|resumo executivo|comparar celula|desempenho|analise|insight|produtividade|gargalo|ia operacional|copilot)\b/.test(text);
+  return /\b(relatorio|resumo executivo|comparar celula|desempenho|analise|insight|produtividade|gargalo|ia operacional|copilot|envie|enviar|mande|mandar|agenda|agendar|agendamento|cancele|cancelar|logs)\b/.test(text);
 }
 
-export async function askOperationalCopilot(question, { user }) {
+export async function askOperationalCopilot(question, { user, conversationContext }) {
   const started = performance.now();
-  const normalized = normalizeText(question);
-  if (parseOperationalCommand(question)) {
-    return executeOperationalCommand(question, { user });
-  }
-  if (/\b(relatorio|pdf|excel|csv|enviar por email|agendar)\b/.test(normalized)) {
-    const content = 'Posso montar, exportar, enviar e agendar esse relatório na área IA Operacional. Os filtros e destinatários ficam registrados para auditoria.';
-    await recordAiRequest({ user, requestType: 'navigation', prompt: question, intent: 'report_request', responseSummary: content, sourceTables: [], durationMs: Math.round(performance.now() - started) });
-    return { content, actions: [{ label: 'Abrir IA Operacional', path: '/ia-operacional' }] };
+  
+  const actionResult = await routeAction(question, { user, conversationContext });
+  if (actionResult) {
+    await recordAiRequest({
+      user,
+      requestType: actionResult.pendingAction ? 'question' : 'report',
+      prompt: question,
+      intent: actionResult.context?.command?.action || 'operational_command',
+      filters: actionResult.context?.command?.filters || {},
+      responseSummary: actionResult.content,
+      durationMs: Math.round(performance.now() - started),
+    });
+    return actionResult;
   }
 
   const filters = filtersFromQuestion(question);

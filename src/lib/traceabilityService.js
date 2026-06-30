@@ -164,6 +164,7 @@ export function buildOccurrenceFromRejectedReading(payload = {}) {
 }
 
 function buildReading(clean, match, status, routeStep, now) {
+  const isRework = clean.isRework || clean.is_rework || match.item?.status === 'rework';
   return {
     id: clean.readingId || `reading-${now.getTime()}`,
     tag_id: match.tag?.id || null,
@@ -182,6 +183,9 @@ function buildReading(clean, match, status, routeStep, now) {
     step_name: routeStep?.step_name || clean.stepName || match.item?.current_step || null,
     quantity: clean.quantity,
     status,
+    is_rework: Boolean(isRework),
+    rework_of_reading_id: clean.reworkOfReadingId || clean.rework_of_reading_id || match.item?.last_rejection_reading_id || null,
+    rework_reason: clean.reworkReason || clean.rework_reason || match.item?.last_rejection_reason || null,
     created_at: now.toISOString(),
   };
 }
@@ -319,24 +323,36 @@ export async function registerTraceabilityRejection(payload) {
 }
 
 export async function fetchRecentReadings(params = {}) {
-  const limit = typeof params === 'number' ? params : (params.limit || 30);
+  const limit = typeof params === 'number'
+    ? params
+    : (params.limit === null || params.limit === 'all' ? null : (params.limit || 30));
   const cellName = typeof params === 'object' ? params.cellName : null;
   const date = typeof params === 'object' ? params.date : null;
+  const lotId = typeof params === 'object' ? params.lotId : null;
+  const machineId = typeof params === 'object' ? params.machineId : null;
 
   let query = supabase
     .from('production_stage_readings')
     .select('*');
     
-  if (cellName) {
-    query = query.eq('cell_name', cellName);
-  }
-  if (date) {
-    query = query.eq('date', date);
+  if (lotId) {
+    query = query.eq('lot_id', lotId);
+  } else {
+    if (cellName) {
+      query = query.eq('cell_name', cellName);
+    }
+    if (date) {
+      query = query.eq('date', date);
+    }
+    if (machineId) {
+      query = query.eq('machine_id', machineId);
+    }
   }
 
-  const { data, error } = await query
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  query = query.order('created_at', { ascending: false });
+  if (limit !== null) query = query.limit(limit);
+
+  const { data, error } = await query;
   if (error) throw error;
   return data || [];
 }
@@ -348,6 +364,38 @@ export async function fetchCollectionKpis(params = {}) {
   const lotId = typeof params === 'object' ? params.lotId : null;
   const loadNumber = typeof params === 'object' ? params.loadNumber : null;
   const orderNumber = typeof params === 'object' ? params.orderNumber : null;
+  const machineId = typeof params === 'object' ? params.machineId : null;
+
+  // Tentativa de buscar via contadores em tempo real para alta performance
+  try {
+    let query = supabase.from('production_realtime_counters').select('*').eq('date', date);
+    if (cellName) query = query.eq('cell_name', cellName);
+    if (lotId) query = query.eq('lot_id', lotId);
+    if (machineId) query = query.eq('machine_id', machineId);
+    if (loadNumber) query = query.eq('load_number', loadNumber);
+    if (orderNumber) query = query.eq('order_number', orderNumber);
+
+    const { data, error } = await query;
+    if (!error && data && data.length > 0) {
+      const planned = data.reduce((sum, row) => sum + (Number(row.planned_quantity) || 0), 0);
+      const approved = data.reduce((sum, row) => sum + (Number(row.approved_quantity) || 0), 0);
+      const rejected = data.reduce((sum, row) => sum + (Number(row.rejected_quantity) || 0), 0);
+      const blocked = data.reduce((sum, row) => sum + (Number(row.blocked_quantity) || 0), 0);
+      const pending = data.reduce((sum, row) => sum + (Number(row.pending_quantity) || 0), 0);
+
+      return {
+        total: planned > 0 ? planned : (approved + rejected + blocked),
+        planned,
+        approved,
+        rejected,
+        blocked,
+        pending,
+        progressPercent: planned > 0 ? Math.min(Math.round((approved / planned) * 100), 100) : 0
+      };
+    }
+  } catch (e) {
+    console.warn('[Traceability Service] Falha ao consultar contadores rápidos, caindo para fallback histórico:', e);
+  }
 
   if (lotId || loadNumber || orderNumber) {
     let query = supabase.from('production_cell_progress').select('*');
@@ -400,4 +448,39 @@ export async function fetchCollectionKpis(params = {}) {
     blocked,
     pending: 0
   };
+}
+
+export async function fetchRealtimeCounters(params = {}) {
+  const date = params.date || new Date().toISOString().slice(0, 10);
+  let query = supabase
+    .from('production_realtime_counters')
+    .select('*')
+    .eq('date', date);
+
+  if (params.cellName) {
+    query = query.eq('cell_name', params.cellName);
+  }
+  if (params.machineId) {
+    query = query.eq('machine_id', params.machineId);
+  }
+  if (params.lotId) {
+    query = query.eq('lot_id', params.lotId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
+
+export async function fetchProductionMachines(cellName) {
+  let query = supabase
+    .from('production_machines')
+    .select('*')
+    .eq('active', true);
+  if (cellName) {
+    query = query.eq('cell_name', cellName);
+  }
+  const { data, error } = await query.order('name');
+  if (error) throw error;
+  return data || [];
 }

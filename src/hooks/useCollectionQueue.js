@@ -3,23 +3,46 @@ import {
   enqueueCollectionEvent,
   flushCollectionQueue,
   getQueueStats,
+  getQueueStatsByCellMachine,
   processCollectionEvent,
   retryErrors,
+  recoverStaleProcessingEvents,
 } from '@/lib/collectionEventQueue';
 
 /**
  * Hook que encapsula a fila de eventos de coleta em estado React.
  * @param {function} processFn — função que processa um evento e o persiste no Supabase
+ * @param {object} options — opções de filtro (cellName, machineId)
  */
-export function useCollectionQueue(processFn) {
-  const [stats, setStats] = useState({ total: 0, pending: 0, processing: 0, synced: 0, error: 0 });
+export function useCollectionQueue(processFn, options = {}) {
+  const { cellName, machineId } = options;
+  const [stats, setStats] = useState({
+    total: 0,
+    pending: 0,
+    processing: 0,
+    synced: 0,
+    error: 0,
+    hasStalePending: false,
+    hasSlowEnqueue: false,
+  });
   const [flushing, setFlushing] = useState(false);
   const processFnRef = useRef(processFn);
   processFnRef.current = processFn;
 
   const refreshStats = useCallback(async () => {
-    const s = await getQueueStats();
+    const s = (cellName || machineId)
+      ? await getQueueStatsByCellMachine(cellName, machineId)
+      : await getQueueStats();
     setStats(s);
+  }, [cellName, machineId]);
+
+  // Recuperação de processamento travado periódico
+  useEffect(() => {
+    recoverStaleProcessingEvents();
+    const interval = setInterval(() => {
+      recoverStaleProcessingEvents();
+    }, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   // Escuta eventos de mudança da fila
@@ -45,6 +68,7 @@ export function useCollectionQueue(processFn) {
     if (flushing || !navigator.onLine) return;
     setFlushing(true);
     try {
+      await recoverStaleProcessingEvents(); // recuperar antes do flush
       await flushCollectionQueue(processFnRef.current);
     } finally {
       setFlushing(false);
@@ -52,10 +76,10 @@ export function useCollectionQueue(processFn) {
     }
   }, [flushing, refreshStats]);
 
-  const enqueue = useCallback(async (payload, options = {}) => {
+  const enqueue = useCallback(async (payload, enqueueOpts = {}) => {
     const id = await enqueueCollectionEvent(payload);
     await refreshStats();
-    if (navigator.onLine && options.autoFlush !== false) {
+    if (navigator.onLine && enqueueOpts.autoFlush !== false) {
       flush();
     }
     return id;

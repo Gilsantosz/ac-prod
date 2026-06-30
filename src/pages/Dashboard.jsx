@@ -34,8 +34,9 @@ import { usePerformanceAlert } from '@/hooks/usePerformanceAlert';
 import { useEfficiencyDropAlert } from '@/hooks/useEfficiencyDropAlert';
 import DailyProductionCard from '@/components/dashboard/DailyProductionCard';
 import DashboardLayoutSettings from '@/components/dashboard/DashboardLayoutSettings';
+import RealtimeCellProgressPanel from '@/components/dashboard/RealtimeCellProgressPanel';
 
-const PANEL_IDS = ['monthlyTracker', 'dailyProduction', 'charts', 'weeklyRanking', 'effDrop', 'goalProgress', 'goalProjection', 'weeklyTrend', 'highPerformers'];
+const PANEL_IDS = ['realtimeProgress', 'monthlyTracker', 'dailyProduction', 'charts', 'weeklyRanking', 'effDrop', 'goalProgress', 'goalProjection', 'weeklyTrend', 'highPerformers'];
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
@@ -68,6 +69,8 @@ export default function Dashboard() {
     queryKey: ['production'],
     queryFn: () => base44.entities.ProductionEntry.list('-date', 5000),
     initialData: [],
+    staleTime: 0,
+    refetchOnMount: true,
   });
 
   const { data: goals = [] } = useQuery({
@@ -77,29 +80,34 @@ export default function Dashboard() {
   });
 
   const { activeCells } = useCells();
-  const validCellNames = useMemo(() => activeCells.map(c => c.name), [activeCells]);
+  const validCellNames = useMemo(() => activeCells.map(c => c.name.trim()), [activeCells]);
 
   const cells = useMemo(() => validCellNames, [validCellNames]);
+
 
   const { kiosk, toggleKiosk } = useKiosk();
   const [kioskCell, setKioskCell] = useState('all');
   const [rotating, setRotating] = useState(false);
 
   // Garante uma célula válida selecionada ao entrar no quiosque
+  // Inicia com 'all' para mostrar dados consolidados de todas as células
   useEffect(() => {
-    if (kiosk && cells.length && !cells.includes(kioskCell)) setKioskCell(cells[0]);
+    if (kiosk && kioskCell !== 'all' && cells.length && !cells.includes(kioskCell)) setKioskCell('all');
     if (!kiosk) { setKioskCell('all'); setRotating(false); }
-  }, [kiosk, cells]);  
+  }, [kiosk, kioskCell, cells]);
+
 
   const activeCell = kiosk && kioskCell !== 'all' ? kioskCell : filters.cell;
 
   const filtered = useMemo(() => all.filter((e) => {
-    if (!validCellNames.includes(e.cell)) return false;
+    const eCell = (e.cell || '').trim();
+    if (!validCellNames.includes(eCell)) return false;
     if (filters.date && e.date !== filters.date) return false;
     if (filters.shift !== 'all' && e.shift !== filters.shift) return false;
-    if (activeCell !== 'all' && e.cell !== activeCell) return false;
+    if (activeCell !== 'all' && eCell !== activeCell) return false;
     return true;
   }), [all, filters, activeCell, validCellNames]);
+
 
   const totalProduced = sumBy(filtered, 'produced');
   const totalTarget = sumBy(filtered, 'target');
@@ -107,9 +115,28 @@ export default function Dashboard() {
   const eff = efficiency(totalProduced, totalTarget);
   const critCount = filtered.filter(isCritical).length;
 
-  const byHour = groupBy(filtered, 'hour');
-  const byShift = groupBy(filtered, 'shift');
-  const byCell = groupBy(filtered, 'cell');
+  const byHour = useMemo(() => groupBy(filtered, 'hour'), [filtered]);
+  const byShift = useMemo(() => {
+    const grouped = groupBy(filtered, 'shift');
+    const result = [...grouped];
+    const shifts = ['1º Turno', '2º Turno', '3º Turno'];
+    shifts.forEach(shiftName => {
+      if (!grouped.some(g => g.key === shiftName)) {
+        result.push({ key: shiftName, produced: 0, target: 0, scrap: 0, downtime: 0, count: 0, efficiency: 0, scrapRate: 0 });
+      }
+    });
+    return result;
+  }, [filtered]);
+  const byCell = useMemo(() => {
+    const grouped = groupBy(filtered, 'cell');
+    const result = [...grouped];
+    cells.forEach(cellName => {
+      if (!grouped.some(g => g.key.toLowerCase().trim() === cellName.toLowerCase().trim())) {
+        result.push({ key: cellName, produced: 0, target: 0, scrap: 0, downtime: 0, count: 0, efficiency: 0, scrapRate: 0 });
+      }
+    });
+    return result;
+  }, [filtered, cells]);
   const performers = useMemo(() => highPerformers(filtered, 95), [filtered]);
   const projection = useMemo(() => projectGoal(filtered, 3), [filtered]);
   const effDrop = useMemo(() => detectEfficiencyDrop(filtered, 3, 10), [filtered]);
@@ -170,7 +197,7 @@ export default function Dashboard() {
         return { cell: g.cell, shift: g.shift, target: Number(g.target) || 0, produced };
       })
       .filter((it) => it.target > 0);
-  }, [goals, filtered, filters]);
+  }, [goals, filtered, filters, validCellNames]);
 
   usePerformanceAlert(performers);
   useEfficiencyDropAlert(effDrop);
@@ -190,8 +217,9 @@ export default function Dashboard() {
   const { order, hidden, sizes, reorder, toggleHidden, toggleSize } = useDashboardLayout(PANEL_IDS);
 
   const panels = useMemo(() => [
+    { id: 'realtimeProgress', title: 'Produção em Tempo Real', node: <RealtimeCellProgressPanel date={filters.date} kioskCell={kioskCell} filterCell={kiosk ? kioskCell : filters.cell} /> },
     { id: 'monthlyTracker', title: 'Acompanhamento Mensal', node: <MonthlyGoalTracker tracking={monthlyTracking} cellTrackings={cellMonthlyTrackings} /> },
-    { id: 'dailyProduction', title: 'Produção Diária', node: <DailyProductionCard entries={filtered} goals={goals} kioskCell={kiosk ? kioskCell : null} /> },
+    { id: 'dailyProduction', title: 'Produção Diária', node: <DailyProductionCard filtered={filtered} kiosk={kiosk} kioskCell={kioskCell} /> },
     { id: 'weeklyRanking', title: 'Ranking Semanal', node: <WeeklyRankingPanel ranking={ranking} /> },
     { id: 'effDrop', title: 'Alerta de Eficiência', node: <EfficiencyAlert alert={effDrop} /> },
     { id: 'goalProgress', title: 'Progresso do Turno', node: <GoalProgressPanel items={goalProgress} /> },
@@ -214,7 +242,7 @@ export default function Dashboard() {
         </div>
       ),
     },
-  ], [monthlyTracking, ranking, effDrop, goalProgress, projection, weeklyTrend, weeklyTrendLabel, performers, byHour, byShift, byCell, kiosk]);
+  ], [filters.date, filters.cell, monthlyTracking, cellMonthlyTrackings, ranking, effDrop, goalProgress, projection, weeklyTrend, weeklyTrendLabel, performers, byHour, byShift, byCell, kiosk, kioskCell, filtered]);
 
   return (
     <div className={kiosk ? 'p-4 space-y-4' : 'p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6'}>
@@ -298,18 +326,9 @@ export default function Dashboard() {
         <KpiCard index={3} title="Falhas Críticas" value={critCount} icon={AlertTriangle} accent={critCount ? 'danger' : 'accent'} />
       </div>
 
-      {filtered.length === 0 ? (
-        <div key="no-data" className="space-y-6">
-          <MonthlyGoalTracker tracking={monthlyTracking} cellTrackings={cellMonthlyTrackings} />
-          <div className="text-center py-20 text-muted-foreground border border-dashed border-border rounded-2xl">
-            Nenhum dado para os filtros selecionados. Registre produção na aba "Entrada de Produção".
-          </div>
-        </div>
-      ) : (
-        <div key="sortable-panels">
-          <SortablePanels panels={panels} order={order} sizes={sizes} onReorder={reorder} onToggleHide={toggleHidden} onToggleSize={toggleSize} />
-        </div>
-      )}
+      <div key="sortable-panels">
+        <SortablePanels panels={panels} order={order} sizes={sizes} onReorder={reorder} onToggleHide={toggleHidden} onToggleSize={toggleSize} />
+      </div>
     </div>
   );
 }

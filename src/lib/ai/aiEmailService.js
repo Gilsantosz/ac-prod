@@ -69,3 +69,15 @@ export async function sendReportEmail({ reportJobId, recipientIds, templateCode,
   if (!data?.success) throw new Error(data?.error || data?.message || 'O envio não foi concluído.');
   return data;
 }
+
+export async function sendReportEmailSmart({ reportJobId, recipientIds = [], directRecipients = [], templateCode, subject, message, user }) {
+  if (!recipientIds?.length && !directRecipients?.length) {
+    throw new Error('Selecione pelo menos um destinatário.');
+  }
+  const { data, error } = await supabase.functions.invoke('send-report-email', {
+    body: { reportJobId, recipientIds, directRecipients, templateCode, subject, message },
+  });
+  if (error) throw new Error(await getFunctionErrorMessage(error, 'O serviço de e-mail não respondeu.'));
+  if (!data?.success) throw new Error(data?.error || data?.message || 'O envio não foi concluído.');
+  return data;
+}

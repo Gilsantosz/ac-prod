@@ -5,7 +5,7 @@ import ScannerModeSelector from './ScannerModeSelector';
 import MobileCameraScanner from './MobileCameraScanner';
 import RfidReadinessPanel from './RfidReadinessPanel';
 
-export default function TraceabilityScannerPanel({ mode, onModeChange, onRead, loading, feedback, cellName, shift, operator }) {
+export default function TraceabilityScannerPanel({ mode, onModeChange, onRead, loading, feedback, cellName, shift, operator, machine }) {
   const [value, setValue] = useState('');
   const inputRef = useRef(null);
   const submittingRef = useRef(false);
@@ -42,13 +42,15 @@ export default function TraceabilityScannerPanel({ mode, onModeChange, onRead, l
         stationName: cellName,
         operator,
         shift,
+        machineId: machine?.id || null,
+        machineName: machine?.name || null,
       });
       setValue('');
     } finally {
       submittingRef.current = false;
       if (mode === 'scanner') setTimeout(() => inputRef.current?.focus(), 40);
     }
-  }, [cellName, contextReady, loading, mode, onRead, operator, shift, value]);
+  }, [cellName, contextReady, loading, mode, onRead, operator, shift, value, machine]);
 
   useEffect(() => {
     if (mode !== 'scanner' || !contextReady || loading || value.trim().length < 3) return undefined;
@@ -62,7 +64,9 @@ export default function TraceabilityScannerPanel({ mode, onModeChange, onRead, l
     stationName: '',
     operator,
     shift,
-  }), [onRead, cellName, operator, shift]);
+    machineId: machine?.id || null,
+    machineName: machine?.name || null,
+  }), [onRead, cellName, operator, shift, machine]);
 
   return (
     <div className="bg-card border border-border rounded-md p-4 sm:p-5 space-y-5">
@@ -119,7 +123,7 @@ export default function TraceabilityScannerPanel({ mode, onModeChange, onRead, l
 
       <div className="flex items-start gap-2 text-xs text-muted-foreground border-t border-border pt-3">
         <Info className="w-4 h-4 shrink-0" />
-        <span>Célula: <strong className="text-foreground">{cellName || 'não selecionada'}</strong> · Turno: <strong className="text-foreground">{shift || 'não informado'}</strong> · Operador: <strong className="text-foreground">{operator || 'não informado'}</strong></span>
+        <span>Célula: <strong className="text-foreground">{cellName || 'não selecionada'}</strong>{machine && <> · Máquina: <strong className="text-foreground">{machine.name}</strong></>} · Turno: <strong className="text-foreground">{shift || 'não informado'}</strong> · Operador: <strong className="text-foreground">{operator || 'não informado'}</strong></span>
       </div>
     </div>
   );

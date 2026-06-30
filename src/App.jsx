@@ -29,9 +29,11 @@ import PromobIntegration from '@/pages/PromobIntegration';
 import SystemLogs from '@/pages/SystemLogs';
 import DownloadsBackups from '@/pages/DownloadsBackups';
 import AiOperations from '@/pages/AiOperations';
+import { useProductionRealtimeSync } from '@/hooks/useProductionRealtimeSync';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, authError, navigateToLogin } = useAuth();
+  useProductionRealtimeSync({ enabled: !isLoadingAuth && !authError });
 
   // Show loading spinner while checking auth
   if (isLoadingAuth) {

@@ -2,7 +2,7 @@
 import { buildProductionMetric, getProductionMetricRule } from '@/lib/productionUnitRules';
 
 export function efficiency(produced, target) {
-  if (!target) return 0;
+  if (!target) return produced > 0 ? 100 : 0;
   return Math.round((produced / target) * 100);
 }
 
@@ -12,8 +12,16 @@ export function scrapRate(scrap, produced) {
   return Math.round(((scrap || 0) / total) * 1000) / 10;
 }
 
+export function isValidProductionEntry(entry = {}) {
+  return !entry.approval_status || entry.approval_status === 'valid';
+}
+
+function validProductionEntries(entries = []) {
+  return (entries || []).filter(isValidProductionEntry);
+}
+
 export function sumBy(entries, key) {
-  return entries.reduce((acc, e) => acc + (Number(e[key]) || 0), 0);
+  return validProductionEntries(entries).reduce((acc, e) => acc + (Number(e[key]) || 0), 0);
 }
 
 export function difference(realized, base) {
@@ -75,13 +83,13 @@ function finalizeUnitAware(list) {
 
 export function groupByCellUnit(entries = []) {
   const map = new Map();
-  entries.forEach((entry) => addUnitAware(map, entry, false));
+  validProductionEntries(entries).forEach((entry) => addUnitAware(map, entry, false));
   return finalizeUnitAware([...map.values()]);
 }
 
 export function groupByShiftCellUnit(entries = []) {
   const map = new Map();
-  entries.forEach((entry) => addUnitAware(map, entry, true));
+  validProductionEntries(entries).forEach((entry) => addUnitAware(map, entry, true));
   return finalizeUnitAware([...map.values()]);
 }
 
@@ -113,7 +121,7 @@ export function summarizeByUnit(entries = []) {
 // Agrupa entradas por um campo e calcula totais
 export function groupBy(entries, field) {
   const map = {};
-  entries.forEach((e) => {
+  validProductionEntries(entries).forEach((e) => {
     const k = e[field] || '—';
     if (!map[k]) map[k] = { key: k, produced: 0, target: 0, scrap: 0, downtime: 0, count: 0 };
     map[k].produced += Number(e.produced) || 0;
@@ -210,11 +218,12 @@ export function detectEfficiencyDrop(entries, lastHours = 3, minDropPct = 10) {
 export function monthlyGoalTracking(entries, goals, now = new Date()) {
   const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const inMonth = (d) => typeof d === 'string' && d.startsWith(ym);
+  const validEntries = validProductionEntries(entries);
 
-  const produced = entries.filter((e) => inMonth(e.date)).reduce((a, e) => a + (Number(e.produced) || 0), 0);
+  const produced = validEntries.filter((e) => inMonth(e.date)).reduce((a, e) => a + (Number(e.produced) || 0), 0);
   // meta mensal = soma das metas diárias definidas no mês; fallback para metas das entradas
   let target = goals.filter((g) => inMonth(g.date)).reduce((a, g) => a + (Number(g.target) || 0), 0);
-  if (!target) target = entries.filter((e) => inMonth(e.date)).reduce((a, e) => a + (Number(e.target) || 0), 0);
+  if (!target) target = validEntries.filter((e) => inMonth(e.date)).reduce((a, e) => a + (Number(e.target) || 0), 0);
   if (!target) return null;
 
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
@@ -247,7 +256,7 @@ export function monthlyGoalTracking(entries, goals, now = new Date()) {
 // Retorna uma lista de alertas (uma por célula em estado crítico sustentado).
 export function detectSustainedLowEfficiency(entries, minEff = 70, minHours = 3) {
   const byCell = {};
-  entries.forEach((e) => {
+  validProductionEntries(entries).forEach((e) => {
     if (!e.cell || !e.hour || !(Number(e.target) > 0)) return;
     const k = e.cell;
     if (!byCell[k]) byCell[k] = {};
@@ -303,7 +312,7 @@ export function efficiencyTrend(entries, cell = 'all', days = 7, endDate = new D
     d.setDate(end.getDate() - i);
     const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const dayEntries = entries.filter(
-      (e) => e.date === iso && (cell === 'all' || e.cell === cell)
+      (e) => isValidProductionEntry(e) && e.date === iso && (cell === 'all' || e.cell === cell)
     );
     const produced = sumBy(dayEntries, 'produced');
     const target = sumBy(dayEntries, 'target');

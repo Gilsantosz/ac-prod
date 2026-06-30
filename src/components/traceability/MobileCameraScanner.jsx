@@ -9,6 +9,7 @@ export default function MobileCameraScanner({ active, onDetected, onManual, feed
   const videoRef = useRef(null);
   const adapterRef = useRef(null);
   const processingRef = useRef(false);
+  // Controla o fluxo de leitura ótica por webcam/câmera móvel
   const [permission, setPermission] = useState('idle');
   const [message, setMessage] = useState('');
   const [paused, setPaused] = useState(false);

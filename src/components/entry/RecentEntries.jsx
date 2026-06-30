@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/table';
 import { 
   Trash2, AlertTriangle, ChevronDown, Clock, Filter, 
-  ShieldAlert, FileSpreadsheet, FileText,
+  ShieldAlert, FileSpreadsheet, FileText, RotateCcw,
 } from 'lucide-react';
 import { efficiency, isCritical, scrapRate } from '@/lib/productionMetrics';
 import { useAuth } from '@/lib/AuthContext';
@@ -288,6 +288,7 @@ export default function RecentEntries({ entries = [], onDelete = null, onCorrect
                   <TableCell className="text-xs">
                     <div className="flex flex-wrap gap-1">
                       {renderAuditBadge(e.approval_status)}
+                      {e.is_rework && <Badge className="bg-amber-500/10 text-amber-700 border border-amber-500/20 hover:bg-amber-500/10 text-[9px] gap-0.5 px-1 py-0 h-4"><RotateCcw className="w-2.5 h-2.5" /> Retrabalho</Badge>}
                       {limitedTraceability && <Badge variant="outline" className="text-[9px] border-amber-300 text-amber-700 dark:text-amber-400">Limitada</Badge>}
                       {crit && <Badge variant="destructive" className="text-[9px] gap-0.5 px-1 py-0 h-4"><AlertTriangle className="w-2.5 h-2.5" /> Crítico</Badge>}
                       {belowTarget && !e.approval_status && (

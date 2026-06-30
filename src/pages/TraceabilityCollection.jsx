@@ -23,6 +23,7 @@ import {
   fetchRecentReadings,
   processProductionReading,
   registerTraceabilityRejection,
+  fetchProductionMachines,
 } from '@/lib/traceabilityService';
 import { registerReadingOccurrence } from '@/lib/productionHistoryService';
 
@@ -33,13 +34,82 @@ function currentShift() {
   return '3º Turno';
 }
 
+function isClosedLotContext(feedback) {
+  const closedStatuses = new Set(['completed', 'shipped', 'cancelled', 'closed']);
+  return closedStatuses.has(feedback?.lot?.current_status) || closedStatuses.has(feedback?.lot?.status);
+}
+
 export default function TraceabilityCollection({ embedded = false }) {
   const { user } = useAuth();
   const { session: opSession } = useOperatorSession();
   const { activeCells, isLoading: cellsLoading } = useCells();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState('scanner');
-  const [feedback, setFeedback] = useState(null);
+  const [feedback, setFeedback] = useState(() => {
+    try {
+      const saved = localStorage.getItem('traceability-last-feedback');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (isClosedLotContext(parsed)) {
+          return null;
+        }
+        return parsed;
+      }
+    } catch (_) {}
+    return null;
+  });
+
+  const updateFeedback = useCallback((newFeedback) => {
+    if (isClosedLotContext(newFeedback)) {
+      setFeedback(null);
+      try { localStorage.removeItem('traceability-last-feedback'); } catch (_) {}
+      return;
+    }
+    setFeedback(newFeedback);
+    if (newFeedback) {
+      try {
+        // Salvar apenas os campos essenciais para evitar circular references
+        const toSave = {
+          success: newFeedback.success,
+          status: newFeedback.status,
+          message: newFeedback.message,
+          lot: newFeedback.lot ? {
+            id: newFeedback.lot.id,
+            lot_code: newFeedback.lot.lot_code,
+            current_status: newFeedback.lot.current_status,
+            status: newFeedback.lot.status,
+          } : null,
+          item: newFeedback.item ? {
+            id: newFeedback.item.id,
+            item_code: newFeedback.item.item_code,
+            current_step: newFeedback.item.current_step,
+            status: newFeedback.item.status,
+          } : null,
+          route: newFeedback.route ? {
+            id: newFeedback.route.id,
+            step_name: newFeedback.route.step_name,
+            cell_name: newFeedback.route.cell_name,
+            step_order: newFeedback.route.step_order,
+          } : null,
+          reading: newFeedback.reading ? {
+            id: newFeedback.reading.id,
+            tag_id: newFeedback.reading.tag_id,
+            tag_value: newFeedback.reading.tag_value,
+            reader_type: newFeedback.reading.reader_type,
+            station_name: newFeedback.reading.station_name,
+            cell_name: newFeedback.reading.cell_name,
+            operator: newFeedback.reading.operator,
+            status: newFeedback.reading.status,
+            is_rework: newFeedback.reading.is_rework,
+          } : null,
+        };
+        localStorage.setItem('traceability-last-feedback', JSON.stringify(toSave));
+      } catch (_) {}
+    } else {
+      try { localStorage.removeItem('traceability-last-feedback'); } catch (_) {}
+    }
+  }, []);
+
   const [rejectionOpen, setRejectionOpen] = useState(false);
   const [rejecting, setRejecting] = useState(false);
 
@@ -61,6 +131,9 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   const [shift, setShift] = useState(() => opSession?.shift || currentShift());
 
+  // Máquina selecionada
+  const [machine, setMachine] = useState(null);
+
   // Sincronizar célula e turno quando a sessão operacional mudar
   useEffect(() => {
     if (opSession?.primary_cell) setCellName(opSession.primary_cell);
@@ -73,20 +146,62 @@ export default function TraceabilityCollection({ embedded = false }) {
     catch { /* armazenamento indisponível */ }
   }, [cellName]);
 
-  const { data: readings = [], isFetching: readingsLoading } = useQuery({
-    queryKey: ['production-stage-readings'],
-    queryFn: () => fetchRecentReadings(1000),
+  // Carregar máquinas da célula
+  const { data: machines = [], isLoading: machinesLoading } = useQuery({
+    queryKey: ['production-machines', cellName],
+    queryFn: () => fetchProductionMachines(cellName),
+    enabled: !!cellName,
     initialData: [],
+  });
+
+  // Auto-selecionar ou recuperar máquina
+  useEffect(() => {
+    if (machines.length === 1) {
+      setMachine(machines[0]);
+    } else if (machines.length > 1) {
+      const savedId = sessionStorage.getItem(`selected-machine-id-${cellName}`);
+      const savedMachine = machines.find(m => m.id === savedId);
+      if (savedMachine) {
+        setMachine(savedMachine);
+      } else {
+        setMachine(null);
+      }
+    } else {
+      setMachine(null);
+    }
+  }, [machines, cellName]);
+
+  const handleMachineChange = (selected) => {
+    setMachine(selected);
+    if (selected) {
+      sessionStorage.setItem(`selected-machine-id-${cellName}`, selected.id);
+    } else {
+      sessionStorage.removeItem(`selected-machine-id-${cellName}`);
+    }
+  };
+
+  // Queries baseadas em hooks reativos — sempre busca dado fresco ao montar
+  const { data: readings = [], isFetching: readingsLoading } = useQuery({
+    queryKey: ['stageReadings', cellName, machine?.id, feedback?.lot?.id],
+    queryFn: () => fetchRecentReadings({
+      cellName,
+      machineId: feedback?.lot?.id ? null : machine?.id,
+      lotId: feedback?.lot?.id || null,
+      limit: feedback?.lot?.id ? null : 250,
+    }),
+    initialData: [],
+    staleTime: 0,
+    refetchOnMount: true,
     retry: false,
-    refetchInterval: 15000,
   });
 
   const { data: kpis = {} } = useQuery({
-    queryKey: ['traceability-collection-kpis'],
-    queryFn: () => fetchCollectionKpis(),
+    queryKey: ['realtimeCounters', cellName, machine?.id],
+    queryFn: () => fetchCollectionKpis({ cellName, machineId: machine?.id }),
     initialData: { total: 0, approved: 0, rejected: 0, blocked: 0 },
+    staleTime: 0,
+    refetchOnMount: true,
     retry: false,
-    refetchInterval: 15000,
   });
 
   const lotId = feedback?.lot?.id;
@@ -99,12 +214,12 @@ export default function TraceabilityCollection({ embedded = false }) {
   });
 
   const refreshData = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['production-stage-readings'] });
-    queryClient.invalidateQueries({ queryKey: ['traceability-collection-kpis'] });
+    queryClient.invalidateQueries({ queryKey: ['stageReadings', cellName, machine?.id] });
+    queryClient.invalidateQueries({ queryKey: ['realtimeCounters', cellName, machine?.id] });
     queryClient.invalidateQueries({ queryKey: ['production'] });
     queryClient.invalidateQueries({ queryKey: ['production-lots'] });
     queryClient.invalidateQueries({ queryKey: ['occurrences'] });
-  }, [queryClient]);
+  }, [queryClient, cellName, machine]);
 
   // ─── Função que processa um evento da fila ──────────────────────────────────
 
@@ -118,26 +233,32 @@ export default function TraceabilityCollection({ embedded = false }) {
       operatorId: event.operatorId || operatorId,
       client_event_id: event.client_event_id,
       readerType: event.readerType || 'keyboard_barcode',
+      machineId: event.machineId || machine?.id || null,
+      machineName: event.machineName || machine?.name || null,
+      enqueue_duration_ms: event.enqueue_duration_ms || 0,
       ...event,
     });
     refreshData();
     return result;
-  }, [cellName, shift, operator, operatorId, refreshData]);
+  }, [cellName, shift, operator, operatorId, machine, refreshData]);
 
-  // ─── Fila de coleta ─────────────────────────────────────────────────────────
-  const { stats: queueStats, flushing, enqueue, processNow, retryQueueErrors } = useCollectionQueue(processEvent);
+  // ─── Fila de coleta com filtros ─────────────────────────────────────────────
+  const { stats: queueStats, flushing, enqueue, processNow, retryQueueErrors } = useCollectionQueue(processEvent, {
+    cellName,
+    machineId: machine?.id,
+  });
 
   // ─── Handler principal de leitura — enfileira e processa ────────────────────
   const handleRead = useCallback(async (payload) => {
     if (!cellName) {
       const result = { success: false, status: 'invalid_context', message: 'Selecione a célula antes de processar a leitura.' };
-      setFeedback(result);
+      updateFeedback(result);
       toast.warning(result.message);
       return result;
     }
     if (!operator) {
       const result = { success: false, status: 'invalid_context', message: 'Não foi possível identificar o operador.' };
-      setFeedback(result);
+      updateFeedback(result);
       toast.error(result.message);
       return result;
     }
@@ -149,17 +270,18 @@ export default function TraceabilityCollection({ embedded = false }) {
       shift,
       operator,
       operatorId,
+      machineId: machine?.id || null,
+      machineName: machine?.name || null,
     };
 
-    // Enfileirar (IndexedDB) — nunca descarta
+    // Enfileirar (IndexedDB)
     const clientEventId = await enqueue(eventPayload, { autoFlush: false });
 
     // Feedback imediato otimista
     if (navigator.onLine) {
-      // Processa o mesmo evento persistido na fila local.
       try {
         const result = await processNow(clientEventId);
-        setFeedback({ ...result, client_event_id: clientEventId });
+        updateFeedback({ ...result, client_event_id: clientEventId });
         if (result?.success) {
           toast.success(result.message || 'Leitura aprovada');
           navigator.vibrate?.([70, 40, 70]);
@@ -176,17 +298,17 @@ export default function TraceabilityCollection({ embedded = false }) {
           client_event_id: clientEventId,
           message: error?.message || 'Leitura enfileirada para reenvio.',
         };
-        setFeedback(result);
+        updateFeedback(result);
         toast.error('Falha ao processar leitura. Enfileirada para reenvio automático.');
         return result;
       }
     } else {
       toast.info('Sem conexão. Leitura salva na fila local.');
       const result = { success: false, status: 'queued', client_event_id: clientEventId, message: 'Leitura salva na fila local.' };
-      setFeedback(result);
+      updateFeedback(result);
       return result;
     }
-  }, [cellName, shift, operator, operatorId, enqueue, processNow]);
+  }, [cellName, shift, operator, operatorId, machine, enqueue, processNow, updateFeedback]);
 
   const handleReject = async (form) => {
     if (!feedback?.item?.id) return;
@@ -198,6 +320,7 @@ export default function TraceabilityCollection({ embedded = false }) {
         lotId: feedback.lot?.id,
         tagId: feedback.reading?.tag_id,
         tagValue: feedback.reading?.tag_value,
+        readingId: feedback.reading?.id,
         readerType: feedback.reading?.reader_type || 'manual',
         stationName: feedback.reading?.station_name,
         stepName: feedback.route?.step_name || feedback.item.current_step,
@@ -205,8 +328,10 @@ export default function TraceabilityCollection({ embedded = false }) {
         operator: operator,
         operatorId,
         shift,
+        machineId: machine?.id || null,
+        machineName: machine?.name || null,
       });
-      setFeedback(result);
+      updateFeedback(result);
       setRejectionOpen(false);
       toast.success(result.message || 'Ocorrência registrada');
       refreshData();
@@ -236,9 +361,11 @@ export default function TraceabilityCollection({ embedded = false }) {
       notes: '',
       quantity: 0,
       downtime: 0,
+      machine_id: machine?.id || null,
+      machine_name: machine?.name || null,
     });
     setReadingOccurrenceOpen(true);
-  }, [cellName, shift, operator]);
+  }, [cellName, shift, operator, machine]);
 
   const handleReadingOccurrenceSubmit = async (form) => {
     setReadingOccurrenceLoading(true);
@@ -269,8 +396,9 @@ export default function TraceabilityCollection({ embedded = false }) {
       cellName={cellName}
       shift={shift}
       operator={operator}
+      machine={machine}
     />
-  ), [mode, handleRead, feedback, cellName, shift, operator]);
+  ), [mode, handleRead, feedback, cellName, shift, operator, machine]);
 
   const isCellLocked = !!(opSession?.primary_cell);
 
@@ -280,7 +408,7 @@ export default function TraceabilityCollection({ embedded = false }) {
         <PageHeader title="Coleta por Código / RFID" subtitle="Baixa produtiva por lote, peça, etapa e célula." icon={ScanLine} />
       )}
 
-      {/* Contexto de coleta (célula, turno, operador) */}
+      {/* Contexto de coleta (célula, máquina, turno, operador) */}
       <div className="flex flex-col sm:flex-row gap-3 sm:items-start bg-card border border-border rounded-md p-4">
         <div className="space-y-1.5 flex-1">
           <label htmlFor="traceability-cell" className="text-xs font-semibold text-muted-foreground">Célula da coleta</label>
@@ -289,7 +417,7 @@ export default function TraceabilityCollection({ embedded = false }) {
             value={cellName}
             onChange={(e) => setCellName(e.target.value)}
             disabled={cellsLoading || isCellLocked}
-            className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm disabled:opacity-60"
+            className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm disabled:opacity-60 font-medium"
             required
           >
             <option value="">{cellsLoading ? 'Carregando células...' : activeCells.length ? 'Selecione a célula' : 'Nenhuma célula ativa'}</option>
@@ -297,17 +425,36 @@ export default function TraceabilityCollection({ embedded = false }) {
           </select>
           {isCellLocked && <p className="text-[11px] text-muted-foreground">Célula definida pelo login operacional.</p>}
         </div>
+
+        <div className="space-y-1.5 flex-1">
+          <label htmlFor="traceability-machine" className="text-xs font-semibold text-muted-foreground">Máquina / Posto</label>
+          <select
+            id="traceability-machine"
+            value={machine?.id || ''}
+            onChange={(e) => {
+              const selected = machines.find(m => m.id === e.target.value);
+              handleMachineChange(selected || null);
+            }}
+            disabled={machinesLoading || !cellName}
+            className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm disabled:opacity-60 font-medium"
+          >
+            <option value="">{machinesLoading ? 'Carregando máquinas...' : machines.length ? 'Todas as máquinas' : 'Nenhuma máquina cadastrada'}</option>
+            {machines.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+        </div>
+
         <div className="space-y-1.5 flex-1">
           <label htmlFor="traceability-shift" className="text-xs font-semibold text-muted-foreground">Turno</label>
           <select
             id="traceability-shift"
             value={shift}
             onChange={(e) => setShift(e.target.value)}
-            className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+            className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm font-medium"
           >
             {['1º Turno', '2º Turno', '3º Turno'].map((item) => <option key={item}>{item}</option>)}
           </select>
         </div>
+
         <div className="space-y-1.5 flex-1">
           <label className="text-xs font-semibold text-muted-foreground">Operador</label>
           <div className="h-10 rounded-md border border-input bg-secondary/50 px-3 flex items-center text-sm font-medium truncate">

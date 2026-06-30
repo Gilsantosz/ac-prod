@@ -105,6 +105,19 @@ export async function enqueueCollectionEvent(payload) {
     created_at_client: now,
     updated_at: now,
     raw_value: payload.rawValue ?? payload.raw_value ?? '',
+    lot_id: payload.lotId ?? payload.lot_id ?? null,
+    lot_code: payload.lotCode ?? payload.lot_code ?? null,
+    load_number: payload.loadNumber ?? payload.load_number ?? null,
+    order_number: payload.orderNumber ?? payload.order_number ?? null,
+    customer_name: payload.customerName ?? payload.customer_name ?? null,
+    environment_name: payload.environmentName ?? payload.environment_name ?? null,
+    machine_id: payload.machineId ?? payload.machine_id ?? null,
+    machine_name: payload.machineName ?? payload.machine_name ?? null,
+    station_name: payload.stationName ?? payload.station_name ?? null,
+    enqueue_duration_ms: 0,
+    sync_started_at: null,
+    sync_finished_at: null,
+    sync_duration_ms: null,
     ...payload,
     client_event_id: clientEventId,
   };
@@ -112,7 +125,17 @@ export async function enqueueCollectionEvent(payload) {
   const existing = await dbGet(event.client_event_id);
   if (existing) return existing.client_event_id;
 
+  const t0 = performance.now();
   await dbPut(event);
+  const elapsed = performance.now() - t0;
+
+  event.enqueue_duration_ms = elapsed;
+  await dbPut(event);
+
+  if (elapsed > 800) {
+    console.warn(`[Queue] Local save exceeded 800ms: ${elapsed.toFixed(1)}ms`);
+  }
+
   notifyChange();
   return event.client_event_id;
 }
@@ -122,12 +145,56 @@ export async function enqueueCollectionEvent(payload) {
  */
 export async function getQueueStats() {
   const all = await dbGetAll();
+  const now = Date.now();
+  const staleThreshold = now - 60000;
+
+  const pending = all.filter((e) => e.status === 'pending');
+  const processing = all.filter((e) => e.status === 'processing');
+
+  const hasStalePending = pending.some(e => new Date(e.created_at_client).getTime() < staleThreshold)
+    || processing.some(e => new Date(e.created_at_client).getTime() < staleThreshold);
+
+  const hasSlowEnqueue = all.some(e => Number(e.enqueue_duration_ms) > 800);
+
   return {
     total: all.length,
-    pending: all.filter((e) => e.status === 'pending').length,
-    processing: all.filter((e) => e.status === 'processing').length,
+    pending: pending.length,
+    processing: processing.length,
     synced: all.filter((e) => e.status === 'synced').length,
     error: all.filter((e) => e.status === 'error').length,
+    hasStalePending,
+    hasSlowEnqueue,
+  };
+}
+
+/**
+ * Retorna estatísticas da fila filtradas por célula e máquina.
+ */
+export async function getQueueStatsByCellMachine(cellName, machineId) {
+  const all = await dbGetAll();
+  const filtered = all.filter(e =>
+    (!cellName || e.cellName === cellName || e.cell_name === cellName) &&
+    (!machineId || e.machineId === machineId || e.machine_id === machineId)
+  );
+  const now = Date.now();
+  const staleThreshold = now - 60000;
+
+  const pending = filtered.filter((e) => e.status === 'pending');
+  const processing = filtered.filter((e) => e.status === 'processing');
+
+  const hasStalePending = pending.some(e => new Date(e.created_at_client).getTime() < staleThreshold)
+    || processing.some(e => new Date(e.created_at_client).getTime() < staleThreshold);
+
+  const hasSlowEnqueue = filtered.some(e => Number(e.enqueue_duration_ms) > 800);
+
+  return {
+    total: filtered.length,
+    pending: pending.length,
+    processing: processing.length,
+    synced: filtered.filter((e) => e.status === 'synced').length,
+    error: filtered.filter((e) => e.status === 'error').length,
+    hasStalePending,
+    hasSlowEnqueue,
   };
 }
 
@@ -139,40 +206,112 @@ export async function getEventsByStatus(status) {
 }
 
 /**
+ * Recupera eventos processing antigos jogando-os de volta para pending.
+ */
+export async function recoverStaleProcessingEvents(maxAgeMs = 120000) {
+  const all = await dbGetAll();
+  const cutoff = Date.now() - maxAgeMs;
+  let count = 0;
+  for (const event of all) {
+    if (event.status === 'processing') {
+      const timestamp = new Date(event.updated_at || event.created_at_client).getTime();
+      if (timestamp < cutoff) {
+        event.status = 'pending';
+        event.retries = 0;
+        event.updated_at = new Date().toISOString();
+        await dbPut(event);
+        count++;
+      }
+    }
+  }
+  if (count > 0) {
+    console.log(`[Queue] Recovered ${count} stale processing events.`);
+    notifyChange();
+  }
+  return count;
+}
+
+/**
+ * Retorna o evento pendente mais antigo.
+ */
+export async function getOldestPendingEvent() {
+  const pending = await dbGetByIndex('by_status', 'pending');
+  if (!pending || pending.length === 0) return null;
+  pending.sort((a, b) => a.created_at_client.localeCompare(b.created_at_client));
+  return pending[0];
+}
+
+/**
+ * Funções de marcação de status
+ */
+export async function markEventPending(clientEventId) {
+  const event = await dbGet(clientEventId);
+  if (!event) return;
+  event.status = 'pending';
+  event.updated_at = new Date().toISOString();
+  await dbPut(event);
+  notifyChange();
+}
+
+export async function markEventProcessing(clientEventId) {
+  const event = await dbGet(clientEventId);
+  if (!event) return;
+  event.status = 'processing';
+  event.sync_started_at = new Date().toISOString();
+  event.updated_at = new Date().toISOString();
+  await dbPut(event);
+  notifyChange();
+}
+
+export async function markEventSynced(clientEventId, result) {
+  const event = await dbGet(clientEventId);
+  if (!event) return;
+  event.status = 'synced';
+  event.result = result;
+  event.sync_finished_at = new Date().toISOString();
+  if (event.sync_started_at) {
+    event.sync_duration_ms = new Date(event.sync_finished_at).getTime() - new Date(event.sync_started_at).getTime();
+  }
+  event.processed_at = new Date().toISOString();
+  event.updated_at = new Date().toISOString();
+  await dbPut(event);
+  notifyChange();
+}
+
+export async function markEventError(clientEventId, error) {
+  const event = await dbGet(clientEventId);
+  if (!event) return;
+  const retries = (event.retries || 0) + 1;
+  event.status = retries >= 3 ? 'error' : 'pending';
+  event.retries = retries;
+  event.last_error = error?.message || String(error);
+  event.sync_finished_at = new Date().toISOString();
+  if (event.sync_started_at) {
+    event.sync_duration_ms = new Date(event.sync_finished_at).getTime() - new Date(event.sync_started_at).getTime();
+  }
+  event.updated_at = new Date().toISOString();
+  await dbPut(event);
+  notifyChange();
+}
+
+/**
  * Processa um evento especifico da fila e devolve o resultado persistido.
  * Mantem o evento na fila se houver falha para permitir nova tentativa.
  */
 export async function processCollectionEvent(clientEventId, processFn, opts = {}) {
-  const { maxRetries = 3 } = opts;
   const event = await dbGet(clientEventId);
   if (!event) throw new Error('Evento de coleta não localizado na fila local.');
   if (event.status === 'synced') return event.result;
 
-  const processing = { ...event, status: 'processing', updated_at: new Date().toISOString() };
-  await dbPut(processing);
-  notifyChange();
+  await markEventProcessing(clientEventId);
+  const processingEvent = await dbGet(clientEventId);
 
   try {
-    const result = await processFn(processing);
-    await dbPut({
-      ...processing,
-      status: 'synced',
-      result,
-      updated_at: new Date().toISOString(),
-      processed_at: new Date().toISOString(),
-    });
-    notifyChange();
+    const result = await processFn(processingEvent);
+    await markEventSynced(clientEventId, result);
     return result;
   } catch (err) {
-    const retries = (event.retries || 0) + 1;
-    await dbPut({
-      ...event,
-      status: retries >= maxRetries ? 'error' : 'pending',
-      retries,
-      last_error: err?.message || String(err),
-      updated_at: new Date().toISOString(),
-    });
-    notifyChange();
+    await markEventError(clientEventId, err);
     throw err;
   }
 }
@@ -184,7 +323,7 @@ export async function processCollectionEvent(clientEventId, processFn, opts = {}
  * @returns {{ processed: number, synced: number, errors: number }}
  */
 export async function flushCollectionQueue(processFn, opts = {}) {
-  const { onProgress, maxRetries = 3 } = opts;
+  const { onProgress } = opts;
   const pending = await dbGetByIndex('by_status', 'pending');
   // Ordenar por horário de criação (FIFO)
   pending.sort((a, b) => a.created_at_client.localeCompare(b.created_at_client));
@@ -194,7 +333,7 @@ export async function flushCollectionQueue(processFn, opts = {}) {
 
   for (const event of pending) {
     try {
-      await processCollectionEvent(event.client_event_id, processFn, { maxRetries });
+      await processCollectionEvent(event.client_event_id, processFn);
       synced++;
     } catch (err) {
       errors++;

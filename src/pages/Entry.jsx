@@ -129,7 +129,7 @@ export default function Entry() {
   // Lista de lançamentos
   const { data: entries = [] } = useQuery({
     queryKey: ['production'],
-    queryFn: () => base44.entities.ProductionEntry.list('-created_date', 50),
+    queryFn: () => base44.entities.ProductionEntry.list('-created_date'),
     initialData: [],
   });
 

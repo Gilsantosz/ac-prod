@@ -233,7 +233,7 @@ export function buildProductionMetric(input = {}) {
     planned_target: target,
     planned_capacity: capacity,
     difference_quantity: realized - (target || capacity || 0),
-    efficiency_percent: target > 0 ? Math.round((realized / target) * 1000) / 10 : 0,
+    efficiency_percent: target > 0 ? Math.round((realized / target) * 1000) / 10 : (realized > 0 ? 100 : 0),
   };
 }
 
