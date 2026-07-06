@@ -1,8 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/lib/localDb';
 import { useAuth } from '@/lib/AuthContext';
 import { toast } from 'sonner';
+import { supabase } from '@/lib/supabaseClient';
+import { runOperationalAlertDiagnostics } from '@/lib/operationalAlertService';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -45,10 +47,38 @@ export default function NotificationCenter() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
+  // Executa diagnóstico silencioso em background ao carregar e a cada 60 segundos
+  useEffect(() => {
+    if (!user) return;
+    
+    // Executa diagnóstico inicial
+    runOperationalAlertDiagnostics().catch((err) => {
+      console.error('[NotificationCenter] Falha no diagnóstico de alertas inicial:', err);
+    });
+
+    // Agenda execuções a cada 60 segundos
+    const interval = setInterval(() => {
+      runOperationalAlertDiagnostics().catch((err) => {
+        console.error('[NotificationCenter] Falha no diagnóstico de alertas periódico:', err);
+      });
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [user]);
+
   // Busca apenas alertas não resolvidos (ordenados do mais recente ao mais antigo)
   const { data: alerts = [] } = useQuery({
     queryKey: ['unresolvedAlerts'],
-    queryFn: () => base44.entities.AlertLog.filter({ resolved: false }, '-created_date', 100),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('alert_logs')
+        .select('*')
+        .eq('resolved', false)
+        .order('triggered_at', { ascending: false });
+      
+      if (error) throw error;
+      return data || [];
+    },
     enabled: !!user,
   });
 
@@ -60,11 +90,20 @@ export default function NotificationCenter() {
 
   // Mutação para resolver a notificação no banco
   const resolveAlert = useMutation({
-    mutationFn: (alertId) =>
-      base44.entities.AlertLog.update(alertId, {
-        resolved: true,
-        resolved_by: user?.id,
-      }),
+    mutationFn: async (alertId) => {
+      const { data, error } = await supabase
+        .from('alert_logs')
+        .update({
+          resolved: true,
+          resolved_at: new Date().toISOString(),
+          resolved_by: user?.id,
+        })
+        .eq('id', alertId)
+        .select();
+
+      if (error) throw error;
+      return data;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unresolvedAlerts'] });
       toast.success('Notificação marcada como resolvida.');
