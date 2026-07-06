@@ -1,7 +1,19 @@
+/**
+ * @deprecated-scope FASE 1 — AC.Prod MES (2025-07)
+ *
+ * Este hook serve APENAS para apontamentos manuais de produção (Entry.jsx).
+ * Usa localStorage via offlineQueue.js — sem idempotência, sem audit_log.
+ *
+ * Para coleta rastreável por código de barras/RFID:
+ *   → usar: src/hooks/useCollectionQueue.js   (IndexedDB + idempotência por client_event_id)
+ *
+ * Não criar novos usos deste hook para funcionalidades de rastreabilidade.
+ */
 import { useState, useEffect, useCallback } from 'react';
 import { getQueue, enqueue, flushQueue } from '@/lib/offlineQueue';
 
 // Gerencia status online/offline, fila pendente e sincronização automática.
+// ESCOPO: apontamentos manuais de produção (Entry.jsx) ← não usar para coleta rastreável
 export function useOfflineSync(createFn, onSynced) {
   const [online, setOnline] = useState(navigator.onLine);
   const [pending, setPending] = useState(getQueue().length);

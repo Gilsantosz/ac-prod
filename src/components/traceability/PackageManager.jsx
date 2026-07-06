@@ -1,114 +1,193 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { auditLog, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import {
   Box, Plus, CheckCircle, RefreshCw, Package,
-  Lock,
+  Lock, Unlock, Trash2, QrCode, Play, AlertCircle, ArrowRight
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  createVolume,
+  scanPieceToVolume,
+  removePieceFromVolume,
+  closeVolume,
+  reopenVolumeWithPermission,
+  getVolumeItems,
+  getPackingProgress
+} from '@/lib/packingService';
 
 export default function PackageManager({ trace }) {
   const qc = useQueryClient();
   const [selectedOrderId, setSelectedOrderId] = useState(null);
+  const [activeVolumeId, setActiveVolumeId] = useState(null);
+  const [barcodeInput, setBarcodeInput] = useState('');
+  const [isSubmittingScan, setIsSubmittingScan] = useState(false);
 
-  // ─── Ordens prontas para embalar ─────────────────────────────
+  // Lotes aguardando embalagem ou em embalagem
   const readyOrders = trace.lots.data.filter(l =>
-    l.current_stage === 'separation' || l.current_stage === 'packaging'
+    l.status === 'waiting_packaging' || l.status === 'in_progress' || l.status === 'ready_to_pack'
   );
 
-  // ─── Embalagens da ordem selecionada ─────────────────────────
-  const { data: packages = [], isLoading } = useQuery({
-    queryKey: ['packages', selectedOrderId],
-    queryFn: async () => {
-      if (!selectedOrderId) return [];
-      const { data, error } = await supabase
-        .from('packages')
-        .select('*, package_items(id, lot_item_id, quantity, lot_items(piece_name, piece_code))')
-        .eq('lot_id', selectedOrderId)
-        .order('volume_number', { ascending: true });
-      if (error) throw error;
-      return data || [];
-    },
+  // Volumes da ordem/lote selecionado
+  const { data: progressData, isLoading: isLoadingProgress, refetch: refetchProgress } = useQuery({
+    queryKey: ['packing-progress', selectedOrderId],
+    queryFn: () => getPackingProgress(selectedOrderId),
     enabled: !!selectedOrderId,
-    initialData: [],
   });
 
   const selectedLot = trace.lots.data.find(l => l.id === selectedOrderId);
+  const activeVolume = progressData?.volumes?.find(v => v.id === activeVolumeId);
+
+  // Peças do volume ativo
+  const { data: activeVolumeItems = [], isLoading: isLoadingItems, refetch: refetchItems } = useQuery({
+    queryKey: ['packing-volume-items', activeVolumeId],
+    queryFn: () => getVolumeItems(activeVolumeId),
+    enabled: !!activeVolumeId,
+    initialData: [],
+  });
+
+  // Atualizar volume selecionado se a lista mudar
+  useEffect(() => {
+    if (progressData?.volumes && progressData.volumes.length > 0) {
+      if (!activeVolumeId || !progressData.volumes.some(v => v.id === activeVolumeId)) {
+        setActiveVolumeId(progressData.volumes[0].id);
+      }
+    } else {
+      setActiveVolumeId(null);
+    }
+  }, [progressData, activeVolumeId]);
 
   // ─── Criar novo volume ────────────────────────────────────────
-  const createPackage = useMutation({
-    mutationFn: async ({ lotId, orderId }) => {
-      const existingCount = packages.length;
-      const volumeNumber = existingCount + 1;
-      const { data: lot } = await supabase
-        .from('production_lots')
-        .select('production_orders(order_code)')
-        .eq('id', lotId)
-        .single();
-
-      const packageCode = `${lot?.production_orders?.order_code}-V${String(volumeNumber).padStart(3, '0')}-${Date.now()}`;
-
-      const { data, error } = await supabase.from('packages').insert({
-        lot_id:        lotId,
-        order_id:      orderId || lotId,
-        package_code:  packageCode,
-        volume_number: volumeNumber,
-        status:        'open',
-        total_items:   0,
-      }).select().single();
-
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: async (data) => {
-      qc.invalidateQueries({ queryKey: ['packages', selectedOrderId] });
-      await auditLog(AUDIT_ACTIONS.PACKAGE_CREATE, 'package', data.id, { lotId: selectedOrderId });
-      toast.success(`📦 Volume ${data.volume_number} criado: ${data.package_code}`);
-    },
-    onError: (e) => toast.error(e?.message),
-  });
+  const handleCreateVolume = async () => {
+    if (!selectedLot) return;
+    try {
+      const vol = await createVolume(selectedLot.id, selectedLot.production_orders?.id);
+      toast.success(`📦 Volume ${vol.volume_code} criado com sucesso!`);
+      refetchProgress();
+      setActiveVolumeId(vol.id);
+    } catch (e) {
+      toast.error(e?.message || 'Falha ao criar volume');
+    }
+  };
 
   // ─── Fechar volume ────────────────────────────────────────────
-  const closePackage = useMutation({
-    mutationFn: async (packageId) => {
-      const { error } = await supabase.from('packages').update({
-        status:    'closed',
-        closed_at: new Date().toISOString(),
-      }).eq('id', packageId);
-      if (error) throw error;
-      return packageId;
-    },
-    onSuccess: async (pkgId) => {
-      qc.invalidateQueries({ queryKey: ['packages', selectedOrderId] });
-      await auditLog(AUDIT_ACTIONS.PACKAGE_CLOSE, 'package', pkgId, { lotId: selectedOrderId });
-      toast.success('📦 Volume fechado!');
-    },
-    onError: (e) => toast.error(e?.message),
-  });
+  const handleCloseVolume = async (volId) => {
+    try {
+      await closeVolume(volId);
+      toast.success('✓ Volume fechado e lacrado!');
+      refetchProgress();
+      refetchItems();
+    } catch (e) {
+      toast.error(e?.message);
+    }
+  };
+
+  // ─── Reabrir volume ───────────────────────────────────────────
+  const handleReopenVolume = async (volId) => {
+    try {
+      await reopenVolumeWithPermission(volId);
+      toast.success('🔓 Volume reaberto para edição!');
+      refetchProgress();
+      refetchItems();
+    } catch (e) {
+      toast.error(e?.message);
+    }
+  };
+
+  // ─── Bipar Peça ───────────────────────────────────────────────
+  const handleScanSubmit = async (e) => {
+    e.preventDefault();
+    if (!barcodeInput.trim() || !activeVolumeId) return;
+
+    setIsSubmittingScan(true);
+    try {
+      await scanPieceToVolume(activeVolumeId, barcodeInput.trim());
+      toast.success('✓ Peça adicionada ao volume!');
+      setBarcodeInput('');
+      refetchItems();
+      refetchProgress();
+    } catch (err) {
+      toast.error(err.message || 'Erro ao bipar peça');
+    } finally {
+      setIsSubmittingScan(false);
+    }
+  };
+
+  // ─── Remover Peça ─────────────────────────────────────────────
+  const handleRemoveItem = async (itemId) => {
+    try {
+      await removePieceFromVolume(itemId);
+      toast.success('Lixeira: Peça removida do volume.');
+      refetchItems();
+      refetchProgress();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  // ─── Imprimir Etiqueta do Volume ──────────────────────────────
+  const handlePrintLabel = (volume) => {
+    if (!volume) return;
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Etiqueta de Volume - ${volume.volume_code}</title>
+          <style>
+            body { font-family: 'Courier New', monospace; padding: 20px; text-align: center; }
+            .label-box { border: 3px solid #000; padding: 20px; width: 380px; margin: 0 auto; border-radius: 8px; }
+            .title { font-size: 20px; font-weight: bold; margin-bottom: 10px; text-transform: uppercase; }
+            .code { font-size: 26px; font-weight: bold; margin: 15px 0; background: #000; color: #fff; padding: 5px; }
+            .meta { text-align: left; font-size: 13px; line-height: 1.6; }
+            .footer { font-size: 10px; margin-top: 20px; color: #555; }
+          </style>
+        </head>
+        <body onload="window.print(); window.close();">
+          <div class="label-box">
+            <div class="title">AC.Prod MES — Volume</div>
+            <div class="code">${volume.volume_code}</div>
+            <div class="meta">
+              <strong>LOTE:</strong> ${selectedLot?.lot_code}<br/>
+              <strong>CLIENTE:</strong> ${selectedLot?.production_orders?.customer_name || 'Sob Medida'}<br/>
+              <strong>PEDIDO:</strong> ${selectedLot?.production_orders?.order_code || selectedLot?.order_id || ''}<br/>
+              <strong>GERADO EM:</strong> ${new Date(volume.created_at).toLocaleString('pt-BR')}<br/>
+            </div>
+            <div class="footer">AC.Prod Rastreabilidade de Chão de Fábrica</div>
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-      {/* ── Lista de Lotes prontos para embalar ─────────────────── */}
+      {/* ── Lista de Lotes ─────────────────────────────────────── */}
       <div className="lg:col-span-1 space-y-3">
         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-          Lotes em Separação / Embalagem
+          Lotes Aguardando Embalagem / Coleta
         </h3>
 
         {readyOrders.length === 0 ? (
           <div className="text-center py-10 text-muted-foreground border border-dashed border-border/40 rounded-2xl">
             <Box className="w-6 h-6 mx-auto mb-2 opacity-40" />
-            <p className="text-sm">Nenhum lote pronto para embalar</p>
+            <p className="text-sm">Nenhum lote pendente de embalagem</p>
           </div>
         ) : (
           <div className="space-y-2 max-h-[65vh] overflow-y-auto pr-1">
             {readyOrders.map(lot => (
               <button
                 key={lot.id}
-                onClick={() => setSelectedOrderId(lot.id)}
+                onClick={() => {
+                  setSelectedOrderId(lot.id);
+                  setActiveVolumeId(null);
+                }}
                 className={cn(
                   'w-full text-left px-4 py-3 rounded-xl border transition-all duration-150',
                   selectedOrderId === lot.id
@@ -116,136 +195,266 @@ export default function PackageManager({ trace }) {
                     : 'border-border/50 bg-card hover:border-border/80'
                 )}
               >
-                <p className="font-semibold text-sm text-foreground">{lot.lot_code}</p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {lot.production_orders?.customer_name}
-                </p>
-                <Badge variant="outline" className="text-[10px] mt-1">
-                  {lot.current_stage === 'separation' ? 'Separação' : 'Embalagem'}
-                </Badge>
+                <div className="flex justify-between items-start gap-2">
+                  <div>
+                    <p className="font-semibold text-sm text-foreground">{lot.lot_code}</p>
+                    <p className="text-xs text-muted-foreground truncate max-w-[200px]">
+                      {lot.production_orders?.customer_name || 'Móvel Planejado'}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] bg-secondary/30">
+                    {lot.status === 'waiting_packaging' ? 'Pronto Embalar' : 'Em Produção'}
+                  </Badge>
+                </div>
               </button>
             ))}
           </div>
         )}
       </div>
 
-      {/* ── Volumes do Lote Selecionado ──────────────────────────── */}
+      {/* ── Gerenciamento de Embalagem ─────────────────────────── */}
       <div className="lg:col-span-2 space-y-4">
         {!selectedOrderId ? (
           <div className="text-center py-20 border border-dashed border-border/40 rounded-2xl text-muted-foreground">
             <Package className="w-10 h-10 mx-auto mb-3 opacity-30" />
-            <p className="font-medium text-foreground">Selecione um lote para gerenciar embalagens</p>
-            <p className="text-sm mt-1">Crie volumes e adicione peças para controle de expedição</p>
+            <p className="font-medium text-foreground">Selecione um lote de produção</p>
+            <p className="text-sm mt-1">Crie volumes físicos e bipa as peças para lacrar a carga</p>
           </div>
         ) : (
           <>
             {selectedLot && (
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div>
-                  <h3 className="font-bold text-foreground">{selectedLot.lot_code}</h3>
+                  <h3 className="font-bold text-foreground text-lg">{selectedLot.lot_code}</h3>
                   <p className="text-sm text-muted-foreground">
-                    {selectedLot.production_orders?.customer_name}
+                    Cliente: {selectedLot.production_orders?.customer_name || 'Sob Medida'}
                   </p>
                 </div>
                 <Button
-                  className="gap-2 bg-[#2d9c4a] hover:bg-[#25813d] text-white"
-                  onClick={() => createPackage.mutate({
-                    lotId:   selectedOrderId,
-                    orderId: selectedLot.production_orders?.id,
-                  })}
-                  disabled={createPackage.isPending}
+                  className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={handleCreateVolume}
                 >
-                  {createPackage.isPending
-                    ? <RefreshCw className="w-4 h-4 animate-spin" />
-                    : <Plus className="w-4 h-4" />
-                  }
-                  Novo Volume
+                  <Plus className="w-4 h-4" />
+                  Criar Volume
                 </Button>
               </div>
             )}
 
-            {isLoading ? (
+            {/* Progresso Geral de Embalagem */}
+            {progressData && (
+              <div className="border border-border/60 bg-card/40 rounded-2xl p-4 space-y-2">
+                <div className="flex justify-between items-center text-xs text-muted-foreground">
+                  <span>Progresso de Embalagem do Lote</span>
+                  <span className="font-bold text-foreground">
+                    {progressData.totalPacked} / {progressData.totalExpected} peças ({progressData.percent}%)
+                  </span>
+                </div>
+                <div className="w-full bg-secondary h-2.5 rounded-full overflow-hidden">
+                  <div
+                    className="bg-emerald-500 h-full rounded-full transition-all duration-300"
+                    style={{ width: `${progressData.percent}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            {progressData && progressData.percent === 100 && (
+              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4 flex justify-between items-center gap-3 text-xs text-emerald-700 dark:text-emerald-400">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-5 h-5 shrink-0 text-emerald-500" />
+                  <div>
+                    <p className="font-bold">Lote 100% Embalado!</p>
+                    <p className="text-[10px] opacity-80 font-normal">Todos os volumes deste lote foram devidamente fechados e lacrados.</p>
+                  </div>
+                </div>
+                <Button asChild className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] h-8 gap-1.5 shrink-0">
+                  <Link to="/rastreabilidade?tab=shipping">
+                    Ir para Expedição <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </Button>
+              </div>
+            )}
+
+
+
+            {isLoadingProgress ? (
               <div className="flex items-center gap-3 p-4 text-sm text-muted-foreground">
                 <RefreshCw className="w-4 h-4 animate-spin" /> Carregando volumes…
               </div>
-            ) : packages.length === 0 ? (
+            ) : progressData?.volumes?.length === 0 ? (
               <div className="text-center py-12 border border-dashed border-border/40 rounded-2xl text-muted-foreground">
                 <Box className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                <p className="text-sm">Nenhum volume criado</p>
-                <p className="text-xs mt-1">Clique em "Novo Volume" para começar a embalar</p>
+                <p className="text-sm">Nenhum volume cadastrado</p>
+                <p className="text-xs mt-1">Clique em "Criar Volume" para abrir a primeira caixa.</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {packages.map(pkg => (
-                  <div
-                    key={pkg.id}
-                    className={cn(
-                      'border rounded-2xl p-4 space-y-3',
-                      pkg.status === 'closed'
-                        ? 'bg-emerald-50/20 dark:bg-emerald-950/10 border-emerald-200/60 dark:border-emerald-800/40'
-                        : 'bg-card border-border/60'
-                    )}
-                  >
-                    {/* Header do volume */}
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Abas Verticais de Volumes */}
+                <div className="md:col-span-1 space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+                  {progressData?.volumes?.map(v => (
+                    <button
+                      key={v.id}
+                      onClick={() => setActiveVolumeId(v.id)}
+                      className={cn(
+                        'w-full text-left p-3 rounded-xl border flex items-center justify-between transition-all',
+                        activeVolumeId === v.id
+                          ? 'border-emerald-500/50 bg-emerald-500/5 shadow-sm'
+                          : 'border-border/50 bg-card hover:border-border/80'
+                      )}
+                    >
                       <div className="flex items-center gap-2">
-                        <div className={cn(
-                          'w-8 h-8 rounded-lg flex items-center justify-center',
-                          pkg.status === 'closed'
-                            ? 'bg-emerald-100 dark:bg-emerald-900/30'
-                            : 'bg-secondary/60'
-                        )}>
-                          <Box className={cn(
-                            'w-4 h-4',
-                            pkg.status === 'closed' ? 'text-emerald-600' : 'text-muted-foreground'
-                          )} />
-                        </div>
-                        <div>
-                          <p className="font-semibold text-sm text-foreground">
-                            Volume {pkg.volume_number}
-                          </p>
-                          <p className="text-xs text-muted-foreground font-mono">{pkg.package_code}</p>
-                        </div>
+                        <Box className={cn('w-4 h-4', v.status === 'closed' ? 'text-emerald-500' : 'text-muted-foreground')} />
+                        <span className="text-sm font-semibold">{v.volume_code.split('-V')[1]}</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={pkg.status === 'closed' ? 'default' : 'outline'} className={cn(
-                          'text-xs',
-                          pkg.status === 'closed' && 'bg-emerald-600 text-white border-0'
-                        )}>
-                          {pkg.status === 'closed' ? '✓ Fechado' : '● Aberto'}
-                        </Badge>
-                        {pkg.status === 'open' && (
+                      <Badge variant={v.status === 'closed' ? 'default' : 'outline'} className={cn(
+                        v.status === 'closed' ? 'bg-emerald-600 text-white border-0' : 'text-[10px]'
+                      )}>
+                        {v.status === 'closed' ? 'Lacre' : 'Aberto'}
+                      </Badge>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Painel do Volume Ativo */}
+                <div className="md:col-span-2 border border-border/60 bg-card rounded-2xl p-4 space-y-4">
+                  {activeVolume ? (
+                    <>
+                      <div className="flex justify-between items-start gap-2 flex-wrap">
+                        <div>
+                          <h4 className="font-bold text-foreground">{activeVolume.volume_code}</h4>
+                          <span className="text-xs text-muted-foreground">
+                            Criado em: {new Date(activeVolume.created_at).toLocaleDateString('pt-BR')}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-7 text-xs gap-1 text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:border-emerald-800/60"
-                            onClick={() => closePackage.mutate(pkg.id)}
-                            disabled={closePackage.isPending}
+                            className="text-xs h-8"
+                            onClick={() => handlePrintLabel(activeVolume)}
                           >
-                            <Lock className="w-3 h-3" /> Fechar Volume
+                            Imprimir Etiqueta
                           </Button>
+                          {activeVolume.status === 'open' ? (
+                            <Button
+                              size="sm"
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 gap-1"
+                              onClick={() => handleCloseVolume(activeVolume.id)}
+                            >
+                              <Lock className="w-3 h-3" /> Fechar Volume
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              className="text-xs h-8 gap-1"
+                              onClick={() => handleReopenVolume(activeVolume.id)}
+                            >
+                              <Unlock className="w-3 h-3" /> Reabrir
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Input de Bipagem se Volume Aberto */}
+                      {activeVolume.status === 'open' ? (
+                        <form onSubmit={handleScanSubmit} className="flex gap-2">
+                          <div className="relative flex-1">
+                            <QrCode className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
+                            <Input
+                              placeholder="Bipar etiqueta da peça (Ex: PC-2026...)"
+                              value={barcodeInput}
+                              onChange={(e) => setBarcodeInput(e.target.value)}
+                              className="pl-9 h-9"
+                              disabled={isSubmittingScan}
+                              autoFocus
+                            />
+                          </div>
+                          <Button
+                            type="submit"
+                            size="sm"
+                            className="bg-secondary hover:bg-secondary/80 h-9"
+                            disabled={isSubmittingScan || !barcodeInput.trim()}
+                          >
+                            {isSubmittingScan ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                          </Button>
+                        </form>
+                      ) : (
+                        <div className="bg-emerald-500/5 border border-emerald-500/20 text-emerald-600 rounded-xl p-3 flex items-center gap-2 text-xs">
+                          <CheckCircle className="w-4 h-4 shrink-0" />
+                          <span>Este volume está fechado e lacrado. Nenhuma peça pode ser adicionada ou removida.</span>
+                        </div>
+                      )}
+
+                      {/* Lista de Peças Embaladas no Volume */}
+                      <div className="space-y-2">
+                        <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                          Peças no Volume ({activeVolumeItems.length})
+                        </h5>
+                        {isLoadingItems ? (
+                          <p className="text-xs text-muted-foreground">Carregando itens...</p>
+                        ) : activeVolumeItems.length === 0 ? (
+                          <p className="text-xs text-muted-foreground italic">Nenhuma peça bipada neste volume.</p>
+                        ) : (
+                          <div className="space-y-1.5 max-h-[30vh] overflow-y-auto">
+                            {activeVolumeItems.map(item => (
+                              <div
+                                key={item.id}
+                                className="flex items-center justify-between gap-2 p-2 bg-secondary/30 hover:bg-secondary/50 rounded-lg text-xs"
+                              >
+                                <div className="truncate">
+                                  <p className="font-medium text-foreground truncate">
+                                    {item.production_pieces?.piece_name || 'Peça sem nome'}
+                                  </p>
+                                  <p className="text-[10px] text-muted-foreground font-mono">
+                                    {item.traceability_code} · {item.production_pieces?.material} {item.production_pieces?.color}
+                                  </p>
+                                </div>
+                                {activeVolume.status === 'open' && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
+                                    onClick={() => handleRemoveItem(item.id)}
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </div>
+                    </>
+                  ) : (
+                    <div className="text-center py-10 text-muted-foreground">
+                      <Box className="w-6 h-6 mx-auto mb-2 opacity-30" />
+                      <p className="text-sm">Selecione ou crie um volume para visualizar</p>
                     </div>
+                  )}
+                </div>
+              </div>
+            )}
 
-                    {/* Itens do volume */}
-                    {pkg.package_items && pkg.package_items.length > 0 ? (
-                      <div className="space-y-1">
-                        {pkg.package_items.map(item => (
-                          <div key={item.id} className="flex items-center gap-2 text-xs text-muted-foreground py-1 border-t border-border/30">
-                            <CheckCircle className="w-3 h-3 text-emerald-500 shrink-0" />
-                            <span className="flex-1 truncate">{item.lot_items?.piece_name || item.lot_item_id}</span>
-                            <span className="font-medium">×{item.quantity}</span>
-                          </div>
-                        ))}
+            {/* Peças Faltantes no Lote */}
+            {progressData && progressData.missingPieces?.length > 0 && (
+              <div className="border border-amber-500/20 bg-amber-500/5 rounded-2xl p-4 space-y-2">
+                <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>Peças Pendentes de Embalagem ({progressData.missingPieces.length})</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-[20vh] overflow-y-auto pr-1">
+                  {progressData.missingPieces.map(p => (
+                    <div key={p.id} className="text-xs bg-card/60 border p-2 rounded-lg flex justify-between items-center gap-2">
+                      <div className="truncate">
+                        <p className="font-semibold truncate">{p.piece_name}</p>
+                        <p className="text-[10px] text-muted-foreground font-mono">{p.piece_uid}</p>
                       </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground italic">
-                        Nenhuma peça adicionada a este volume
-                      </p>
-                    )}
-                  </div>
-                ))}
+                      <Badge variant="outline" className="text-[9px] shrink-0">
+                        {p.current_stage}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </>

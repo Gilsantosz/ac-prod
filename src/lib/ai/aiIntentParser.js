@@ -188,6 +188,10 @@ export function parseIntent(prompt, options = {}) {
 
   // 6. Extração de destinatários (excluindo e-mails já extraídos)
   const recipients = [...directEmails];
+  if (/\b(para\s+mim|para\s+meu\s+e-?mail|meu\s+e-?mail|remetente|solicitante|usuario\s+atual|usu[aá]rio\s+atual)\b/.test(normalized)
+    || /\b(me\s+envie|envie-?\s?me|me\s+mande|mande-?\s?me)\b/.test(normalized)) {
+    recipients.push('remetente');
+  }
   const toMatch = text.match(/\bpara\s+(?:o\s+|a\s+)?(?:gestor(?:a)?|gerente|administrador(?:a)?|diretoria|gerencia)?\s*([\p{L}][\p{L}\s.'-]{1,80}?)(?=\s+(?:por|via|as|todo|toda|diariamente|dias|mensalmente)\b|[,.!?]|$)/iu);
   if (toMatch) {
     const name = toMatch[1].trim().replace(/\s+/g, ' ');

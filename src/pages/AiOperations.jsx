@@ -7,7 +7,7 @@ import { IndustrialModeTabs, IndustrialPageShell } from '@/components/industrial
 import { useAuth } from '@/lib/AuthContext';
 import { canUseAiOperations, fetchAiMetadata } from '@/lib/ai/aiContextService';
 import { generateOperationalReport, listReportJobs, createScheduledReport } from '@/lib/ai/aiReportService';
-import { deleteReportRecipient, listEmailLogs, listReportRecipients, saveReportRecipient, sendReportEmail } from '@/lib/ai/aiEmailService';
+import { listEmailLogs, listReportRecipients, sendReportEmail } from '@/lib/ai/aiEmailService';
 import { listAiLogs } from '@/lib/ai/aiAuditService';
 import { exportOperationalReport } from '@/lib/reports/reportExportService';
 import AiAssistantPanel from '@/components/ai/AiAssistantPanel';
@@ -35,13 +35,12 @@ export default function AiOperations() {
   const [report, setReport] = useState(null);
   const [emailOpen, setEmailOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  // canManage: admin e manager podem gerenciar destinatários/agendamentos (alinhado com RLS do banco)
-  // canManage NÃO inclui operadores com manage_automations, pois a RLS bloqueia INSERT/DELETE em report_recipients para não-admin/manager
+  // canManage: admin e manager podem criar agendamentos (alinhado com RLS do banco).
   const canManage = user?.role === 'admin' || user?.role === 'manager';
 
   const metadataQuery = useQuery({ queryKey: ['ai-metadata', user?.id], queryFn: () => fetchAiMetadata(user), enabled: !!user });
   const historyQuery = useQuery({ queryKey: ['ai-report-jobs'], queryFn: () => listReportJobs(), enabled: tab === 'history' });
-  const recipientsQuery = useQuery({ queryKey: ['ai-report-recipients'], queryFn: listReportRecipients, enabled: ['request', 'managers'].includes(tab) || emailOpen });
+  const recipientsQuery = useQuery({ queryKey: ['ai-report-recipients'], queryFn: listReportRecipients, enabled: ['request', 'managers'].includes(tab) || emailOpen || scheduleOpen });
   const deliveriesQuery = useQuery({ queryKey: ['ai-email-logs'], queryFn: listEmailLogs, enabled: tab === 'deliveries' });
   const logsQuery = useQuery({ queryKey: ['ai-system-logs'], queryFn: () => listAiLogs(), enabled: tab === 'logs' });
 
@@ -52,16 +51,6 @@ export default function AiOperations() {
       queryClient.invalidateQueries({ queryKey: ['ai-report-jobs'] });
       toast.success('Relatório gerado com dados reais do período.');
     },
-    onError: (error) => toast.error(error.message),
-  });
-  const recipientMutation = useMutation({
-    mutationFn: saveReportRecipient,
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['ai-report-recipients'] }); toast.success('Destinatário salvo.'); },
-    onError: (error) => toast.error(error.message),
-  });
-  const deleteRecipientMutation = useMutation({
-    mutationFn: deleteReportRecipient,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['ai-report-recipients'] }),
     onError: (error) => toast.error(error.message),
   });
   const emailMutation = useMutation({
@@ -91,7 +80,7 @@ export default function AiOperations() {
       {tab === 'request' && <div className="space-y-5"><AiReportRequestForm metadata={metadata} loading={generateMutation.isPending} onGenerate={generateMutation.mutate} /><AiReportPreview report={report} onExport={() => exportOperationalReport(report).catch((error) => toast.error(error.message))} onEmail={() => setEmailOpen(true)} /></div>}
       {tab === 'history' && <AiReportHistory items={historyQuery.data?.data} warning={historyQuery.data?.warning} />}
       {tab === 'deliveries' && <AiLogsPanel title="Envios de relatórios" items={deliveriesQuery.data?.data} warning={deliveriesQuery.data?.warning} />}
-      {tab === 'managers' && <AiRecipientsManager items={recipientsQuery.data?.data} warning={recipientsQuery.data?.warning} canManage={canManage} saving={recipientMutation.isPending} onSave={recipientMutation.mutateAsync} onDelete={deleteRecipientMutation.mutate} />}
+      {tab === 'managers' && <AiRecipientsManager items={recipientsQuery.data?.data} warning={recipientsQuery.data?.warning} />}
       {tab === 'logs' && <AiLogsPanel items={logsQuery.data?.data} warning={logsQuery.data?.warning} />}
       <AiEmailDialog open={emailOpen} onOpenChange={setEmailOpen} report={report} recipients={recipientsQuery.data?.data || []} onSend={emailMutation.mutate} sending={emailMutation.isPending} />
       <AiScheduleDialog open={scheduleOpen} onOpenChange={setScheduleOpen} report={report} recipients={recipientsQuery.data?.data || []} onSave={scheduleMutation.mutate} />

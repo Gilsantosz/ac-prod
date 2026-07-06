@@ -53,13 +53,12 @@ describe('comandos operacionais por linguagem natural', () => {
       dependencies: {
         clock: () => new Date(2026, 5, 21, 10, 0, 0),
         findManager: vi.fn().mockResolvedValue({ name: 'Gildemar', email: 'gildemar@empresa.com', profileId: 'profile-1' }),
-        ensureRecipient: vi.fn().mockResolvedValue('recipient-1'),
         generateReport,
         sendEmail,
       },
     });
     expect(generateReport).toHaveBeenCalledWith(expect.objectContaining({ reportType: 'oee', format: 'csv' }));
-    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ reportJobId: 'job-1', recipientIds: ['recipient-1'] }));
+    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ reportJobId: 'job-1', recipientProfileIds: ['profile-1'] }));
     expect(result.content).toContain('enviado para Gildemar');
   });
 
@@ -69,7 +68,6 @@ describe('comandos operacionais por linguagem natural', () => {
       user: admin,
       dependencies: {
         findManager: vi.fn().mockResolvedValue({ name: 'Gildemar', email: 'gildemar@empresa.com' }),
-        ensureRecipient: vi.fn().mockResolvedValue('recipient-1'),
         generateReport: vi.fn().mockResolvedValue({ jobId: 'job-1', context: { entries: [] }, analysis: {} }),
         sendEmail,
       },

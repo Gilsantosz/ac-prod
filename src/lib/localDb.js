@@ -265,11 +265,17 @@ const createEntityClient = (entityName) => {
           }
         }).catch(err => console.error('Erro ao sincronizar contato com Resend no create:', err));
 
-        // Atualiza a coluna active, se necessário, já que inviteUser não a define
-        if (enriched.active !== undefined) {
-          await supabase.from('profiles').update({ active: enriched.active }).eq('id', res.id);
-        }
-        return normalizeFromDb(entityName, { ...res, active: enriched.active ?? true, cell: JSON.stringify(enriched.cells || []) });
+        // Garante que a aba Gestores seja a fonte oficial para IA, escopo e e-mails.
+        await supabase
+          .from('profiles')
+          .update({
+            role: 'manager',
+            cell: JSON.stringify(enriched.cells || []),
+            managed_cells: enriched.cells || [],
+            active: enriched.active ?? true,
+          })
+          .eq('id', res.id);
+        return normalizeFromDb(entityName, { ...res, active: enriched.active ?? true, cell: JSON.stringify(enriched.cells || []), managed_cells: enriched.cells || [] });
       }
 
       if (entityName === 'NotificationConfig') {
@@ -369,7 +375,9 @@ const createEntityClient = (entityName) => {
         const res = await users.updateUser(id, {
           name: clean.name,
           email: clean.email,
-          cell: JSON.stringify(clean.cells || [])
+          role: 'manager',
+          cell: JSON.stringify(clean.cells || []),
+          managed_cells: clean.cells || [],
         });
 
         // Sincroniza com o Resend
@@ -385,7 +393,7 @@ const createEntityClient = (entityName) => {
         if (clean.active !== undefined) {
           await supabase.from('profiles').update({ active: clean.active }).eq('id', id);
         }
-        return normalizeFromDb(entityName, { ...res, active: clean.active ?? true, cell: JSON.stringify(clean.cells || []) });
+        return normalizeFromDb(entityName, { ...res, active: clean.active ?? true, cell: JSON.stringify(clean.cells || []), managed_cells: clean.cells || [] });
       }
 
       if (entityName === 'NotificationConfig') {
@@ -455,6 +463,70 @@ const createEntityClient = (entityName) => {
   };
 };
 
+const getDefaultPermissions = (role) => {
+  if (role === 'admin') {
+    return {
+      view_dashboards: true,
+      register_production: true,
+      manage_occurrences: true,
+      manage_cells: true,
+      manage_operators: true,
+      view_reports: true,
+      ai_operations: true,
+      manage_automations: true,
+      manage_users: true,
+      view_pcp: true,
+      manage_pcp: true,
+      manage_routes: true,
+      traceability_collect: true,
+      view_traceability: true,
+      manage_packaging: true,
+      manage_shipping: true,
+      view_mes_alerts: true
+    };
+  } else if (role === 'manager') {
+    return {
+      view_dashboards: true,
+      register_production: true,
+      manage_occurrences: true,
+      manage_cells: false,
+      manage_operators: false,
+      view_reports: true,
+      ai_operations: true,
+      manage_automations: false,
+      manage_users: false,
+      view_pcp: true,
+      manage_pcp: true,
+      manage_routes: true,
+      traceability_collect: true,
+      view_traceability: true,
+      manage_packaging: true,
+      manage_shipping: true,
+      view_mes_alerts: true
+    };
+  } else {
+    return {
+      view_dashboards: true,
+      register_production: true,
+      manage_occurrences: true,
+      manage_cells: false,
+      manage_operators: false,
+      view_reports: false,
+      ai_operations: false,
+      manage_automations: false,
+      manage_users: false,
+      view_pcp: false,
+      manage_pcp: false,
+      manage_routes: false,
+      traceability_collect: true,
+      view_traceability: true,
+      manage_packaging: false,
+      manage_shipping: false,
+      view_mes_alerts: false
+    };
+  }
+};
+
 // ─── Auth wrapper usando Supabase Auth ───────────────────────────────────────
 const auth = {
   me: async () => {
@@ -481,16 +553,8 @@ const auth = {
       name: profile?.name || meta.name || user.email?.split('@')[0] || '',
       role: profile?.role || meta.role || 'operator',
       cell: profile?.cell || meta.cell || '',
-      permissions: profile?.permissions || meta.permissions || {
-        view_dashboards: true,
-        register_production: true,
-        manage_occurrences: true,
-        manage_cells: false,
-        manage_operators: false,
-        view_reports: false,
-        manage_automations: false,
-        manage_users: false,
-      },
+      permissions: profile?.permissions || meta.permissions || getDefaultPermissions(profile?.role || meta.role || 'operator'),
+
       dashboard_layout: profile?.dashboard_layout || null,
     };
   },
@@ -534,16 +598,8 @@ const auth = {
       name: profile?.name || meta.name || user.email?.split('@')[0] || '',
       role: profile?.role || meta.role || 'operator',
       cell: profile?.cell || meta.cell || '',
-      permissions: profile?.permissions || meta.permissions || {
-        view_dashboards: true,
-        register_production: true,
-        manage_occurrences: true,
-        manage_cells: false,
-        manage_operators: false,
-        view_reports: false,
-        manage_automations: false,
-        manage_users: false,
-      },
+      permissions: profile?.permissions || meta.permissions || getDefaultPermissions(profile?.role || meta.role || 'operator'),
+
       dashboard_layout: profile?.dashboard_layout || null,
     };
   },
@@ -614,9 +670,8 @@ const auth = {
 const users = {
   inviteUser: async (email, role, name = '', password = '', permissions = null, cell = '') => {
     // 1. Criar usuário via Supabase Auth com metadata
-    const defaultPermissions = role === 'admin'
-      ? { view_dashboards: true, register_production: true, manage_occurrences: true, manage_cells: true, manage_operators: true, view_reports: true, manage_automations: true, manage_users: true }
-      : { view_dashboards: true, register_production: true, manage_occurrences: true, manage_cells: false, manage_operators: false, view_reports: false, manage_automations: false, manage_users: false };
+    const defaultPermissions = getDefaultPermissions(role);
+
 
     const finalPermissions = permissions || defaultPermissions;
 

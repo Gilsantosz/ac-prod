@@ -4,10 +4,78 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, UserPlus, LayoutDashboard, PlusCircle, AlertOctagon, Boxes, HardHat, LineChart, Zap, Users, ShieldAlert, BrainCircuit } from 'lucide-react';
+import {
+  Loader2, UserPlus, LayoutDashboard, PlusCircle, AlertOctagon, Boxes, HardHat, LineChart,
+  Zap, Users, ShieldAlert, BrainCircuit, Plug, GitFork, Box, Truck, BellRing, Layers
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCells } from '@/hooks/useCells';
 import { Switch } from '@/components/ui/switch';
+
+const getDefaultPermissions = (role) => {
+  if (role === 'admin') {
+    return {
+      view_dashboards: true,
+      register_production: true,
+      manage_occurrences: true,
+      manage_cells: true,
+      manage_operators: true,
+      view_reports: true,
+      ai_operations: true,
+      manage_automations: true,
+      manage_users: true,
+      view_pcp: true,
+      manage_pcp: true,
+      manage_routes: true,
+      traceability_collect: true,
+      view_traceability: true,
+      manage_packaging: true,
+      manage_shipping: true,
+      view_mes_alerts: true
+    };
+  } else if (role === 'manager') {
+    return {
+      view_dashboards: true,
+      register_production: true,
+      manage_occurrences: true,
+      manage_cells: false,
+      manage_operators: false,
+      view_reports: true,
+      ai_operations: true,
+      manage_automations: false,
+      manage_users: false,
+      view_pcp: true,
+      manage_pcp: true,
+      manage_routes: true,
+      traceability_collect: true,
+      view_traceability: true,
+      manage_packaging: true,
+      manage_shipping: true,
+      view_mes_alerts: true
+    };
+  } else {
+    return {
+      view_dashboards: true,
+      register_production: true,
+      manage_occurrences: true,
+      manage_cells: false,
+      manage_operators: false,
+      view_reports: false,
+      ai_operations: false,
+      manage_automations: false,
+      manage_users: false,
+      view_pcp: false,
+      manage_pcp: false,
+      manage_routes: false,
+      traceability_collect: true,
+      view_traceability: true,
+      manage_packaging: false,
+      manage_shipping: false,
+      view_mes_alerts: false
+    };
+  }
+};
+
 
 const PERMISSION_METADATA = [
   { key: 'view_dashboards', label: 'Visualizar Painéis', desc: 'Painéis, OEE, Tendências e Gamificação.', icon: LayoutDashboard },
@@ -19,7 +87,16 @@ const PERMISSION_METADATA = [
   { key: 'ai_operations', label: 'IA Operacional', desc: 'Consultar o Copilot e gerar análises produtivas.', icon: BrainCircuit },
   { key: 'manage_automations', label: 'Alertas e Automações', desc: 'Configurar automações e regras de alerta.', icon: Zap },
   { key: 'manage_users', label: 'Gerenciar Usuários', desc: 'Cadastrar usuários e configurar acessos.', icon: Users, warning: true },
+  { key: 'view_pcp', label: 'Visualizar PCP', desc: 'Acessar o portal de PCP e importação de XML/CSV.', icon: Plug },
+  { key: 'manage_pcp', label: 'Gerenciar PCP', desc: 'Gerenciar importações e configurações do PCP.', icon: Plug },
+  { key: 'manage_routes', label: 'Gerenciar Rotas', desc: 'Configurar templates de roteiros produtivos.', icon: GitFork },
+  { key: 'traceability_collect', label: 'Coleta / Bipagem', desc: 'Registrar peças no coletor de código/RFID.', icon: PlusCircle },
+  { key: 'view_traceability', label: 'Rastreabilidade Geral', desc: 'Acessar o Kanban e timeline de peças.', icon: Layers },
+  { key: 'manage_packaging', label: 'Gerenciar Embalagem', desc: 'Criar volumes e bipar peças (Scan-to-Pack).', icon: Box },
+  { key: 'manage_shipping', label: 'Gerenciar Expedição', desc: 'Realizar checklist de remessas e expedição.', icon: Truck },
+  { key: 'view_mes_alerts', label: 'Alertas MES', desc: 'Visualizar atrasos e gargalos no chão de fábrica.', icon: BellRing }
 ];
+
 
 export default function InviteUserForm({ onInvite, saving }) {
   const { activeCells } = useCells();
@@ -32,57 +109,12 @@ export default function InviteUserForm({ onInvite, saving }) {
   const [shift, setShift] = useState('');
   const [createOperator, setCreateOperator] = useState(true);
   
-  const [permissions, setPermissions] = useState({
-    view_dashboards: true,
-    register_production: true,
-    manage_occurrences: true,
-    manage_cells: false,
-    manage_operators: false,
-    view_reports: false,
-    ai_operations: false,
-    manage_automations: false,
-    manage_users: false,
-  });
+  const [permissions, setPermissions] = useState(() => getDefaultPermissions('operator'));
+
 
   // Atualiza as permissões automaticamente quando o papel muda
   useEffect(() => {
-    if (role === 'admin') {
-      setPermissions({
-        view_dashboards: true,
-        register_production: true,
-        manage_occurrences: true,
-        manage_cells: true,
-        manage_operators: true,
-        view_reports: true,
-        ai_operations: true,
-        manage_automations: true,
-        manage_users: true,
-      });
-    } else if (role === 'manager') {
-      setPermissions({
-        view_dashboards: true,
-        register_production: true,
-        manage_occurrences: true,
-        manage_cells: false,
-        manage_operators: false,
-        view_reports: true,
-        ai_operations: true,
-        manage_automations: false,
-        manage_users: false,
-      });
-    } else {
-      setPermissions({
-        view_dashboards: true,
-        register_production: true,
-        manage_occurrences: true,
-        manage_cells: false,
-        manage_operators: false,
-        view_reports: false,
-        ai_operations: false,
-        manage_automations: false,
-        manage_users: false,
-      });
-    }
+    setPermissions(getDefaultPermissions(role));
   }, [role]);
 
   const togglePermission = (key) => {
@@ -119,17 +151,8 @@ export default function InviteUserForm({ onInvite, saving }) {
     setRegistration('');
     setShift('');
     setCreateOperator(true);
-    setPermissions({
-      view_dashboards: true,
-      register_production: true,
-      manage_occurrences: true,
-      manage_cells: false,
-      manage_operators: false,
-      view_reports: false,
-      ai_operations: false,
-      manage_automations: false,
-      manage_users: false,
-    });
+    setPermissions(getDefaultPermissions('operator'));
+
   };
 
   return (

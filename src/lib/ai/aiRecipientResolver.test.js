@@ -15,35 +15,58 @@ describe('aiRecipientResolver', () => {
     vi.clearAllMocks();
   });
 
-  it('resolves direct email addresses and ensures it in database', async () => {
-    const mockSingle = vi.fn().mockResolvedValue({ data: null, error: null });
-    const mockSelect = vi.fn().mockReturnValue({ single: mockSingle });
-    const mockInsert = vi.fn().mockReturnValue({ select: mockSelect });
-    const mockLimit = vi.fn().mockResolvedValue({ data: [], error: null });
-    const mockEq = vi.fn().mockReturnValue({ limit: mockLimit });
+  it('resolves direct email addresses without creating legacy recipients', async () => {
+    const mockInsert = vi.fn();
 
     vi.mocked(supabase.from).mockImplementation((table) => {
       if (table === 'report_recipients') {
         return {
-          select: () => ({ eq: mockEq }),
+          select: () => ({
+            ilike: () => ({
+              eq: () => ({
+                limit: () => Promise.resolve({ data: [], error: null }),
+              }),
+            }),
+          }),
           insert: mockInsert,
         };
       }
       if (table === 'profiles') {
         return {
-          select: () => ({ eq: () => ({ limit: () => Promise.resolve({ data: [] }) }) }),
+          select: () => ({
+            ilike: () => ({
+              eq: () => ({
+                in: () => ({
+                  limit: () => Promise.resolve({ data: [], error: null }),
+                }),
+              }),
+            }),
+          }),
         };
       }
       return {};
     });
 
     const res = await resolveRecipientsFromPrompt('Envie o OEE para joao@empresa.com', { email: 'admin@empresa.com' });
-    expect(mockInsert).toHaveBeenCalledWith({
-      name: 'joao',
-      email: 'joao@empresa.com',
-      role_label: 'Destinatário externo/manual',
-      recipient_group: 'other',
-      active: true,
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(res.resolved[0]).toMatchObject({ id: null, source: 'direct', email: 'joao@empresa.com' });
+  });
+
+  it('resolves current signed-in user when prompt asks for sender/self', async () => {
+    const res = await resolveRecipientsFromPrompt('Me envie o relatório OEE de hoje no meu e-mail', {
+      id: 'profile-1',
+      name: 'Gildemar',
+      email: 'gildemar@empresa.com',
+      role: 'manager',
+      managed_cells: ['Corte'],
+    });
+
+    expect(res.resolved).toHaveLength(1);
+    expect(res.resolved[0]).toMatchObject({
+      id: 'profile:profile-1',
+      profile_id: 'profile-1',
+      source: 'profile',
+      email: 'gildemar@empresa.com',
     });
   });
 
@@ -68,6 +91,7 @@ describe('aiRecipientResolver', () => {
 
     const res = await resolveRecipientsFromPrompt('Envie para todos os gestores', { email: 'admin@empresa.com' });
     expect(res.resolved).toHaveLength(2);
+    expect(res.resolved[0].id).toBe('profile:1');
     expect(res.resolved[0].email).toBe('carlos@empresa.com');
   });
 });

@@ -50,7 +50,7 @@ export async function executeAiAction(actionPlan, { user, conversationContext = 
   let resolvedRecs = null;
   if (['send_report_email', 'schedule_report_email'].includes(action)) {
     const prompt = actionPlan.rawPrompt || user.prompt || '';
-    resolvedRecs = await resolveRecipientsFromPrompt(prompt, user);
+    resolvedRecs = await resolveRecipientsFromPrompt(prompt, user, { explicitRecipients: actionPlan.recipients });
 
     // Se houver ambiguidade, retorna imediatamente exigindo confirmação do destinatário correto
     if (resolvedRecs.ambiguous.length > 0) {
@@ -183,7 +183,7 @@ export async function executeAiAction(actionPlan, { user, conversationContext = 
   }
 
   if (action === 'schedule_report_email') {
-    return createScheduleFromCommand(actionPlan, user);
+    return createScheduleFromCommand(actionPlan, user, { resolvedRecipients: resolvedRecs });
   }
 
   if (action === 'list_schedules') {

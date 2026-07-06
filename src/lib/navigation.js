@@ -1,37 +1,25 @@
 /**
  * Leo Flow — Navigation Helpers
  *
- * Centraliza redirecionamentos para garantir que o basename /ac-prod/ seja
- * sempre incluído, tanto no dev local (http://localhost:5173/ac-prod/) quanto
- * no GitHub Pages (https://gilsantosz.github.io/ac-prod/).
- *
- * REGRA: Nunca use window.location.href = '/rota' diretamente.
- * Use navigate('/rota') do React Router (preferência) ou navTo('/rota') aqui.
+ * Centraliza redirecionamentos para garantir que o basename seja
+ * dinâmico, tanto no dev local (/) quanto em produção/GitHub Pages (/ac-prod/).
  */
 
-const getBase = () => {
-  const base = import.meta.env.BASE_URL || '/ac-prod/';
-  return base.replace(/\/$/, ''); // Remove trailing slash
+export const getAppBase = () => {
+  const base = import.meta.env.BASE_URL || '/';
+  return base === '/' ? '' : base.replace(/\/$/, '');
 };
 
-/**
- * Redireciona para um caminho dentro do app, incluindo o basename.
- * Equivalente ao window.location.replace() mas com o prefix correto.
- *
- * @param {string} path - ex: '/login', '/', '/dashboard'
- */
-export const navTo = (path) => {
+export const appPath = (path = '/') => {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  window.location.replace(`${getBase()}${cleanPath}`);
+  return `${getAppBase()}${cleanPath}`;
 };
 
-/**
- * Retorna a URL completa de uma rota do app (útil para redirectTo em OAuth).
- *
- * @param {string} path - ex: '/reset-password'
- * @returns {string} - ex: 'http://localhost:5173/ac-prod/reset-password'
- */
-export const appUrl = (path) => {
-  const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  return `${window.location.origin}${getBase()}${cleanPath}`;
+export const appUrl = (path = '/') => {
+  return `${window.location.origin}${appPath(path)}`;
 };
+
+export const navTo = (path = '/') => {
+  window.location.replace(appPath(path));
+};
+

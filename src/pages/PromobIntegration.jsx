@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/lib/supabaseClient';
 import {
   Upload, Plug, History, FileText, Database, Shield, Settings, Download, Search,
-  RefreshCw, Trash2, Check, Lock, Cloud
+  RefreshCw, Trash2, Check, Lock, Cloud, GitFork
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -26,6 +26,8 @@ import {
 
 // ─── Sub-componentes ──────────────────────────────────────────
 import XmlImportTab from '@/components/promob/XmlImportTab';
+import ApiConfigTab from '@/components/promob/ApiConfigTab';
+
 
 export default function PromobIntegration() {
   const { user } = useAuth();
@@ -467,10 +469,98 @@ export default function PromobIntegration() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-5 sm:space-y-6">
       <PageHeader
-        title="Portal PCP — Entrada de Produção XML/CSV"
-        subtitle="Gerencie importações de planos de corte Promob/planilhas, logs de processamento, rastreabilidade e retenção de backups."
+        title="PCP / Retaguarda — Portal de Planejamento"
+        subtitle="Gerencie importações de planos de corte XML/CSV, ordens de produção, logs, backups de conformidade de 4 anos e configurações."
         icon={Plug}
       />
+
+      {/* Cards de Atalhos Rápidos */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+        <button
+          onClick={() => handleTabChange('import')}
+          className={cn(
+            "p-3 border rounded-2xl text-left bg-card hover:bg-secondary/15 transition-all text-xs flex flex-col justify-between min-h-[85px] border-border/60",
+            activeTab === 'import' && "border-[#2d9c4a]/50 bg-[#2d9c4a]/5"
+          )}
+        >
+          <Upload className="w-4.5 h-4.5 text-[#2d9c4a]" />
+          <div>
+            <p className="font-bold text-foreground">Importar Arquivo</p>
+            <p className="text-[10px] text-muted-foreground">Upload XML/CSV</p>
+          </div>
+        </button>
+
+        <button
+          onClick={() => handleTabChange('orders')}
+          className={cn(
+            "p-3 border rounded-2xl text-left bg-card hover:bg-secondary/15 transition-all text-xs flex flex-col justify-between min-h-[85px] border-border/60",
+            activeTab === 'orders' && "border-[#2d9c4a]/50 bg-[#2d9c4a]/5"
+          )}
+        >
+          <FileText className="w-4.5 h-4.5 text-blue-500" />
+          <div>
+            <p className="font-bold text-foreground">Ordens de Prod.</p>
+            <p className="text-[10px] text-muted-foreground">{ordersCount} ativas</p>
+          </div>
+        </button>
+
+        <button
+          onClick={() => handleTabChange('history')}
+          className={cn(
+            "p-3 border rounded-2xl text-left bg-card hover:bg-secondary/15 transition-all text-xs flex flex-col justify-between min-h-[85px] border-border/60",
+            activeTab === 'history' && "border-[#2d9c4a]/50 bg-[#2d9c4a]/5"
+          )}
+        >
+          <History className="w-4.5 h-4.5 text-indigo-500" />
+          <div>
+            <p className="font-bold text-foreground">Histórico</p>
+            <p className="text-[10px] text-muted-foreground">{batchesCount} importações</p>
+          </div>
+        </button>
+
+        <button
+          onClick={() => handleTabChange('logs')}
+          className={cn(
+            "p-3 border rounded-2xl text-left bg-card hover:bg-secondary/15 transition-all text-xs flex flex-col justify-between min-h-[85px] border-border/60",
+            activeTab === 'logs' && "border-[#2d9c4a]/50 bg-[#2d9c4a]/5"
+          )}
+        >
+          <Database className="w-4.5 h-4.5 text-amber-500" />
+          <div>
+            <p className="font-bold text-foreground">Logs do PCP</p>
+            <p className="text-[10px] text-muted-foreground">{logsCount} entradas</p>
+          </div>
+        </button>
+
+        <button
+          onClick={() => handleTabChange('backup')}
+          className={cn(
+            "p-3 border rounded-2xl text-left bg-card hover:bg-secondary/15 transition-all text-xs flex flex-col justify-between min-h-[85px] border-border/60",
+            activeTab === 'backup' && "border-[#2d9c4a]/50 bg-[#2d9c4a]/5"
+          )}
+        >
+          <Shield className="w-4.5 h-4.5 text-emerald-500" />
+          <div>
+            <p className="font-bold text-foreground">Backups</p>
+            <p className="text-[10px] text-muted-foreground">{backupsCount} salvos</p>
+          </div>
+        </button>
+
+        <Button
+          asChild
+          variant="outline"
+          className="p-3 border rounded-2xl text-left bg-card hover:bg-secondary/15 transition-all text-xs flex flex-col justify-between items-start min-h-[85px] border-border/60 h-auto hover:text-foreground active:scale-100"
+        >
+          <Link to="/rotas-produtivas" className="w-full">
+            <GitFork className="w-4.5 h-4.5 text-violet-500" />
+            <div>
+              <p className="font-bold text-foreground">Rotas Produtivas</p>
+              <p className="text-[10px] text-muted-foreground">Sequências MES</p>
+            </div>
+          </Link>
+        </Button>
+      </div>
+
 
       <Tabs defaultValue="import" value={activeTab} onValueChange={handleTabChange} className="space-y-6">
         <TabsList className="bg-card border border-border/60 overflow-x-auto flex-wrap h-auto gap-1 p-1">
@@ -662,7 +752,7 @@ export default function PromobIntegration() {
                 <table className="w-full text-sm">
                   <thead className="bg-secondary/30 border-b border-border/60">
                     <tr>
-                      {['Data Criada', 'Código OP', 'Cliente', 'Projeto', 'Entrega', 'Status'].map(h => (
+                      {['Data Criada', 'Código OP', 'Cliente', 'Projeto', 'Entrega', 'Status', 'Ações'].map(h => (
                         <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                           {h}
                         </th>
@@ -681,7 +771,7 @@ export default function PromobIntegration() {
                         <td className="px-4 py-3 text-xs text-foreground font-medium">
                           {order.customer_name || '—'}
                         </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground truncate max-w-[200px]">
+                        <td className="px-4 py-3 text-xs text-muted-foreground truncate max-w-[150px]">
                           {order.promob_project_name || '—'}
                         </td>
                         <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
@@ -692,10 +782,26 @@ export default function PromobIntegration() {
                             {order.status}
                           </Badge>
                         </td>
+                        <td className="px-4 py-3 text-xs space-x-1.5 whitespace-nowrap">
+                          <Button asChild variant="outline" size="sm" className="h-7 text-[10px]">
+                            <Link to="/rastreabilidade?tab=kanban">Kanban</Link>
+                          </Button>
+                          {(order.status === 'released' || order.status === 'in_production') && (
+                            <Button asChild variant="outline" size="sm" className="h-7 text-[10px] text-amber-600 hover:text-amber-700">
+                              <Link to="/rastreabilidade?tab=packaging">Embalar</Link>
+                            </Button>
+                          )}
+                          {order.status === 'completed' && (
+                            <Button asChild variant="outline" size="sm" className="h-7 text-[10px] text-emerald-600 hover:text-emerald-700">
+                              <Link to="/rastreabilidade?tab=shipping">Expedir</Link>
+                            </Button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+
               )}
             </div>
 
@@ -1055,8 +1161,15 @@ export default function PromobIntegration() {
               })
             )}
           </div>
+
+          {/* Configuração de APIs ativas e webhook integrando ApiConfigTab */}
+          <div className="pt-6 border-t border-border/60">
+            <h4 className="font-bold text-sm text-foreground mb-3">Configurador de APIs e Sincronização Dinâmica (Promob API)</h4>
+            <ApiConfigTab />
+          </div>
         </TabsContent>
       </Tabs>
+
 
       {/* Dialog de Confirmação de Exclusão com Senha */}
       <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>

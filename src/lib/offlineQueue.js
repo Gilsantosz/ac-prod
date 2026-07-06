@@ -1,3 +1,17 @@
+/**
+ * @deprecated FASE 1 — AC.Prod MES (2025-07)
+ *
+ * Esta fila usa localStorage e serve APENAS para apontamentos manuais da tela
+ * de Entrada (/entrada). Ela NÃO tem suporte a idempotência nem a eventos de
+ * rastreabilidade por código de barras/RFID.
+ *
+ * Para coleta rastreável (coleta setor a setor, bipagem, RFID):
+ *   → usar: src/lib/collectionEventQueue.js   (IndexedDB + client_event_id idempotente)
+ *   → hook: src/hooks/useCollectionQueue.js
+ *
+ * Esta fila permanece ativa por compatibilidade com Entry.jsx. Não criar novos
+ * usos. Remover somente após Entry.jsx migrar para useCollectionQueue.
+ */
 // Fila offline de registros de produção (persistida em localStorage)
 const KEY = 'prodview_offline_queue';
 

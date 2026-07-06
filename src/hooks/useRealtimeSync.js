@@ -8,7 +8,9 @@ const TABLE_TO_QUERY_KEY = {
   daily_goals: ['dailyGoals'],
   occurrences: ['occurrences'],
   operators: ['operators'],
-  cells: ['cells'],
+  cells: ['cells', 'cells-admin-list'],
+  production_machines: ['production-machines', 'machines-admin-list'],
+  production_daily_goals: ['production-daily-goals', 'collection-kpis', 'cells-goals-summary'],
   automation_rules: ['automationRules'],
   profiles: ['users', 'me'],
   alert_logs: ['unresolvedAlerts'],
@@ -38,15 +40,16 @@ export function useRealtimeSync(enabled = true) {
         },
         (payload) => {
           const table = payload.table;
-          const queryKey = TABLE_TO_QUERY_KEY[table];
+          const queryKeys = TABLE_TO_QUERY_KEY[table];
 
-          if (queryKey) {
-            console.log(`[Realtime Sync] Alteração detectada em '${table}', invalidando cache:`, queryKey);
+          if (queryKeys) {
+            console.log(`[Realtime Sync] Alteração detectada em '${table}', invalidando caches:`, queryKeys);
             
             // Invalida a chave da query correspondente
-            // Isso força o React Query a fazer um refetch inteligente em background,
-            // atualizando a interface gráfica (UI) sem travar ou forçar F5.
-            queryClient.invalidateQueries({ queryKey });
+            // Como mapeamos chaves aninhadas, invalidamos cada uma delas de forma robusta
+            queryKeys.forEach(queryKey => {
+              queryClient.invalidateQueries({ queryKey: [queryKey] });
+            });
           }
         }
       )

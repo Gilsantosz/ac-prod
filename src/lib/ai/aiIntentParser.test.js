@@ -26,6 +26,16 @@ describe('aiIntentParser', () => {
     });
   });
 
+  it('detects current user as recipient for self-send prompts', () => {
+    const res = parseIntent('Me envie o relatório OEE de hoje no meu e-mail', { now: clock });
+    expect(res).toMatchObject({
+      action: 'send_report_email',
+      reportType: 'oee',
+      recipients: ['remetente'],
+      filters: { startDate: '2026-06-30', endDate: '2026-06-30' },
+    });
+  });
+
   it('detects daily schedule', () => {
     const res = parseIntent('Agende o resumo diário de produção para todos os gestores às 7h', { now: clock });
     expect(res).toMatchObject({

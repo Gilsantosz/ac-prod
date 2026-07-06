@@ -31,9 +31,9 @@ function reportLabel(type) {
   return map[type] || type;
 }
 
-export async function createScheduleFromCommand(command, user) {
-  // Resolve recipients
-  const resolvedRecs = await resolveRecipientsFromPrompt(user.prompt || '', user);
+export async function createScheduleFromCommand(command, user, options = {}) {
+  const resolvedRecs = options.resolvedRecipients
+    || await resolveRecipientsFromPrompt(command.rawPrompt || user.prompt || '', user, { explicitRecipients: command.recipients });
   const recipientIds = resolvedRecs.resolved.map(r => r.id).filter(Boolean);
   const extraEmails = resolvedRecs.resolved.filter(r => !r.id).map(r => r.email);
 

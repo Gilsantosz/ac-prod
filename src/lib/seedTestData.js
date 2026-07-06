@@ -1,12 +1,7 @@
-/**
- * seedTestData.js
- * Gera dados de produção realistas para testes do sistema.
- * 10 dias de histórico, 3 turnos, 5 células, dados por hora.
- */
-
 import { base44 } from './localDb';
+import { supabase } from './supabaseClient';
 
-const CELLS = ['Célula A', 'Célula B', 'Célula C', 'Célula D', 'Célula E'];
+const CELLS = ['Corte', 'Bordo', 'Usinagem', 'Marcenaria', 'Embalagem', 'Expedição'];
 const SHIFTS = ['1º Turno', '2º Turno', '3º Turno'];
 
 // Horários por turno (hora de início de cada intervalo)
@@ -18,20 +13,22 @@ const SHIFT_HOURS = {
 
 // Meta padrão por turno/célula (peças/hora)
 const BASE_TARGET_PER_HOUR = {
-  'Célula A': 50,
-  'Célula B': 45,
-  'Célula C': 60,
-  'Célula D': 40,
-  'Célula E': 55,
+  'Corte': 50,
+  'Bordo': 45,
+  'Usinagem': 60,
+  'Marcenaria': 40,
+  'Embalagem': 55,
+  'Expedição': 50,
 };
 
 // Perfis de eficiência por célula (simulam comportamentos distintos)
 const CELL_EFFICIENCY_PROFILES = {
-  'Célula A': { avg: 92, variance: 8 },   // Alta performance
-  'Célula B': { avg: 78, variance: 12 },  // Performance moderada
-  'Célula C': { avg: 85, variance: 10 },  // Boa performance
-  'Célula D': { avg: 65, variance: 20 },  // Performance baixa (com críticos)
-  'Célula E': { avg: 95, variance: 5 },   // Excelente performance
+  'Corte': { avg: 92, variance: 8 },
+  'Bordo': { avg: 78, variance: 12 },
+  'Usinagem': { avg: 85, variance: 10 },
+  'Marcenaria': { avg: 65, variance: 20 },
+  'Embalagem': { avg: 95, variance: 5 },
+  'Expedição': { avg: 90, variance: 7 },
 };
 
 // Ocorrências típicas de parada (compatíveis com os motivos do formulário de ocorrências)
@@ -54,32 +51,22 @@ function clamp(val, min, max) {
   return Math.max(min, Math.min(max, val));
 }
 
-/**
- * Gera a string de data no formato yyyy-MM-dd para N dias atrás
- */
 function dateNDaysAgo(n) {
   const d = new Date();
   d.setDate(d.getDate() - n);
   return d.toISOString().slice(0, 10);
 }
 
-/**
- * Gera eficiência baseada no perfil da célula, com variações por hora e turno
- */
 function generateEfficiency(cell, shift, hour) {
-  const profile = CELL_EFFICIENCY_PROFILES[cell];
+  const profile = CELL_EFFICIENCY_PROFILES[cell] || { avg: 80, variance: 10 };
   let base = profile.avg;
 
-  // Penalidade no início do turno (aquecimento)
   const shiftHours = SHIFT_HOURS[shift];
   const hourIndex = shiftHours.indexOf(Number(hour));
-  if (hourIndex === 0) base -= 10; // primeira hora mais baixa
-  if (hourIndex === 1) base -= 5;  // segunda hora ainda aquecendo
-
-  // Penalidade no final do turno (fadiga)
+  if (hourIndex === 0) base -= 10;
+  if (hourIndex === 1) base -= 5;
   if (hourIndex === shiftHours.length - 1) base -= 5;
 
-  // Variação aleatória
   const noise = (Math.random() - 0.5) * profile.variance * 2;
   const eff = clamp(base + noise, 30, 110);
 
@@ -101,8 +88,6 @@ async function seedProductionEntries(daysBack = 10) {
 
       for (const cell of CELLS) {
         const baseTarget = BASE_TARGET_PER_HOUR[cell];
-
-        // Nem todo turno tem todos os horários (simula intervalos reais)
         const activeHours = hours.slice(0, randomBetween(5, 8));
 
         for (const hour of activeHours) {
@@ -112,7 +97,7 @@ async function seedProductionEntries(daysBack = 10) {
           const scrap = eff < 70 ? randomBetween(2, 8) : randomBetween(0, 3);
           const downtime = eff < 65 ? randomBetween(10, 30) : (eff < 80 ? randomBetween(0, 10) : 0);
           const reason = downtime > 0 ? DOWNTIME_REASONS[randomBetween(0, DOWNTIME_REASONS.length - 1)] : '';
-          const operator = `Operador ${randomBetween(1, 5)}`;
+          const operatorName = `Operador ${randomBetween(1, 5)}`;
 
           entries.push({
             date,
@@ -124,10 +109,9 @@ async function seedProductionEntries(daysBack = 10) {
             scrap,
             downtime,
             notes: reason,
-            operator,
+            operator: operatorName,
           });
 
-          // Se houve parada, cria também um registro de Ocorrência correspondente
           if (downtime > 0) {
             occurrences.push({
               date,
@@ -135,7 +119,7 @@ async function seedProductionEntries(daysBack = 10) {
               cell,
               reason: reason,
               downtime,
-              operator,
+              operator: operatorName,
               notes: 'Parada registrada automaticamente pelo gerador de dados de teste.',
             });
           }
@@ -144,7 +128,7 @@ async function seedProductionEntries(daysBack = 10) {
     }
   }
 
-  // Insere entradas em lotes de 20
+  // Insere entradas em lotes
   let count = 0;
   for (let i = 0; i < entries.length; i += 20) {
     const batch = entries.slice(i, i + 20);
@@ -152,7 +136,7 @@ async function seedProductionEntries(daysBack = 10) {
     count += batch.length;
   }
 
-  // Insere ocorrências em lotes de 20
+  // Insere ocorrências em lotes
   let occCount = 0;
   for (let i = 0; i < occurrences.length; i += 20) {
     const batch = occurrences.slice(i, i + 20);
@@ -169,11 +153,11 @@ async function seedOperators() {
   let count = 0;
 
   const testOperators = [
-    { name: 'Carlos Silva', registration: '00101', shift: '1º Turno', cells: ['Célula A', 'Célula B'], active: true },
-    { name: 'Marcos Souza', registration: '00102', shift: '2º Turno', cells: ['Célula B', 'Célula C'], active: true },
-    { name: 'Ana Costa', registration: '00103', shift: '3º Turno', cells: ['Célula A', 'Célula D'], active: true },
-    { name: 'Juliana Lima', registration: '00104', shift: '1º Turno', cells: ['Célula D', 'Célula E'], active: true },
-    { name: 'Roberto Alves', registration: '00105', shift: '2º Turno', cells: ['Célula C', 'Célula E'], active: true },
+    { name: 'Carlos Silva', registration: '00101', shift: '1º Turno', cells: ['Corte', 'Bordo'], active: true },
+    { name: 'Marcos Souza', registration: '00102', shift: '2º Turno', cells: ['Bordo', 'Usinagem'], active: true },
+    { name: 'Ana Costa', registration: '00103', shift: '3º Turno', cells: ['Corte', 'Marcenaria'], active: true },
+    { name: 'Juliana Lima', registration: '00104', shift: '1º Turno', cells: ['Marcenaria', 'Embalagem'], active: true },
+    { name: 'Roberto Alves', registration: '00105', shift: '2º Turno', cells: ['Usinagem', 'Expedição'], active: true },
   ];
 
   for (const op of testOperators) {
@@ -185,9 +169,6 @@ async function seedOperators() {
   return count;
 }
 
-/**
- * Injeta metas diárias por célula/turno
- */
 async function seedDailyGoals(daysBack = 10) {
   const goals = [];
 
@@ -216,16 +197,13 @@ async function seedDailyGoals(daysBack = 10) {
       await base44.entities.DailyGoal.create(g);
       count++;
     } catch {
-      // upsert pode falhar por conflito — ok
+      // ignorar falha por conflito de chave
     }
   }
 
   return count;
 }
 
-/**
- * Injeta células no banco (se ainda não existirem)
- */
 async function seedCells() {
   const existing = await base44.entities.Cell.list();
   const existingNames = existing.map(c => c.name);
@@ -248,9 +226,202 @@ async function seedCells() {
 }
 
 /**
- * Função principal de seed — executa tudo em sequência
- * Retorna um resumo do que foi criado
+ * Injeta lotes, peças, rotas, leituras, pacotes e remessas de teste consistentes (Chão de fábrica MES).
+ * Importante: preserva os dados de coletas de histórico de testes existentes no banco.
  */
+async function seedTraceabilityData() {
+  const testLots = [
+    { lot_code: 'LOTE-TESTE-101', customer_name: 'Residencial Alpha', order_number: 'PED-901', status: 'waiting_packaging', current_stage: 'Embalagem', planned_quantity: 42, approved_quantity: 42 },
+    { lot_code: 'LOTE-TESTE-102', customer_name: 'Apartamento 302', order_number: 'PED-902', status: 'in_progress', current_stage: 'Usinagem', planned_quantity: 15, approved_quantity: 8 },
+    { lot_code: 'LOTE-TESTE-103', customer_name: 'Consultório Med', order_number: 'PED-903', status: 'waiting_shipping', current_stage: 'Expedição', planned_quantity: 28, approved_quantity: 28 },
+    { lot_code: 'LOTE-TESTE-104', customer_name: 'Cozinha Planejada B', order_number: 'PED-904', status: 'completed', current_stage: 'Concluído', planned_quantity: 10, approved_quantity: 10 }
+  ];
+
+  for (const l of testLots) {
+    const { data: existingLot } = await supabase
+      .from('production_lots')
+      .select('id')
+      .eq('lot_code', l.lot_code)
+      .maybeSingle();
+
+    let lotId = existingLot?.id;
+
+    if (!lotId) {
+      // 1. Cria Ordem de Produção
+      const { data: order } = await supabase
+        .from('production_orders')
+        .insert({
+          order_code: l.order_number,
+          customer_name: l.customer_name,
+          status: l.status === 'completed' ? 'shipped' : 'in_progress'
+        })
+        .select()
+        .single();
+
+      // 2. Cria Lote
+      const { data: newLot } = await supabase
+        .from('production_lots')
+        .insert({
+          order_id: order.id,
+          production_order_id: order.id,
+          lot_code: l.lot_code,
+          status: l.status,
+          current_status: l.status,
+          current_stage: l.current_stage,
+          planned_quantity: l.planned_quantity,
+          approved_quantity: l.approved_quantity,
+          customer_name: l.customer_name,
+          order_number: l.order_number
+        })
+        .select()
+        .single();
+
+      lotId = newLot.id;
+
+      // 3. Cria Rotas de Produção
+      const steps = ['Corte', 'Bordo', 'Usinagem', 'Marcenaria', 'Embalagem', 'Expedição'];
+      const routeInserts = steps.map((step, idx) => ({
+        lot_id: lotId,
+        step_order: idx + 1,
+        step_name: step,
+        cell_name: step,
+        required: true
+      }));
+      await supabase.from('production_routes').insert(routeInserts);
+
+      // 4. Cria Peças
+      const pieceNames = ['Lateral Direita', 'Lateral Esquerda', 'Base Inferior', 'Tampo Superior', 'Prateleira Móvel', 'Frente Gaveta', 'Porta Giro'];
+      const pieceInserts = [];
+      
+      for (let i = 1; i <= l.planned_quantity; i++) {
+        const pieceName = pieceNames[(i - 1) % pieceNames.length];
+        const suffix = String(i).padStart(3, '0');
+        const pieceUid = `AC-${l.lot_code}-${suffix}`;
+
+        pieceInserts.push({
+          lot_id: lotId,
+          piece_uid: pieceUid,
+          piece_name: `${pieceName} (${suffix})`,
+          material: i % 2 === 0 ? 'MDF Branco 18mm' : 'MDF Louro Freijó 15mm',
+          color: i % 2 === 0 ? 'Branco' : 'Madeirado',
+          width: i % 2 === 0 ? 600 : 450,
+          length: i % 2 === 0 ? 1200 : 800,
+          thickness: i % 2 === 0 ? 18 : 15,
+          current_stage: l.current_stage,
+          status: 'approved'
+        });
+      }
+      
+      const { data: createdPieces } = await supabase
+        .from('production_pieces')
+        .insert(pieceInserts)
+        .select();
+
+      // 5. Cria leituras (readings) de histórico correspondentes
+      const readingsToInsert = [];
+      const now = new Date();
+
+      if (l.lot_code === 'LOTE-TESTE-101' || l.lot_code === 'LOTE-TESTE-103' || l.lot_code === 'LOTE-TESTE-104') {
+        const completedStages = l.lot_code === 'LOTE-TESTE-101' 
+          ? ['Corte', 'Bordo', 'Usinagem', 'Marcenaria']
+          : l.lot_code === 'LOTE-TESTE-103'
+            ? ['Corte', 'Bordo', 'Usinagem', 'Marcenaria', 'Embalagem']
+            : ['Corte', 'Bordo', 'Usinagem', 'Marcenaria', 'Embalagem', 'Expedição'];
+
+        createdPieces.forEach((piece) => {
+          completedStages.forEach((stage, sIdx) => {
+            const timeOffset = sIdx * 10;
+            const readTime = new Date(now.getTime() - (2 * 24 * 60 * 60 * 1000) + (timeOffset * 60 * 1000));
+            
+            readingsToInsert.push({
+              lot_id: lotId,
+              tag_id: crypto.randomUUID(),
+              tag_value: piece.piece_uid,
+              reader_type: 'keyboard_barcode',
+              reader_name: 'Scanner Teclado',
+              step_name: stage,
+              cell_name: stage,
+              operator: 'Carlos Silva',
+              shift: '1º Turno',
+              date: readTime.toISOString().slice(0, 10),
+              hour: readTime.toTimeString().slice(0, 5),
+              status: 'approved',
+              event_type: 'approved_scan',
+              quantity: 1,
+              created_at: readTime.toISOString(),
+              lot_code: l.lot_code,
+              order_number: l.order_number,
+              customer_name: l.customer_name,
+              piece_code: piece.piece_uid
+            });
+          });
+        });
+      }
+
+      if (l.lot_code === 'LOTE-TESTE-102') {
+        createdPieces.forEach((piece, pIdx) => {
+          if (pIdx < 8) {
+            const readTime = new Date(now.getTime() - (60 * 60 * 1000));
+            readingsToInsert.push({
+              lot_id: lotId,
+              tag_id: crypto.randomUUID(),
+              tag_value: piece.piece_uid,
+              reader_type: 'keyboard_barcode',
+              reader_name: 'Scanner Teclado',
+              step_name: 'Corte',
+              cell_name: 'Corte',
+              operator: 'Marcos Souza',
+              shift: '2º Turno',
+              date: readTime.toISOString().slice(0, 10),
+              hour: readTime.toTimeString().slice(0, 5),
+              status: 'approved',
+              event_type: 'approved_scan',
+              quantity: 1,
+              created_at: readTime.toISOString(),
+              lot_code: l.lot_code,
+              order_number: l.order_number,
+              customer_name: l.customer_name,
+              piece_code: piece.piece_uid
+            });
+          }
+        });
+      }
+
+      if (readingsToInsert.length > 0) {
+        for (let idx = 0; idx < readingsToInsert.length; idx += 30) {
+          await supabase.from('production_stage_readings').insert(readingsToInsert.slice(idx, idx + 30));
+        }
+      }
+
+      // 6. Cria Pacotes (Volumes)
+      if (l.lot_code === 'LOTE-TESTE-103' || l.lot_code === 'LOTE-TESTE-104') {
+        const pkgInserts = [
+          { lot_id: lotId, order_id: order.id, package_code: `VOL-${l.lot_code}-001`, volume_number: 1, status: 'closed', total_items: 15, closed_at: now.toISOString() },
+          { lot_id: lotId, order_id: order.id, package_code: `VOL-${l.lot_code}-002`, volume_number: 2, status: 'closed', total_items: 13, closed_at: now.toISOString() }
+        ];
+        await supabase.from('packages').insert(pkgInserts);
+      }
+
+      // 7. Cria Remessas de Carga
+      if (l.lot_code === 'LOTE-TESTE-104') {
+        await supabase
+          .from('shipments')
+          .insert({
+            order_id: order.id,
+            lot_id: lotId,
+            shipment_code: 'CARGA-TESTE-104',
+            carrier: 'Transportadora Leo',
+            vehicle: 'Caminhão Ford Cargo',
+            driver: 'Antônio Santos',
+            tracking_code: 'TRK-LEO-104',
+            shipped_at: now.toISOString(),
+            status: 'shipped'
+          });
+      }
+    }
+  }
+}
+
 export async function runSeedTestData(daysBack = 10) {
   const results = { cells: 0, entries: 0, occurrences: 0, goals: 0, operators: 0, errors: [] };
 
@@ -278,6 +449,12 @@ export async function runSeedTestData(daysBack = 10) {
     results.goals = await seedDailyGoals(daysBack);
   } catch (e) {
     results.errors.push(`Metas: ${e.message}`);
+  }
+
+  try {
+    await seedTraceabilityData();
+  } catch (e) {
+    results.errors.push(`Fluxos Rastreabilidade: ${e.message}`);
   }
 
   return results;

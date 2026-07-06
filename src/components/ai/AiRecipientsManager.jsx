@@ -1,170 +1,64 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Loader2, Plus, Trash2, UserRoundCog, Info, ShieldCheck, ArrowRight, ExternalLink } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { IndustrialEmptyState, IndustrialSectionCard } from '@/components/industrial';
+import { Building2, ShieldCheck, UserRoundCog } from 'lucide-react';
 
-export default function AiRecipientsManager({ items = [], warning = '', canManage, saving, onSave, onDelete }) {
-  const navigate = useNavigate();
-  const [form, setForm] = useState({ name: '', email: '', roleLabel: 'Contato', recipientGroup: 'other' });
+function cellsLabel(item) {
+  if (!item.cell_filter?.length) return 'Todas as células';
+  return item.cell_filter.join(', ');
+}
 
-  const submit = async (event) => {
-    event.preventDefault();
-    await onSave(form);
-    setForm({ name: '', email: '', roleLabel: 'Contato', recipientGroup: 'other' });
-  };
+export default function AiRecipientsManager({ items = [], warning = '' }) {
+  const profileCount = items.filter((item) => item.source === 'profile').length;
+  const legacyCount = items.filter((item) => item.source !== 'profile').length;
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-[minmax(320px,420px)_1fr] gap-6">
-      {/* Painel Esquerdo: Controle Unificado */}
-      <div className="space-y-6">
-        <IndustrialSectionCard
-          title="Gestão Centralizada"
-          subtitle="Integração de Contas e Envios"
-          icon={ShieldCheck}
-        >
-          <div className="space-y-4">
-            <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/30 rounded-xl flex gap-3 text-sm text-emerald-800 dark:text-emerald-300">
-              <Info className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <p className="font-semibold">Cadastro Unificado de Gestores</p>
-                <p className="text-xs text-emerald-700/90 dark:text-emerald-400/90 leading-relaxed">
-                  Para evitar duplicidades e inconsistências, gestores com acesso ao sistema devem ser cadastrados na página de <strong>Usuários e Acessos</strong>. Eles são automaticamente sincronizados para receber relatórios.
-                </p>
-              </div>
-            </div>
-
-            <Button
-              onClick={() => navigate('/usuarios?tab=managers')}
-              className="w-full gap-2 bg-emerald-700 hover:bg-emerald-800 text-white dark:bg-emerald-600 dark:hover:bg-emerald-700"
-            >
-              Ir para Controle de Acessos
-              <ArrowRight className="w-4 h-4" />
-            </Button>
-          </div>
-        </IndustrialSectionCard>
-
-        {canManage && (
-          <IndustrialSectionCard
-            title="Outros Destinatários"
-            subtitle="Adicione contatos externos ou e-mails pontuais"
-            icon={Plus}
-          >
-            <form onSubmit={submit} className="space-y-4">
-              <div className="space-y-2">
-                <Label>Nome do Contato</Label>
-                <Input
-                  required
-                  placeholder="Ex: Diretoria Externa"
-                  value={form.name}
-                  onChange={(event) => setForm((curr) => ({ ...curr, name: event.target.value }))}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>E-mail</Label>
-                <Input
-                  type="email"
-                  required
-                  placeholder="diretoria@parceiro.com"
-                  value={form.email}
-                  onChange={(event) => setForm((curr) => ({ ...curr, email: event.target.value }))}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Cargo / Rótulo</Label>
-                <Input
-                  placeholder="Ex: Auditor Externo"
-                  value={form.roleLabel}
-                  onChange={(event) => setForm((curr) => ({ ...curr, roleLabel: event.target.value }))}
-                />
-              </div>
-
-              <Button type="submit" disabled={saving} className="w-full gap-2">
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                Cadastrar Contato
-              </Button>
-            </form>
-          </IndustrialSectionCard>
-        )}
-      </div>
-
-      {/* Painel Direito: Lista de Destinatários */}
+    <div className="space-y-5">
       <IndustrialSectionCard
-        title="Lista de Destinatários Cadastrados"
-        subtitle="E-mails autorizados para recebimento de relatórios e alertas industriais."
-        icon={UserRoundCog}
+        title="Fonte oficial de destinatários"
+        subtitle="A IA agora consulta diretamente a aba Usuários/Gestores. Não é mais necessário cadastrar o mesmo e-mail dentro da página de IA."
+        icon={ShieldCheck}
       >
-        {warning && (
-          <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/30 rounded-xl text-sm text-amber-800 dark:text-amber-400">
-            {warning}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+          <div className="rounded-lg border border-border/70 p-3">
+            <p className="text-muted-foreground text-xs">Gestores/Admins oficiais</p>
+            <strong className="text-2xl text-foreground">{profileCount}</strong>
           </div>
-        )}
+          <div className="rounded-lg border border-border/70 p-3">
+            <p className="text-muted-foreground text-xs">Cadastros legados IA</p>
+            <strong className="text-2xl text-foreground">{legacyCount}</strong>
+          </div>
+          <div className="rounded-lg border border-border/70 p-3">
+            <p className="text-muted-foreground text-xs">Regra ativa</p>
+            <strong className="text-sm text-emerald-700 dark:text-emerald-400">Sem duplicidade</strong>
+          </div>
+        </div>
+        {warning && <p className="mt-4 text-sm text-amber-700 dark:text-amber-400">{warning}</p>}
+        <p className="mt-4 text-xs text-muted-foreground">
+          Para incluir, alterar ou desativar um destinatário, use <strong>Usuários → Gestores</strong>. A IA usa nome, e-mail, perfil e células monitoradas desse cadastro.
+        </p>
+      </IndustrialSectionCard>
 
+      <IndustrialSectionCard title="Gestores disponíveis para a IA" subtitle="Destinatários resolvidos automaticamente pelo motor IA." icon={UserRoundCog}>
         {!items.length ? (
-          <IndustrialEmptyState
-            title="Nenhum destinatário"
-            description="Todos os gestores cadastrados no controle de acesso e contatos externos aparecerão aqui."
-            icon={UserRoundCog}
-          />
+          <IndustrialEmptyState title="Nenhum gestor ativo encontrado" description="Cadastre pelo menos um usuário com perfil Gestor ou Administrador na aba Usuários/Gestores." icon={UserRoundCog} />
         ) : (
-          <div className="divide-y divide-border/60">
-            {items.map((item) => {
-              const isSynced = item.recipient_group === 'manager';
-              return (
-                <div key={item.id} className="flex items-center justify-between gap-4 py-3.5 first:pt-0 last:pb-0">
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <strong className="text-sm font-semibold text-foreground truncate">
-                        {item.name}
-                      </strong>
-                      {isSynced ? (
-                        <Badge variant="outline" className="text-[10px] font-normal border-emerald-200 text-emerald-800 bg-emerald-50/50 dark:border-emerald-900/40 dark:text-emerald-400 dark:bg-emerald-950/20">
-                          Sincronizado (Perfil)
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-[10px] font-normal border-muted text-muted-foreground bg-muted/20">
-                          Contato Externo
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {item.email} &middot; {item.role_label || item.recipient_group}
-                    </p>
+          <div className="divide-y divide-border">
+            {items.map((item) => (
+              <div key={item.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <strong className="block text-sm truncate">{item.name}</strong>
+                    <Badge variant={item.source === 'profile' ? 'default' : 'secondary'} className="text-[10px]">
+                      {item.source_label || item.role_label || 'Destinatário'}
+                    </Badge>
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    {isSynced ? (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/5"
-                        onClick={() => navigate('/usuarios?tab=managers')}
-                        title="Ir para edição no controle de acessos"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                      </Button>
-                    ) : (
-                      canManage && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                          onClick={() => onDelete(item.id)}
-                          title="Excluir destinatário"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      )
-                    )}
-                  </div>
+                  <span className="text-sm text-muted-foreground truncate">{item.email}</span>
+                  <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                    <Building2 className="w-3.5 h-3.5" /> {cellsLabel(item)}
+                  </p>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )}
       </IndustrialSectionCard>

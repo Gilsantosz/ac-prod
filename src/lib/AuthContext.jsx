@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { clearPersistedAuthSession, persistAuthSession, restoreAuthSession, supabase } from '@/lib/supabaseClient';
 import { base44 } from '@/lib/localDb';
+import { navTo } from '@/lib/navigation';
 
 const AuthContext = createContext();
 const AUTH_STEP_TIMEOUT_MS = 3000;
@@ -11,12 +12,74 @@ const withTimeout = (promise, timeoutMs, fallback) => Promise.race([
   new Promise((resolve) => setTimeout(() => resolve(fallback), timeoutMs)),
 ]);
 
-// ─── Helper: navega respeitando o basename /ac-prod/ ────────────────────────
 const redirectTo = (path) => {
-  const base = (import.meta.env.BASE_URL || '/ac-prod/').replace(/\/$/, '');
-  const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  window.location.replace(`${base}${cleanPath}`);
+  navTo(path);
 };
+
+const getDefaultPermissions = (role) => {
+  if (role === 'admin') {
+    return {
+      view_dashboards: true,
+      register_production: true,
+      manage_occurrences: true,
+      manage_cells: true,
+      manage_operators: true,
+      view_reports: true,
+      ai_operations: true,
+      manage_automations: true,
+      manage_users: true,
+      view_pcp: true,
+      manage_pcp: true,
+      manage_routes: true,
+      traceability_collect: true,
+      view_traceability: true,
+      manage_packaging: true,
+      manage_shipping: true,
+      view_mes_alerts: true
+    };
+  } else if (role === 'manager') {
+    return {
+      view_dashboards: true,
+      register_production: true,
+      manage_occurrences: true,
+      manage_cells: false,
+      manage_operators: false,
+      view_reports: true,
+      ai_operations: true,
+      manage_automations: false,
+      manage_users: false,
+      view_pcp: true,
+      manage_pcp: true,
+      manage_routes: true,
+      traceability_collect: true,
+      view_traceability: true,
+      manage_packaging: true,
+      manage_shipping: true,
+      view_mes_alerts: true
+    };
+  } else {
+    return {
+      view_dashboards: true,
+      register_production: true,
+      manage_occurrences: true,
+      manage_cells: false,
+      manage_operators: false,
+      view_reports: false,
+      ai_operations: false,
+      manage_automations: false,
+      manage_users: false,
+      view_pcp: false,
+      manage_pcp: false,
+      manage_routes: false,
+      traceability_collect: true,
+      view_traceability: true,
+      manage_packaging: false,
+      manage_shipping: false,
+      view_mes_alerts: false
+    };
+  }
+};
+
 
 const resolveSessionUser = async (session) => {
   if (!session?.user) return { user: null, shouldSignOut: false };
@@ -66,26 +129,18 @@ export const AuthProvider = ({ children }) => {
       }
 
       const meta = supabaseUser.user_metadata || {};
+      const userRole = profile?.role || meta.role || 'operator';
       return {
         id: supabaseUser.id,
         email: supabaseUser.email,
         name: profile?.name || meta.name || supabaseUser.email?.split('@')[0] || '',
-        role: profile?.role || meta.role || 'operator',
+        role: userRole,
         cell: profile?.cell || meta.cell || '',
-        permissions: profile?.permissions || meta.permissions || {
-          view_dashboards: true,
-          register_production: true,
-          manage_occurrences: true,
-          manage_cells: false,
-          manage_operators: false,
-          view_reports: false,
-          ai_operations: false,
-          manage_automations: false,
-          manage_users: false,
-        },
+        permissions: profile?.permissions || meta.permissions || getDefaultPermissions(userRole),
         dashboard_layout: profile?.dashboard_layout || null,
         managed_cells: profile?.managed_cells || [],
       };
+
     } catch (err) {
       console.error('[Leo Flow] Erro no catch de fetchProfile:', err);
       const meta = supabaseUser.user_metadata || {};

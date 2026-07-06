@@ -1,7 +1,8 @@
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
+
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
@@ -29,7 +30,24 @@ import PromobIntegration from '@/pages/PromobIntegration';
 import SystemLogs from '@/pages/SystemLogs';
 import DownloadsBackups from '@/pages/DownloadsBackups';
 import AiOperations from '@/pages/AiOperations';
+import ProductionRoutes from '@/pages/ProductionRoutes';
+import MesHub from '@/pages/MesHub';
+import CollectionPage from '@/pages/CollectionPage';
+import PackagingPage from '@/pages/PackagingPage';
+import ShippingPage from '@/pages/ShippingPage';
+import MesAlertsPage from '@/pages/MesAlertsPage';
 import { useProductionRealtimeSync } from '@/hooks/useProductionRealtimeSync';
+
+
+const AcProdRedirect = () => {
+  const location = useLocation();
+  const cleanPath = location.pathname.replace(/^\/ac-prod/, '');
+  const target = cleanPath === '' ? '/' : cleanPath;
+  return <Navigate to={target} replace />;
+};
+
+
+
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, authError, navigateToLogin } = useAuth();
@@ -58,6 +76,7 @@ const AuthenticatedApp = () => {
   // Render the main app
   return (
     <Routes>
+      <Route path="/ac-prod/*" element={<AcProdRedirect />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -82,17 +101,43 @@ const AuthenticatedApp = () => {
           <Route path="/usuarios" element={<Users />} />
           <Route path="/relatorios" element={<Reports />} />
           <Route path="/ia-operacional" element={<AiOperations />} />
-          {/* ── Novas rotas MES Leo Madeiras ── */}
+           {/* ── Novas rotas MES Leo Madeiras ── */}
           <Route path="/rastreabilidade" element={<Traceability />} />
-          <Route path="/integracoes/promob" element={<PromobIntegration />} />
+          <Route path="/rastreabilidade/kanban" element={<Navigate to="/rastreabilidade?tab=kanban" replace />} />
+          <Route path="/rastreabilidade/buscar" element={<Navigate to="/rastreabilidade?tab=search" replace />} />
+          <Route path="/rastreabilidade/historico" element={<Navigate to="/rastreabilidade?tab=timeline" replace />} />
+          <Route path="/rastreabilidade/marcenaria" element={<Navigate to="/rastreabilidade?tab=joinery" replace />} />
+          <Route path="/rastreabilidade/embalagem" element={<Navigate to="/rastreabilidade?tab=packaging" replace />} />
+          <Route path="/rastreabilidade/expedicao" element={<Navigate to="/rastreabilidade?tab=shipping" replace />} />
+          <Route path="/rastreabilidade/alertas" element={<Navigate to="/rastreabilidade?tab=alerts" replace />} />
+          <Route path="/rastreabilidade/testes" element={<Navigate to="/rastreabilidade?tab=test-panel" replace />} />
+
+          <Route path="/pcp" element={<PromobIntegration />} />
+          <Route path="/pcp/importar" element={<Navigate to="/pcp?tab=import" replace />} />
+          <Route path="/pcp/historico" element={<Navigate to="/pcp?tab=history" replace />} />
+          <Route path="/pcp/ordens" element={<Navigate to="/pcp?tab=orders" replace />} />
+          <Route path="/pcp/logs" element={<Navigate to="/pcp?tab=logs" replace />} />
+          <Route path="/pcp/backups" element={<Navigate to="/pcp?tab=backup" replace />} />
+          <Route path="/pcp/configuracoes" element={<Navigate to="/pcp?tab=settings" replace />} />
+
+          <Route path="/coleta" element={<CollectionPage />} />
+          <Route path="/embalagem" element={<PackagingPage />} />
+          <Route path="/expedicao" element={<ShippingPage />} />
+          <Route path="/alertas-mes" element={<MesAlertsPage />} />
+
+          <Route path="/rotas-produtivas" element={<ProductionRoutes />} />
+          <Route path="/mes" element={<MesHub />} />
+
+          <Route path="/integracoes/promob" element={<Navigate to="/pcp" replace />} />
           <Route path="/logs-sistema" element={<SystemLogs />} />
           <Route path="/downloads-backups" element={<DownloadsBackups />} />
           <Route path="/backups" element={<Navigate to="/downloads-backups" replace />} />
-          <Route path="/ordens-producao" element={<Navigate to="/integracoes/promob?tab=orders" replace />} />
+          <Route path="/ordens-producao" element={<Navigate to="/pcp?tab=orders" replace />} />
           {/* Aliases de compatibilidade */}
-          <Route path="/coleta-codigo-rfid" element={<Navigate to="/entrada?modo=coleta" replace />} />
+          <Route path="/coleta-codigo-rfid" element={<Navigate to="/coleta" replace />} />
         </Route>
       </Route>
+
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );
@@ -100,14 +145,18 @@ const AuthenticatedApp = () => {
 
 
 function App() {
+  const routerBase = import.meta.env.BASE_URL === '/'
+    ? ''
+    : import.meta.env.BASE_URL.replace(/\/$/, '');
 
   return (
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>
-        <Router basename="/ac-prod">
+        <Router basename={routerBase}>
           <ScrollToTop />
           <AuthenticatedApp />
         </Router>
+
         <Toaster />
         <SonnerToaster position="top-right" richColors />
       </QueryClientProvider>

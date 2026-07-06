@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import PageHeader from '@/components/ui/PageHeader';
 import { useTraceability } from '@/hooks/useTraceability';
@@ -5,24 +6,30 @@ import LotKanban      from '@/components/traceability/LotKanban';
 import LotSearch      from '@/components/traceability/LotSearch';
 import LotTimeline    from '@/components/traceability/LotTimeline';
 import JoineryWorkbench from '@/components/traceability/JoineryWorkbench';
-import PackageManager from '@/components/traceability/PackageManager';
-import ShipmentPanel  from '@/components/traceability/ShipmentPanel';
 import TraceabilityTestPanel from '@/components/traceability/TraceabilityTestPanel';
 import {
-  Layers, Search, GitBranch, Wrench, Box, Truck, RefreshCw, Clock, CheckCircle, Lock, Play,
+  Layers, Search, GitBranch, Wrench, RefreshCw, Clock, CheckCircle, Lock, Play,
 } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 export default function Traceability() {
   const trace = useTraceability();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const activeTab = ['kanban', 'search', 'timeline', 'joinery', 'test-panel'].includes(requestedTab) ? requestedTab : 'kanban';
+
+  const handleTabChange = (value) => {
+    setSearchParams(value === 'kanban' ? {} : { tab: value }, { replace: true });
+  };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-5 sm:space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <PageHeader
-          title="Rastreabilidade"
+          title="Rastreabilidade Geral"
           subtitle="Acompanhe cada lote e peça em tempo real — do Promob à expedição."
           icon={Layers}
         />
@@ -47,7 +54,7 @@ export default function Traceability() {
       </div>
 
       {/* ── Abas ───────────────────────────────────────────── */}
-      <Tabs defaultValue="kanban" className="space-y-5">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-5">
         <TabsList className="bg-card border border-border/60 h-auto p-1 flex-wrap gap-1">
           <TabsTrigger value="kanban" className="gap-2 text-xs sm:text-sm">
             <Layers className="w-3.5 h-3.5" /> Kanban
@@ -65,12 +72,6 @@ export default function Traceability() {
                 {trace.stats.withJoinery}
               </Badge>
             )}
-          </TabsTrigger>
-          <TabsTrigger value="packaging" className="gap-2 text-xs sm:text-sm">
-            <Box className="w-3.5 h-3.5" /> Embalagem
-          </TabsTrigger>
-          <TabsTrigger value="shipping" className="gap-2 text-xs sm:text-sm">
-            <Truck className="w-3.5 h-3.5" /> Expedição
           </TabsTrigger>
           <TabsTrigger value="test-panel" className="gap-2 text-xs sm:text-sm">
             <Play className="w-3.5 h-3.5" /> Simulador / Testes
@@ -93,18 +94,11 @@ export default function Traceability() {
           <JoineryWorkbench trace={trace} />
         </TabsContent>
 
-        <TabsContent value="packaging">
-          <PackageManager trace={trace} />
-        </TabsContent>
-
-        <TabsContent value="shipping">
-          <ShipmentPanel trace={trace} />
-        </TabsContent>
-
         <TabsContent value="test-panel">
           <TraceabilityTestPanel />
         </TabsContent>
       </Tabs>
+
     </div>
   );
 }
@@ -128,3 +122,4 @@ function StatCard({ icon: Icon, label, value, accent, className }) {
     </div>
   );
 }
+

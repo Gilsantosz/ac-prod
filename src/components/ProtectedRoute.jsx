@@ -3,6 +3,9 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import { Lock, ShieldAlert, ArrowLeft, LogOut } from 'lucide-react';
+import { pathPermissionMap, permissionLabels } from '@/config/appRoutes';
+import { navTo } from '@/lib/navigation';
+
 
 const DefaultFallback = () => (
   <div className="fixed inset-0 flex items-center justify-center bg-slate-950/20 backdrop-blur-sm">
@@ -40,37 +43,13 @@ export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthe
   let hasPermission = true;
   let requiredPermissionLabel = '';
 
-  const pathPermissionMap = {
-    '/': 'view_dashboards',
-    '/painel': 'view_dashboards',
-    '/entrada': 'register_production',
-    '/resumo-diario': 'view_dashboards',
-    '/oee': 'view_dashboards',
-    '/celulas-metas': 'manage_cells',
-    '/operadores': 'manage_operators',
-    '/ocorrencias': 'manage_occurrences',
-    '/analise-paradas': 'manage_occurrences',
-    '/analise-tendencia': 'view_dashboards',
-    '/gamificacao': 'view_dashboards',
-    '/relatorios': 'view_reports',
-    '/automacoes': 'manage_automations',
-  };
 
-  const permissionLabels = {
-    view_dashboards: 'Visualizar Painéis (OEE, Ocorrências)',
-    register_production: 'Lançar Produção',
-    manage_occurrences: 'Gerenciar Ocorrências e Paradas',
-    manage_cells: 'Gerenciar Células e Metas',
-    manage_operators: 'Gerenciar Operadores e Equipes',
-    view_reports: 'Visualizar Relatórios Industriais',
-    manage_automations: 'Gerenciar Alertas e Automações',
-  };
 
   if (user && user.role !== 'admin') {
     const cleanPath = path.replace(/\/$/, '') || '/';
     
     // Bloquear nível operacional (operator) de páginas restritas (Integração, Células/Metas, Usuários/Operadores)
-    if (user.role === 'operator' && ['/integracoes/promob', '/celulas-metas', '/usuarios', '/operadores'].includes(cleanPath)) {
+    if (user.role === 'operator' && ['/integracoes/promob', '/celulas-metas', '/celulas', '/metas', '/celulas-e-metas', '/cells-goals', '/usuarios', '/operadores'].includes(cleanPath)) {
       hasPermission = false;
       requiredPermissionLabel = 'Acesso Reservado para Gestores e Administradores';
     } else {
@@ -126,7 +105,7 @@ export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthe
 
           <div className="flex flex-col gap-2.5 pt-2">
             <button
-              onClick={() => window.location.replace(`${(import.meta.env.BASE_URL || '/ac-prod/').replace(/\/$/, '')}/painel`)}
+              onClick={() => navTo('/')}
               className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-sm py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/10 hover:translate-y-[-1px] active:translate-y-0"
             >
               <ArrowLeft className="w-4 h-4" /> Voltar para o Painel Principal

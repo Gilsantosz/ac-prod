@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { fetchAiContext, normalizeAiFilters } from './aiContextService';
 import { analyzeProductionContext } from './aiInsightService';
 import { isAiSchemaUnavailable, recordAiEvent, recordAiRequest } from './aiAuditService';
+import { splitRecipientRefs } from './aiEmailService';
 
 export const REPORT_TYPES = [
   { value: 'oee', label: 'OEE - Eficiência Global' },
@@ -106,12 +107,22 @@ export async function listReportJobs(limit = 100) {
 export async function listScheduledReports() {
   const { data, error } = await supabase.from('report_schedules').select('*').order('created_at', { ascending: false });
   if (!error) return { data: data || [], warning: '' };
-  if (isAiSchemaUnavailable(error)) return { data: [], warning: 'Agendamentos estarão disponíveis após publicar a migração 013.' };
+  if (isAiSchemaUnavailable(error)) return { data: [], warning: 'Agendamentos estarão disponíveis após publicar as migrações de relatórios automáticos.' };
   throw error;
 }
 
 export async function createScheduledReport(payload, user) {
-  const { data, error } = await supabase.functions.invoke('schedule-report-job', { body: { ...payload, filters: normalizeAiFilters(payload.filters), requestedBy: user?.id } });
+  const refs = splitRecipientRefs(payload.recipientIds || []);
+  const body = {
+    ...payload,
+    recipientIds: refs.reportRecipientIds,
+    recipientProfileIds: [...new Set([...(payload.recipientProfileIds || []), ...refs.profileIds])],
+    recipientEmails: [...new Set([...(payload.recipientEmails || []), ...(payload.extraEmails || []), ...refs.recipientEmails])],
+    filters: normalizeAiFilters(payload.filters),
+    requestedBy: user?.id,
+  };
+  const { data, error } = await supabase.functions.invoke('schedule-report-job', { body });
   if (error) throw new Error(error.message || 'Não foi possível criar o agendamento.');
+  if (!data?.success) throw new Error(data?.error || 'Não foi possível criar o agendamento.');
   return data;
 }

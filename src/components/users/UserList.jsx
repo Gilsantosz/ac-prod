@@ -5,12 +5,81 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { User as UserIcon, Edit3, Trash2, Save, X, LayoutDashboard, PlusCircle, AlertOctagon, Boxes, HardHat, LineChart, Zap, Users, KeyRound, Send, BrainCircuit } from 'lucide-react';
+import {
+  User as UserIcon, Edit3, Trash2, Save, X, LayoutDashboard, PlusCircle, AlertOctagon,
+  Boxes, HardHat, LineChart, Zap, Users, KeyRound, Send, BrainCircuit,
+  Plug, GitFork, Box, Truck, BellRing, Layers
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCells } from '@/hooks/useCells';
 import { Switch } from '@/components/ui/switch';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/lib/localDb';
+
+const getDefaultPermissions = (role) => {
+  if (role === 'admin') {
+    return {
+      view_dashboards: true,
+      register_production: true,
+      manage_occurrences: true,
+      manage_cells: true,
+      manage_operators: true,
+      view_reports: true,
+      ai_operations: true,
+      manage_automations: true,
+      manage_users: true,
+      view_pcp: true,
+      manage_pcp: true,
+      manage_routes: true,
+      traceability_collect: true,
+      view_traceability: true,
+      manage_packaging: true,
+      manage_shipping: true,
+      view_mes_alerts: true
+    };
+  } else if (role === 'manager') {
+    return {
+      view_dashboards: true,
+      register_production: true,
+      manage_occurrences: true,
+      manage_cells: false,
+      manage_operators: false,
+      view_reports: true,
+      ai_operations: true,
+      manage_automations: false,
+      manage_users: false,
+      view_pcp: true,
+      manage_pcp: true,
+      manage_routes: true,
+      traceability_collect: true,
+      view_traceability: true,
+      manage_packaging: true,
+      manage_shipping: true,
+      view_mes_alerts: true
+    };
+  } else {
+    return {
+      view_dashboards: true,
+      register_production: true,
+      manage_occurrences: true,
+      manage_cells: false,
+      manage_operators: false,
+      view_reports: false,
+      ai_operations: false,
+      manage_automations: false,
+      manage_users: false,
+      view_pcp: false,
+      manage_pcp: false,
+      manage_routes: false,
+      traceability_collect: true,
+      view_traceability: true,
+      manage_packaging: false,
+      manage_shipping: false,
+      view_mes_alerts: false
+    };
+  }
+};
+
 
 const PERMISSION_LABELS = {
   view_dashboards: 'Painéis',
@@ -22,7 +91,16 @@ const PERMISSION_LABELS = {
   ai_operations: 'IA Operacional',
   manage_automations: 'Automações',
   manage_users: 'Usuários',
+  view_pcp: 'Visualizar PCP',
+  manage_pcp: 'Gerenciar PCP',
+  manage_routes: 'Rotas MES',
+  traceability_collect: 'Bipagem / Coleta',
+  view_traceability: 'Rastreabilidade',
+  manage_packaging: 'Embalagem',
+  manage_shipping: 'Expedição',
+  view_mes_alerts: 'Alertas MES'
 };
+
 
 const PERMISSION_METADATA = [
   { key: 'view_dashboards', label: 'Painéis', icon: LayoutDashboard },
@@ -34,7 +112,16 @@ const PERMISSION_METADATA = [
   { key: 'ai_operations', label: 'IA Operacional', icon: BrainCircuit },
   { key: 'manage_automations', label: 'Automações', icon: Zap },
   { key: 'manage_users', label: 'Usuários', icon: Users, warning: true },
+  { key: 'view_pcp', label: 'Visualizar PCP', icon: Plug },
+  { key: 'manage_pcp', label: 'Gerenciar PCP', icon: Plug },
+  { key: 'manage_routes', label: 'Rotas MES', icon: GitFork },
+  { key: 'traceability_collect', label: 'Bipagem / Coleta', icon: PlusCircle },
+  { key: 'view_traceability', label: 'Rastreabilidade', icon: Layers },
+  { key: 'manage_packaging', label: 'Embalagem', icon: Box },
+  { key: 'manage_shipping', label: 'Expedição', icon: Truck },
+  { key: 'view_mes_alerts', label: 'Alertas MES', icon: BellRing }
 ];
+
 
 export default function UserList({ users, currentUserId, onUpdate, onDelete, onResetPassword, onResendInvite }) {
   if (!users.length) {
@@ -73,17 +160,8 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
   const [editName, setEditName] = useState(user.name || '');
   const [editRole, setEditRole] = useState(user.role || 'operator');
   const [editCell, setEditCell] = useState(user.cell || 'none');
-  const [editPermissions, setEditPermissions] = useState(user.permissions || {
-    view_dashboards: true,
-    register_production: true,
-    manage_occurrences: true,
-    manage_cells: false,
-    manage_operators: false,
-    view_reports: false,
-    ai_operations: false,
-    manage_automations: false,
-    manage_users: false,
-  });
+  const [editPermissions, setEditPermissions] = useState(() => user.permissions || getDefaultPermissions(user.role || 'operator'));
+
 
   const [editRegistration, setEditRegistration] = useState('');
   const [editShift, setEditShift] = useState('');
@@ -161,17 +239,8 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
     setEditName(user.name || '');
     setEditRole(user.role || 'operator');
     setEditCell(user.cell || 'none');
-    setEditPermissions(user.permissions || {
-      view_dashboards: true,
-      register_production: true,
-      manage_occurrences: true,
-      manage_cells: false,
-      manage_operators: false,
-      view_reports: false,
-      ai_operations: false,
-      manage_automations: false,
-      manage_users: false,
-    });
+    setEditPermissions(user.permissions || getDefaultPermissions(user.role || 'operator'));
+
     if (operator) {
       setEditRegistration(operator.registration || '');
       setEditShift(operator.shift || '');

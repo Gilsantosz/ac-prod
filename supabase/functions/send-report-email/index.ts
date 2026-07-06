@@ -12,6 +12,8 @@ const ERROR_STATUS: Record<string, number> = {
   EMAIL_PROVIDER_FAILED: 502,
 };
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function csvAttachment(entries: any[]) {
   const columns = ['order_number','lot_code','load_number','customer_trade_name','customer_legal_name','product_name','route_name','finalization_date','pallet_number','cell','process_step','produced','approved_quantity','rejected_quantity','pending_quantity','scrap','downtime','approval_status'];
   const escape = (value: any) => `"${String(value ?? '').replaceAll('"','""')}"`;
@@ -32,7 +34,7 @@ function publicError(error: unknown) {
   if (message === 'REPORT_REQUIRED') return 'Gere e registre o relatório antes do envio.';
   if (message === 'RECIPIENT_REQUIRED') return 'Selecione pelo menos um destinatário.';
   if (message === 'REPORT_NOT_FOUND') return 'Relatório não encontrado.';
-  if (message === 'RECIPIENTS_NOT_FOUND') return 'Nenhum destinatário válido.';
+  if (message === 'RECIPIENTS_NOT_FOUND') return 'Nenhum destinatário válido encontrado em Usuários/Gestores.';
   if (message === 'EMAIL_PROVIDER_NOT_CONFIGURED') return 'Provedor de e-mail não configurado. Defina RESEND_API_KEY e REPORT_FROM_EMAIL.';
   if (message === 'EMAIL_PROVIDER_FAILED') return 'O provedor de e-mail recusou o envio.';
   return message;
@@ -42,6 +44,91 @@ function canSendReport(profile: any, user: any, job: any) {
   if (job.requested_by === user.id) return true;
   if (profile.role === 'admin' || profile.role === 'manager') return true;
   return Boolean(profile.permissions?.manage_automations && profile.permissions?.ai_operations);
+}
+
+function asArray(value: any): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item || '').trim()).filter(Boolean) : [];
+}
+
+function splitRefs(body: any) {
+  const profileIds = new Set<string>(asArray(body.recipientProfileIds || body.profileIds));
+  const reportRecipientIds = new Set<string>();
+  const recipientEmails = new Set<string>(asArray(body.recipientEmails || body.emails).map((email) => email.toLowerCase()).filter((email) => EMAIL_PATTERN.test(email)));
+
+  asArray(body.extraEmails).forEach((email) => {
+    const clean = email.toLowerCase();
+    if (EMAIL_PATTERN.test(clean)) recipientEmails.add(clean);
+  });
+
+  if (Array.isArray(body.directRecipients)) {
+    body.directRecipients.forEach((recipient: any) => {
+      const email = String(recipient?.email || '').trim().toLowerCase();
+      if (EMAIL_PATTERN.test(email)) recipientEmails.add(email);
+    });
+  }
+
+  asArray(body.recipientIds).forEach((value) => {
+    if (value.startsWith('profile:')) profileIds.add(value.slice('profile:'.length));
+    else if (value.startsWith('recipient:')) reportRecipientIds.add(value.slice('recipient:'.length));
+    else if (EMAIL_PATTERN.test(value)) recipientEmails.add(value.toLowerCase());
+    else reportRecipientIds.add(value);
+  });
+
+  return { profileIds: [...profileIds], reportRecipientIds: [...reportRecipientIds], recipientEmails: [...recipientEmails] };
+}
+
+function dedupeRecipients(recipients: any[]) {
+  const byEmail = new Map<string, any>();
+  recipients.forEach((recipient) => {
+    const email = String(recipient.email || '').trim().toLowerCase();
+    if (!EMAIL_PATTERN.test(email)) return;
+    const current = byEmail.get(email);
+    if (!current || recipient.source === 'profile') byEmail.set(email, { ...recipient, email });
+  });
+  return [...byEmail.values()];
+}
+
+async function resolveRecipients(admin: any, body: any) {
+  const refs = splitRefs(body);
+  const recipients: any[] = [];
+
+  if (refs.profileIds.length) {
+    const { data, error } = await admin
+      .from('profiles')
+      .select('id,name,email,role,active')
+      .in('id', refs.profileIds)
+      .eq('active', true)
+      .in('role', ['admin', 'manager']);
+    if (error) throw error;
+    (data || []).forEach((profile: any) => recipients.push({
+      source: 'profile',
+      profile_id: profile.id,
+      recipient_id: null,
+      name: profile.name || profile.email,
+      email: profile.email,
+      role: profile.role,
+    }));
+  }
+
+  if (refs.reportRecipientIds.length) {
+    const { data, error } = await admin
+      .from('report_recipients')
+      .select('id,name,email,role_label,active')
+      .in('id', refs.reportRecipientIds)
+      .eq('active', true);
+    if (error) throw error;
+    (data || []).forEach((recipient: any) => recipients.push({
+      source: 'report_recipients',
+      profile_id: null,
+      recipient_id: recipient.id,
+      name: recipient.name || recipient.email,
+      email: recipient.email,
+      role: recipient.role_label,
+    }));
+  }
+
+  refs.recipientEmails.forEach((email) => recipients.push({ source: 'direct', profile_id: null, recipient_id: null, name: email, email }));
+  return dedupeRecipients(recipients);
 }
 
 async function readProviderResult(response: Response) {
@@ -80,41 +167,26 @@ Deno.serve(async (req) => {
     ({ admin, user } = auth);
     const body = await req.json();
     if (!body.reportJobId) throw new Error('REPORT_REQUIRED');
-    
-    const recipientIds = body.recipientIds || [];
-    const directRecipients = body.directRecipients || [];
-    if (!recipientIds.length && !directRecipients.length) throw new Error('RECIPIENT_REQUIRED');
-    
-    const [{ data: job, error: jobError }, { data: recipients, error: recipientsError }] = await Promise.all([
+
+    const [{ data: job, error: jobError }, recipients] = await Promise.all([
       admin.from('report_jobs').select('*').eq('id', body.reportJobId).single(),
-      recipientIds.length > 0
-        ? admin.from('report_recipients').select('*').in('id', recipientIds).eq('active', true)
-        : Promise.resolve({ data: [], error: null }),
+      resolveRecipients(admin, body),
     ]);
-    
     if (jobError || !job) throw new Error('REPORT_NOT_FOUND');
     if (!canSendReport(auth.profile, user, job)) throw new Error('ACCESS_DENIED');
-    if (recipientsError) throw recipientsError;
-    
-    // Construct unified list of recipients
-    const allRecipients = [
-      ...(recipients || []).map((r: any) => ({ id: r.id, name: r.name, email: r.email })),
-      ...directRecipients.map((r: any, idx: number) => ({ id: null, name: r.name || `Destinatário ${idx+1}`, email: r.email })),
-    ];
-    
-    if (allRecipients.length === 0) throw new Error('RECIPIENTS_NOT_FOUND');
-    
+    if (!recipients?.length) throw new Error('RECIPIENTS_NOT_FOUND');
+
     const apiKey = Deno.env.get('RESEND_API_KEY');
     const from = Deno.env.get('REPORT_FROM_EMAIL');
     if (!apiKey || !from) throw new Error('EMAIL_PROVIDER_NOT_CONFIGURED');
-    
+
     const freshContext = await fetchOperationalData(admin, auth.profile, job.filters || {});
     const summary = aggregate(freshContext.entries, freshContext.occurrences, freshContext.lots);
     const html = renderEmailTemplate(body.templateCode || 'manager-summary', job.title, summary, body.message || 'Segue o relatório industrial solicitado.');
     const subject = String(body.subject || `[AC.Prod] ${job.title}`).slice(0, 180);
-    
     const results = [];
-    for (const recipient of allRecipients) {
+
+    for (const recipient of recipients) {
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -123,16 +195,15 @@ Deno.serve(async (req) => {
           to: [recipient.email],
           subject,
           html,
-          attachments: [{ filename: `${job.title.replace(/[^a-z0-9]+/gi,'-').toLowerCase()}.csv`, content: csvAttachment(freshContext.entries) }]
-        })
+          attachments: [{ filename: `${job.title.replace(/[^a-z0-9]+/gi,'-').toLowerCase()}.csv`, content: csvAttachment(freshContext.entries) }],
+        }),
       });
       const providerResult = await readProviderResult(response);
       const success = response.ok;
       const errorMessage = success ? null : providerErrorMessage(providerResult, response.status);
-      
       await admin.from('report_email_logs').insert({
         report_job_id: job.id,
-        recipient_id: recipient.id,
+        recipient_id: recipient.recipient_id || null,
         recipient_email: recipient.email,
         subject,
         provider: 'resend',
@@ -140,12 +211,11 @@ Deno.serve(async (req) => {
         status: success ? 'sent' : 'failed',
         error_message: errorMessage,
         sent_by: user.id,
-        sent_at: success ? new Date().toISOString() : null
+        sent_at: success ? new Date().toISOString() : null,
       });
-      
-      results.push({ email: recipient.email, success, error: errorMessage });
+      results.push({ email: recipient.email, name: recipient.name, source: recipient.source, success, error: errorMessage });
     }
-    
+
     const sent = results.filter((item) => item.success).length;
     const failed = results.length - sent;
     await recordSystemLog(admin, {
@@ -155,9 +225,9 @@ Deno.serve(async (req) => {
       event: sent ? 'report.email.sent' : 'report.email.failed',
       entity: 'report_job',
       entity_id: job.id,
-      metadata: { recipients: results.length, success: sent, failed }
+      metadata: { recipients: results.length, success: sent, failed, sources: [...new Set(results.map((item) => item.source))] },
+      success: sent > 0,
     });
-    
     if (!sent) return json({ success: false, error: results[0]?.error || publicError(new Error('EMAIL_PROVIDER_FAILED')), results }, 502);
     return json({ success: true, message: failed ? `${sent} e-mail(s) enviado(s); ${failed} falharam.` : 'Relatório enviado e registrado.', results }, failed ? 207 : 200);
   } catch (error) {

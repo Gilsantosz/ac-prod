@@ -66,9 +66,12 @@ describe('aiActionExecutor', () => {
     const res = await executeAiAction({
       action: 'send_report_email',
       reportType: 'oee',
+      rawPrompt: 'Envie o relatório OEE',
+      recipients: ['carlos@empresa.com'],
       filters: { startDate: '2026-06-30', endDate: '2026-06-30' },
     }, { user });
 
+    expect(resolveRecipientsFromPrompt).toHaveBeenCalledWith('Envie o relatório OEE', user, { explicitRecipients: ['carlos@empresa.com'] });
     expect(generateOperationalReport).toHaveBeenCalled();
     expect(sendReportEmailSmart).toHaveBeenCalled();
     expect(res.content).toContain('enviado com sucesso');

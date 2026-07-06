@@ -6,10 +6,6 @@ import PageHeader from '@/components/ui/PageHeader';
 import { Button } from '@/components/ui/button';
 import TraceabilityScannerPanel from '@/components/traceability/TraceabilityScannerPanel';
 import TraceabilityKpiCards from '@/components/traceability/TraceabilityKpiCards';
-import CollectionContextSummary from '@/components/traceability/CollectionContextSummary';
-import PieceRouteTimeline from '@/components/traceability/PieceRouteTimeline';
-import LastReadingsList from '@/components/traceability/LastReadingsList';
-import RejectionOccurrenceDialog from '@/components/traceability/RejectionOccurrenceDialog';
 import RfidReadinessPanel from '@/components/traceability/RfidReadinessPanel';
 import OccurrenceQuickDialog from '@/components/entry/OccurrenceQuickDialog';
 import CollectionQueuePanel from '@/components/entry/CollectionQueuePanel';
@@ -17,15 +13,19 @@ import { useAuth } from '@/lib/AuthContext';
 import { useOperatorSession } from '@/hooks/useOperatorSession';
 import { useCollectionQueue } from '@/hooks/useCollectionQueue';
 import { useCells } from '@/hooks/useCells';
-import { base44 } from '@/lib/localDb';
 import {
-  fetchCollectionKpis,
-  fetchRecentReadings,
-  processProductionReading,
-  registerTraceabilityRejection,
   fetchProductionMachines,
+  processProductionReading,
 } from '@/lib/traceabilityService';
 import { registerReadingOccurrence } from '@/lib/productionHistoryService';
+import { supabase } from '@/lib/supabaseClient';
+
+// Novos componentes operacionais da célula
+import CollectionRecentReadsPanel from '@/components/collection/CollectionRecentReadsPanel';
+import CollectionPieceDetailPanel from '@/components/collection/CollectionPieceDetailPanel';
+import CollectionRejectPieceModal from '@/components/collection/CollectionRejectPieceModal';
+import CollectionPieceTraceabilityDrawer from '@/components/collection/CollectionPieceTraceabilityDrawer';
+import { getPieceTraceability, rejectPieceFromCollection, getCollectionKpis } from '@/lib/collectionService';
 
 function currentShift() {
   const hour = new Date().getHours();
@@ -45,6 +45,17 @@ export default function TraceabilityCollection({ embedded = false }) {
   const { activeCells, isLoading: cellsLoading } = useCells();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState('scanner');
+  
+  // Estados para as duas colunas operacionais da célula
+  const [selectedPiece, setSelectedPiece] = useState(null);
+  const [selectedPieceEvents, setSelectedPieceEvents] = useState([]);
+  const [loadingPieceEvents, setLoadingPieceEvents] = useState(false);
+  const [traceabilityCodeForDrawer, setTraceabilityCodeForDrawer] = useState(null);
+  const [traceabilityOpen, setTraceabilityOpen] = useState(false);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [pieceToReject, setPieceToReject] = useState(null);
+  const [refreshReadsSignal, setRefreshReadsSignal] = useState(0);
+
   const [feedback, setFeedback] = useState(() => {
     try {
       const saved = localStorage.getItem('traceability-last-feedback');
@@ -68,7 +79,6 @@ export default function TraceabilityCollection({ embedded = false }) {
     setFeedback(newFeedback);
     if (newFeedback) {
       try {
-        // Salvar apenas os campos essenciais para evitar circular references
         const toSave = {
           success: newFeedback.success,
           status: newFeedback.status,
@@ -110,7 +120,6 @@ export default function TraceabilityCollection({ embedded = false }) {
     }
   }, []);
 
-  const [rejectionOpen, setRejectionOpen] = useState(false);
   const [rejecting, setRejecting] = useState(false);
 
   // Ocorrência por leitura específica
@@ -123,15 +132,12 @@ export default function TraceabilityCollection({ embedded = false }) {
   const operatorId = opSession?.id || null;
 
   const [cellName, setCellName] = useState(() => {
-    // Célula da sessão operacional tem prioridade
     if (opSession?.primary_cell) return opSession.primary_cell;
     try { return user?.cell || localStorage.getItem('traceability-cell') || ''; }
     catch { return user?.cell || ''; }
   });
 
   const [shift, setShift] = useState(() => opSession?.shift || currentShift());
-
-  // Máquina selecionada
   const [machine, setMachine] = useState(null);
 
   // Sincronizar célula e turno quando a sessão operacional mudar
@@ -180,49 +186,58 @@ export default function TraceabilityCollection({ embedded = false }) {
     }
   };
 
-  // Queries baseadas em hooks reativos — sempre busca dado fresco ao montar
-  const { data: readings = [], isFetching: readingsLoading } = useQuery({
-    queryKey: ['stageReadings', cellName, machine?.id, feedback?.lot?.id],
-    queryFn: () => fetchRecentReadings({
+  // KPIs consistentes com a fonte do histórico de coletas
+  const { data: kpis = {}, refetch: refetchKpis } = useQuery({
+    queryKey: ['collection-kpis', cellName, machine?.id, refreshReadsSignal],
+    queryFn: () => getCollectionKpis({
       cellName,
-      machineId: feedback?.lot?.id ? null : machine?.id,
-      lotId: feedback?.lot?.id || null,
-      limit: feedback?.lot?.id ? null : 250,
+      workstationId: machine?.id || null,
+      operatorId: operatorId || null,
+      shift: shift || null
     }),
-    initialData: [],
-    staleTime: 0,
-    refetchOnMount: true,
-    retry: false,
-  });
-
-  const { data: kpis = {} } = useQuery({
-    queryKey: ['realtimeCounters', cellName, machine?.id],
-    queryFn: () => fetchCollectionKpis({ cellName, machineId: machine?.id }),
     initialData: { total: 0, approved: 0, rejected: 0, blocked: 0 },
     staleTime: 0,
     refetchOnMount: true,
     retry: false,
   });
 
-  const lotId = feedback?.lot?.id;
-  const { data: route = [] } = useQuery({
-    queryKey: ['production-route', lotId],
-    queryFn: () => base44.entities.ProductionRoute.filter({ lot_id: lotId }, 'step_order'),
-    enabled: !!lotId,
-    initialData: [],
-    retry: false,
-  });
-
   const refreshData = useCallback(() => {
+    refetchKpis();
     queryClient.invalidateQueries({ queryKey: ['stageReadings', cellName, machine?.id] });
-    queryClient.invalidateQueries({ queryKey: ['realtimeCounters', cellName, machine?.id] });
     queryClient.invalidateQueries({ queryKey: ['production'] });
     queryClient.invalidateQueries({ queryKey: ['production-lots'] });
     queryClient.invalidateQueries({ queryKey: ['occurrences'] });
-  }, [queryClient, cellName, machine]);
+  }, [queryClient, cellName, machine, refetchKpis]);
+
+  // Busca silenciosa das timeline da peça ativa
+  useEffect(() => {
+    if (!selectedPiece) {
+      setSelectedPieceEvents([]);
+      return;
+    }
+    const loadEvents = async () => {
+      setLoadingPieceEvents(true);
+      try {
+        const res = await getPieceTraceability(selectedPiece.piece_uid || selectedPiece.id);
+        setSelectedPieceEvents(res.readings || []);
+        setSelectedPiece(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            route: res.route || [],
+            completedSteps: res.readings.filter(r => r.status === 'approved').map(r => r.step_name)
+          };
+        });
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoadingPieceEvents(false);
+      }
+    };
+    loadEvents();
+  }, [selectedPiece?.piece_uid, selectedPiece?.id, refreshReadsSignal]);
 
   // ─── Função que processa um evento da fila ──────────────────────────────────
-
   const processEvent = useCallback(async (event) => {
     if (!event.cellName && !cellName) throw new Error('Célula não definida.');
     const result = await processProductionReading({
@@ -274,14 +289,13 @@ export default function TraceabilityCollection({ embedded = false }) {
       machineName: machine?.name || null,
     };
 
-    // Enfileirar (IndexedDB)
     const clientEventId = await enqueue(eventPayload, { autoFlush: false });
 
-    // Feedback imediato otimista
     if (navigator.onLine) {
       try {
         const result = await processNow(clientEventId);
         updateFeedback({ ...result, client_event_id: clientEventId });
+        
         if (result?.success) {
           toast.success(result.message || 'Leitura aprovada');
           navigator.vibrate?.([70, 40, 70]);
@@ -290,6 +304,27 @@ export default function TraceabilityCollection({ embedded = false }) {
         } else {
           toast.error(result?.message || 'Leitura não aprovada');
         }
+
+        // Auto-seleciona a peça recém-lida para exibir o fluxo à direita
+        const uid = eventPayload.raw_value;
+        const tempPiece = {
+          id: result.item?.id || result.reading?.piece_id,
+          piece_uid: uid,
+          piece_name: result.item?.name || result.item?.piece_name || 'Peça Lida',
+          lot_id: result.lot?.id,
+          lot_code: result.lot?.lot_code || 'LOTE-N/A',
+          order_number: result.lot?.order_number || result.lot?.order_code || 'N/A',
+          client_name: result.lot?.client_name || result.lot?.customer_name || 'Móvel Planejado',
+          current_stage: result.route?.step_name || result.item?.current_step,
+          current_stage_name: result.route?.step_name || result.item?.current_step,
+          operator_name: operator,
+          status: result.status || 'approved',
+          route: [],
+          completedSteps: []
+        };
+        setSelectedPiece(tempPiece);
+        setRefreshReadsSignal(prev => prev + 1);
+
         return result;
       } catch (error) {
         const result = {
@@ -310,39 +345,49 @@ export default function TraceabilityCollection({ embedded = false }) {
     }
   }, [cellName, shift, operator, operatorId, machine, enqueue, processNow, updateFeedback]);
 
-  const handleReject = async (form) => {
-    if (!feedback?.item?.id) return;
+  // Aberturas de modais operacionais
+  const handleOpenRejectModal = (piece) => {
+    setPieceToReject(piece);
+    setRejectModalOpen(true);
+  };
+
+  const handleOpenTraceabilityDrawer = (piece) => {
+    setTraceabilityCodeForDrawer(piece.piece_uid || piece.traceability_code);
+    setTraceabilityOpen(true);
+  };
+
+  const handleRejectPieceSubmit = async (formData) => {
+    if (!pieceToReject) return;
     setRejecting(true);
     try {
-      const result = await registerTraceabilityRejection({
-        ...form,
-        itemId: feedback.item.id,
-        lotId: feedback.lot?.id,
-        tagId: feedback.reading?.tag_id,
-        tagValue: feedback.reading?.tag_value,
-        readingId: feedback.reading?.id,
-        readerType: feedback.reading?.reader_type || 'manual',
-        stationName: feedback.reading?.station_name,
-        stepName: feedback.route?.step_name || feedback.item.current_step,
-        cellName: feedback.reading?.cell_name || cellName,
-        operator: operator,
+      await rejectPieceFromCollection({
+        pieceId: pieceToReject.id,
+        traceabilityCode: pieceToReject.piece_uid || pieceToReject.traceability_code,
+        reason: formData.reason,
+        notes: formData.notes,
+        action: formData.action,
         operatorId,
-        shift,
-        machineId: machine?.id || null,
-        machineName: machine?.name || null,
+        operatorName: operator,
+        cellName,
+        workstationId: machine?.id || null
       });
-      updateFeedback(result);
-      setRejectionOpen(false);
-      toast.success(result.message || 'Ocorrência registrada');
+
+      toast.success('Reprovação registrada com sucesso.');
+      setRejectModalOpen(false);
+      setRefreshReadsSignal(prev => prev + 1);
       refreshData();
+
+      if (selectedPiece && selectedPiece.piece_uid === pieceToReject.piece_uid) {
+        setSelectedPiece(prev => prev ? { ...prev, status: 'rejected' } : null);
+      }
     } catch (error) {
-      toast.error(error?.message || 'Falha ao reprovar peça');
+      toast.error(error?.message || 'Falha ao registrar reprovação.');
     } finally {
       setRejecting(false);
+      setPieceToReject(null);
     }
   };
 
-  // ─── Ocorrência vinculada a uma leitura específica ──────────────────────────
   const handleOpenReadingOccurrence = useCallback((reading) => {
     const now = new Date();
     setReadingOccurrenceSuggestion({
@@ -384,7 +429,7 @@ export default function TraceabilityCollection({ embedded = false }) {
     }
   };
 
-  const pageClass = embedded ? 'space-y-5' : 'p-4 sm:p-6 lg:p-8 max-w-[1500px] mx-auto space-y-5 sm:space-y-6';
+  const pageClass = embedded ? 'space-y-5' : 'p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-5 sm:space-y-6';
 
   const scanner = useMemo(() => (
     <TraceabilityScannerPanel
@@ -405,11 +450,11 @@ export default function TraceabilityCollection({ embedded = false }) {
   return (
     <div className={pageClass}>
       {!embedded && (
-        <PageHeader title="Coleta por Código / RFID" subtitle="Baixa produtiva por lote, peça, etapa e célula." icon={ScanLine} />
+        <PageHeader title="Coleta por Código / RFID" subtitle="Estação de controle operacional e baixa produtiva por posto." icon={ScanLine} />
       )}
 
       {/* Contexto de coleta (célula, máquina, turno, operador) */}
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-start bg-card border border-border rounded-md p-4">
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-start bg-card border border-border rounded-2xl p-4">
         <div className="space-y-1.5 flex-1">
           <label htmlFor="traceability-cell" className="text-xs font-semibold text-muted-foreground">Célula da coleta</label>
           <select
@@ -417,7 +462,7 @@ export default function TraceabilityCollection({ embedded = false }) {
             value={cellName}
             onChange={(e) => setCellName(e.target.value)}
             disabled={cellsLoading || isCellLocked}
-            className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm disabled:opacity-60 font-medium"
+            className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm disabled:opacity-60 font-medium"
             required
           >
             <option value="">{cellsLoading ? 'Carregando células...' : activeCells.length ? 'Selecione a célula' : 'Nenhuma célula ativa'}</option>
@@ -436,7 +481,7 @@ export default function TraceabilityCollection({ embedded = false }) {
               handleMachineChange(selected || null);
             }}
             disabled={machinesLoading || !cellName}
-            className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm disabled:opacity-60 font-medium"
+            className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm disabled:opacity-60 font-medium"
           >
             <option value="">{machinesLoading ? 'Carregando máquinas...' : machines.length ? 'Todas as máquinas' : 'Nenhuma máquina cadastrada'}</option>
             {machines.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -449,7 +494,7 @@ export default function TraceabilityCollection({ embedded = false }) {
             id="traceability-shift"
             value={shift}
             onChange={(e) => setShift(e.target.value)}
-            className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm font-medium"
+            className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm font-medium"
           >
             {['1º Turno', '2º Turno', '3º Turno'].map((item) => <option key={item}>{item}</option>)}
           </select>
@@ -457,7 +502,7 @@ export default function TraceabilityCollection({ embedded = false }) {
 
         <div className="space-y-1.5 flex-1">
           <label className="text-xs font-semibold text-muted-foreground">Operador</label>
-          <div className="h-10 rounded-md border border-input bg-secondary/50 px-3 flex items-center text-sm font-medium truncate">
+          <div className="h-10 rounded-xl border border-input bg-secondary/50 px-3 flex items-center text-sm font-medium truncate">
             {operator || 'Não identificado'}
           </div>
         </div>
@@ -471,47 +516,65 @@ export default function TraceabilityCollection({ embedded = false }) {
         online={navigator.onLine}
       />
 
+      {/* KPIs da Tela */}
       <TraceabilityKpiCards kpis={kpis} />
+
+      {/* Scanner Área */}
       {scanner}
 
-      <div className="grid lg:grid-cols-2 gap-5 items-start">
-        <CollectionContextSummary
-          feedback={feedback}
-          refreshToken={`${feedback?.reading?.id || feedback?.client_event_id || ''}-${queueStats.synced}-${readings[0]?.id || ''}`}
-        />
-        <PieceRouteTimeline route={route} currentStep={feedback?.item?.current_step} />
+      {/* 2 Colunas: Últimas leituras da célula e Detalhe da peça selecionada */}
+      <div className="grid md:grid-cols-2 gap-6 items-stretch">
+        <div className="h-full">
+          <CollectionRecentReadsPanel
+            cellName={cellName}
+            workstationId={machine?.id}
+            operatorId={operatorId}
+            shift={shift}
+            onSelectPiece={setSelectedPiece}
+            onRejectPiece={handleOpenRejectModal}
+            onOpenTraceability={handleOpenTraceabilityDrawer}
+            refreshSignal={refreshReadsSignal}
+            canReject={true}
+          />
+        </div>
+
+        <div className="h-full">
+          <CollectionPieceDetailPanel
+            piece={selectedPiece}
+            events={selectedPieceEvents}
+            loading={loadingPieceEvents}
+            onReject={handleOpenRejectModal}
+            onOpenTraceability={handleOpenTraceabilityDrawer}
+            onRefresh={() => setRefreshReadsSignal(prev => prev + 1)}
+            canReject={true}
+          />
+        </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between pt-2">
         <RfidReadinessPanel />
-        <Button
-          variant="destructive"
-          className="gap-2 shrink-0"
-          disabled={!feedback?.item?.id}
-          onClick={() => setRejectionOpen(true)}
-        >
-          <AlertOctagon /> Registrar Ocorrência / Reprovar Peça
-        </Button>
       </div>
-
-      <LastReadingsList
-        readings={readings}
-        loading={readingsLoading}
-        onOccurrence={handleOpenReadingOccurrence}
-      />
 
       <div className="text-xs text-muted-foreground flex items-center gap-2">
         <RadioTower className="w-4 h-4" />
         Câmeras exigem HTTPS em produção. Scanner físico e modo manual continuam disponíveis sem câmera.
       </div>
 
-      {/* Diálogos */}
-      <RejectionOccurrenceDialog
-        open={rejectionOpen}
-        onOpenChange={setRejectionOpen}
-        context={feedback}
-        onSubmit={handleReject}
+      {/* Modais e Dialogs */}
+      <CollectionRejectPieceModal
+        open={rejectModalOpen}
+        onOpenChange={setRejectModalOpen}
+        piece={pieceToReject}
+        onSubmit={handleRejectPieceSubmit}
         loading={rejecting}
+      />
+
+      <CollectionPieceTraceabilityDrawer
+        open={traceabilityOpen}
+        onOpenChange={setTraceabilityOpen}
+        pieceCode={traceabilityCodeForDrawer}
+        canReject={true}
+        onReject={handleOpenRejectModal}
       />
 
       <OccurrenceQuickDialog

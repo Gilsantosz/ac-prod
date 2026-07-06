@@ -1,16 +1,73 @@
 import { corsHeaders, json, requireAiUser } from '../_shared/aiOperations.ts';
 
-function mapReportTypeToScheduleType(aiType: string): string {
-  const type = String(aiType || '').toLowerCase().trim();
-  if (type === 'production_summary' || type === 'daily_production' || type === 'cell_performance' || type === 'occurrences') return 'daily_production';
-  if (type === 'shift_closure') return 'shift_closure';
-  if (type === 'oee') return 'oee';
-  if (type === 'traceability_pending' || type === 'lot_traceability') return 'traceability_pending';
-  if (type === 'lots_delayed') return 'lots_delayed';
-  if (type === 'packaging_pending') return 'packaging_pending';
-  if (type === 'shipping_pending') return 'shipping_pending';
-  if (type === 'executive' || type === 'executive_summary') return 'executive_summary';
-  return 'daily_production';
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function asArray(value: any): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item || '').trim()).filter(Boolean) : [];
+}
+
+function splitRefs(body: any) {
+  const profileIds = new Set<string>(asArray(body.recipientProfileIds || body.profileIds));
+  const reportRecipientIds = new Set<string>();
+  const emails = new Set<string>(asArray(body.recipientEmails || body.emails).map((email) => email.toLowerCase()).filter((email) => EMAIL_PATTERN.test(email)));
+
+  asArray(body.extraEmails).forEach((email) => {
+    const clean = email.toLowerCase();
+    if (EMAIL_PATTERN.test(clean)) emails.add(clean);
+  });
+
+  asArray(body.recipientIds).forEach((value) => {
+    if (value.startsWith('profile:')) profileIds.add(value.slice('profile:'.length));
+    else if (value.startsWith('recipient:')) reportRecipientIds.add(value.slice('recipient:'.length));
+    else if (EMAIL_PATTERN.test(value)) emails.add(value.toLowerCase());
+    else reportRecipientIds.add(value);
+  });
+
+  return { profileIds: [...profileIds], reportRecipientIds: [...reportRecipientIds], emails: [...emails] };
+}
+
+function mapReportType(type: string) {
+  const map: Record<string, string> = {
+    oee: 'oee',
+    production_summary: 'daily_production',
+    executive: 'executive_summary',
+    lot_traceability: 'traceability_pending',
+    cell_performance: 'daily_production',
+    occurrences: 'daily_production',
+    daily_production: 'daily_production',
+    shift_closure: 'shift_closure',
+    traceability_pending: 'traceability_pending',
+    lots_delayed: 'lots_delayed',
+    packaging_pending: 'packaging_pending',
+    shipping_pending: 'shipping_pending',
+    executive_summary: 'executive_summary',
+  };
+  return map[type] || 'daily_production';
+}
+
+function normalizeTime(value: string) {
+  const clean = String(value || '07:00').trim();
+  if (/^\d{2}:\d{2}:\d{2}$/.test(clean)) return clean;
+  if (/^\d{2}:\d{2}$/.test(clean)) return `${clean}:00`;
+  return '07:00:00';
+}
+
+function nextRunAt(timeLocal: string, frequency: string) {
+  const next = new Date();
+  const [hour, minute] = timeLocal.split(':').map(Number);
+  next.setHours(hour || 7, minute || 0, 0, 0);
+  if (next <= new Date()) next.setDate(next.getDate() + 1);
+  if (frequency === 'workdays') {
+    while ([0, 6].includes(next.getDay())) next.setDate(next.getDate() + 1);
+  }
+  return next.toISOString();
+}
+
+async function legacyRecipientsToEmails(admin: any, ids: string[]) {
+  if (!ids.length) return [];
+  const { data, error } = await admin.from('report_recipients').select('email').in('id', ids).eq('active', true);
+  if (error) return [];
+  return (data || []).map((row: any) => String(row.email || '').trim().toLowerCase()).filter((email: string) => EMAIL_PATTERN.test(email));
 }
 
 Deno.serve(async (req) => {
@@ -18,105 +75,42 @@ Deno.serve(async (req) => {
   try {
     const { admin, user } = await requireAiUser(req, true);
     const body = await req.json();
-    
-    const next = new Date();
-    const [hour, minute] = String(body.timeLocal || '07:00').split(':').map(Number);
-    next.setHours(hour || 7, minute || 0, 0, 0);
-    if (next <= new Date()) next.setDate(next.getDate() + 1);
-    
-    let templateId = body.templateId || null;
-    if (!templateId && body.templateCode) {
-      const { data: template } = await admin.from('report_templates').select('id').eq('code', body.templateCode).maybeSingle();
-      templateId = template?.id || null;
-    }
-    
-    const scheduleId = crypto.randomUUID();
-    
-    // Resolve report_recipients to profiles and extra emails
-    const recipientIds = body.recipientIds || [];
-    const recipientProfileIds: string[] = [];
-    const extraEmails: string[] = [];
-    
-    if (recipientIds.length > 0) {
-      const { data: recs } = await admin.from('report_recipients').select('email').in('id', recipientIds);
-      if (recs && recs.length > 0) {
-        const emails = recs.map((r: any) => r.email.toLowerCase().trim());
-        const { data: profs } = await admin.from('profiles').select('id, email').in('email', emails);
-        const profileMap = new Map();
-        if (profs) {
-          profs.forEach((p: any) => profileMap.set(p.email.toLowerCase().trim(), p.id));
-        }
-        emails.forEach((email: string) => {
-          if (profileMap.has(email)) {
-            recipientProfileIds.push(profileMap.get(email));
-          } else {
-            extraEmails.push(email);
-          }
-        });
-      }
-    }
-    
-    if (Array.isArray(body.extraEmails)) {
-      body.extraEmails.forEach((email: string) => {
-        const clean = String(email || '').trim().toLowerCase();
-        if (clean && !extraEmails.includes(clean)) extraEmails.push(clean);
-      });
-    }
+    const refs = splitRefs(body);
+    const legacyEmails = await legacyRecipientsToEmails(admin, refs.reportRecipientIds);
+    const recipientProfileIds = [...new Set(refs.profileIds)];
+    const extraEmails = [...new Set([...refs.emails, ...legacyEmails])];
 
-    // 1. Insert into scheduled_reports (compatibility)
-    const { data: scheduledReport, error: srError } = await admin.from('scheduled_reports').insert({
-      id: scheduleId,
-      name: body.name,
-      report_type: body.reportType || 'production_summary',
-      format: body.format || 'pdf',
-      filters: body.filters || {},
-      options: body.options || {},
-      recipient_ids: recipientIds,
-      template_id: templateId,
-      frequency: body.frequency || 'daily',
-      time_local: body.timeLocal || '07:00',
-      timezone: body.timezone || 'America/Sao_Paulo',
-      next_run_at: next.toISOString(),
-      created_by: user.id
-    }).select().single();
-    
-    if (srError) throw srError;
+    if (!recipientProfileIds.length && !extraEmails.length) throw new Error('RECIPIENT_REQUIRED');
 
-    // 2. Insert into report_schedules (processed by Edge Function send-scheduled-reports)
-    const { error: rsError } = await admin.from('report_schedules').insert({
-      id: scheduleId,
-      name: body.name,
-      enabled: body.enabled !== false,
-      report_type: mapReportTypeToScheduleType(body.reportType),
-      time_local: body.timeLocal ? `${body.timeLocal}:00` : '07:00:00',
-      timezone: body.timezone || 'America/Sao_Paulo',
-      frequency: body.frequency || 'daily',
-      cell_filter: body.filters?.cells || body.cellFilter || [],
-      stage_filter: body.filters?.stages || body.stageFilter || [],
+    const reportType = mapReportType(body.reportType || body.report_type);
+    const reportTypes = asArray(body.reportTypes || body.report_types).map(mapReportType);
+    const timeLocal = normalizeTime(body.timeLocal || body.time_local);
+    const frequency = ['daily', 'workdays', 'weekly', 'monthly'].includes(body.frequency) ? body.frequency : 'daily';
+    const filters = body.filters || {};
+
+    const payload = {
+      name: String(body.name || 'Relatório IA Operacional').trim(),
+      report_type: reportTypes[0] || reportType,
+      report_types: reportTypes.length ? reportTypes : [reportType],
+      format: ['pdf', 'xlsx', 'csv', 'email_html'].includes(body.format) ? body.format : 'email_html',
+      cell_filter: Array.isArray(filters.cells) ? filters.cells : [],
       recipient_profile_ids: recipientProfileIds,
       extra_emails: extraEmails,
-      format: body.format === 'html' || body.format === 'email_html' ? 'email_html' : body.format || 'email_html',
-      next_run_at: next.toISOString(),
-      created_by: user.id
-    });
-    
-    if (rsError) {
-      // Rollback scheduled_report
-      await admin.from('scheduled_reports').delete().eq('id', scheduleId);
-      throw rsError;
-    }
+      frequency,
+      time_local: timeLocal,
+      timezone: body.timezone || 'America/Sao_Paulo',
+      next_run_at: nextRunAt(timeLocal, frequency),
+      enabled: body.enabled !== false,
+      created_by: user.id,
+    };
 
-    await admin.from('ai_system_logs').insert({
-      user_id: user.id,
-      event: 'report.scheduled',
-      entity: 'scheduled_report',
-      entity_id: scheduleId,
-      metadata: { frequency: body.frequency, source: 'ai_copilot' }
-    });
-    
-    return json({ success: true, schedule: scheduledReport });
+    const { data, error } = await admin.from('report_schedules').insert(payload).select().single();
+    if (error) throw error;
+    await admin.from('ai_system_logs').insert({ user_id: user.id, event: 'report.scheduled', entity: 'report_schedule', entity_id: data.id, metadata: { frequency: data.frequency, recipientProfiles: recipientProfileIds.length, extraEmails: extraEmails.length } });
+    return json({ success: true, schedule: data });
   } catch (error) {
-    const status = error.message === 'AUTH_REQUIRED' ? 401 : error.message === 'ACCESS_DENIED' ? 403 : 500;
-    return json({ success: false, error: error.message }, status);
+    const message = error instanceof Error ? error.message : String(error);
+    const status = message === 'AUTH_REQUIRED' ? 401 : message === 'ACCESS_DENIED' ? 403 : message === 'RECIPIENT_REQUIRED' ? 422 : 500;
+    return json({ success: false, error: message === 'RECIPIENT_REQUIRED' ? 'Selecione pelo menos um gestor cadastrado ou e-mail válido.' : message }, status);
   }
 });

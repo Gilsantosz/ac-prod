@@ -23,27 +23,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import NotificationCenter from '@/components/layout/NotificationCenter';
 import LeoAssistantChat from '@/components/assistant/LeoAssistantChat';
 
-const nav = [
-  // ─── Produção Principal ──────────────────────────────────────────────
-  { to: '/',                    label: 'Painéis',             icon: LayoutDashboard },
-  { to: '/entrada',             label: 'Entrada de Produção', icon: PlusCircle },
-  { to: '/resumo-diario',       label: 'Resumo Diário',       icon: ClipboardList },
-  { to: '/oee',                 label: 'OEE',                 icon: Gauge },
-  { to: '/celulas-metas',       label: 'Células e Metas',     icon: Boxes },
-  // ─── Rastreabilidade MES ──────────────────────────────────────────
-  { to: '/rastreabilidade',     label: 'Rastreabilidade',     icon: Layers },
-  { to: '/integracoes/promob',  label: 'Integração Promob',   icon: Plug },
-  // ─── Qualidade e Relatórios ─────────────────────────────────────
-  { to: '/ocorrencias',         label: 'Ocorrências',         icon: AlertOctagon },
-  { to: '/gamificacao',         label: 'Gamificação',         icon: Trophy },
-  { to: '/relatorios',          label: 'Relatórios',          icon: LineChart },
-  { to: '/ia-operacional',      label: 'IA Operacional',      icon: BrainCircuit },
-  { to: '/automacoes',          label: 'Automações',          icon: Zap },
-  // ─── Administração ─────────────────────────────────────────────────
-  { to: '/usuarios',            label: 'Usuários',            icon: Users },
-  { to: '/logs-sistema',        label: 'Logs do Sistema',     icon: Shield,    adminOnly: true },
-  { to: '/downloads-backups',   label: 'Backups & Drive',     icon: HardDrive, adminOnly: true },
-];
+import { appRoutes, routeGroups } from '@/config/appRoutes';
 
 export default function AppLayout() {
   return (
@@ -79,31 +59,18 @@ function AppShell() {
 
   useRealtimeSync(!!user);
 
-  const pathPermissionMap = {
-    '/': 'view_dashboards',
-    '/painel': 'view_dashboards',
-    '/entrada': 'register_production',
-    '/resumo-diario': 'view_dashboards',
-    '/oee': 'view_dashboards',
-    '/celulas-metas': 'manage_cells',
-    '/usuarios': 'manage_operators',
-    '/ocorrencias': 'manage_occurrences',
-    '/analise-paradas': 'manage_occurrences',
-    '/analise-tendencia': 'view_dashboards',
-    '/gamificacao': 'view_dashboards',
-    '/relatorios': 'view_reports',
-    '/ia-operacional': 'ai_operations',
-    '/automacoes': 'manage_automations',
-  };
 
-  const visibleNav = nav.filter((item) => {
-    if (item.adminOnly && user?.role !== 'admin') return false;
-    if (user?.role === 'operator' && ['/integracoes/promob', '/celulas-metas', '/usuarios'].includes(item.to)) return false;
+
+
+  const visibleNav = appRoutes.filter((item) => {
+    if (!item.showInSidebar) return false;
+    if (item.permission === 'adminOnly' && user?.role !== 'admin') return false;
+    if (user?.role === 'operator' && ['/pcp', '/celulas-metas', '/usuarios', '/rotas-produtivas'].includes(item.path)) return false;
     if (user?.role === 'admin') return true;
     if (!user?.permissions) return false;
     
-    const requiredPermission = pathPermissionMap[item.to];
-    if (requiredPermission) {
+    const requiredPermission = item.permission;
+    if (requiredPermission && requiredPermission !== 'adminOnly') {
       if (requiredPermission === 'ai_operations') {
         return !!(user.permissions.ai_operations || user.permissions.view_reports || user.permissions.manage_automations);
       }
@@ -111,6 +78,7 @@ function AppShell() {
     }
     return true;
   });
+
 
   const userInitials = user
     ? (user.name ? user.name.substring(0, 2).toUpperCase() : user.email.substring(0, 2).toUpperCase())
@@ -158,34 +126,49 @@ function AppShell() {
           </button>
 
           {/* ── Nav Items ─────────────────────────────────────────────────── */}
-          <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-0.5 px-2">
-            {visibleNav.map((item) => {
-              const active = location.pathname === item.to;
+          <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-4 px-2 select-none">
+            {Object.entries(routeGroups).map(([groupKey, groupLabel]) => {
+              const groupItems = visibleNav.filter(item => item.group === groupKey);
+              if (groupItems.length === 0) return null;
+
               return (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  title={collapsed ? item.label : undefined}
-                  className={cn(
-                    'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 select-none group',
-                    collapsed ? 'justify-center' : 'justify-start',
-                    active
-                      ? 'bg-[#76FB91]/20 text-foreground font-semibold border border-[#76FB91]/30 shadow-sm'
-                      : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                <div key={groupKey} className="space-y-1">
+                  {!collapsed && (
+                    <h4 className="px-3 text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-none mb-2 mt-2 opacity-65">
+                      {groupLabel}
+                    </h4>
                   )}
-                >
-                  <item.icon
-                    className={cn(
-                      'shrink-0 transition-transform duration-200 group-hover:scale-110',
-                      collapsed ? 'w-5 h-5' : 'w-4.5 h-4.5',
-                      active ? 'text-[#2d9c4a]' : ''
-                    )}
-                  />
-                  {!collapsed && <span className="truncate">{item.label}</span>}
-                </Link>
+                  {groupItems.map((item) => {
+                    const active = location.pathname === item.path || (item.aliases && item.aliases.some(alias => location.pathname === alias));
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.path}
+                        to={item.path}
+                        title={collapsed ? item.label : undefined}
+                        className={cn(
+                          'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 select-none group',
+                          collapsed ? 'justify-center' : 'justify-start',
+                          active
+                            ? 'bg-[#76FB91]/20 text-foreground font-semibold border border-[#76FB91]/30 shadow-sm'
+                            : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                        )}
+                      >
+                        <Icon
+                          className={cn(
+                            'shrink-0 transition-transform duration-200 group-hover:scale-110 w-4.5 h-4.5',
+                            active ? 'text-[#2d9c4a]' : ''
+                          )}
+                        />
+                        {!collapsed && <span className="truncate">{item.label}</span>}
+                      </Link>
+                    );
+                  })}
+                </div>
               );
             })}
           </nav>
+
 
           {/* ── Footer: Tema + Perfil ──────────────────────────────────────── */}
           <div className={cn(
@@ -325,27 +308,41 @@ function AppShell() {
                 </div>
 
                 {/* Nav list */}
-                <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
-                  {visibleNav.map((item) => {
-                    const active = location.pathname === item.to;
+                <nav className="flex-1 space-y-4 overflow-y-auto pr-1">
+                  {Object.entries(routeGroups).map(([groupKey, groupLabel]) => {
+                    const groupItems = visibleNav.filter(item => item.group === groupKey);
+                    if (groupItems.length === 0) return null;
+
                     return (
-                      <Link
-                        key={item.to}
-                        to={item.to}
-                        onClick={() => setMobileOpen(false)}
-                        className={cn(
-                          'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 select-none',
-                          active
-                            ? 'bg-[#76FB91]/20 text-foreground font-semibold border border-[#76FB91]/30 shadow-sm'
-                            : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-                        )}
-                      >
-                        <item.icon className={cn('w-5 h-5 shrink-0', active ? 'text-[#2d9c4a]' : '')} />
-                        <span>{item.label}</span>
-                      </Link>
+                      <div key={groupKey} className="space-y-1">
+                        <h4 className="px-4 text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-none mb-2 mt-2 opacity-60">
+                          {groupLabel}
+                        </h4>
+                        {groupItems.map((item) => {
+                          const active = location.pathname === item.path || (item.aliases && item.aliases.some(alias => location.pathname === alias));
+                          const Icon = item.icon;
+                          return (
+                            <Link
+                              key={item.path}
+                              to={item.path}
+                              onClick={() => setMobileOpen(false)}
+                              className={cn(
+                                'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 select-none',
+                                active
+                                  ? 'bg-[#76FB91]/20 text-foreground font-semibold border border-[#76FB91]/30 shadow-sm'
+                                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                              )}
+                            >
+                              <Icon className={cn('w-5 h-5 shrink-0', active ? 'text-[#2d9c4a]' : '')} />
+                              <span>{item.label}</span>
+                            </Link>
+                          );
+                        })}
+                      </div>
                     );
                   })}
                 </nav>
+
 
                 {/* Footer drawer */}
                 <div className="pt-4 border-t border-border/60 mt-auto shrink-0">

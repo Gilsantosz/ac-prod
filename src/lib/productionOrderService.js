@@ -1,3 +1,9 @@
+/**
+ * AC.Prod MES — Fase 2 (2025-07)
+ * Campos canônicos (migration 025):
+ *   - production_order_id  (não order_id)
+ *   - current_step         (não current_stage)
+ */
 import { supabase } from '@/lib/supabaseClient';
 
 const text = (value) => String(value ?? '').trim();
@@ -63,16 +69,18 @@ async function persistChildren(order, lots = [], items = []) {
   for (const rawLot of lots) {
     const lotCode = text(rawLot.lot_code || rawLot.lotCode || rawLot.lote);
     if (!lotCode) continue;
+    // FASE 2: production_order_id é o FK canônico; order_id é alias (mantido por compat)
+    const canonicalStep = text(rawLot.current_step || rawLot.current_stage) || 'imported';
     const payload = {
-      order_id: order.id,
-      production_order_id: order.id,
+      production_order_id: order.id, // [CANÔNICO]
+      order_id: order.id,            // [ALIAS] compatibilidade legada
       lot_code: lotCode,
       product_code: text(rawLot.product_code || rawLot.productCode),
       product_name: text(rawLot.product_name || rawLot.productName),
       product_description: text(rawLot.product_description || rawLot.productDescription),
       planned_quantity: number(rawLot.planned_quantity || rawLot.quantity),
-      current_step: text(rawLot.current_step || rawLot.current_stage) || 'imported',
-      current_stage: text(rawLot.current_stage || rawLot.current_step) || 'imported',
+      current_step: canonicalStep,   // [CANÔNICO]
+      current_stage: canonicalStep,  // [ALIAS] compatibilidade legada
       status: text(rawLot.status) || 'planned',
     };
     const { data, error } = await supabase.from('production_lots').upsert(payload, { onConflict: 'lot_code' }).select().single();
