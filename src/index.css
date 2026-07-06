@@ -438,3 +438,15 @@ body {
   .delay-250 { animation-delay: 250ms; }
   .delay-300 { animation-delay: 300ms; }
 }
+
+/* Modo Quiosque Global */
+.kiosk-mode {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.kiosk-mode * {
+  user-select: none;
+}
+

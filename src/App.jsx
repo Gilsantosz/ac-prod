@@ -15,6 +15,8 @@ import Register from '@/pages/Register';
 import ForgotPassword from '@/pages/ForgotPassword';
 import ResetPassword from '@/pages/ResetPassword';
 import AppLayout from '@/components/layout/AppLayout';
+import KioskLayout from '@/components/layout/KioskLayout';
+import KioskDashboard from '@/pages/KioskDashboard';
 import Dashboard from '@/pages/Dashboard';
 import DailySummary from '@/pages/DailySummary';
 import OEE from '@/pages/OEE';
@@ -82,6 +84,11 @@ const AuthenticatedApp = () => {
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
+        <Route path="/quiosque" element={
+          <KioskLayout>
+            <KioskDashboard />
+          </KioskLayout>
+        } />
         <Route element={<AppLayout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/painel" element={<Navigate to="/" replace />} />

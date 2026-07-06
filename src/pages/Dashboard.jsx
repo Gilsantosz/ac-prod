@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/lib/localDb';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
@@ -9,6 +10,12 @@ import { runSeedTestData } from '@/lib/seedTestData';
 import PageHeader from '@/components/ui/PageHeader';
 import { useKiosk } from '@/lib/KioskContext';
 import { useCells } from '@/hooks/useCells';
+import {
+  isFullscreenActive,
+  isFullscreenSupported,
+  enterFullscreen,
+  exitFullscreen
+} from '@/lib/fullscreenService';
 import KioskCellControl from '@/components/dashboard/KioskCellControl';
 import KpiCard from '@/components/dashboard/KpiCard';
 import HourlyChart from '@/components/dashboard/HourlyChart';
@@ -38,7 +45,8 @@ import RealtimeCellProgressPanel from '@/components/dashboard/RealtimeCellProgre
 
 const PANEL_IDS = ['realtimeProgress', 'monthlyTracker', 'dailyProduction', 'charts', 'weeklyRanking', 'effDrop', 'goalProgress', 'goalProjection', 'weeklyTrend', 'highPerformers'];
 
-export default function Dashboard() {
+export default function Dashboard({ kioskModeOverride = false }) {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [theme, setTheme] = useTheme();
   const [seeding, setSeeding] = useState(false);
@@ -85,7 +93,35 @@ export default function Dashboard() {
   const cells = useMemo(() => validCellNames, [validCellNames]);
 
 
-  const { kiosk, toggleKiosk } = useKiosk();
+  const { kiosk: contextKiosk, toggleKiosk } = useKiosk();
+  const kiosk = kioskModeOverride || contextKiosk;
+
+  const handleOpenKiosk = async () => {
+    try {
+      if (isFullscreenSupported()) {
+        await enterFullscreen();
+      }
+    } catch (error) {
+      console.warn('Fullscreen bloqueado ou falhou:', error);
+    }
+    navigate('/quiosque');
+  };
+
+  const handleExitKiosk = async () => {
+    try {
+      if (isFullscreenActive()) {
+        await exitFullscreen();
+      }
+    } catch (error) {
+      console.warn('Erro ao sair de tela cheia:', error);
+    }
+    if (kioskModeOverride) {
+      navigate('/');
+    } else {
+      toggleKiosk();
+    }
+  };
+
   const [kioskCell, setKioskCell] = useState('all');
   const [rotating, setRotating] = useState(false);
 
@@ -264,7 +300,7 @@ export default function Dashboard() {
             <Button
               variant="outline"
               className="gap-2 bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full shadow-sm"
-              onClick={toggleKiosk}
+              onClick={handleOpenKiosk}
             >
               <Monitor className="w-4 h-4" /> Modo Quiosque
             </Button>
@@ -312,7 +348,7 @@ export default function Dashboard() {
             </button>
             <DashboardLayoutSettings panels={panels} hidden={hidden} sizes={sizes} toggleHidden={toggleHidden} toggleSize={toggleSize} />
             <KioskCellControl cells={cells} active={kioskCell} setActive={setKioskCell} rotating={rotating} setRotating={setRotating} />
-            <Button variant="default" className="w-full sm:w-auto gap-2 min-h-[44px]" onClick={toggleKiosk}>
+            <Button variant="default" className="w-full sm:w-auto gap-2 min-h-[44px]" onClick={handleExitKiosk}>
               <Minimize2 className="w-4 h-4" /> Sair do Quiosque
             </Button>
           </div>
