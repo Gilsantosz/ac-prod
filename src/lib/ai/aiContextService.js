@@ -133,9 +133,9 @@ export async function fetchAiContext(rawFilters = {}, user) {
   const [entriesResult, occurrencesResult, lotsResult, cellsResult, goalsResult] = await Promise.all([
     runQuery('Produção', entriesQuery),
     runQuery('Ocorrências', occurrencesQuery, true),
-    runQuery('Lotes', supabase.from('production_lots').select('*, production_orders(*)').order('created_at', { ascending: false }).limit(2000), true),
+    runQuery('Lotes', supabase.from('production_lots').select('*, production_orders:production_orders!production_order_id(*)').order('created_at', { ascending: false }).limit(2000), true),
     runQuery('Células', supabase.from('cells').select('id, name, active').eq('active', true).order('name'), true),
-    runQuery('Metas', supabase.from('daily_goals').select('*').gte('date', filters.startDate).lte('date', filters.endDate).limit(5000), true),
+    runQuery('Metas', supabase.from('production_daily_goals').select('*').gte('date', filters.startDate).lte('date', filters.endDate).limit(5000), true),
   ]);
 
   let entries = filterEntries(entriesResult.rows, filters);
@@ -150,6 +150,9 @@ export async function fetchAiContext(rawFilters = {}, user) {
     entries = entries.filter((entry) => occurrenceKeys.has(`${entry.date}|${entry.shift}|${entry.cell}`));
   }
   const lots = filterLots(lotsResult.rows, filters);
+  const goals = goalsResult.rows
+    .map((goal) => ({ ...goal, cell: goal.cell || goal.cell_name }))
+    .filter((goal) => !filters.cells.length || filters.cells.includes(goal.cell));
   const warnings = [occurrencesResult, lotsResult, cellsResult, goalsResult]
     .map((result) => result.warning)
     .filter(Boolean);
@@ -160,7 +163,7 @@ export async function fetchAiContext(rawFilters = {}, user) {
     occurrences,
     lots,
     cells: cellsResult.rows,
-    goals: goalsResult.rows,
+    goals,
     warnings,
     sources: ['production_entries', ...(occurrencesResult.warning ? [] : ['occurrences']), ...(lotsResult.warning ? [] : ['production_lots', 'production_orders'])],
     generatedAt: new Date().toISOString(),

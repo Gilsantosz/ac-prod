@@ -8,13 +8,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import {
   Boxes, Target, CalendarRange, Plus, Trash2,
   ChevronLeft, ChevronRight, Factory, Pencil, 
-  ChevronDown, ChevronUp, Users, Search, RefreshCw,
-  Sliders, Link as LinkIcon, ExternalLink
+  Users, Search, RefreshCw, ExternalLink
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import CellForm from '@/components/cells/CellForm';
@@ -28,15 +26,12 @@ import { Link } from 'react-router-dom';
 
 import {
   getCells,
-  getActiveCells,
   createCell,
   updateCell,
-  deactivateCell,
   deleteCell,
   getWorkstations,
   createWorkstation,
   updateWorkstation,
-  deactivateWorkstation,
   deleteWorkstation,
   getProductionGoals,
   deleteProductionGoal,
@@ -116,13 +111,31 @@ export default function CellsAndGoals() {
     initialData: []
   });
 
+  const invalidateCellQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ['cells-admin-list'] });
+    queryClient.invalidateQueries({ queryKey: ['cells'] });
+  };
+
+  const invalidateMachineQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ['machines-admin-list'] });
+    queryClient.invalidateQueries({ queryKey: ['production-machines-admin'] });
+    queryClient.invalidateQueries({ queryKey: ['production-machines'] });
+  };
+
+  const invalidateGoalQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ['production-daily-goals'] });
+    queryClient.invalidateQueries({ queryKey: ['productionDailyGoals'] });
+    queryClient.invalidateQueries({ queryKey: ['dailyGoals'] });
+    queryClient.invalidateQueries({ queryKey: ['cells-goals-summary'] });
+  };
+
   // ─── MUTATIONS ─────────────────────────────────────────────────────────────
 
   // Células
   const mutationCreateCell = useMutation({
     mutationFn: createCell,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cells-admin-list'] });
+      invalidateCellQueries();
       refetchSummary();
       toast.success('Célula cadastrada com sucesso');
       setCellDialogOpen(false);
@@ -133,7 +146,9 @@ export default function CellsAndGoals() {
   const mutationUpdateCell = useMutation({
     mutationFn: ({ id, payload }) => updateCell(id, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cells-admin-list'] });
+      invalidateCellQueries();
+      invalidateMachineQueries();
+      invalidateGoalQueries();
       refetchSummary();
       toast.success('Célula atualizada com sucesso');
       setEditingCell(null);
@@ -145,7 +160,7 @@ export default function CellsAndGoals() {
   const mutationDeleteCell = useMutation({
     mutationFn: deleteCell,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cells-admin-list'] });
+      invalidateCellQueries();
       refetchSummary();
       toast.success('Célula removida com sucesso');
     },
@@ -155,7 +170,7 @@ export default function CellsAndGoals() {
   const mutationToggleCellActive = useMutation({
     mutationFn: ({ id, active }) => updateCell(id, { active }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cells-admin-list'] });
+      invalidateCellQueries();
       refetchSummary();
       toast.success('Status da célula atualizado');
     },
@@ -166,6 +181,7 @@ export default function CellsAndGoals() {
   const mutationCreateMachine = useMutation({
     mutationFn: createWorkstation,
     onSuccess: () => {
+      invalidateMachineQueries();
       refetchMachines();
       refetchSummary();
       toast.success('Máquina/Posto cadastrado com sucesso');
@@ -177,6 +193,7 @@ export default function CellsAndGoals() {
   const mutationUpdateMachine = useMutation({
     mutationFn: ({ id, payload }) => updateWorkstation(id, payload),
     onSuccess: () => {
+      invalidateMachineQueries();
       refetchMachines();
       refetchSummary();
       toast.success('Máquina/Posto atualizado com sucesso');
@@ -189,6 +206,7 @@ export default function CellsAndGoals() {
   const mutationDeleteMachine = useMutation({
     mutationFn: deleteWorkstation,
     onSuccess: () => {
+      invalidateMachineQueries();
       refetchMachines();
       refetchSummary();
       toast.success('Máquina/Posto excluído com sucesso');
@@ -200,6 +218,7 @@ export default function CellsAndGoals() {
     mutationFn: ({ id, active, name, cell_name, station_name, metric_unit }) => 
       updateWorkstation(id, { name, cell_name, station_name, metric_unit, active }),
     onSuccess: () => {
+      invalidateMachineQueries();
       refetchMachines();
       refetchSummary();
       toast.success('Status do posto atualizado');
@@ -211,6 +230,7 @@ export default function CellsAndGoals() {
   const mutationDeleteGoal = useMutation({
     mutationFn: deleteProductionGoal,
     onSuccess: () => {
+      invalidateGoalQueries();
       refetchGoals();
       refetchSummary();
       toast.success('Meta diária removida');
@@ -258,10 +278,10 @@ export default function CellsAndGoals() {
     }
   };
 
-  const openNewMachineDialog = () => {
+  const openNewMachineDialog = (cellName = '') => {
     setEditingMachine(null);
     setMName('');
-    setMCell(activeCells[0]?.name || '');
+    setMCell(cellName || activeCells[0]?.name || '');
     setMStation('');
     setMUnit('peças');
     setMActive(true);
@@ -318,17 +338,28 @@ export default function CellsAndGoals() {
   // ─── FILTROS DE LISTAGENS ──────────────────────────────────────────────────
 
   const filteredCells = useMemo(() => {
+    const cellQuery = cellSearch.trim().toLowerCase();
+    const machineQuery = machineSearch.trim().toLowerCase();
+
     return cells.filter(c => {
-      const matchesSearch = c.name.toLowerCase().includes(cellSearch.toLowerCase()) ||
-        (c.description || '').toLowerCase().includes(cellSearch.toLowerCase());
+      const cellMachines = machines.filter(m => m.cell_name === c.name);
+      const matchesCellSearch = !cellQuery ||
+        c.name.toLowerCase().includes(cellQuery) ||
+        (c.description || '').toLowerCase().includes(cellQuery) ||
+        (c.notes || '').toLowerCase().includes(cellQuery);
+      const matchesMachineSearch = !machineQuery || cellMachines.some((m) =>
+        m.name.toLowerCase().includes(machineQuery) ||
+        (m.station_name || '').toLowerCase().includes(machineQuery) ||
+        (m.metric_unit || '').toLowerCase().includes(machineQuery)
+      );
       
       const matchesStatus = cellStatusFilter === 'all' ||
         (cellStatusFilter === 'active' && c.active !== false) ||
         (cellStatusFilter === 'inactive' && c.active === false);
 
-      return matchesSearch && matchesStatus;
+      return matchesCellSearch && matchesMachineSearch && matchesStatus;
     });
-  }, [cells, cellSearch, cellStatusFilter]);
+  }, [cells, machines, cellSearch, machineSearch, cellStatusFilter]);
 
   const filteredMachines = useMemo(() => {
     return machines.filter(m => {
@@ -341,15 +372,10 @@ export default function CellsAndGoals() {
     });
   }, [machines, machineSearch, machineCellFilter]);
 
-  const goalsByShift = useMemo(() => {
-    const map = {};
-    for (const g of goals) {
-      const key = g.shift || '1º Turno';
-      if (!map[key]) map[key] = [];
-      map[key].push(g);
-    }
-    return map;
-  }, [goals]);
+  const orphanMachines = useMemo(() => {
+    const cellNames = new Set(cells.map((c) => c.name));
+    return machines.filter((machine) => machine.cell_name && !cellNames.has(machine.cell_name));
+  }, [cells, machines]);
 
   // Vínculos de operários por célula
   const operatorsByCell = useMemo(() => {
@@ -385,20 +411,23 @@ export default function CellsAndGoals() {
         />
         <div className="flex gap-2">
           {activeTab === 'cells' && (
-            <Button
-              onClick={() => { setEditingCell(null); setCellDialogOpen(true); }}
-              className="gap-2 rounded-xl shadow-sm bg-primary text-primary-foreground hover:bg-primary/95"
-            >
-              <Plus className="w-4 h-4" /> Nova Célula
-            </Button>
-          )}
-          {activeTab === 'machines' && (
-            <Button
-              onClick={openNewMachineDialog}
-              className="gap-2 rounded-xl shadow-sm bg-primary text-primary-foreground hover:bg-primary/95"
-            >
-              <Plus className="w-4 h-4" /> Novo Posto
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                onClick={() => openNewMachineDialog()}
+                disabled={activeCells.length === 0}
+                className="gap-2 rounded-xl shadow-sm"
+                title={activeCells.length === 0 ? 'Cadastre uma célula antes de vincular postos' : 'Novo posto vinculado a uma célula'}
+              >
+                <Plus className="w-4 h-4" /> Novo Posto
+              </Button>
+              <Button
+                onClick={() => { setEditingCell(null); setCellDialogOpen(true); }}
+                className="gap-2 rounded-xl shadow-sm bg-primary text-primary-foreground hover:bg-primary/95"
+              >
+                <Plus className="w-4 h-4" /> Nova Célula
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -433,8 +462,7 @@ export default function CellsAndGoals() {
       {/* Abas */}
       <div className="flex border-b border-border bg-card/40 backdrop-blur-sm rounded-t-xl px-2">
         {[
-          { id: 'cells', label: 'Células', icon: Boxes },
-          { id: 'machines', label: 'Máquinas / Postos', icon: Factory },
+          { id: 'cells', label: 'Células e Máquinas', icon: Boxes },
           { id: 'goals', label: 'Metas Produtivas', icon: Target },
           { id: 'links', label: 'Vínculos', icon: Users }
         ].map(tab => {
@@ -473,6 +501,15 @@ export default function CellsAndGoals() {
                   className="pl-9 h-10 rounded-xl border-border/60 bg-card"
                 />
               </div>
+              <div className="relative flex-1">
+                <Factory className="w-4.5 h-4.5 text-muted-foreground absolute left-3 top-2.5" />
+                <Input
+                  value={machineSearch}
+                  onChange={(e) => setMachineSearch(e.target.value)}
+                  placeholder="Pesquisar máquinas, postos ou estações..."
+                  className="pl-9 h-10 rounded-xl border-border/60 bg-card"
+                />
+              </div>
               <Select value={cellStatusFilter} onValueChange={setCellStatusFilter}>
                 <SelectTrigger className="w-full sm:w-[160px] h-10 rounded-xl border-border/60 bg-card">
                   <SelectValue placeholder="Status" />
@@ -484,6 +521,33 @@ export default function CellsAndGoals() {
                 </SelectContent>
               </Select>
             </div>
+
+            {orphanMachines.length > 0 && (
+              <Card className="border-amber-500/30 bg-amber-500/10 p-4">
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-amber-700 dark:text-amber-300">Postos com célula não encontrada</p>
+                    <p className="text-xs text-amber-700/80 dark:text-amber-300/80">
+                      Estes postos apontam para nomes de célula que não existem mais no cadastro atual. Edite o vínculo para que coleta, metas e painéis usem o mesmo cadastro.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {orphanMachines.map((machine) => (
+                      <Button
+                        key={machine.id}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 rounded-xl border-amber-500/40 bg-card text-xs"
+                        onClick={() => openEditMachineDialog(machine)}
+                      >
+                        {machine.name} · {machine.cell_name}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </Card>
+            )}
 
             {/* Listagem */}
             {cellsLoading ? (
@@ -502,8 +566,16 @@ export default function CellsAndGoals() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredCells.map(c => {
-                  const cellMachines = machines.filter(m => m.cell_name === c.name);
-                  const cellGoal = goals.find(g => g.cell_name === c.name);
+                  const machineQuery = machineSearch.trim().toLowerCase();
+                  const allCellMachines = machines.filter(m => m.cell_name === c.name);
+                  const cellMachines = machineQuery
+                    ? allCellMachines.filter((m) =>
+                        m.name.toLowerCase().includes(machineQuery) ||
+                        (m.station_name || '').toLowerCase().includes(machineQuery) ||
+                        (m.metric_unit || '').toLowerCase().includes(machineQuery)
+                      )
+                    : allCellMachines;
+                  const cellGoals = goals.filter(g => g.cell_name === c.name);
 
                   return (
                     <Card key={c.id} className={cn(
@@ -528,13 +600,98 @@ export default function CellsAndGoals() {
                         <div className="mt-4 pt-4 border-t border-border/40 grid grid-cols-3 gap-2">
                           <div className="text-center bg-secondary/50 p-2 rounded-xl">
                             <span className="text-[9px] text-muted-foreground font-bold block uppercase">Postos</span>
-                            <span className="font-extrabold text-foreground text-sm">{cellMachines.length}</span>
+                            <span className="font-extrabold text-foreground text-sm">{allCellMachines.length}</span>
                           </div>
-                          <div className="text-center bg-secondary/50 p-2 rounded-xl col-span-2">
+                          <div className="text-center bg-secondary/50 p-2 rounded-xl">
+                            <span className="text-[9px] text-muted-foreground font-bold block uppercase">Metas Hoje</span>
+                            <span className="font-extrabold text-foreground text-sm">{cellGoals.length}</span>
+                          </div>
+                          <div className="text-center bg-secondary/50 p-2 rounded-xl">
                             <span className="text-[9px] text-muted-foreground font-bold block uppercase">Horas por Turno</span>
                             <span className="font-semibold text-foreground text-xs font-mono">
                               {c.hoursShift1}h · {c.hoursShift2}h · {c.hoursShift3}h
                             </span>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 border border-border/50 rounded-xl overflow-hidden bg-background/50">
+                          <div className="px-3 py-2 border-b border-border/40 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Factory className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                              <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground truncate">
+                                Máquinas e postos vinculados
+                              </span>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 rounded-lg text-[10px] font-bold"
+                              onClick={() => openNewMachineDialog(c.name)}
+                              title={`Adicionar posto em ${c.name}`}
+                            >
+                              <Plus className="w-3.5 h-3.5 mr-1" /> Posto
+                            </Button>
+                          </div>
+                          <div className="max-h-44 overflow-y-auto divide-y divide-border/40">
+                            {allCellMachines.length === 0 ? (
+                              <p className="px-3 py-4 text-xs text-muted-foreground text-center">
+                                Nenhum posto vinculado a esta célula.
+                              </p>
+                            ) : cellMachines.length === 0 ? (
+                              <p className="px-3 py-4 text-xs text-muted-foreground text-center">
+                                Nenhum posto desta célula corresponde à busca.
+                              </p>
+                            ) : (
+                              cellMachines.map((machine) => (
+                                <div key={machine.id} className="px-3 py-2.5 flex items-center gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      <span className="text-xs font-semibold text-foreground truncate">{machine.name}</span>
+                                      <Badge variant={machine.active !== false ? 'secondary' : 'outline'} className="text-[9px] shrink-0">
+                                        {machine.active !== false ? 'Ativo' : 'Inativo'}
+                                      </Badge>
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground truncate mt-0.5">
+                                      {machine.station_name || 'Sem estação'} · {machine.metric_unit || 'peças'}
+                                    </p>
+                                  </div>
+                                  <Switch
+                                    checked={machine.active !== false}
+                                    onCheckedChange={(checked) => mutationToggleMachineActive.mutate({
+                                      id: machine.id,
+                                      active: checked,
+                                      name: machine.name,
+                                      cell_name: machine.cell_name,
+                                      station_name: machine.station_name,
+                                      metric_unit: machine.metric_unit
+                                    })}
+                                  />
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-muted-foreground hover:bg-secondary hover:text-foreground rounded-lg"
+                                    onClick={() => openEditMachineDialog(machine)}
+                                    title="Editar posto"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive rounded-lg"
+                                    onClick={() => {
+                                      if (confirm(`Deseja realmente excluir a máquina/posto "${machine.name}"?`)) {
+                                        mutationDeleteMachine.mutate(machine.id);
+                                      }
+                                    }}
+                                    title="Excluir posto"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </div>
+                              ))
+                            )}
                           </div>
                         </div>
                       </div>

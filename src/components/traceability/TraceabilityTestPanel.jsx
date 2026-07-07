@@ -39,7 +39,7 @@ export default function TraceabilityTestPanel() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('production_lots')
-        .select('*, production_orders(order_code)')
+        .select('*, production_orders:production_orders!production_order_id(order_code)')
         .like('lot_code', 'LOTE-TEST-%')
         .order('created_at', { ascending: false });
       if (error) throw error;

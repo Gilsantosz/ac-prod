@@ -73,7 +73,7 @@ export default function PackagingPage() {
           order_id,
           deadline,
           created_at,
-          production_orders (
+          production_orders:production_orders!production_order_id (
             id,
             order_code,
             customer_name

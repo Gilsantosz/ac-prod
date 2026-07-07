@@ -36,6 +36,21 @@ describe('aiIntentParser', () => {
     });
   });
 
+  it('detects day of month prompts as a specific production date', () => {
+    const res = parseIntent('Envie relatório de produção do dia 7 para gildemar@empresa.com', { now: new Date(2026, 6, 7, 10, 0, 0) });
+    expect(res).toMatchObject({
+      action: 'send_report_email',
+      reportType: 'production_summary',
+      recipients: ['gildemar@empresa.com'],
+      filters: { startDate: '2026-07-07', endDate: '2026-07-07' },
+    });
+  });
+
+  it('detects explicit Brazilian date prompts as a single day', () => {
+    const res = parseIntent('Envie resumo de produção do dia 07/07/2026 para gildemar@empresa.com', { now: clock });
+    expect(res.filters).toMatchObject({ startDate: '2026-07-07', endDate: '2026-07-07' });
+  });
+
   it('detects daily schedule', () => {
     const res = parseIntent('Agende o resumo diário de produção para todos os gestores às 7h', { now: clock });
     expect(res).toMatchObject({

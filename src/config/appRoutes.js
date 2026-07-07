@@ -9,7 +9,7 @@ import {
   LayoutDashboard, PlusCircle, ClipboardList, Gauge, Boxes,
   Layers, Plug, AlertOctagon, Trophy, LineChart, BrainCircuit,
   Zap, Users, Shield, HardDrive, Truck, Box, BellRing, Play,
-  Settings, FolderKanban, GitFork, Cpu
+  Settings, FolderKanban, GitFork, Cpu, ShieldCheck
 } from 'lucide-react';
 
 export const routeGroups = {
@@ -48,6 +48,16 @@ export const appRoutes = [
     label: 'Rastreabilidade Geral',
     description: 'Painel Kanban, timeline de peças e busca detalhada de lotes',
     icon: Layers,
+    group: 'operation',
+    permission: 'view_traceability',
+    showInSidebar: true,
+    showInDashboardHub: true
+  },
+  {
+    path: '/integridade-lote',
+    label: 'Integridade do Lote',
+    description: 'Painel de controle de integridade de lotes, gargalos e fechamento',
+    icon: ShieldCheck,
     group: 'operation',
     permission: 'view_traceability',
     showInSidebar: true,
@@ -259,6 +269,16 @@ export const appRoutes = [
     icon: HardDrive,
     group: 'admin',
     permission: 'adminOnly',
+    showInSidebar: true,
+    showInDashboardHub: true
+  },
+  {
+    path: '/logs-integridade',
+    label: 'Logs de Integridade',
+    description: 'Histórico e auditoria de coletas, bipes rejeitados e liberações especiais',
+    icon: ClipboardList,
+    group: 'admin',
+    permission: 'manage_operators',
     showInSidebar: true,
     showInDashboardHub: true
   },

@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import {
   Cpu, LayoutDashboard, PlusCircle, Layers, Plug, GitFork,
   Box, Truck, BellRing, ClipboardList, Shield, HardDrive,
-  ArrowRight, Activity, Bell, AlertTriangle
+  ArrowRight, Activity, Bell, AlertTriangle, ShieldCheck
 } from 'lucide-react';
 
 export default function MesHub() {
@@ -65,6 +65,16 @@ export default function MesHub() {
       info: 'Bipagem e registro de peças por scanner de barras ou RFID.'
     },
     {
+      title: 'Integridade do Lote',
+      description: 'Bloqueios, retrabalhos, reposições e fechamento',
+      icon: ShieldCheck,
+      path: '/integridade-lote',
+      group: 'Operação',
+      status: 'Controle Ativo',
+      badgeColor: 'bg-emerald-500/10 text-emerald-500',
+      info: 'Monitore gargalos, peças pendentes, e libere o fechamento do lote.'
+    },
+    {
       title: 'Rastreabilidade Geral',
       description: 'Monitoramento do fluxo Kanban e histórico',
       icon: Layers,
@@ -113,6 +123,16 @@ export default function MesHub() {
       status: 'Conforme',
       badgeColor: 'bg-emerald-500/10 text-emerald-500',
       info: 'Audite logs do sistema e garanta redundância de dados.'
+    },
+    {
+      title: 'Logs de Integridade',
+      description: 'Auditoria e histórico de validações e exceções',
+      icon: ClipboardList,
+      path: '/logs-integridade',
+      group: 'Administração',
+      status: 'Auditoria',
+      badgeColor: 'bg-indigo-500/10 text-indigo-500',
+      info: 'Audite todas as leituras de coletas, bipes rejeitados e liberações especiais.'
     }
   ];
 

@@ -12,12 +12,21 @@ const TABLE_TO_QUERY_KEYS = {
   production_daily_goals: [
     ['productionDailyGoals'],
     ['dailyGoals'],
+    ['production-daily-goals'],
+    ['cells-goals-summary'],
+    ['collection-kpis'],
   ],
   occurrences: [['occurrences']],
-  cells: [['cells']],
+  cells: [
+    ['cells'],
+    ['cells-admin-list'],
+    ['cells-goals-summary'],
+  ],
   production_machines: [
     ['production-machines'],
     ['production-machines-admin'],
+    ['machines-admin-list'],
+    ['cells-goals-summary'],
   ],
   production_realtime_counters: [['realtimeCounters']],
   production_collection_events: [['collectionEvents']],
@@ -63,7 +72,10 @@ const TABLE_TO_QUERY_KEYS = {
     ['users', 'me'],
   ],
   automation_rules: [['automationRules']],
-  alert_logs: [['unresolvedAlerts']],
+  alert_logs: [
+    ['unresolvedAlerts'],
+    ['unresolved-alerts-list'],
+  ],
 };
 
 const REALTIME_TABLES = Object.keys(TABLE_TO_QUERY_KEYS);

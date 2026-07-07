@@ -339,6 +339,45 @@ export async function simulateTraceabilityTestReading(payload) {
 }
 
 export async function deleteTraceabilityTestData() {
+  // 1. Obter IDs dos lotes de teste existentes para limpar as novas tabelas relacionadas
+  const { data: testLots } = await supabase
+    .from('production_lots')
+    .select('id')
+    .like('lot_code', 'LOTE-TEST%');
+  
+  const lotIds = (testLots || []).map(l => l.id);
+
+  if (lotIds.length > 0) {
+    try {
+      // Apagar shipment_items vinculados às cargas de teste
+      const { data: testShipments } = await supabase.from('shipments').select('id').in('lot_id', lotIds);
+      const shipmentIds = (testShipments || []).map(s => s.id);
+      if (shipmentIds.length > 0) {
+        await supabase.from('shipment_items').delete().in('shipment_id', shipmentIds);
+        await supabase.from('shipments').delete().in('id', shipmentIds);
+      }
+
+      // Apagar packing_volume_items vinculados aos volumes de teste
+      const { data: testVols } = await supabase.from('packing_volumes').select('id').in('lot_id', lotIds);
+      const volIds = (testVols || []).map(v => v.id);
+      if (volIds.length > 0) {
+        await supabase.from('packing_volume_items').delete().in('volume_id', volIds);
+        await supabase.from('packing_volumes').delete().in('id', volIds);
+      }
+
+      // Apagar eventos de bloqueio e logs de auditoria
+      await supabase.from('production_events').delete().in('lot_id', lotIds);
+      await supabase.from('production_collection_events').delete().in('lot_id', lotIds);
+    } catch (e) {
+      console.warn('Erro ao limpar tabelas filhas de teste:', e.message);
+    }
+  }
+
+  // Apagar pacotes órfãos da tabela antiga packages
+  try {
+    await supabase.from('packages').delete().like('package_code', 'VOL-LOTE-TEST%');
+  } catch (_) {}
+
   const rpcResult = await supabase.rpc('delete_traceability_test_data');
   if (!rpcResult.error) return rpcResult.data;
   if (!isMissingSchema(rpcResult.error)) throw rpcResult.error;

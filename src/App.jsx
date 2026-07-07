@@ -38,6 +38,8 @@ import CollectionPage from '@/pages/CollectionPage';
 import PackagingPage from '@/pages/PackagingPage';
 import ShippingPage from '@/pages/ShippingPage';
 import MesAlertsPage from '@/pages/MesAlertsPage';
+import LotIntegrity from '@/pages/LotIntegrity';
+import IntegrityLogs from '@/pages/IntegrityLogs';
 import { useProductionRealtimeSync } from '@/hooks/useProductionRealtimeSync';
 
 
@@ -134,6 +136,8 @@ const AuthenticatedApp = () => {
 
           <Route path="/rotas-produtivas" element={<ProductionRoutes />} />
           <Route path="/mes" element={<MesHub />} />
+          <Route path="/integridade-lote" element={<LotIntegrity />} />
+          <Route path="/logs-integridade" element={<IntegrityLogs />} />
 
           <Route path="/integracoes/promob" element={<Navigate to="/pcp" replace />} />
           <Route path="/logs-sistema" element={<SystemLogs />} />

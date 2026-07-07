@@ -58,6 +58,21 @@ function resolvePeriod(normalized, now = new Date(), reportType = 'production_su
     if (startDate && endDate) return { startDate, endDate };
   }
 
+  const explicitDate = normalized.match(/\b(?:dia|data|em)\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b/);
+  if (explicitDate) {
+    const date = parseBrazilianDate(explicitDate[1]);
+    if (date) return { startDate: date, endDate: date };
+  }
+
+  const dayOfMonth = normalized.match(/\bdia\s+(\d{1,2})\b/);
+  if (dayOfMonth) {
+    const day = Number(dayOfMonth[1]);
+    const date = new Date(now.getFullYear(), now.getMonth(), day);
+    if (day >= 1 && day <= 31 && date.getMonth() === now.getMonth()) {
+      return { startDate: localIso(date), endDate: localIso(date) };
+    }
+  }
+
   if (/\bontem\b/.test(normalized)) {
     const yesterday = localIso(addDays(now, -1));
     return { startDate: yesterday, endDate: yesterday };

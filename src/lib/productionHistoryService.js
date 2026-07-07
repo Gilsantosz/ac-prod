@@ -444,7 +444,7 @@ async function fetchOrdersByIds(orderIds = [], warnings = []) {
   return data || [];
 }
 
-function lotMatchesSearch(lot, order, items = [], tags = [], query = '') {
+function lotMatchesSearch(lot, order, items = [], tags = [], pieces = [], query = '') {
   const clean = normalizeSearch(query);
   if (!clean) return true;
   const haystack = [
@@ -461,6 +461,7 @@ function lotMatchesSearch(lot, order, items = [], tags = [], query = '') {
     order?.customer_trade_name,
     ...items.flatMap((item) => [item.item_code, item.product_code, item.product_name]),
     ...tags.flatMap((tag) => [tag.tag_value, tag.barcode_value, tag.epc_code, tag.qr_value]),
+    ...pieces.flatMap((piece) => [piece.piece_uid, piece.piece_name, piece.traceability_code]),
   ].join(' ').toLowerCase();
   return haystack.includes(clean);
 }
@@ -471,23 +472,88 @@ function lotMatchesSearch(lot, order, items = [], tags = [], query = '') {
  */
 export async function fetchTraceabilityBoardLots({ stageFilter = null, searchQuery = '', limit = 500 } = {}) {
   const warnings = [];
-  const { data: lotsRaw, error } = await supabase
-    .from('production_lots')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .range(0, Math.max(0, limit - 1));
+  let matchedLotIds = new Set();
+  let matchedOrphanPieces = [];
+  const hasSearch = searchQuery && searchQuery.trim().length > 0;
+
+  if (hasSearch) {
+    const cleanQuery = searchQuery.trim();
+    
+    // 1. Busca por código de lote, cliente ou número de pedido diretamente em production_lots
+    const { data: lotsByCode } = await supabase
+      .from('production_lots')
+      .select('id')
+      .or(`lot_code.ilike.%${cleanQuery}%,customer_name.ilike.%${cleanQuery}%,order_number.ilike.%${cleanQuery}%`)
+      .limit(200);
+    lotsByCode?.forEach(l => matchedLotIds.add(l.id));
+
+    // 2. Busca em production_orders
+    const { data: ordersByCode } = await supabase
+      .from('production_orders')
+      .select('id')
+      .or(`order_code.ilike.%${cleanQuery}%,customer_name.ilike.%${cleanQuery}%,load_number.ilike.%${cleanQuery}%`)
+      .limit(200);
+    if (ordersByCode && ordersByCode.length > 0) {
+      const orderIds = ordersByCode.map(o => o.id);
+      const { data: lotsByOrders } = await supabase
+        .from('production_lots')
+        .select('id')
+        .in('production_order_id', orderIds)
+        .limit(200);
+      lotsByOrders?.forEach(l => matchedLotIds.add(l.id));
+    }
+
+    // 3. Busca nas peças modernas (production_pieces)
+    const { data: piecesByCode } = await supabase
+      .from('production_pieces')
+      .select('*')
+      .or(`piece_uid.ilike.%${cleanQuery}%,piece_name.ilike.%${cleanQuery}%`)
+      .limit(200);
+    
+    piecesByCode?.forEach(p => {
+      if (p.lot_id) {
+        matchedLotIds.add(p.lot_id);
+      } else {
+        matchedOrphanPieces.push(p);
+      }
+    });
+
+    // 4. Busca nas tags (production_tags)
+    const { data: tagsDirect } = await supabase
+      .from('production_tags')
+      .select('lot_id')
+      .or(`tag_value.ilike.%${cleanQuery}%,barcode_value.ilike.%${cleanQuery}%`)
+      .limit(200);
+    tagsDirect?.forEach(t => { if (t.lot_id) matchedLotIds.add(t.lot_id); });
+
+    // Se nenhum lote foi casado e não temos peças avulsas, retorna vazio diretamente
+    if (matchedLotIds.size === 0 && matchedOrphanPieces.length === 0) {
+      return [];
+    }
+  }
+
+  let dbQuery = supabase.from('production_lots').select('*');
+  
+  if (hasSearch) {
+    dbQuery = dbQuery.in('id', Array.from(matchedLotIds));
+  } else {
+    dbQuery = dbQuery.order('created_at', { ascending: false }).range(0, Math.max(0, limit - 1));
+  }
+
+  const { data: lotsRaw, error } = await dbQuery;
   if (error) throw error;
 
   const lots = (lotsRaw || []).map(normalizeLot);
   const lotIds = lots.map((lot) => lot.id).filter(Boolean);
   const orderIds = lots.map(getLotOrderId).filter(Boolean);
 
-  const [ordersRaw, items, readings, tags, routes] = await Promise.all([
+  const [ordersRaw, items, readings, tags, routes, pieces] = await Promise.all([
     fetchOrdersByIds(orderIds, warnings),
     fetchRowsForLots('production_lot_items', lotIds, warnings),
     fetchRowsForLots('production_stage_readings', lotIds, warnings),
     fetchRowsForLots('production_tags', lotIds, warnings),
     fetchRowsForLots('production_routes', lotIds, warnings),
+    fetchRowsForLots('production_pieces', lotIds, warnings),
   ]);
 
   const ordersById = new Map(ordersRaw.map((order) => [order.id, normalizeOrder(order)]));
@@ -495,14 +561,17 @@ export async function fetchTraceabilityBoardLots({ stageFilter = null, searchQue
   const readingsByLot = groupBy(readings, (reading) => reading.lot_id);
   const tagsByLot = groupBy(tags, (tag) => tag.lot_id);
   const routesByLot = groupBy(routes, (route) => route.lot_id);
+  const piecesByLot = groupBy(pieces, (piece) => piece.lot_id);
 
-  return lots
+  const finalLots = lots
     .map((lot) => {
       const order = ordersById.get(getLotOrderId(lot)) || null;
       const lotItems = itemsByLot.get(lot.id) || [];
       const lotReadings = readingsByLot.get(lot.id) || [];
       const lotTags = tagsByLot.get(lot.id) || [];
       const lotRoutes = routesByLot.get(lot.id) || [];
+      const lotPieces = piecesByLot.get(lot.id) || [];
+
       const runtime = buildLotRuntimeSummary(lot, lotItems, lotReadings, lotRoutes, lotTags);
 
       return {
@@ -518,19 +587,86 @@ export async function fetchTraceabilityBoardLots({ stageFilter = null, searchQue
         production_routes: sortRoutes(lotRoutes),
         production_tags: lotTags,
         production_stage_readings: lotReadings,
+        production_pieces: lotPieces,
         traceability_progress: runtime.progress,
         route_progress: runtime.routeProgress,
         latest_reading: runtime.latestReading,
         missing_pieces: runtime.missingPieces,
         traceability_warnings: warnings,
       };
-    })
+    });
+
+  if (matchedOrphanPieces.length > 0) {
+    const orphanLotPromises = matchedOrphanPieces.map(async (piece) => {
+      const { data: reading } = await supabase
+        .from('production_stage_readings')
+        .select('*')
+        .or(`tag_value.eq.${piece.piece_uid},piece_code.eq.${piece.piece_uid}`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const cellName = reading?.cell_name || (piece.current_stage === 'Corte' ? 'Corte' : piece.current_stage === 'Bordo' ? 'Borda' : piece.current_stage);
+
+      return {
+        id: `virtual-lot-${piece.id}`,
+        lot_code: `Peça Avulsa: ${piece.piece_uid}`,
+        status: piece.status === 'completed' ? 'shipped' : 'in_progress',
+        current_stage: piece.current_stage === 'Corte' ? 'cut' : piece.current_stage === 'Bordo' ? 'edge' : piece.current_stage === 'Usinagem' ? 'cnc' : piece.current_stage === 'Marcenaria' ? 'joinery' : piece.current_stage === 'Separação' ? 'separation' : piece.current_stage === 'Embalagem' ? 'packaging' : piece.current_stage === 'Expedição' ? 'shipping' : piece.current_stage,
+        current_step: piece.current_stage,
+        current_cell: cellName,
+        progress_percent: piece.status === 'completed' ? 100 : 0,
+        missing_count: piece.status === 'completed' ? 0 : 1,
+        production_orders: {
+          customer_name: 'Geral',
+          order_code: 'Avulso',
+          load_number: 'N/A'
+        },
+        production_lot_items: [{
+          id: piece.id,
+          item_code: piece.piece_uid,
+          product_name: piece.piece_name,
+          status: piece.status,
+          quantity: 1
+        }],
+        lot_items: [{
+          id: piece.id,
+          piece_name: piece.piece_name,
+          piece_code: piece.piece_uid,
+          status: piece.status,
+          quantity: 1
+        }],
+        production_pieces: [piece],
+        production_routes: [],
+        production_tags: [],
+        production_stage_readings: reading ? [reading] : [],
+        traceability_progress: {
+          total: 1,
+          completed: piece.status === 'completed' ? 1 : 0,
+          pending: piece.status === 'completed' ? 0 : 1,
+          percent: piece.status === 'completed' ? 100 : 0
+        },
+        route_progress: [
+          { step_name: piece.current_stage, total: 1, collected: piece.status === 'completed' ? 1 : 0, pending: piece.status === 'completed' ? 0 : 1 }
+        ],
+        latest_reading: reading,
+        missing_pieces: piece.status === 'completed' ? [] : [piece.piece_uid],
+        traceability_warnings: []
+      };
+    });
+
+    const orphanLots = await Promise.all(orphanLotPromises);
+    finalLots.push(...orphanLots);
+  }
+
+  return finalLots
     .filter((lot) => !stageFilter || stageFilter === 'all' || lot.current_stage === stageFilter)
     .filter((lot) => lotMatchesSearch(
       lot,
       lot.production_orders,
       lot.production_lot_items,
       lot.production_tags,
+      lot.production_pieces || [],
       searchQuery,
     ));
 }

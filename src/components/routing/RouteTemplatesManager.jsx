@@ -7,15 +7,26 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { Loader2, Plus, ArrowUp, ArrowDown, Trash2, Edit3, X, GitCommit, ListOrdered, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function RouteTemplatesManager() {
   const qc = useQueryClient();
   const [selectedId, setSelectedId] = useState(null);
-  const [editingTemplate, setEditingTemplate] = useState(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: '', description: '', product_type: 'standard' });
+  const [editingTemplate, setEditingTemplate] = useState(null);
+  const [form, setForm] = useState({
+    name: '',
+    description: '',
+    product_type: 'standard',
+    material: '',
+    application: '',
+    allow_skip: false,
+    requires_final_inspection: false,
+    requires_individual_packaging: false,
+    active: true
+  });
 
   // Queries
   const { data: templates = [], isLoading: loadingTemplates } = useQuery({
@@ -99,13 +110,33 @@ export default function RouteTemplatesManager() {
 
   const handleEditTemplate = (t) => {
     setEditingTemplate(t);
-    setForm({ name: t.name, description: t.description || '', product_type: t.product_type || 'standard' });
+    setForm({
+      name: t.name,
+      description: t.description || '',
+      product_type: t.product_type || 'standard',
+      material: t.material || '',
+      application: t.application || '',
+      allow_skip: !!t.allow_skip,
+      requires_final_inspection: !!t.requires_final_inspection,
+      requires_individual_packaging: !!t.requires_individual_packaging,
+      active: t.active !== false
+    });
     setShowForm(true);
   };
 
   const handleCreateTemplate = () => {
     setEditingTemplate(null);
-    setForm({ name: '', description: '', product_type: 'standard' });
+    setForm({
+      name: '',
+      description: '',
+      product_type: 'standard',
+      material: '',
+      application: '',
+      allow_skip: false,
+      requires_final_inspection: false,
+      requires_individual_packaging: false,
+      active: true
+    });
     setShowForm(true);
   };
 
@@ -209,6 +240,61 @@ export default function RouteTemplatesManager() {
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs">Material</Label>
+                  <Input
+                    value={form.material}
+                    onChange={(e) => setForm((f) => ({ ...f, material: e.target.value }))}
+                    placeholder="Ex: MDF 18mm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Aplicação</Label>
+                  <Input
+                    value={form.application}
+                    onChange={(e) => setForm((f) => ({ ...f, application: e.target.value }))}
+                    placeholder="Ex: Portas"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2 pt-2 border-t border-border/40">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs cursor-pointer" htmlFor="allow_skip">Permitir pular etapa?</Label>
+                  <Switch
+                    id="allow_skip"
+                    checked={form.allow_skip}
+                    onCheckedChange={(val) => setForm((f) => ({ ...f, allow_skip: val }))}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs cursor-pointer" htmlFor="requires_final_inspection">Exigir conferência final?</Label>
+                  <Switch
+                    id="requires_final_inspection"
+                    checked={form.requires_final_inspection}
+                    onCheckedChange={(val) => setForm((f) => ({ ...f, requires_final_inspection: val }))}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs cursor-pointer" htmlFor="requires_individual_packaging">Exigir embalagem individual?</Label>
+                  <Switch
+                    id="requires_individual_packaging"
+                    checked={form.requires_individual_packaging}
+                    onCheckedChange={(val) => setForm((f) => ({ ...f, requires_individual_packaging: val }))}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs cursor-pointer text-emerald-600 font-semibold" htmlFor="active">Roteiro Ativo?</Label>
+                  <Switch
+                    id="active"
+                    checked={form.active}
+                    onCheckedChange={(val) => setForm((f) => ({ ...f, active: val }))}
+                  />
+                </div>
+              </div>
+
               <div className="flex gap-2 justify-end pt-2">
                 <Button size="sm" variant="outline" type="button" onClick={() => setShowForm(false)}>
                   Cancelar
@@ -241,11 +327,18 @@ export default function RouteTemplatesManager() {
                 }`}
               >
                 <div className="flex justify-between items-start gap-2">
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="font-semibold text-foreground text-sm truncate">{t.name}</p>
                     <p className="text-xs text-muted-foreground truncate mt-0.5">{t.description || 'Sem descrição'}</p>
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {t.material && <span className="text-[9px] bg-secondary text-secondary-foreground px-1 rounded">{t.material}</span>}
+                      {t.allow_skip && <span className="text-[9px] bg-amber-500/10 text-amber-600 px-1 rounded">Pula etapa</span>}
+                      {t.requires_final_inspection && <span className="text-[9px] bg-blue-500/10 text-blue-600 px-1 rounded font-medium">Insp. Final</span>}
+                      {t.requires_individual_packaging && <span className="text-[9px] bg-purple-500/10 text-purple-600 px-1 rounded font-medium">Embalagem</span>}
+                      {t.active === false && <span className="text-[9px] bg-destructive/10 text-destructive px-1 rounded font-bold">Inativo</span>}
+                    </div>
                   </div>
-                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 shrink-0">
+                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 shrink-0 capitalize">
                     {t.product_type}
                   </Badge>
                 </div>
@@ -286,12 +379,20 @@ export default function RouteTemplatesManager() {
         {selectedTemplate ? (
           <Card className="p-6 border-border/60 shadow-sm space-y-6">
             <div className="border-b border-border/40 pb-4">
-              <div className="flex justify-between items-start flex-wrap gap-2">
-                <div>
+              <div className="flex justify-between items-start flex-wrap gap-4">
+                <div className="space-y-1">
                   <h3 className="font-semibold text-xl text-foreground">{selectedTemplate.name}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">{selectedTemplate.description || 'Sem descrição'}</p>
+                  <p className="text-sm text-muted-foreground">{selectedTemplate.description || 'Sem descrição'}</p>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    <Badge variant="secondary" className="capitalize text-[10px]">{selectedTemplate.product_type}</Badge>
+                    {selectedTemplate.material && <Badge variant="outline" className="text-[10px]">Material: {selectedTemplate.material}</Badge>}
+                    {selectedTemplate.application && <Badge variant="outline" className="text-[10px]">Aplicação: {selectedTemplate.application}</Badge>}
+                    {selectedTemplate.allow_skip && <Badge variant="outline" className="text-[10px] border-amber-500/20 text-amber-600 bg-amber-500/5">Permite Pular Etapa</Badge>}
+                    {selectedTemplate.requires_final_inspection && <Badge variant="outline" className="text-[10px] border-blue-500/20 text-blue-600 bg-blue-500/5">Exige Insp. Final</Badge>}
+                    {selectedTemplate.requires_individual_packaging && <Badge variant="outline" className="text-[10px] border-purple-500/20 text-purple-600 bg-purple-500/5">Embalagem Indiv.</Badge>}
+                    {selectedTemplate.active === false && <Badge variant="destructive" className="text-[10px]">Inativo</Badge>}
+                  </div>
                 </div>
-                <Badge className="capitalize">{selectedTemplate.product_type}</Badge>
               </div>
             </div>
 

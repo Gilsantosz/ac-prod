@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { aggregate, corsHeaders, fetchOperationalData, json, requireAiUser } from '../_shared/aiOperations.ts';
 import { renderEmailTemplate } from '../_shared/emailTemplates.ts';
 
@@ -35,7 +36,7 @@ function publicError(error: unknown) {
   if (message === 'RECIPIENT_REQUIRED') return 'Selecione pelo menos um destinatário.';
   if (message === 'REPORT_NOT_FOUND') return 'Relatório não encontrado.';
   if (message === 'RECIPIENTS_NOT_FOUND') return 'Nenhum destinatário válido encontrado em Usuários/Gestores.';
-  if (message === 'EMAIL_PROVIDER_NOT_CONFIGURED') return 'Provedor de e-mail não configurado. Defina RESEND_API_KEY e REPORT_FROM_EMAIL.';
+  if (message === 'EMAIL_PROVIDER_NOT_CONFIGURED') return 'Provedor de e-mail não configurado. Defina SMTP_USER/SMTP_PASS ou RESEND_API_KEY.';
   if (message === 'EMAIL_PROVIDER_FAILED') return 'O provedor de e-mail recusou o envio.';
   return message;
 }
@@ -150,6 +151,99 @@ function providerErrorMessage(result: any, status: number) {
   return `Resend HTTP ${status}`;
 }
 
+function filenameFor(job: any) {
+  return `${String(job.title || 'relatorio-acprod').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.csv`;
+}
+
+function resolveEmailProvider() {
+  const resendKey = Deno.env.get('RESEND_API_KEY');
+  const reportFrom = Deno.env.get('REPORT_FROM_EMAIL');
+  const smtpUser = Deno.env.get('SMTP_USER');
+  const smtpPass = Deno.env.get('SMTP_PASS');
+
+  if (smtpUser && smtpPass) {
+    return {
+      provider: 'smtp',
+      smtpUser,
+      smtpPass,
+      from: reportFrom || `"AC.Prod MES" <${smtpUser}>`,
+    };
+  }
+
+  if (resendKey) {
+    return {
+      provider: 'resend',
+      resendKey,
+      from: reportFrom || 'AC.Prod MES <alertas@acprod.com.br>',
+    };
+  }
+
+  throw new Error('EMAIL_PROVIDER_NOT_CONFIGURED');
+}
+
+async function sendViaResend(provider: any, opts: any) {
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${provider.resendKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: provider.from,
+      to: [opts.recipient.email],
+      subject: opts.subject,
+      html: opts.html,
+      attachments: [opts.attachment],
+    }),
+  });
+  const providerResult = await readProviderResult(response);
+  const success = response.ok;
+  return {
+    success,
+    providerResult,
+    errorMessage: success ? null : providerErrorMessage(providerResult, response.status),
+  };
+}
+
+async function sendViaSmtp(provider: any, opts: any) {
+  try {
+    const nodemailer = (await import('npm:nodemailer@6.9.9')).default;
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: { user: provider.smtpUser, pass: provider.smtpPass },
+    });
+
+    const info = await transporter.sendMail({
+      from: provider.from,
+      to: opts.recipient.email,
+      subject: opts.subject,
+      html: opts.html,
+      text: 'Use um cliente de e-mail com suporte a HTML para visualizar este relatório.',
+      attachments: [{
+        filename: opts.attachment.filename,
+        content: Buffer.from(opts.attachment.content, 'base64'),
+        contentType: opts.attachment.contentType,
+      }],
+    });
+
+    return {
+      success: true,
+      providerResult: { id: info?.messageId || null },
+      errorMessage: null,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      providerResult: {},
+      errorMessage: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function sendEmail(provider: any, opts: any) {
+  if (provider.provider === 'smtp') return sendViaSmtp(provider, opts);
+  return sendViaResend(provider, opts);
+}
+
 async function recordSystemLog(admin: any, payload: Record<string, unknown>) {
   try {
     await admin.from('ai_system_logs').insert(payload);
@@ -176,37 +270,27 @@ Deno.serve(async (req) => {
     if (!canSendReport(auth.profile, user, job)) throw new Error('ACCESS_DENIED');
     if (!recipients?.length) throw new Error('RECIPIENTS_NOT_FOUND');
 
-    const apiKey = Deno.env.get('RESEND_API_KEY');
-    const from = Deno.env.get('REPORT_FROM_EMAIL');
-    if (!apiKey || !from) throw new Error('EMAIL_PROVIDER_NOT_CONFIGURED');
+    const emailProvider = resolveEmailProvider();
 
     const freshContext = await fetchOperationalData(admin, auth.profile, job.filters || {});
     const summary = aggregate(freshContext.entries, freshContext.occurrences, freshContext.lots);
     const html = renderEmailTemplate(body.templateCode || 'manager-summary', job.title, summary, body.message || 'Segue o relatório industrial solicitado.');
     const subject = String(body.subject || `[AC.Prod] ${job.title}`).slice(0, 180);
+    const attachment = {
+      filename: filenameFor(job),
+      content: csvAttachment(freshContext.entries),
+      contentType: 'text/csv',
+    };
     const results = [];
 
     for (const recipient of recipients) {
-      const response = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          from,
-          to: [recipient.email],
-          subject,
-          html,
-          attachments: [{ filename: `${job.title.replace(/[^a-z0-9]+/gi,'-').toLowerCase()}.csv`, content: csvAttachment(freshContext.entries) }],
-        }),
-      });
-      const providerResult = await readProviderResult(response);
-      const success = response.ok;
-      const errorMessage = success ? null : providerErrorMessage(providerResult, response.status);
+      const { providerResult, success, errorMessage } = await sendEmail(emailProvider, { recipient, subject, html, attachment });
       await admin.from('report_email_logs').insert({
         report_job_id: job.id,
         recipient_id: recipient.recipient_id || null,
         recipient_email: recipient.email,
         subject,
-        provider: 'resend',
+        provider: emailProvider.provider,
         provider_message_id: providerResult.id || null,
         status: success ? 'sent' : 'failed',
         error_message: errorMessage,

@@ -187,7 +187,7 @@ export async function getPieceTraceability(pieceIdOrCode) {
       production_lots (
         id,
         lot_code,
-        production_orders (
+        production_orders:production_orders!production_order_id (
           id,
           order_code,
           customer_name
@@ -343,4 +343,28 @@ export async function getPieceFlow(pieceId) {
     currentStage: piece.current_stage,
     status: piece.status
   };
+}
+
+/**
+ * Solicita reposição automática de peça de produção (cria peça substituta).
+ */
+export async function requestPieceReplacement({ pieceId, reason, notes }) {
+  if (!pieceId) throw new Error('ID da peça original é obrigatório.');
+
+  const { data, error } = await supabase.rpc('create_piece_replacement', {
+    p_original_piece_id: pieceId,
+    p_reason: reason,
+    p_notes: notes || ''
+  });
+
+  if (error) throw error;
+  
+  await auditLog(
+    'piece_replacement_created',
+    'production_piece',
+    pieceId,
+    { action: 'replacement_created', reason, notes }
+  );
+
+  return data;
 }

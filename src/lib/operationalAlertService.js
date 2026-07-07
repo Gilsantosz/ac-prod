@@ -7,6 +7,8 @@
 
 import { supabase } from '@/lib/supabaseClient';
 
+export const ACTIVE_ALERTS_QUERY_KEY = ['unresolved-alerts-list'];
+
 const STAGE_LIMITS_HOURS = {
   'Corte': 4,
   'Bordo': 8,
@@ -30,10 +32,11 @@ export async function runOperationalAlertDiagnostics() {
     // ─────────────────────────────────────────────────────────────
     // 1. DIAGNÓSTICO: Peça parada tempo demais & Peça perdida
     // ─────────────────────────────────────────────────────────────
-    const { data: pieces } = await supabase
+    const { data: pieces, error: piecesError } = await supabase
       .from('production_pieces')
       .select('id, piece_uid, piece_name, current_stage, status, updated_at, lot_id, production_order_id')
       .not('status', 'in', '("completed","cancelled","shipped")');
+    if (piecesError && !isOptionalSchemaError(piecesError)) throw piecesError;
 
     if (pieces) {
       pieces.forEach(p => {
@@ -59,12 +62,13 @@ export async function runOperationalAlertDiagnostics() {
     // ─────────────────────────────────────────────────────────────
     // 2. DIAGNÓSTICO: Lote Atrasado (Data de entrega vencida)
     // ─────────────────────────────────────────────────────────────
-    const { data: lots } = await supabase
+    const { data: lots, error: lotsError } = await supabase
       .from('production_lots')
       .select(`
-        id, lot_code, status, delivery_date, production_orders ( delivery_date )
+        id, lot_code, status, delivery_date, production_orders:production_orders!production_order_id ( delivery_date )
       `)
       .not('status', 'in', '("shipped","cancelled")');
+    if (lotsError && !isOptionalSchemaError(lotsError)) throw lotsError;
 
     if (lots) {
       lots.forEach(l => {
@@ -103,10 +107,11 @@ export async function runOperationalAlertDiagnostics() {
     // ─────────────────────────────────────────────────────────────
     // 3. DIAGNÓSTICO: Retrabalho Pendente
     // ─────────────────────────────────────────────────────────────
-    const { data: reworkOrders } = await supabase
+    const { data: reworkOrders, error: reworkError } = await supabase
       .from('rework_orders')
       .select('id, original_piece_id, replacement_piece_id, stage_at_damage, rework_reasons ( description )')
       .eq('status', 'pending');
+    if (reworkError && !isOptionalSchemaError(reworkError)) throw reworkError;
 
     if (reworkOrders) {
       reworkOrders.forEach(rw => {
@@ -125,10 +130,11 @@ export async function runOperationalAlertDiagnostics() {
     // ─────────────────────────────────────────────────────────────
     // 4. DIAGNÓSTICO: Embalagem Incompleta (Lote pronto há mais de 12h mas sem volumes fechados)
     // ─────────────────────────────────────────────────────────────
-    const { data: packagingLots } = await supabase
+    const { data: packagingLots, error: packagingError } = await supabase
       .from('production_lots')
       .select('id, lot_code, status, updated_at')
       .eq('status', 'waiting_packaging');
+    if (packagingError && !isOptionalSchemaError(packagingError)) throw packagingError;
 
     if (packagingLots) {
       packagingLots.forEach(l => {
@@ -153,35 +159,37 @@ export async function runOperationalAlertDiagnostics() {
     // GRAVAR / RESOLVER NO SUPABASE
     // ─────────────────────────────────────────────────────────────
     
-    // Inserir/Atualizar alertas ativos
+    // Inserir/Atualizar alertas ativos. O diagnóstico só deve prometer
+    // alertas na tela depois de confirmar que o Supabase gravou os registros.
     if (alertsTriggered.length > 0) {
-      for (const alert of alertsTriggered) {
-        await supabase
-          .from('alert_logs')
-          .upsert({
-            signature: alert.signature,
-            cell: alert.cell,
-            message: alert.message,
-            severity: alert.severity,
-            resolved: false,
-            metadata: alert.metadata,
-            triggered_at: now.toISOString(),
-            date: now.toISOString().split('T')[0]
-          }, { onConflict: 'signature' });
-      }
+      const { error: upsertError } = await supabase
+        .from('alert_logs')
+        .upsert(alertsTriggered.map((alert) => ({
+          signature: alert.signature,
+          cell: alert.cell,
+          message: alert.message,
+          severity: alert.severity,
+          resolved: false,
+          metadata: alert.metadata,
+          triggered_at: now.toISOString(),
+          date: now.toISOString().split('T')[0]
+        })), { onConflict: 'signature' });
+      if (upsertError) throw upsertError;
     }
 
     // Resolver automaticamente os alertas que deixaram de existir
-    const { data: unresolvedAlerts } = await supabase
+    const { data: unresolvedAlerts, error: unresolvedError } = await supabase
       .from('alert_logs')
       .select('id, signature')
-      .eq('resolved', false);
+      .or('resolved.is.false,resolved.is.null');
+    if (unresolvedError) throw unresolvedError;
 
     if (unresolvedAlerts) {
       for (const alert of unresolvedAlerts) {
+        if (!alert.signature) continue;
         // Se a assinatura não está na lista de alertas diagnosticados hoje, significa que o problema foi corrigido!
         if (!activeSignatures.has(alert.signature)) {
-          await supabase
+          const { error: resolveError } = await supabase
             .from('alert_logs')
             .update({
               resolved: true,
@@ -189,11 +197,19 @@ export async function runOperationalAlertDiagnostics() {
               message: `[RESOLVIDO] ${alert.signature}`
             })
             .eq('id', alert.id);
+          if (resolveError) throw resolveError;
         }
       }
     }
 
-    return { success: true, alertsTriggeredCount: alertsTriggered.length };
+    const activeAlerts = await getActiveAlerts();
+
+    return {
+      success: true,
+      alertsTriggeredCount: alertsTriggered.length,
+      activeAlertsCount: activeAlerts.length,
+      activeAlerts,
+    };
 
   } catch (error) {
     console.error('Falha ao diagnosticar e disparar alertas operacionais:', error);
@@ -208,11 +224,15 @@ export async function getActiveAlerts() {
   const { data, error } = await supabase
     .from('alert_logs')
     .select('*')
-    .eq('resolved', false)
+    .or('resolved.is.false,resolved.is.null')
     .order('triggered_at', { ascending: false });
 
   if (error) throw error;
   return data || [];
+}
+
+function isOptionalSchemaError(error) {
+  return /schema cache|does not exist|relation .* does not exist|column .* does not exist/i.test(error?.message || '');
 }
 
 /**

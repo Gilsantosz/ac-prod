@@ -68,6 +68,85 @@ export default function TraceabilityScannerPanel({ mode, onModeChange, onRead, l
     machineName: machine?.name || null,
   }), [onRead, cellName, operator, shift, machine]);
 
+  // Efeito para reproduzir alerta sonoro correspondente ao bip
+  useEffect(() => {
+    if (!feedback) return;
+    
+    const playSound = (alertLevel) => {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        
+        if (alertLevel === 'green') {
+          // Bip curto de aprovação
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(880, ctx.currentTime);
+          gain.gain.setValueAtTime(0.1, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.12);
+        } else if (alertLevel === 'red') {
+          // Buzz grave de erro
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(110, ctx.currentTime);
+          gain.gain.setValueAtTime(0.15, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.5);
+        } else if (alertLevel === 'yellow') {
+          // Bip duplo de atenção
+          const osc1 = ctx.createOscillator();
+          const osc2 = ctx.createOscillator();
+          const gain1 = ctx.createGain();
+          const gain2 = ctx.createGain();
+          
+          osc1.connect(gain1); gain1.connect(ctx.destination);
+          osc2.connect(gain2); gain2.connect(ctx.destination);
+          
+          osc1.type = 'sine';
+          osc1.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+          gain1.gain.setValueAtTime(0.1, ctx.currentTime);
+          gain1.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.08);
+          osc1.start();
+          osc1.stop(ctx.currentTime + 0.08);
+          
+          osc2.type = 'sine';
+          osc2.frequency.setValueAtTime(523.25, ctx.currentTime + 0.12);
+          gain2.gain.setValueAtTime(0.1, ctx.currentTime + 0.12);
+          gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+          osc2.start(ctx.currentTime + 0.12);
+          osc2.stop(ctx.currentTime + 0.2);
+        } else if (alertLevel === 'blue') {
+          // Chime suave
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(659.25, ctx.currentTime); // E5
+          gain.gain.setValueAtTime(0.08, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.35);
+        }
+      } catch (error) {
+        console.error('Falha na execução do áudio de bip:', error);
+      }
+    };
+
+    const level = feedback.alert_level || (feedback.success ? 'green' : 'red');
+    playSound(level);
+  }, [feedback]);
+
   return (
     <div className="bg-card border border-border rounded-md p-4 sm:p-5 space-y-5">
       <ScannerModeSelector value={mode} onChange={onModeChange} />
@@ -108,16 +187,40 @@ export default function TraceabilityScannerPanel({ mode, onModeChange, onRead, l
         <div
           role="status"
           data-status={feedback.status}
-          className={`rounded-md border px-3 py-2 text-sm ${
-            feedback.success
-              ? 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200'
-              : ['rejected', 'blocked', 'error'].includes(feedback.status)
-                ? 'border-red-300 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200'
-                : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200'
+          className={`rounded-xl border p-4 shadow-md transition-all flex flex-col gap-1.5 ${
+            feedback.alert_level === 'red' || ['rejected', 'blocked', 'error'].includes(feedback.status)
+              ? 'border-red-300 border-red-500/30 bg-red-500/5 text-red-600 dark:bg-red-950/10 dark:text-red-400'
+              : feedback.alert_level === 'yellow' || feedback.status === 'duplicated' || feedback.status === 'warning' || feedback.status === 'wrong_step'
+                ? 'border-amber-300 border-amber-500/30 bg-amber-500/5 text-amber-600 dark:bg-amber-950/10 dark:text-amber-400'
+                : feedback.alert_level === 'blue'
+                  ? 'border-blue-500/30 bg-blue-500/5 text-blue-600 dark:bg-blue-950/10 dark:text-blue-400'
+                  : 'border-emerald-300 border-emerald-500/30 bg-emerald-500/5 text-emerald-600 dark:bg-emerald-950/10 dark:text-emerald-400'
           }`}
         >
-          <strong>{feedback.success ? 'Leitura aprovada. ' : 'Leitura não aprovada. '}</strong>
-          {feedback.message}
+          <div className="flex items-center gap-2 font-bold text-base uppercase tracking-wide">
+            {feedback.alert_level === 'red' || ['rejected', 'blocked', 'error'].includes(feedback.status) ? (
+              <>
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping shrink-0" />
+                ENTRADA BLOQUEADA
+              </>
+            ) : feedback.alert_level === 'yellow' || feedback.status === 'duplicated' || feedback.status === 'warning' ? (
+              <>
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
+                ATENÇÃO DO OPERADOR
+              </>
+            ) : feedback.alert_level === 'blue' ? (
+              <>
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" />
+                INFORMAÇÃO DO FLUXO
+              </>
+            ) : (
+              <>
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
+                PEÇA LIBERADA — OK
+              </>
+            )}
+          </div>
+          <p className="text-sm font-medium leading-relaxed">{feedback.message}</p>
         </div>
       )}
 

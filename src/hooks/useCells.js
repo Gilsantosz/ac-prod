@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { base44 } from '@/lib/localDb';
+import { getCells } from '@/lib/cellsGoalsService';
 
 const HOURS_KEY = { '1º Turno': 'hoursShift1', '2º Turno': 'hoursShift2', '3º Turno': 'hoursShift3' };
 
@@ -9,7 +9,7 @@ const HOURS_KEY = { '1º Turno': 'hoursShift1', '2º Turno': 'hoursShift2', '3º
 export function useCells() {
   const { data: cells = [], isLoading } = useQuery({
     queryKey: ['cells'],
-    queryFn: () => base44.entities.Cell.list('-created_date', 200),
+    queryFn: getCells,
     initialData: [],
   });
 

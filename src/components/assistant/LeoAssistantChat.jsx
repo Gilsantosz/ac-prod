@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Bot, Eraser, MessageCircle, Send, Sparkles, X } from 'lucide-react';
 import LeoLogo from '@/components/ui/LeoLogo';
 import { askLeoAssistant } from '@/lib/assistant/leoAssistant';
+import { executeAiAction } from '@/lib/ai/aiActionExecutor';
 import { cn } from '@/lib/utils';
 
 const WELCOME = {
@@ -13,9 +14,10 @@ const WELCOME = {
 };
 
 const QUICK_PROMPTS = ['Localizar um lote', 'Insights produtivos', 'Ajuda para navegar'];
+const CHAT_STORAGE_VERSION = 'v2';
 
 function storageKey(user) {
-  return `leo-assistant-chat:${user?.id || user?.email || 'session'}`;
+  return `leo-assistant-chat:${CHAT_STORAGE_VERSION}:${user?.id || user?.email || 'session'}`;
 }
 
 function loadMessages(user) {
@@ -35,6 +37,11 @@ export default function LeoAssistantChat({ user }) {
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState(() => loadMessages(user));
   const [lastLotCode, setLastLotCode] = useState('');
+  const [conversationContext, setConversationContext] = useState({
+    lastReport: null,
+    lastFilters: null,
+    pendingAction: null,
+  });
   const endRef = useRef(null);
 
   const persistedMessages = useMemo(() => messages.slice(-24), [messages]);
@@ -62,6 +69,21 @@ export default function LeoAssistantChat({ user }) {
   const clearConversation = () => {
     setMessages([WELCOME]);
     setLastLotCode('');
+    setConversationContext({ lastReport: null, lastFilters: null, pendingAction: null });
+  };
+
+  const appendAssistantAnswer = (answer) => {
+    if (answer.context?.lastLotCode) setLastLotCode(answer.context.lastLotCode);
+    if (answer.contextPatch) {
+      setConversationContext((current) => ({ ...current, ...answer.contextPatch }));
+    }
+    if (answer.pendingAction) {
+      setConversationContext((current) => ({ ...current, pendingAction: answer.pendingAction }));
+    }
+    setMessages((current) => [
+      ...current,
+      { id: `assistant-${Date.now()}`, role: 'assistant', ...answer },
+    ]);
   };
 
   const sendQuestion = async (value = input) => {
@@ -78,12 +100,9 @@ export default function LeoAssistantChat({ user }) {
         user,
         lastLotCode,
         currentPath: location.pathname,
+        conversationContext,
       });
-      if (answer.context?.lastLotCode) setLastLotCode(answer.context.lastLotCode);
-      setMessages((current) => [
-        ...current,
-        { id: `assistant-${Date.now()}`, role: 'assistant', ...answer },
-      ]);
+      appendAssistantAnswer(answer);
     } catch (error) {
       console.error('[Assistente Leo] Falha ao responder:', error);
       setMessages((current) => [
@@ -100,8 +119,67 @@ export default function LeoAssistantChat({ user }) {
   };
 
   const goTo = (path) => {
+    if (!path) return;
     navigate(path);
     setOpen(false);
+  };
+
+  const handleAssistantAction = async (action, message) => {
+    if (!action?.action) {
+      goTo(action?.path);
+      return;
+    }
+
+    if (action.action === 'cancel_pending_action') {
+      setConversationContext((current) => ({ ...current, pendingAction: null }));
+      setMessages((current) => [
+        ...current,
+        { id: `assistant-cancel-${Date.now()}`, role: 'assistant', content: 'Ação cancelada.' },
+      ]);
+      return;
+    }
+
+    if (action.action !== 'confirm_pending_action') return;
+
+    const pending = conversationContext.pendingAction || message.pendingAction;
+    if (!pending) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: `assistant-missing-action-${Date.now()}`,
+          role: 'assistant',
+          content: 'Não encontrei a ação pendente para confirmar. Peça o envio novamente, por favor.',
+        },
+      ]);
+      return;
+    }
+
+    const payload = {
+      ...pending.payload,
+      ...(action.payloadOverride || {}),
+      confirmedExternal: pending.payload.confirmedExternal || action.payloadOverride?.confirmedExternal,
+      confirmedVolume: pending.payload.confirmedVolume || action.payloadOverride?.confirmedVolume,
+      confirmedCancel: pending.payload.confirmedCancel || action.payloadOverride?.confirmedCancel,
+    };
+
+    setLoading(true);
+    try {
+      const answer = await executeAiAction(payload, { user, conversationContext });
+      setConversationContext((current) => ({ ...current, pendingAction: null }));
+      appendAssistantAnswer(answer);
+    } catch (error) {
+      console.error('[Assistente Leo] Falha ao confirmar ação:', error);
+      setMessages((current) => [
+        ...current,
+        {
+          id: `assistant-action-error-${Date.now()}`,
+          role: 'assistant',
+          content: error.message || 'Não foi possível executar a ação confirmada.',
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -160,9 +238,10 @@ export default function LeoAssistantChat({ user }) {
                     <div className="flex flex-wrap gap-1.5">
                       {message.actions.map((action) => (
                         <button
-                          key={`${message.id}-${action.path}`}
+                          key={`${message.id}-${action.path || action.action || action.label}`}
                           type="button"
-                          onClick={() => goTo(action.path)}
+                          onClick={() => handleAssistantAction(action, message)}
+                          disabled={loading}
                           className="text-xs px-2.5 py-1.5 rounded-md border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40 transition-colors"
                         >
                           {action.label}

@@ -8,12 +8,12 @@ const TABLE_TO_QUERY_KEY = {
   daily_goals: ['dailyGoals'],
   occurrences: ['occurrences'],
   operators: ['operators'],
-  cells: ['cells', 'cells-admin-list'],
-  production_machines: ['production-machines', 'machines-admin-list'],
-  production_daily_goals: ['production-daily-goals', 'collection-kpis', 'cells-goals-summary'],
+  cells: ['cells', 'cells-admin-list', 'cells-goals-summary'],
+  production_machines: ['production-machines', 'production-machines-admin', 'machines-admin-list', 'cells-goals-summary'],
+  production_daily_goals: ['production-daily-goals', 'productionDailyGoals', 'dailyGoals', 'collection-kpis', 'cells-goals-summary'],
   automation_rules: ['automationRules'],
   profiles: ['users', 'me'],
-  alert_logs: ['unresolvedAlerts'],
+  alert_logs: ['unresolvedAlerts', 'unresolved-alerts-list'],
 };
 
 /**

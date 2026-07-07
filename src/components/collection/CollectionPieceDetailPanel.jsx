@@ -12,6 +12,7 @@ export default function CollectionPieceDetailPanel({
   onReject,
   onOpenTraceability,
   onRefresh,
+  onReplacement,
   canReject = false
 }) {
   if (loading) {
@@ -105,6 +106,18 @@ export default function CollectionPieceDetailPanel({
             <User className="w-3.5 h-3.5 text-muted-foreground" /> {piece.operator_name || 'Operador'}
           </p>
         </div>
+        {piece.rework_status && piece.rework_status !== 'none' && (
+          <div className="space-y-0.5 col-span-1">
+            <span className="text-[10px] text-purple-600 uppercase font-bold tracking-wider">Retrabalho</span>
+            <p className="font-bold text-purple-700 capitalize">{piece.rework_status}</p>
+          </div>
+        )}
+        {piece.replacement_status && piece.replacement_status !== 'none' && (
+          <div className="space-y-0.5 col-span-1">
+            <span className="text-[10px] text-amber-600 uppercase font-bold tracking-wider">Reposição</span>
+            <p className="font-bold text-amber-700 capitalize">{piece.replacement_status}</p>
+          </div>
+        )}
       </div>
 
       {/* 3. Fluxo Produtivo Visual */}
@@ -165,24 +178,36 @@ export default function CollectionPieceDetailPanel({
       </div>
 
       {/* 5. Ações de Detalhe da Peça */}
-      <div className="flex gap-2.5 pt-4 border-t border-border/40">
-        {canReject && !isRejected && (
+      <div className="flex flex-col gap-2 pt-4 border-t border-border/40">
+        <div className="flex gap-2.5">
+          {canReject && !isRejected && piece.status !== 'replaced' && (
+            <Button
+              onClick={() => onReject(piece)}
+              variant="destructive"
+              className="flex-1 font-bold text-xs gap-1.5 h-9 rounded-xl text-white shrink-0"
+            >
+              <AlertOctagon className="w-4 h-4" /> Reprovar Peça
+            </Button>
+          )}
+
+          {isRejected && piece.status !== 'replaced' && (
+            <Button
+              onClick={() => onReplacement && onReplacement(piece)}
+              variant="outline"
+              className="flex-1 font-bold text-xs gap-1.5 h-9 rounded-xl border-amber-500/30 text-amber-600 bg-amber-500/5 hover:bg-amber-500/10 shrink-0"
+            >
+              <RefreshCw className="w-4 h-4" /> Reposição
+            </Button>
+          )}
+          
           <Button
-            onClick={() => onReject(piece)}
-            variant="destructive"
-            className="flex-1 font-bold text-xs gap-1.5 h-9 rounded-xl text-white shrink-0"
+            onClick={() => onOpenTraceability(piece)}
+            variant="outline"
+            className="flex-1 font-bold text-xs gap-1.5 h-9 rounded-xl border-border/60 hover:bg-secondary/40 text-foreground"
           >
-            <AlertOctagon className="w-4 h-4" /> Reprovar Peça
+            <Layers className="w-4 h-4" /> Rastreabilidade
           </Button>
-        )}
-        
-        <Button
-          onClick={() => onOpenTraceability(piece)}
-          variant="outline"
-          className="flex-1 font-bold text-xs gap-1.5 h-9 rounded-xl border-border/60 hover:bg-secondary/40 text-foreground"
-        >
-          <Layers className="w-4 h-4" /> Rastreabilidade
-        </Button>
+        </div>
       </div>
 
     </div>

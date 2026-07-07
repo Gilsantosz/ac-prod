@@ -26,9 +26,27 @@ export function workdaysInMonth(month, map = {}) {
   return monthDates(month).filter((d) => isWorkdayDate(d, map)).length;
 }
 
+export function workdayDatesInMonth(month, map = {}) {
+  return monthDates(month).filter((d) => isWorkdayDate(d, map));
+}
+
 // Meta diária = meta mensal / dias úteis do mês.
 export function dailyTargetFromMonthly(monthlyTarget, month, map = {}) {
   const wd = workdaysInMonth(month, map);
   if (!wd) return 0;
   return Math.round((Number(monthlyTarget) || 0) / wd);
+}
+
+export function dailyDistributionFromMonthly(monthlyTarget, month, map = {}) {
+  const dates = workdayDatesInMonth(month, map);
+  if (!dates.length) return [];
+
+  const total = Math.max(0, Math.round(Number(monthlyTarget) || 0));
+  const base = Math.floor(total / dates.length);
+  const remainder = total % dates.length;
+
+  return dates.map((date, index) => ({
+    date,
+    quantity: base + (index < remainder ? 1 : 0),
+  }));
 }

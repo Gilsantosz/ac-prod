@@ -20,12 +20,12 @@ function navigationResponse(topic) {
 }
 
 export async function askLeoAssistant(question, context = {}) {
-  const { user, lastLotCode, currentPath } = context;
+  const { user, lastLotCode, currentPath, conversationContext } = context;
   if (isProductionSearchQuestion(question)) {
     return answerProductionQuestion(question, { user });
   }
   if (isOperationalAiQuestion(question)) {
-    return askOperationalCopilot(question, { user });
+    return askOperationalCopilot(question, { user, conversationContext });
   }
   const intent = classifyAssistantIntent(question, { lastLotCode });
 

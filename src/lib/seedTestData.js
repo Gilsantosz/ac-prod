@@ -231,10 +231,10 @@ async function seedCells() {
  */
 async function seedTraceabilityData() {
   const testLots = [
-    { lot_code: 'LOTE-TESTE-101', customer_name: 'Residencial Alpha', order_number: 'PED-901', status: 'waiting_packaging', current_stage: 'Embalagem', planned_quantity: 42, approved_quantity: 42 },
-    { lot_code: 'LOTE-TESTE-102', customer_name: 'Apartamento 302', order_number: 'PED-902', status: 'in_progress', current_stage: 'Usinagem', planned_quantity: 15, approved_quantity: 8 },
-    { lot_code: 'LOTE-TESTE-103', customer_name: 'Consultório Med', order_number: 'PED-903', status: 'waiting_shipping', current_stage: 'Expedição', planned_quantity: 28, approved_quantity: 28 },
-    { lot_code: 'LOTE-TESTE-104', customer_name: 'Cozinha Planejada B', order_number: 'PED-904', status: 'completed', current_stage: 'Concluído', planned_quantity: 10, approved_quantity: 10 }
+    { lot_code: 'LOTE-TESTE-101', customer_name: 'Residencial Alpha', order_number: 'ORDEM-TEST-901', status: 'waiting_packaging', current_stage: 'Embalagem', planned_quantity: 42, approved_quantity: 42 },
+    { lot_code: 'LOTE-TESTE-102', customer_name: 'Apartamento 302', order_number: 'ORDEM-TEST-902', status: 'in_progress', current_stage: 'Usinagem', planned_quantity: 15, approved_quantity: 8 },
+    { lot_code: 'LOTE-TESTE-103', customer_name: 'Consultório Med', order_number: 'ORDEM-TEST-903', status: 'waiting_shipping', current_stage: 'Expedição', planned_quantity: 28, approved_quantity: 28 },
+    { lot_code: 'LOTE-TESTE-104', customer_name: 'Cozinha Planejada B', order_number: 'ORDEM-TEST-904', status: 'completed', current_stage: 'Concluído', planned_quantity: 10, approved_quantity: 10 }
   ];
 
   for (const l of testLots) {
@@ -248,25 +248,30 @@ async function seedTraceabilityData() {
 
     if (!lotId) {
       // 1. Cria Ordem de Produção
-      const { data: order } = await supabase
+      const { data: order, error: orderErr } = await supabase
         .from('production_orders')
         .insert({
           order_code: l.order_number,
           customer_name: l.customer_name,
-          status: l.status === 'completed' ? 'shipped' : 'in_progress'
+          status: l.status === 'completed' ? 'completed' : 'released'
         })
         .select()
         .single();
+      if (orderErr) throw orderErr;
 
       // 2. Cria Lote
-      const { data: newLot } = await supabase
+      let lotStatus = l.status;
+      if (lotStatus === 'completed') lotStatus = 'shipped';
+      if (lotStatus === 'waiting_shipping') lotStatus = 'released_for_shipping';
+
+      const { data: newLot, error: lotErr } = await supabase
         .from('production_lots')
         .insert({
           order_id: order.id,
           production_order_id: order.id,
           lot_code: l.lot_code,
-          status: l.status,
-          current_status: l.status,
+          status: lotStatus,
+          current_status: lotStatus,
           current_stage: l.current_stage,
           planned_quantity: l.planned_quantity,
           approved_quantity: l.approved_quantity,
@@ -275,6 +280,7 @@ async function seedTraceabilityData() {
         })
         .select()
         .single();
+      if (lotErr) throw lotErr;
 
       lotId = newLot.id;
 
@@ -308,7 +314,8 @@ async function seedTraceabilityData() {
           length: i % 2 === 0 ? 1200 : 800,
           thickness: i % 2 === 0 ? 18 : 15,
           current_stage: l.current_stage,
-          status: 'approved'
+          status: 'approved',
+          requires_packaging: true
         });
       }
       
@@ -319,6 +326,7 @@ async function seedTraceabilityData() {
 
       // 5. Cria leituras (readings) de histórico correspondentes
       const readingsToInsert = [];
+      const logsToInsert = [];
       const now = new Date();
 
       if (l.lot_code === 'LOTE-TESTE-101' || l.lot_code === 'LOTE-TESTE-103' || l.lot_code === 'LOTE-TESTE-104') {
@@ -332,10 +340,11 @@ async function seedTraceabilityData() {
           completedStages.forEach((stage, sIdx) => {
             const timeOffset = sIdx * 10;
             const readTime = new Date(now.getTime() - (2 * 24 * 60 * 60 * 1000) + (timeOffset * 60 * 1000));
+            const readingUuid = crypto.randomUUID();
             
             readingsToInsert.push({
               lot_id: lotId,
-              tag_id: crypto.randomUUID(),
+              tag_id: readingUuid,
               tag_value: piece.piece_uid,
               reader_type: 'keyboard_barcode',
               reader_name: 'Scanner Teclado',
@@ -354,17 +363,69 @@ async function seedTraceabilityData() {
               customer_name: l.customer_name,
               piece_code: piece.piece_uid
             });
+
+            logsToInsert.push({
+              client_event_id: crypto.randomUUID(),
+              raw_value: piece.piece_uid,
+              reader_type: 'keyboard_barcode',
+              operator_name: 'Carlos Silva',
+              cell_name: stage,
+              shift: '1º Turno',
+              date: readTime.toISOString().slice(0, 10),
+              hour: readTime.toTimeString().slice(0, 5),
+              status: 'synced',
+              result_status: 'approved',
+              lot_id: lotId,
+              production_order_id: order.id,
+              error_message: 'Peça processada com sucesso no fluxo.',
+              created_at_client: readTime.toISOString(),
+              created_at: readTime.toISOString(),
+              processed_at: readTime.toISOString(),
+              lot_code: l.lot_code,
+              piece_code: piece.piece_uid,
+              customer_name: l.customer_name,
+              order_number: l.order_number
+            });
           });
         });
+
+        // Simula bloqueio de fluxo para auditoria no LOTE-101
+        if (l.lot_code === 'LOTE-TESTE-101' && createdPieces.length > 0) {
+          const piece1 = createdPieces[0];
+          const readTime = new Date(now.getTime() - 10 * 60 * 1000);
+          logsToInsert.push({
+            client_event_id: crypto.randomUUID(),
+            raw_value: piece1.piece_uid,
+            reader_type: 'keyboard_barcode',
+            operator_name: 'Carlos Silva',
+            cell_name: 'Expedição',
+            shift: '1º Turno',
+            date: readTime.toISOString().slice(0, 10),
+            hour: readTime.toTimeString().slice(0, 5),
+            status: 'synced',
+            result_status: 'blocked',
+            lot_id: lotId,
+            production_order_id: order.id,
+            error_message: 'ENTRADA BLOQUEADA: Esta peça ainda não passou pela estação Embalagem.',
+            created_at_client: readTime.toISOString(),
+            created_at: readTime.toISOString(),
+            processed_at: readTime.toISOString(),
+            lot_code: l.lot_code,
+            piece_code: piece1.piece_uid,
+            customer_name: l.customer_name,
+            order_number: l.order_number
+          });
+        }
       }
 
       if (l.lot_code === 'LOTE-TESTE-102') {
         createdPieces.forEach((piece, pIdx) => {
           if (pIdx < 8) {
             const readTime = new Date(now.getTime() - (60 * 60 * 1000));
+            const readingUuid = crypto.randomUUID();
             readingsToInsert.push({
               lot_id: lotId,
-              tag_id: crypto.randomUUID(),
+              tag_id: readingUuid,
               tag_value: piece.piece_uid,
               reader_type: 'keyboard_barcode',
               reader_name: 'Scanner Teclado',
@@ -383,8 +444,67 @@ async function seedTraceabilityData() {
               customer_name: l.customer_name,
               piece_code: piece.piece_uid
             });
+
+            logsToInsert.push({
+              client_event_id: crypto.randomUUID(),
+              raw_value: piece.piece_uid,
+              reader_type: 'keyboard_barcode',
+              operator_name: 'Marcos Souza',
+              cell_name: 'Corte',
+              shift: '2º Turno',
+              date: readTime.toISOString().slice(0, 10),
+              hour: readTime.toTimeString().slice(0, 5),
+              status: 'synced',
+              result_status: 'approved',
+              lot_id: lotId,
+              production_order_id: order.id,
+              error_message: 'Peça processada com sucesso no fluxo.',
+              created_at_client: readTime.toISOString(),
+              created_at: readTime.toISOString(),
+              processed_at: readTime.toISOString(),
+              lot_code: l.lot_code,
+              piece_code: piece.piece_uid,
+              customer_name: l.customer_name,
+              order_number: l.order_number
+            });
           }
         });
+
+        // Simula tentativas bloqueadas reais na tabela production_events para LOTE-102
+        if (createdPieces.length > 5) {
+          const piece3 = createdPieces[2];
+          const piece5 = createdPieces[4];
+          await supabase.from('production_events').insert([
+            {
+              piece_id: piece3.id,
+              traceability_code: piece3.piece_uid,
+              production_order_id: order.id,
+              lot_id: lotId,
+              event_type: 'block',
+              from_stage: 'Corte',
+              to_stage: 'Marcenaria',
+              cell_name: 'Marcenaria',
+              event_status: 'blocked',
+              notes: 'ENTRADA BLOQUEADA: Esta peça ainda não passou pela estação Borda.',
+              metadata: {},
+              created_at: new Date(now.getTime() - 30 * 60 * 1000).toISOString()
+            },
+            {
+              piece_id: piece5.id,
+              traceability_code: piece5.piece_uid,
+              production_order_id: order.id,
+              lot_id: lotId,
+              event_type: 'block',
+              from_stage: 'Corte',
+              to_stage: 'Marcenaria',
+              cell_name: 'Marcenaria',
+              event_status: 'blocked',
+              notes: 'ENTRADA BLOQUEADA: Esta peça ainda não passou pela estação Borda.',
+              metadata: {},
+              created_at: new Date(now.getTime() - 15 * 60 * 1000).toISOString()
+            }
+          ]);
+        }
       }
 
       if (readingsToInsert.length > 0) {
@@ -393,18 +513,45 @@ async function seedTraceabilityData() {
         }
       }
 
-      // 6. Cria Pacotes (Volumes)
+      if (logsToInsert.length > 0) {
+        for (let idx = 0; idx < logsToInsert.length; idx += 30) {
+          await supabase.from('production_collection_events').insert(logsToInsert.slice(idx, idx + 30));
+        }
+      }
+
+      // 6. Cria Pacotes (Volumes) - Antigo e Novo Formato
       if (l.lot_code === 'LOTE-TESTE-103' || l.lot_code === 'LOTE-TESTE-104') {
         const pkgInserts = [
           { lot_id: lotId, order_id: order.id, package_code: `VOL-${l.lot_code}-001`, volume_number: 1, status: 'closed', total_items: 15, closed_at: now.toISOString() },
           { lot_id: lotId, order_id: order.id, package_code: `VOL-${l.lot_code}-002`, volume_number: 2, status: 'closed', total_items: 13, closed_at: now.toISOString() }
         ];
         await supabase.from('packages').insert(pkgInserts);
+
+        // Novo formato: packing_volumes
+        const { data: vols } = await supabase
+          .from('packing_volumes')
+          .insert([
+            { lot_id: lotId, production_order_id: order.id, volume_code: `VOL-${l.lot_code}-001`, status: 'closed', closed_at: now.toISOString() },
+            { lot_id: lotId, production_order_id: order.id, volume_code: `VOL-${l.lot_code}-002`, status: 'closed', closed_at: now.toISOString() }
+          ])
+          .select();
+
+        if (vols && vols.length >= 2 && createdPieces && createdPieces.length > 0) {
+          const vol1 = vols[0];
+          const vol2 = vols[1];
+          const volumeItems = createdPieces.map((piece, pIdx) => ({
+            volume_id: pIdx % 2 === 0 ? vol1.id : vol2.id,
+            piece_id: piece.id,
+            traceability_code: piece.piece_uid,
+            scanned_at: now.toISOString()
+          }));
+          await supabase.from('packing_volume_items').insert(volumeItems);
+        }
       }
 
-      // 7. Cria Remessas de Carga
+      // 7. Cria Remessas de Carga - Antigo e Novo Formato
       if (l.lot_code === 'LOTE-TESTE-104') {
-        await supabase
+        const { data: shipment } = await supabase
           .from('shipments')
           .insert({
             order_id: order.id,
@@ -416,7 +563,27 @@ async function seedTraceabilityData() {
             tracking_code: 'TRK-LEO-104',
             shipped_at: now.toISOString(),
             status: 'shipped'
-          });
+          })
+          .select()
+          .single();
+
+        // Novo formato: shipment_items
+        const { data: vols104 } = await supabase
+          .from('packing_volumes')
+          .select('id, volume_code')
+          .eq('lot_id', lotId);
+
+        if (vols104 && vols104.length > 0 && shipment) {
+          const shipmentItems = vols104.map(vol => ({
+            shipment_id: shipment.id,
+            expected_type: 'volume',
+            volume_id: vol.id,
+            traceability_code: vol.volume_code,
+            status: 'scanned',
+            scanned_at: now.toISOString()
+          }));
+          await supabase.from('shipment_items').insert(shipmentItems);
+        }
       }
     }
   }

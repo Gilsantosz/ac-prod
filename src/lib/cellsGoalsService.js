@@ -48,8 +48,8 @@ export async function getActiveCells() {
 export async function createCell(payload) {
   const dbPayload = {
     name: payload.name,
-    description: payload.description || null,
-    notes: payload.notes || null,
+    description: payload.description ?? '',
+    notes: payload.notes ?? '',
     active: payload.active !== false,
     shift_hours: {
       shift1: Number(payload.hoursShift1 ?? 8),
@@ -68,17 +68,28 @@ export async function createCell(payload) {
 }
 
 export async function updateCell(id, payload) {
-  const dbPayload = {
-    name: payload.name,
-    description: payload.description || null,
-    notes: payload.notes || null,
-    active: payload.active !== false,
-    shift_hours: {
-      shift1: Number(payload.hoursShift1 ?? 8),
-      shift2: Number(payload.hoursShift2 ?? 8),
-      shift3: Number(payload.hoursShift3 ?? 8),
-    }
-  };
+  const { data: current, error: currentError } = await supabase
+    .from('cells')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (currentError) throw currentError;
+
+  const hasShiftHours = ['hoursShift1', 'hoursShift2', 'hoursShift3'].some((key) => key in payload);
+  const currentShiftHours = current?.shift_hours || {};
+  const dbPayload = {};
+
+  if ('name' in payload) dbPayload.name = payload.name;
+  if ('description' in payload) dbPayload.description = payload.description ?? '';
+  if ('notes' in payload) dbPayload.notes = payload.notes ?? '';
+  if ('active' in payload) dbPayload.active = payload.active !== false;
+  if (hasShiftHours) {
+    dbPayload.shift_hours = {
+      shift1: Number(payload.hoursShift1 ?? currentShiftHours.shift1 ?? 8),
+      shift2: Number(payload.hoursShift2 ?? currentShiftHours.shift2 ?? 8),
+      shift3: Number(payload.hoursShift3 ?? currentShiftHours.shift3 ?? 8),
+    };
+  }
 
   const { data, error } = await supabase
     .from('cells')
@@ -87,7 +98,70 @@ export async function updateCell(id, payload) {
     .select()
     .single();
   if (error) throw error;
+
+  const oldName = String(current?.name || '').trim();
+  const newName = String(data?.name || '').trim();
+  if (oldName && newName && oldName !== newName) {
+    await cascadeCellNameChange(oldName, newName);
+  }
+
   return data;
+}
+
+async function cascadeCellNameChange(oldName, newName) {
+  const updateResult = async (query) => {
+    const { error } = await query;
+    if (error && !/schema cache|does not exist|column/i.test(error.message || '')) {
+      throw error;
+    }
+  };
+
+  await Promise.all([
+    updateResult(supabase.from('production_machines').update({ cell_name: newName }).eq('cell_name', oldName)),
+    updateResult(supabase.from('production_daily_goals').update({ cell_name: newName, area_name: newName }).eq('cell_name', oldName)),
+    updateResult(supabase.from('daily_goals').update({ cell: newName }).eq('cell', oldName)),
+    updateResult(supabase.from('monthly_goals').update({ cell: newName }).eq('cell', oldName)),
+    updateResult(supabase.from('workday_calendar').update({ cell: newName }).eq('cell', oldName)),
+  ]);
+
+  const [operatorsRes, profilesRes] = await Promise.all([
+    supabase.from('operators').select('id, primary_cell, cells'),
+    supabase.from('profiles').select('id, cell, managed_cells'),
+  ]);
+
+  if (operatorsRes.error && !/schema cache|does not exist|column/i.test(operatorsRes.error.message || '')) {
+    throw operatorsRes.error;
+  }
+  if (profilesRes.error && !/schema cache|does not exist|column/i.test(profilesRes.error.message || '')) {
+    throw profilesRes.error;
+  }
+
+  const affectedOperators = (operatorsRes.data || []).filter((operator) =>
+    operator.primary_cell === oldName || (Array.isArray(operator.cells) && operator.cells.includes(oldName))
+  );
+  const affectedProfiles = (profilesRes.data || []).filter((profile) =>
+    profile.cell === oldName || (Array.isArray(profile.managed_cells) && profile.managed_cells.includes(oldName))
+  );
+
+  await Promise.all(affectedOperators.map((operator) => {
+    const cells = Array.isArray(operator.cells)
+      ? operator.cells.map((cell) => (cell === oldName ? newName : cell))
+      : [];
+    return updateResult(supabase.from('operators').update({
+      primary_cell: operator.primary_cell === oldName ? newName : operator.primary_cell,
+      cells,
+    }).eq('id', operator.id));
+  }));
+
+  await Promise.all(affectedProfiles.map((profile) => {
+    const managedCells = Array.isArray(profile.managed_cells)
+      ? profile.managed_cells.map((cell) => (cell === oldName ? newName : cell))
+      : [];
+    return updateResult(supabase.from('profiles').update({
+      cell: profile.cell === oldName ? newName : profile.cell,
+      managed_cells: managedCells,
+    }).eq('id', profile.id));
+  }));
 }
 
 export async function deactivateCell(id) {

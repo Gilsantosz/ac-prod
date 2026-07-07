@@ -11,11 +11,16 @@
  */
 
 import { clearPersistedAuthSession, persistAuthSession, supabase } from './supabaseClient';
+import {
+  getProductionMetricRule,
+  getUnitLabel,
+  normalizeProductionUnit,
+} from '@/lib/productionUnitRules';
 
 // ─── Mapeamento de nomes de entidade para tabelas Supabase ───────────────────
 const TABLE_MAP = {
   ProductionEntry: 'production_entries',
-  DailyGoal: 'daily_goals',
+  DailyGoal: 'production_daily_goals',
   Occurrence: 'occurrences',
   Operator: 'operators',
   Cell: 'cells',
@@ -72,7 +77,18 @@ const normalizeFromDb = (entity, row) => {
     return { ...base, date: row.date?.toString?.() ?? row.date };
   }
   if (entity === 'DailyGoal') {
-    return { ...base, date: row.date?.toString?.() ?? row.date };
+    return {
+      ...base,
+      date: row.date?.toString?.() ?? row.date,
+      cell: row.cell ?? row.cell_name ?? '',
+      cell_name: row.cell_name ?? row.cell ?? '',
+      area_name: row.area_name ?? row.cell_name ?? row.cell ?? '',
+      hours: row.hours,
+      target: Number(row.target) || 0,
+      capacity: Number(row.capacity) || 0,
+      metric_unit: row.metric_unit || 'pieces',
+      metric_unit_label: row.metric_unit_label || getUnitLabel(row.metric_unit || 'pieces'),
+    };
   }
   if (entity === 'Occurrence') {
     return { ...base, date: row.date?.toString?.() ?? row.date };
@@ -160,6 +176,35 @@ const normalizeFromDb = (entity, row) => {
   }
   return base;
 };
+
+const number = (value) => Number(String(value ?? '').replace(',', '.')) || 0;
+
+function toProductionDailyGoalPayload(payload = {}) {
+  const cell = payload.cell_name || payload.cell || payload.area_name || '';
+  const metricUnit = normalizeProductionUnit(
+    payload.metric_unit || payload.metricUnit || payload.unit || getProductionMetricRule({ cell }).unit
+  );
+  const metricRule = getProductionMetricRule({ cell, metric_unit: metricUnit });
+
+  return {
+    date: payload.date,
+    shift: payload.shift || '1º Turno',
+    cell_name: cell,
+    area_name: payload.area_name || cell,
+    metric_unit: metricUnit,
+    metric_unit_label: payload.metric_unit_label || getUnitLabel(metricUnit),
+    metric_name: payload.metric_name || metricRule.metricName,
+    capacity: number(payload.capacity ?? payload.planned_capacity),
+    target: number(payload.target),
+  };
+}
+
+function mapDailyGoalCondition(key, value) {
+  if (key === 'cell') return ['cell_name', value];
+  if (key === 'metricUnit') return ['metric_unit', normalizeProductionUnit(value)];
+  if (key === 'metric_unit') return ['metric_unit', normalizeProductionUnit(value)];
+  return [key, value];
+}
 
 // ─── Ordena lista localmente ──────────────────────────────────────────────────
 const sortData = (list, orderBy) => {
@@ -294,6 +339,21 @@ const createEntityClient = (entityName) => {
         delete enriched.isWorkday;
       }
 
+      if (entityName === 'MonthlyGoal') {
+        enriched.shift = enriched.shift || 'Todos os turnos';
+      }
+
+      if (entityName === 'DailyGoal') {
+        const dbGoal = toProductionDailyGoalPayload(enriched);
+        const { data, error } = await supabase
+          .from(table)
+          .upsert(dbGoal, { onConflict: 'date,shift,cell_name,metric_unit' })
+          .select()
+          .single();
+        if (error) throw error;
+        return normalizeFromDb(entityName, data);
+      }
+
       if (entityName === 'ProductionEntry') {
         const compatible = { ...enriched };
         for (let attempt = 0; attempt < 30; attempt += 1) {
@@ -306,9 +366,7 @@ const createEntityClient = (entityName) => {
         throw new Error('Não foi possível adaptar o apontamento ao schema disponível.');
       }
 
-      const q = entityName === 'DailyGoal'
-        ? supabase.from(table).upsert(enriched, { onConflict: 'date,shift,cell' }).select().single()
-        : supabase.from(table).insert(enriched).select().single();
+      const q = supabase.from(table).insert(enriched).select().single();
       const { data, error } = await q;
       if (error) throw error;
       return normalizeFromDb(entityName, data);
@@ -412,6 +470,31 @@ const createEntityClient = (entityName) => {
         delete clean.isWorkday;
       }
 
+      if (entityName === 'MonthlyGoal') {
+        clean.shift = clean.shift || 'Todos os turnos';
+      }
+
+      if (entityName === 'DailyGoal') {
+        const { data: current, error: currentError } = await supabase
+          .from(table)
+          .select('*')
+          .eq('id', id)
+          .single();
+        if (currentError) throw currentError;
+        const dbGoal = toProductionDailyGoalPayload({
+          ...normalizeFromDb(entityName, current),
+          ...clean,
+        });
+        const { data, error } = await supabase
+          .from(table)
+          .update(dbGoal)
+          .eq('id', id)
+          .select()
+          .single();
+        if (error) throw error;
+        return normalizeFromDb(entityName, data);
+      }
+
       const { data, error } = await supabase
         .from(table)
         .update(clean)
@@ -447,7 +530,10 @@ const createEntityClient = (entityName) => {
 
       for (const [key, val] of Object.entries(conditions)) {
         if (val !== undefined && val !== null) {
-          q = q.eq(key, val);
+          const [dbKey, dbValue] = entityName === 'DailyGoal'
+            ? mapDailyGoalCondition(key, val)
+            : [key, val];
+          q = q.eq(dbKey, dbValue);
         }
       }
 

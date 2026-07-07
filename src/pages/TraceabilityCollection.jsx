@@ -25,7 +25,7 @@ import CollectionRecentReadsPanel from '@/components/collection/CollectionRecent
 import CollectionPieceDetailPanel from '@/components/collection/CollectionPieceDetailPanel';
 import CollectionRejectPieceModal from '@/components/collection/CollectionRejectPieceModal';
 import CollectionPieceTraceabilityDrawer from '@/components/collection/CollectionPieceTraceabilityDrawer';
-import { getPieceTraceability, rejectPieceFromCollection, getCollectionKpis } from '@/lib/collectionService';
+import { getPieceTraceability, rejectPieceFromCollection, getCollectionKpis, requestPieceReplacement } from '@/lib/collectionService';
 
 function currentShift() {
   const hour = new Date().getHours();
@@ -201,13 +201,73 @@ export default function TraceabilityCollection({ embedded = false }) {
     retry: false,
   });
 
+  const { data: cellStats = { expected: 0, approved: 0, rejected: 0, pending: 0, rework: 0, replacement: 0 }, refetch: refetchCellStats } = useQuery({
+    queryKey: ['cell-detailed-stats', cellName, refreshReadsSignal],
+    queryFn: async () => {
+      if (!cellName) return { expected: 0, approved: 0, rejected: 0, pending: 0, rework: 0, replacement: 0 };
+      
+      let cellCode = cellName.toLowerCase();
+      if (cellName === 'Borda' || cellName === 'Bordo') cellCode = 'edge';
+      else if (cellName === 'Usinagem') cellCode = 'cnc';
+      else if (cellName === 'Furação') cellCode = 'drill';
+      else if (cellName === 'Corte') cellCode = 'cut';
+      else if (cellName === 'Marcenaria') cellCode = 'joinery';
+      else if (cellName === 'Embalagem') cellCode = 'packaging';
+      else if (cellName === 'Expedição') cellCode = 'shipping';
+
+      const { count: expected } = await supabase
+        .from('production_pieces')
+        .select('*', { count: 'exact', head: true })
+        .contains('route_steps', [cellCode])
+        .neq('status', 'cancelled');
+
+      const { count: approved } = await supabase
+        .from('production_stage_readings')
+        .select('*', { count: 'exact', head: true })
+        .eq('step_name', cellCode)
+        .eq('status', 'approved');
+
+      const { count: rejected } = await supabase
+        .from('production_stage_readings')
+        .select('*', { count: 'exact', head: true })
+        .eq('step_name', cellCode)
+        .eq('status', 'rejected');
+
+      const { count: rework } = await supabase
+        .from('production_pieces')
+        .select('*', { count: 'exact', head: true })
+        .contains('route_steps', [cellCode])
+        .eq('rework_status', 'in_progress');
+
+      const { count: replacement } = await supabase
+        .from('production_pieces')
+        .select('*', { count: 'exact', head: true })
+        .contains('route_steps', [cellCode])
+        .eq('replacement_status', 'in_production');
+
+      const pending = Math.max(0, (expected || 0) - (approved || 0));
+
+      return {
+        expected: expected || 0,
+        approved: approved || 0,
+        rejected: rejected || 0,
+        pending,
+        rework: rework || 0,
+        replacement: replacement || 0
+      };
+    },
+    enabled: !!cellName,
+    staleTime: 5000
+  });
+
   const refreshData = useCallback(() => {
     refetchKpis();
+    refetchCellStats();
     queryClient.invalidateQueries({ queryKey: ['stageReadings', cellName, machine?.id] });
     queryClient.invalidateQueries({ queryKey: ['production'] });
     queryClient.invalidateQueries({ queryKey: ['production-lots'] });
     queryClient.invalidateQueries({ queryKey: ['occurrences'] });
-  }, [queryClient, cellName, machine, refetchKpis]);
+  }, [queryClient, cellName, machine, refetchKpis, refetchCellStats]);
 
   // Busca silenciosa das timeline da peça ativa
   useEffect(() => {
@@ -388,6 +448,30 @@ export default function TraceabilityCollection({ embedded = false }) {
     }
   };
 
+  const handleRequestReplacement = async (piece) => {
+    if (!piece) return;
+    const reason = prompt('Informe o motivo da reposição (ex: Riscos, Peça Empenada, Erro de furação):', 'Peça danificada no processo');
+    if (!reason || reason.trim() === '') return;
+    
+    try {
+      const res = await requestPieceReplacement({
+        pieceId: piece.id,
+        reason: reason.trim(),
+        notes: `Solicitado via painel de coleta pelo operador ${operator}`
+      });
+      
+      toast.success(`Ordem de reposição gerada com sucesso! Nova peça: ${res.replacement_code}`);
+      setRefreshReadsSignal(prev => prev + 1);
+      refreshData();
+      
+      if (selectedPiece && selectedPiece.id === piece.id) {
+        setSelectedPiece(prev => prev ? { ...prev, status: 'replaced', replacement_status: 'replaced' } : null);
+      }
+    } catch (error) {
+      toast.error(error?.message || 'Falha ao solicitar reposição da peça.');
+    }
+  };
+
   const handleOpenReadingOccurrence = useCallback((reading) => {
     const now = new Date();
     setReadingOccurrenceSuggestion({
@@ -516,6 +600,47 @@ export default function TraceabilityCollection({ embedded = false }) {
         online={navigator.onLine}
       />
 
+      {/* Detalhamento de Peças da Estação / Célula */}
+      {cellName && (
+        <div className="bg-card border border-border/60 rounded-2xl p-4 shadow-sm space-y-3">
+          <div className="flex justify-between items-center">
+            <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+              Painel de Integridade da Estação: {cellName}
+            </h4>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[10px] text-muted-foreground font-semibold">Monitoramento em Tempo Real</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="bg-secondary/20 border border-border/40 rounded-xl p-3">
+              <p className="text-[10px] text-muted-foreground font-semibold uppercase">Previsto</p>
+              <p className="text-xl font-extrabold text-foreground mt-1 tabular-nums">{cellStats.expected}</p>
+            </div>
+            <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-xl p-3">
+              <p className="text-[10px] text-emerald-600 font-semibold uppercase">Aprovado</p>
+              <p className="text-xl font-extrabold text-emerald-600 mt-1 tabular-nums">{cellStats.approved}</p>
+            </div>
+            <div className="bg-rose-500/5 border border-rose-500/10 rounded-xl p-3">
+              <p className="text-[10px] text-rose-600 font-semibold uppercase">Reprovado</p>
+              <p className="text-xl font-extrabold text-rose-600 mt-1 tabular-nums">{cellStats.rejected}</p>
+            </div>
+            <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3">
+              <p className="text-[10px] text-amber-600 font-semibold uppercase">Pendente</p>
+              <p className="text-xl font-extrabold text-amber-600 mt-1 tabular-nums">{cellStats.pending}</p>
+            </div>
+            <div className="bg-purple-500/5 border border-purple-500/10 rounded-xl p-3">
+              <p className="text-[10px] text-purple-600 font-semibold uppercase">Retrabalho</p>
+              <p className="text-xl font-extrabold text-purple-600 mt-1 tabular-nums">{cellStats.rework}</p>
+            </div>
+            <div className="bg-sky-500/5 border border-sky-500/10 rounded-xl p-3">
+              <p className="text-[10px] text-sky-600 font-semibold uppercase">Reposição</p>
+              <p className="text-xl font-extrabold text-sky-600 mt-1 tabular-nums">{cellStats.replacement}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* KPIs da Tela */}
       <TraceabilityKpiCards kpis={kpis} />
 
@@ -546,6 +671,7 @@ export default function TraceabilityCollection({ embedded = false }) {
             onReject={handleOpenRejectModal}
             onOpenTraceability={handleOpenTraceabilityDrawer}
             onRefresh={() => setRefreshReadsSignal(prev => prev + 1)}
+            onReplacement={handleRequestReplacement}
             canReject={true}
           />
         </div>

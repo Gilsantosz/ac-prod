@@ -1,10 +1,9 @@
 import { useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/lib/localDb';
 import { useAuth } from '@/lib/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabaseClient';
-import { runOperationalAlertDiagnostics } from '@/lib/operationalAlertService';
+import { ACTIVE_ALERTS_QUERY_KEY, runOperationalAlertDiagnostics } from '@/lib/operationalAlertService';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -52,19 +51,29 @@ export default function NotificationCenter() {
     if (!user) return;
     
     // Executa diagnóstico inicial
-    runOperationalAlertDiagnostics().catch((err) => {
-      console.error('[NotificationCenter] Falha no diagnóstico de alertas inicial:', err);
-    });
+    runOperationalAlertDiagnostics()
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ['unresolvedAlerts'] });
+        queryClient.invalidateQueries({ queryKey: ACTIVE_ALERTS_QUERY_KEY });
+      })
+      .catch((err) => {
+        console.error('[NotificationCenter] Falha no diagnóstico de alertas inicial:', err);
+      });
 
     // Agenda execuções a cada 60 segundos
     const interval = setInterval(() => {
-      runOperationalAlertDiagnostics().catch((err) => {
-        console.error('[NotificationCenter] Falha no diagnóstico de alertas periódico:', err);
-      });
+      runOperationalAlertDiagnostics()
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ['unresolvedAlerts'] });
+          queryClient.invalidateQueries({ queryKey: ACTIVE_ALERTS_QUERY_KEY });
+        })
+        .catch((err) => {
+          console.error('[NotificationCenter] Falha no diagnóstico de alertas periódico:', err);
+        });
     }, 60000);
 
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, queryClient]);
 
   // Busca apenas alertas não resolvidos (ordenados do mais recente ao mais antigo)
   const { data: alerts = [] } = useQuery({
@@ -106,6 +115,7 @@ export default function NotificationCenter() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unresolvedAlerts'] });
+      queryClient.invalidateQueries({ queryKey: ACTIVE_ALERTS_QUERY_KEY });
       toast.success('Notificação marcada como resolvida.');
     },
     onError: (err) => {

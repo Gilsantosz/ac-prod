@@ -7,7 +7,10 @@ import { Loader2, Target, CheckCircle2, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '@/lib/supabaseClient';
 
-export default function MonthlyGoalForm({ onSubmit, saving, cells = [], workdays, dailyPreview, goals = [] }) {
+const fmt = (value) => (Number(value) || 0).toLocaleString('pt-BR');
+const dayLabel = (date) => `${date.slice(8, 10)}/${date.slice(5, 7)}`;
+
+export default function MonthlyGoalForm({ onSubmit, saving, cells = [], workdays, dailyPreview, dailyDistribution, goals = [] }) {
   const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [cell, setCell] = useState('');
   const [monthlyTarget, setMonthlyTarget] = useState('');
@@ -77,6 +80,7 @@ export default function MonthlyGoalForm({ onSubmit, saving, cells = [], workdays
   };
 
   const preview = monthlyTarget ? dailyPreview(Number(monthlyTarget), month) : null;
+  const dailyRows = monthlyTarget && dailyDistribution ? dailyDistribution(Number(monthlyTarget), month) : [];
   const days = workdays(month);
   const isEditing = !!existingId;
   const isSuggested = !isEditing && computedSum !== null;
@@ -129,7 +133,7 @@ export default function MonthlyGoalForm({ onSubmit, saving, cells = [], workdays
           <p className="text-sm text-muted-foreground">
             Dias uteis em {month}: <span className="font-semibold text-foreground">{days}</span>
             {preview != null && (
-              <> · Meta diaria media: <span className="font-semibold text-foreground">{preview.toLocaleString('pt-BR')}</span></>
+              <> · Meta diaria media: <span className="font-semibold text-foreground">{fmt(preview)}</span></>
             )}
           </p>
           <Button type="submit" disabled={saving || !cell || loadingSum} className="gap-2">
@@ -137,6 +141,29 @@ export default function MonthlyGoalForm({ onSubmit, saving, cells = [], workdays
             {isEditing ? 'Atualizar meta mensal' : 'Salvar meta mensal'}
           </Button>
         </div>
+        {cell && dailyRows.length > 0 && (
+          <div className="rounded-xl border border-border/60 bg-secondary/20 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-bold text-foreground">Prévia diária da meta por célula</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {cell} · {dailyRows.length} dias úteis escolhidos no calendário · total {fmt(monthlyTarget)}
+                </p>
+              </div>
+              <span className="rounded-full bg-background border border-border px-2.5 py-1 text-[11px] font-semibold text-foreground">
+                {fmt(preview)} / dia
+              </span>
+            </div>
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 max-h-36 overflow-y-auto pr-1">
+              {dailyRows.map((row) => (
+                <div key={row.date} className="rounded-lg border border-border/50 bg-card px-2.5 py-2">
+                  <p className="text-[10px] text-muted-foreground font-semibold">{dayLabel(row.date)}</p>
+                  <p className="text-sm font-extrabold text-foreground">{fmt(row.quantity)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </form>
     </div>
   );

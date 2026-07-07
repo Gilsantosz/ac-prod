@@ -28,7 +28,7 @@ export default function JoineryWorkbench({ _trace }) {
         .from('production_lots')
         .select(`
           id, lot_code, current_stage, status, blocked_reason,
-          production_orders (order_code, customer_name, delivery_date),
+          production_orders:production_orders!production_order_id (order_code, customer_name, delivery_date),
           lot_items!inner (
             id, piece_name, piece_code, width, height, thickness,
             material, color, status, requires_joinery, quantity

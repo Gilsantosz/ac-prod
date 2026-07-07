@@ -3,7 +3,7 @@ import { base44 } from '@/lib/localDb';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useCells } from '@/hooks/useCells';
-import { calendarMap, workdaysInMonth, dailyTargetFromMonthly } from '@/lib/workdays';
+import { calendarMap, workdaysInMonth, dailyTargetFromMonthly, dailyDistributionFromMonthly } from '@/lib/workdays';
 import MonthlyGoalForm from './MonthlyGoalForm';
 import MonthlyGoalList from './MonthlyGoalList';
 import WorkdayCalendarEditor from './WorkdayCalendarEditor';
@@ -28,6 +28,7 @@ export default function MonthlyGoalsManager() {
   const map = useMemo(() => calendarMap(calendar), [calendar]);
   const workdays = (month) => workdaysInMonth(month, map);
   const dailyPreview = (monthly, month) => dailyTargetFromMonthly(monthly, month, map);
+  const dailyDistribution = (monthly, month) => dailyDistributionFromMonthly(monthly, month, map);
 
   const createGoal = useMutation({
     mutationFn: (payload) => base44.entities.MonthlyGoal.create(payload),
@@ -78,7 +79,7 @@ export default function MonthlyGoalsManager() {
 
   return (
     <div className="space-y-6">
-      <MonthlyGoalForm onSubmit={handleSubmit} saving={saving} cells={activeCells} workdays={workdays} dailyPreview={dailyPreview} goals={goals} />
+      <MonthlyGoalForm onSubmit={handleSubmit} saving={saving} cells={activeCells} workdays={workdays} dailyPreview={dailyPreview} dailyDistribution={dailyDistribution} goals={goals} />
 
       <WorkdayCalendarEditor entries={calendar} onToggle={(date, isWorkday) => toggleDay.mutate({ date, isWorkday })} />
       <MonthlyGoalList goals={goals} onDelete={(id) => removeGoal.mutate(id)} dailyPreview={dailyPreview} />
