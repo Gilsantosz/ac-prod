@@ -82,7 +82,7 @@ export default defineConfig(({ mode }) => {
           display: 'standalone',
           display_override: ['standalone', 'fullscreen', 'minimal-ui'],
           orientation: 'landscape',
-          scope: normalizedBase,
+          scope: baseWithoutTrailingSlash || '/',
           start_url: normalizedBase,
           lang: 'pt-BR',
           icons: [
