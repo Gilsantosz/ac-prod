@@ -14,7 +14,7 @@ export default function KioskLayout({ children }) {
   }, []);
 
   return (
-    <div className="min-h-screen w-screen overflow-hidden bg-slate-900 dark:bg-slate-950 text-foreground transition-colors duration-200">
+    <div className="min-h-screen w-screen overflow-hidden bg-background text-foreground transition-colors duration-200">
       {children}
     </div>
   );

@@ -70,12 +70,12 @@ export default function KioskDashboard() {
   const needsWarningBanner = showBanner && displayMode === 'browser' && !isFullscreen;
 
   return (
-    <div className="relative w-screen h-screen flex flex-col bg-slate-900 text-slate-100 overflow-hidden select-none">
+    <div className="relative w-screen h-screen flex flex-col bg-background text-foreground overflow-hidden select-none">
       {/* Banner Informativo Superior */}
       {needsWarningBanner && (
-        <div className="flex items-center justify-between gap-3 px-4 py-3 bg-amber-500/10 border-b border-amber-500/20 text-amber-200 animate-slide-in text-sm shrink-0">
+        <div className="flex items-center justify-between gap-3 px-4 py-3 bg-amber-500/10 border-b border-amber-500/20 text-amber-800 dark:text-amber-200 animate-slide-in text-sm shrink-0">
           <div className="flex items-center gap-2 font-medium">
-            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <AlertTriangle className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0" />
             <span>
               Você está rodando no navegador comum. Para ocultar a barra de endereços, instale o <strong>Leo Flow</strong> como PWA ou ative a Tela Cheia.
             </span>
@@ -85,13 +85,13 @@ export default function KioskDashboard() {
               size="sm"
               variant="outline"
               onClick={handleEnterFullscreen}
-              className="h-8 border-amber-500/40 text-amber-100 bg-amber-500/20 hover:bg-amber-500/30 hover:text-white rounded-lg text-xs gap-1.5 font-semibold"
+              className="h-8 border-amber-500/40 text-amber-900 dark:text-amber-100 bg-amber-500/20 hover:bg-amber-500/30 rounded-lg text-xs gap-1.5 font-semibold"
             >
               <Maximize2 className="w-3.5 h-3.5" /> Entrar em Tela Cheia
             </Button>
             <button
               onClick={() => setShowBanner(false)}
-              className="p-1 rounded-lg hover:bg-white/10 text-amber-400 hover:text-amber-200 active:scale-95 transition-all"
+              className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-amber-500 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-200 active:scale-95 transition-all"
               title="Fechar aviso"
             >
               <X className="w-4 h-4" />
@@ -107,7 +107,7 @@ export default function KioskDashboard() {
             size="sm"
             variant="secondary"
             onClick={handleEnterFullscreen}
-            className="h-8 bg-slate-800/80 border border-slate-700/50 hover:bg-slate-700 text-slate-200 rounded-lg text-xs gap-1.5 shadow-lg backdrop-blur"
+            className="h-8 bg-card/85 border border-border hover:bg-secondary text-foreground rounded-lg text-xs gap-1.5 shadow-lg backdrop-blur"
             title="Entrar em Tela Cheia"
           >
             <Maximize2 className="w-3.5 h-3.5" />
@@ -118,7 +118,7 @@ export default function KioskDashboard() {
             size="sm"
             variant="secondary"
             onClick={exitFullscreen}
-            className="h-8 bg-slate-800/80 border border-slate-700/50 hover:bg-slate-700 text-slate-200 rounded-lg text-xs gap-1.5 shadow-lg backdrop-blur"
+            className="h-8 bg-card/85 border border-border hover:bg-secondary text-foreground rounded-lg text-xs gap-1.5 shadow-lg backdrop-blur"
             title="Sair de Tela Cheia"
           >
             <Minimize2 className="w-3.5 h-3.5" />
@@ -128,7 +128,7 @@ export default function KioskDashboard() {
           size="sm"
           variant="secondary"
           onClick={handleRefresh}
-          className="h-8 bg-slate-800/80 border border-slate-700/50 hover:bg-slate-700 text-slate-200 rounded-lg text-xs gap-1.5 shadow-lg backdrop-blur"
+          className="h-8 bg-card/85 border border-border hover:bg-secondary text-foreground rounded-lg text-xs gap-1.5 shadow-lg backdrop-blur"
           title="Atualizar Dados"
         >
           <RefreshCw className="w-3.5 h-3.5" />
