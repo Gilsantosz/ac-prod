@@ -177,10 +177,30 @@ function buildRouteProgress(lot, items = [], readings = [], routes = []) {
   const rejectedReadings = readings.filter((reading) => reading.status === 'rejected');
   const total = Math.max(items.length, toNumber(lot?.planned_quantity));
 
-  return sortedRoutes.map((route) => {
+  const currentStepName = lot?.current_step || lot?.current_stage;
+  const currentStepIndex = sortedRoutes.findIndex(
+    (r) => normalizeKey(r.step_name) === normalizeKey(currentStepName)
+  );
+  const isFinished = lot?.status === 'completed' || lot?.status === 'shipped' || lot?.current_stage === 'completed' || lot?.current_step === 'Finalizado';
+
+  return sortedRoutes.map((route, idx) => {
     const stepReadings = approvedReadings.filter((reading) => normalizeKey(reading.step_name) === normalizeKey(route.step_name));
     const itemIds = uniqueValues(stepReadings.map((reading) => reading.item_id));
-    const collected = itemIds.length || stepReadings.reduce((sum, reading) => sum + (toNumber(reading.quantity) || 1), 0);
+    let collected = itemIds.length || stepReadings.reduce((sum, reading) => sum + (toNumber(reading.quantity) || 1), 0);
+
+    if (collected === 0) {
+      if (isFinished) {
+        collected = total;
+      } else if (currentStepIndex !== -1) {
+        if (idx < currentStepIndex) {
+          collected = total;
+        } else if (idx === currentStepIndex) {
+          const progressCompleted = toNumber(lot?.completed ?? lot?.collected ?? lot?.approved_quantity ?? lot?.produced_quantity);
+          collected = Math.min(total, progressCompleted);
+        }
+      }
+    }
+
     const rejected = rejectedReadings.filter((reading) => normalizeKey(reading.step_name) === normalizeKey(route.step_name)).length;
     const pending = Math.max(0, total - collected);
     return {
@@ -199,25 +219,141 @@ function buildRouteProgress(lot, items = [], readings = [], routes = []) {
   });
 }
 
-function buildLotRuntimeSummary(lot, items = [], readings = [], routes = [], tags = []) {
-  const sortedRoutes = sortRoutes(routes);
+const PIECE_ROUTE_ORDER = ['cut', 'edge', 'drill', 'cnc', 'canal', 'maranello', 'portajoias', 'sorrento', 'usi_especial', 'rasgo_freggio', 'joinery', 'separation', 'packaging', 'shipping'];
+
+function routesFromPieces(pieces = [], lotId = null) {
+  const steps = uniqueValues(pieces.flatMap((piece) => Array.isArray(piece.route_steps) ? piece.route_steps : []));
+  return steps
+    .sort((a, b) => {
+      const aIndex = PIECE_ROUTE_ORDER.indexOf(normalizeKey(a));
+      const bIndex = PIECE_ROUTE_ORDER.indexOf(normalizeKey(b));
+      return (aIndex < 0 ? 999 : aIndex) - (bIndex < 0 ? 999 : bIndex);
+    })
+    .map((step, index) => ({
+      id: `piece-route-${lotId || 'lot'}-${step}`,
+      lot_id: lotId,
+      step_order: index + 1,
+      step_name: step,
+      cell_name: stageFromStep(step),
+      required: true,
+    }));
+}
+
+function buildPieceRouteProgress(lot, pieces = [], readings = []) {
+  const routes = routesFromPieces(pieces, lot?.id);
+  const approvedByPieceStep = new Set(
+    readings
+      .filter((reading) => reading.status === 'approved' && reading.piece_id)
+      .map((reading) => `${reading.piece_id}::${normalizeKey(reading.step_name)}`)
+  );
+
+  const currentStepName = lot?.current_step || lot?.current_stage;
+  const currentStepIndex = routes.findIndex(
+    (r) => normalizeKey(r.step_name) === normalizeKey(currentStepName)
+  );
+  const isFinished = lot?.status === 'completed' || lot?.status === 'shipped' || lot?.current_stage === 'completed' || lot?.current_step === 'Finalizado';
+
+  return routes.map((route, idx) => {
+    const requiredPieces = pieces.filter((piece) => (
+      (piece.route_steps || []).some((step) => normalizeKey(step) === normalizeKey(route.step_name))
+    ));
+    let collected = requiredPieces.filter((piece) => (
+      (piece.completed_steps || []).some((step) => normalizeKey(step) === normalizeKey(route.step_name))
+      || approvedByPieceStep.has(`${piece.id}::${normalizeKey(route.step_name)}`)
+    )).length;
+    const total = requiredPieces.length;
+
+    if (collected === 0 && total > 0) {
+      if (isFinished) {
+        collected = total;
+      } else if (currentStepIndex !== -1) {
+        if (idx < currentStepIndex) {
+          collected = total;
+        } else if (idx === currentStepIndex) {
+          const progressCompleted = toNumber(lot?.completed ?? lot?.collected ?? lot?.approved_quantity ?? lot?.produced_quantity);
+          collected = Math.min(total, progressCompleted);
+        }
+      }
+    }
+
+    const rejected = readings.filter((reading) => (
+      reading.status === 'rejected'
+      && normalizeKey(reading.step_name) === normalizeKey(route.step_name)
+    )).length;
+    return {
+      ...route,
+      stage_code: stageFromStep(route.step_name),
+      total,
+      collected,
+      pending: Math.max(0, total - collected),
+      rejected,
+      percent: total > 0 ? Math.min(100, Math.round((collected / total) * 100)) : 0,
+    };
+  });
+}
+
+function buildPieceProgress(pieces = [], fallback = {}) {
+  const active = pieces.filter((piece) => !['cancelled', 'replaced'].includes(normalizeStatus(piece.status)));
+  const total = active.length;
+  const completed = active.filter((piece) => COMPLETED_STATUSES.has(normalizeStatus(piece.status))).length;
+  const blocked = active.filter((piece) => BLOCKED_STATUSES.has(normalizeStatus(piece.status))).length;
+  const inProgress = active.filter((piece) => (
+    !COMPLETED_STATUSES.has(normalizeStatus(piece.status))
+    && !BLOCKED_STATUSES.has(normalizeStatus(piece.status))
+    && Array.isArray(piece.completed_steps)
+    && piece.completed_steps.length > 0
+  )).length;
+  const totalOperations = active.reduce((sum, piece) => sum + (piece.route_steps?.length || 0), 0);
+  const completedOperations = active.reduce((sum, piece) => {
+    const required = new Set((piece.route_steps || []).map(normalizeKey));
+    return sum + uniqueValues((piece.completed_steps || []).map(normalizeKey)).filter((step) => required.has(step)).length;
+  }, 0);
+  const calculatedPercent = totalOperations > 0 ? Math.round((completedOperations / totalOperations) * 100) : 0;
+
+  return {
+    total,
+    completed,
+    pending: Math.max(0, total - completed),
+    blocked,
+    inProgress,
+    approvedReadings: completedOperations,
+    rejectedReadings: 0,
+    percent: Math.max(calculatedPercent, toNumber(fallback.progress_percent)),
+  };
+}
+
+function buildLotRuntimeSummary(lot, items = [], readings = [], routes = [], tags = [], pieces = []) {
+  const pieceRoutes = routesFromPieces(pieces, lot?.id);
+  const sortedRoutes = sortRoutes(pieceRoutes.length ? pieceRoutes : routes);
   const derivedItems = deriveItemStates(items, readings, sortedRoutes);
-  const progress = buildProgress(items, readings, lot?.planned_quantity, lot, sortedRoutes);
-  const routeProgress = buildRouteProgress(lot, items, readings, sortedRoutes);
+  const progress = pieces.length
+    ? buildPieceProgress(pieces, lot)
+    : buildProgress(items, readings, lot?.planned_quantity, lot, sortedRoutes);
+  const routeProgress = pieces.length
+    ? buildPieceRouteProgress(lot, pieces, readings)
+    : buildRouteProgress(lot, items, readings, sortedRoutes);
   const latestApproved = sortReadings(readings.filter((reading) => reading.status === 'approved')).at(-1) || null;
   const latestRouteIndex = routeIndex(sortedRoutes, latestApproved?.step_name);
   const nextRoute = latestRouteIndex >= 0 ? sortedRoutes[latestRouteIndex + 1] || null : null;
   const allCollected = progress.total > 0 && progress.pending === 0;
+  const currentPieceStep = pieces
+    .filter((piece) => !COMPLETED_STATUSES.has(normalizeStatus(piece.status)))
+    .reduce((counts, piece) => {
+      const step = piece.current_stage;
+      if (step) counts.set(step, (counts.get(step) || 0) + 1);
+      return counts;
+    }, new Map());
+  const dominantPieceStep = [...currentPieceStep.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
   const currentRoute = allCollected
     ? null
     : nextRoute || sortedRoutes.find((route) => route.step_name === lot?.current_step) || sortedRoutes[0] || null;
   const currentStage = allCollected
     ? 'completed'
-    : stageFromStep(currentRoute?.step_name || lot?.current_step || lot?.current_stage, stageFromStep(lot?.current_stage, 'imported'));
+    : stageFromStep(dominantPieceStep || currentRoute?.step_name || lot?.current_step || lot?.current_stage, stageFromStep(lot?.current_stage, 'imported'));
 
   return {
     currentStage,
-    currentStep: allCollected ? 'Finalizado' : firstValue(currentRoute?.step_name, lot?.current_step, lot?.current_stage),
+    currentStep: allCollected ? 'Finalizado' : firstValue(dominantPieceStep, currentRoute?.step_name, lot?.current_step, lot?.current_stage),
     currentCell: allCollected ? '' : firstValue(currentRoute?.cell_name, lot?.current_cell),
     latestReading: latestApproved,
     progress,
@@ -444,11 +580,31 @@ async function fetchOrdersByIds(orderIds = [], warnings = []) {
   return data || [];
 }
 
+async function fetchPcpBatchesByIds(batchIds = [], warnings = []) {
+  const ids = uniqueValues(batchIds);
+  if (!ids.length) return [];
+  const { data, error } = await supabase
+    .from('promob_import_batches')
+    .select(`
+      id, general_lot_code, file_name, imported_at, total_parts, status,
+      completed_parts, pending_parts, progress_percent,
+      total_operations, completed_operations
+    `)
+    .in('id', ids)
+    .range(0, 4999);
+  if (error) {
+    if (!isSchemaError(error)) warnings.push(`Lotes gerais PCP: ${error.message}`);
+    return [];
+  }
+  return data || [];
+}
+
 function lotMatchesSearch(lot, order, items = [], tags = [], pieces = [], query = '') {
   const clean = normalizeSearch(query);
   if (!clean) return true;
   const haystack = [
     lot?.lot_code,
+    lot?.customer_name,
     lot?.order_number,
     lot?.product_name,
     lot?.product_code,
@@ -459,6 +615,8 @@ function lotMatchesSearch(lot, order, items = [], tags = [], pieces = [], query 
     order?.customer_name,
     order?.customer_legal_name,
     order?.customer_trade_name,
+    lot?.pcp_import_batch?.general_lot_code,
+    lot?.pcp_import_batch?.file_name,
     ...items.flatMap((item) => [item.item_code, item.product_code, item.product_name]),
     ...tags.flatMap((tag) => [tag.tag_value, tag.barcode_value, tag.epc_code, tag.qr_value]),
     ...pieces.flatMap((piece) => [piece.piece_uid, piece.piece_name, piece.traceability_code]),
@@ -478,6 +636,22 @@ export async function fetchTraceabilityBoardLots({ stageFilter = null, searchQue
 
   if (hasSearch) {
     const cleanQuery = searchQuery.trim();
+
+    // 0. Lote geral/carga PCP (nome informado na importação ou nome do arquivo)
+    const { data: batchesByCode } = await supabase
+      .from('promob_import_batches')
+      .select('id')
+      .or(`general_lot_code.ilike.%${cleanQuery}%,file_name.ilike.%${cleanQuery}%`)
+      .limit(200);
+    if (batchesByCode?.length) {
+      const batchIds = batchesByCode.map(batch => batch.id);
+      const { data: lotsByBatch } = await supabase
+        .from('production_lots')
+        .select('id')
+        .in('pcp_import_batch_id', batchIds)
+        .limit(500);
+      lotsByBatch?.forEach(lot => matchedLotIds.add(lot.id));
+    }
     
     // 1. Busca por código de lote, cliente ou número de pedido diretamente em production_lots
     const { data: lotsByCode } = await supabase
@@ -501,13 +675,20 @@ export async function fetchTraceabilityBoardLots({ stageFilter = null, searchQue
         .in('production_order_id', orderIds)
         .limit(200);
       lotsByOrders?.forEach(l => matchedLotIds.add(l.id));
+
+      const { data: piecesByOrders } = await supabase
+        .from('production_pieces')
+        .select('lot_id')
+        .in('production_order_id', orderIds)
+        .limit(500);
+      piecesByOrders?.forEach(piece => { if (piece.lot_id) matchedLotIds.add(piece.lot_id); });
     }
 
     // 3. Busca nas peças modernas (production_pieces)
     const { data: piecesByCode } = await supabase
       .from('production_pieces')
       .select('*')
-      .or(`piece_uid.ilike.%${cleanQuery}%,piece_name.ilike.%${cleanQuery}%`)
+      .or(`piece_uid.ilike.%${cleanQuery}%,traceability_code.ilike.%${cleanQuery}%,piece_name.ilike.%${cleanQuery}%`)
       .limit(200);
     
     piecesByCode?.forEach(p => {
@@ -518,7 +699,15 @@ export async function fetchTraceabilityBoardLots({ stageFilter = null, searchQue
       }
     });
 
-    // 4. Busca nas tags (production_tags)
+    // 4. Código individual da peça/produto vindo da linha PCP (ex.: PRA01...)
+    const { data: itemsByCode } = await supabase
+      .from('production_lot_items')
+      .select('lot_id')
+      .or(`item_code.ilike.%${cleanQuery}%,product_code.ilike.%${cleanQuery}%,product_name.ilike.%${cleanQuery}%,customer_name.ilike.%${cleanQuery}%,order_number.ilike.%${cleanQuery}%`)
+      .limit(500);
+    itemsByCode?.forEach(item => { if (item.lot_id) matchedLotIds.add(item.lot_id); });
+
+    // 5. Busca nas tags (production_tags)
     const { data: tagsDirect } = await supabase
       .from('production_tags')
       .select('lot_id')
@@ -546,9 +735,11 @@ export async function fetchTraceabilityBoardLots({ stageFilter = null, searchQue
   const lots = (lotsRaw || []).map(normalizeLot);
   const lotIds = lots.map((lot) => lot.id).filter(Boolean);
   const orderIds = lots.map(getLotOrderId).filter(Boolean);
+  const batchIds = lots.map((lot) => lot.pcp_import_batch_id).filter(Boolean);
 
-  const [ordersRaw, items, readings, tags, routes, pieces] = await Promise.all([
+  const [ordersRaw, batchesRaw, items, readings, tags, routes, pieces] = await Promise.all([
     fetchOrdersByIds(orderIds, warnings),
+    fetchPcpBatchesByIds(batchIds, warnings),
     fetchRowsForLots('production_lot_items', lotIds, warnings),
     fetchRowsForLots('production_stage_readings', lotIds, warnings),
     fetchRowsForLots('production_tags', lotIds, warnings),
@@ -556,7 +747,12 @@ export async function fetchTraceabilityBoardLots({ stageFilter = null, searchQue
     fetchRowsForLots('production_pieces', lotIds, warnings),
   ]);
 
-  const ordersById = new Map(ordersRaw.map((order) => [order.id, normalizeOrder(order)]));
+  const pieceOrderIds = pieces.map(piece => piece.production_order_id).filter(Boolean);
+  const extraOrders = await fetchOrdersByIds(pieceOrderIds.filter(id => !orderIds.includes(id)), warnings);
+  const allOrders = [...ordersRaw, ...extraOrders];
+
+  const ordersById = new Map(allOrders.map((order) => [order.id, normalizeOrder(order)]));
+  const batchesById = new Map(batchesRaw.map((batch) => [batch.id, batch]));
   const itemsByLot = groupBy(items, (item) => item.lot_id);
   const readingsByLot = groupBy(readings, (reading) => reading.lot_id);
   const tagsByLot = groupBy(tags, (tag) => tag.lot_id);
@@ -571,8 +767,11 @@ export async function fetchTraceabilityBoardLots({ stageFilter = null, searchQue
       const lotTags = tagsByLot.get(lot.id) || [];
       const lotRoutes = routesByLot.get(lot.id) || [];
       const lotPieces = piecesByLot.get(lot.id) || [];
+      const lotOrders = uniqueValues(lotPieces.map(piece => piece.production_order_id))
+        .map(orderId => ordersById.get(orderId))
+        .filter(Boolean);
 
-      const runtime = buildLotRuntimeSummary(lot, lotItems, lotReadings, lotRoutes, lotTags);
+      const runtime = buildLotRuntimeSummary(lot, lotItems, lotReadings, lotRoutes, lotTags, lotPieces);
 
       return {
         ...lot,
@@ -582,6 +781,8 @@ export async function fetchTraceabilityBoardLots({ stageFilter = null, searchQue
         progress_percent: runtime.progress.percent,
         missing_count: runtime.progress.pending,
         production_orders: order,
+        production_orders_list: lotOrders.length ? lotOrders : (order ? [order] : []),
+        pcp_import_batch: batchesById.get(lot.pcp_import_batch_id) || null,
         production_lot_items: runtime.items,
         lot_items: runtime.items,
         production_routes: sortRoutes(lotRoutes),
