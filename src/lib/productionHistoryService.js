@@ -337,7 +337,7 @@ function buildLotRuntimeSummary(lot, items = [], readings = [], routes = [], tag
   const nextRoute = latestRouteIndex >= 0 ? sortedRoutes[latestRouteIndex + 1] || null : null;
   const allCollected = progress.total > 0 && progress.pending === 0;
   const currentPieceStep = pieces
-    .filter((piece) => !COMPLETED_STATUSES.has(normalizeStatus(piece.status)))
+    .filter((piece) => piece.status !== 'planned' && !COMPLETED_STATUSES.has(normalizeStatus(piece.status)))
     .reduce((counts, piece) => {
       const step = piece.current_stage;
       if (step) counts.set(step, (counts.get(step) || 0) + 1);
@@ -347,13 +347,20 @@ function buildLotRuntimeSummary(lot, items = [], readings = [], routes = [], tag
   const currentRoute = allCollected
     ? null
     : nextRoute || sortedRoutes.find((route) => route.step_name === lot?.current_step) || sortedRoutes[0] || null;
+  const isInitialStage = ['imported', 'released'].includes(lot?.current_stage);
   const currentStage = allCollected
     ? 'completed'
-    : stageFromStep(dominantPieceStep || currentRoute?.step_name || lot?.current_step || lot?.current_stage, stageFromStep(lot?.current_stage, 'imported'));
+    : (isInitialStage && !latestApproved && !dominantPieceStep)
+      ? lot.current_stage
+      : stageFromStep(dominantPieceStep || currentRoute?.step_name || lot?.current_step || lot?.current_stage, stageFromStep(lot?.current_stage, 'imported'));
 
   return {
     currentStage,
-    currentStep: allCollected ? 'Finalizado' : firstValue(dominantPieceStep, currentRoute?.step_name, lot?.current_step, lot?.current_stage),
+    currentStep: allCollected
+      ? 'Finalizado'
+      : (isInitialStage && !latestApproved && !dominantPieceStep)
+        ? (lot?.current_stage === 'released' ? 'Liberado' : 'Importado')
+        : firstValue(dominantPieceStep, currentRoute?.step_name, lot?.current_step, lot?.current_stage),
     currentCell: allCollected ? '' : firstValue(currentRoute?.cell_name, lot?.current_cell),
     latestReading: latestApproved,
     progress,
