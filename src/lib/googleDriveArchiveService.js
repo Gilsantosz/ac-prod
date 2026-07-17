@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabaseClient';
 const DEFAULT_SETTING = {
   integration_type: 'google_drive',
   enabled: false,
-  folder_path: 'Backups AC.Prod / Ordens de Produção',
+  folder_path: 'Backups Leo Flow / Ordens de Produção',
   drive_folder_id: '',
   last_sync_at: null,
   last_sync_status: null,

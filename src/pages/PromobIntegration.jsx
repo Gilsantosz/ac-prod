@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
 import PageHeader from '@/components/ui/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -26,6 +26,7 @@ import {
 
 // ─── Sub-componentes ──────────────────────────────────────────
 import XmlImportTab from '@/components/promob/XmlImportTab';
+import PcpImportTab from '@/components/promob/PcpImportTab';
 import ApiConfigTab from '@/components/promob/ApiConfigTab';
 
 
@@ -35,6 +36,8 @@ export default function PromobIntegration() {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
   const activeTab = ['import', 'history', 'orders', 'logs', 'backup', 'settings'].includes(requestedTab) ? requestedTab : 'import';
+  const [importMode, setImportMode] = useState('promob');
+  const [preselectedPcpFile, setPreselectedPcpFile] = useState(null);
   
   // Estados para o Histórico de Importações
   const [batches, setBatches] = useState([]);
@@ -475,7 +478,7 @@ export default function PromobIntegration() {
       />
 
       {/* Cards de Atalhos Rápidos */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
         <button
           onClick={() => handleTabChange('import')}
           className={cn(
@@ -546,6 +549,20 @@ export default function PromobIntegration() {
           </div>
         </button>
 
+        <button
+          onClick={() => handleTabChange('settings')}
+          className={cn(
+            "p-3 border rounded-2xl text-left bg-card hover:bg-secondary/15 transition-all text-xs flex flex-col justify-between min-h-[85px] border-border/60",
+            activeTab === 'settings' && "border-[#2d9c4a]/50 bg-[#2d9c4a]/5"
+          )}
+        >
+          <Settings className="w-4.5 h-4.5 text-zinc-500" />
+          <div>
+            <p className="font-bold text-foreground">Configurações</p>
+            <p className="text-[10px] text-muted-foreground">Integração</p>
+          </div>
+        </button>
+
         <Button
           asChild
           variant="outline"
@@ -563,30 +580,37 @@ export default function PromobIntegration() {
 
 
       <Tabs defaultValue="import" value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className="bg-card border border-border/60 overflow-x-auto flex-wrap h-auto gap-1 p-1">
-          <TabsTrigger value="import" id="tab-import" className="gap-2 py-2">
-            <Upload className="w-4 h-4" /> Importar Arquivo
-          </TabsTrigger>
-          <TabsTrigger value="history" id="tab-history" className="gap-2 py-2">
-            <History className="w-4 h-4" /> Histórico de Importações
-          </TabsTrigger>
-          <TabsTrigger value="orders" id="tab-orders" className="gap-2 py-2">
-            <FileText className="w-4 h-4" /> Ordens de Produção
-          </TabsTrigger>
-          <TabsTrigger value="logs" id="tab-logs" className="gap-2 py-2">
-            <Database className="w-4 h-4" /> Logs do PCP
-          </TabsTrigger>
-          <TabsTrigger value="backup" id="tab-backup" className="gap-2 py-2">
-            <Shield className="w-4 h-4" /> Backup e Retenção
-          </TabsTrigger>
-          <TabsTrigger value="settings" id="tab-settings" className="gap-2 py-2">
-            <Settings className="w-4 h-4" /> Configurações
-          </TabsTrigger>
-        </TabsList>
 
         {/* ── 1. Importar Arquivo ───────────────────────────────── */}
         <TabsContent value="import" className="space-y-6 outline-none">
-          <XmlImportTab />
+          <div className="flex border-b border-border/40 pb-2 gap-4">
+            <button
+              onClick={() => setImportMode('promob')}
+              className={cn(
+                "pb-2 text-xs font-bold transition-all relative",
+                importMode === 'promob' ? "text-[#2d9c4a] border-b-2 border-[#2d9c4a]" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Integração Promob (XML/CSV)
+            </button>
+            <button
+              onClick={() => setImportMode('pcp')}
+              className={cn(
+                "pb-2 text-xs font-bold transition-all relative",
+                importMode === 'pcp' ? "text-[#2d9c4a] border-b-2 border-[#2d9c4a]" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Padrão PCP Traceabilidade (XLSX, CSV, TSV, TXT, HTML, XML)
+            </button>
+          </div>
+          {importMode === 'promob' ? (
+            <XmlImportTab onSwitchToPcp={(file) => {
+              setImportMode('pcp');
+              setPreselectedPcpFile(file);
+            }} />
+          ) : (
+            <PcpImportTab preselectedFile={preselectedPcpFile} clearPreselected={() => setPreselectedPcpFile(null)} />
+          )}
         </TabsContent>
 
         {/* ── 2. Histórico de Importações ────────────────────────── */}

@@ -1,16 +1,44 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Layers, RefreshCw, AlertCircle, Filter, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { getCollectionHistory, getCollectionHistoryCount, subscribeToCollectionHistory } from '@/lib/collectionService';
+import {
+  getCollectionHistory,
+  getCollectionHistoryCount,
+  subscribeToCollectionHistory,
+  unsubscribeFromCollectionHistory,
+} from '@/lib/collectionService';
 import CollectionReadItem from './CollectionReadItem';
+
+function getDateRange(selectedPeriod) {
+  const now = new Date();
+  let dateFrom = null;
+  const dateTo = now.toISOString();
+
+  if (selectedPeriod === '24h') {
+    const d = new Date();
+    d.setHours(d.getHours() - 24);
+    dateFrom = d.toISOString();
+  } else if (selectedPeriod === '7days') {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    dateFrom = d.toISOString();
+  } else if (selectedPeriod === 'month') {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    dateFrom = d.toISOString();
+  }
+  return { dateFrom, dateTo };
+}
 
 export default function CollectionRecentReadsPanel({
   cellName,
   workstationId,
   operatorId,
   shift,
+  selectedPiece,
   onSelectPiece,
   onRejectPiece,
+  onCreateOccurrence,
   onOpenTraceability,
   refreshSignal = 0,
   canReject = false
@@ -24,30 +52,12 @@ export default function CollectionRecentReadsPanel({
   // Filtros Locais adicionais
   const [period, setPeriod] = useState('7days'); // 24h, 7days, month, all
   const [statusFilter, setStatusFilter] = useState('all'); // all, approved, rejected, blocked
-  const [realtimeStatus, setRealtimeStatus] = useState('online'); // online, offline
+  const [operatorScope, setOperatorScope] = useState('cell'); // cell, mine
+  const [shiftScope, setShiftScope] = useState('all'); // all, current
+  const [realtimeStatus, setRealtimeStatus] = useState(navigator.onLine ? 'connecting' : 'offline');
+  const realtimeRefreshRef = useRef(null);
 
-  const getDateRange = (selectedPeriod) => {
-    const now = new Date();
-    let dateFrom = null;
-    const dateTo = now.toISOString();
-
-    if (selectedPeriod === '24h') {
-      const d = new Date();
-      d.setHours(d.getHours() - 24);
-      dateFrom = d.toISOString();
-    } else if (selectedPeriod === '7days') {
-      const d = new Date();
-      d.setDate(d.getDate() - 7);
-      dateFrom = d.toISOString();
-    } else if (selectedPeriod === 'month') {
-      const d = new Date();
-      d.setDate(d.getDate() - 30);
-      dateFrom = d.toISOString();
-    }
-    return { dateFrom, dateTo };
-  };
-
-  const fetchReadings = async (showLoading = true) => {
+  const fetchReadings = useCallback(async (showLoading = true) => {
     if (!cellName) return;
     if (showLoading) setLoading(true);
     setError(null);
@@ -55,13 +65,24 @@ export default function CollectionRecentReadsPanel({
       const { dateFrom, dateTo } = getDateRange(period);
       const activeStatus = statusFilter === 'all' ? null : statusFilter;
 
+      console.log('CollectionRecentReadsPanel Fetching:', {
+        cellName,
+        workstationId: workstationId || null,
+        operatorId: operatorScope === 'mine' ? (operatorId || null) : null,
+        shift: shiftScope === 'current' ? (shift || null) : null,
+        status: activeStatus,
+        limit,
+        dateFrom,
+        dateTo
+      });
+
       // Executa a busca e a contagem em paralelo
       const [data, count] = await Promise.all([
         getCollectionHistory({
           cellName,
           workstationId: workstationId || null,
-          operatorId: operatorId || null,
-          shift: shift || null,
+          operatorId: operatorScope === 'mine' ? (operatorId || null) : null,
+          shift: shiftScope === 'current' ? (shift || null) : null,
           status: activeStatus,
           limit,
           offset: 0,
@@ -71,50 +92,65 @@ export default function CollectionRecentReadsPanel({
         getCollectionHistoryCount({
           cellName,
           workstationId: workstationId || null,
-          operatorId: operatorId || null,
-          shift: shift || null,
+          operatorId: operatorScope === 'mine' ? (operatorId || null) : null,
+          shift: shiftScope === 'current' ? (shift || null) : null,
           status: activeStatus,
           dateFrom,
           dateTo
         })
       ]);
 
+      console.log('CollectionRecentReadsPanel Result:', { dataLength: data?.length, count });
+
       setReadings(data);
       setTotalCount(count);
     } catch (e) {
-      console.error(e);
+      console.error('CollectionRecentReadsPanel Error:', e);
       setError('Falha ao carregar o histórico de coletas do banco.');
     } finally {
       if (showLoading) setLoading(false);
     }
-  };
+  }, [cellName, workstationId, operatorId, operatorScope, shift, shiftScope, period, statusFilter, limit]);
 
   // Recarrega quando filtros, limit ou sinal mudar
   useEffect(() => {
     fetchReadings(true);
-  }, [cellName, workstationId, operatorId, shift, period, statusFilter, limit, refreshSignal]);
+  }, [fetchReadings, refreshSignal]);
 
   // Inscrição Realtime
   useEffect(() => {
     if (!cellName) return;
 
-    setRealtimeStatus('online');
+    setRealtimeStatus(navigator.onLine ? 'connecting' : 'offline');
     const channel = subscribeToCollectionHistory({
       cellName,
-      callback: (payload) => {
-        // Ao receber alteração Realtime, atualizamos a lista de coletas silenciosamente
-        fetchReadings(false);
-      }
+      channelSuffix: 'panel',
+      callback: () => {
+        clearTimeout(realtimeRefreshRef.current);
+        realtimeRefreshRef.current = setTimeout(() => fetchReadings(false), 350);
+      },
+      onStatus: (status) => {
+        if (status === 'SUBSCRIBED') setRealtimeStatus('online');
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') setRealtimeStatus('offline');
+        else setRealtimeStatus('connecting');
+      },
     });
 
+    const onOffline = () => setRealtimeStatus('offline');
+    const onOnline = () => setRealtimeStatus('connecting');
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', onOnline);
+
     return () => {
-      if (channel) {
-        channel.unsubscribe();
-      }
+      clearTimeout(realtimeRefreshRef.current);
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('online', onOnline);
+      unsubscribeFromCollectionHistory(channel);
     };
-  }, [cellName, workstationId, operatorId, shift, period, statusFilter, limit]);
+  }, [cellName, fetchReadings]);
 
   const handleSelect = (read) => {
+    if (!read.piece_id) return;
     // Mapeia o item de leitura para o painel de detalhes
     const pieceDetail = {
       id: read.piece_id || read.id,
@@ -163,9 +199,9 @@ export default function CollectionRecentReadsPanel({
             </h3>
             <div className="flex items-center gap-2 text-[10px]">
               <span className="text-muted-foreground">Tempo real:</span>
-              <span className="flex items-center gap-1 font-bold text-emerald-600">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Ativo (Online)
+              <span className={`flex items-center gap-1 font-bold ${realtimeStatus === 'online' ? 'text-emerald-600' : realtimeStatus === 'connecting' ? 'text-amber-600' : 'text-rose-600'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${realtimeStatus === 'online' ? 'bg-emerald-500 animate-pulse' : realtimeStatus === 'connecting' ? 'bg-amber-500' : 'bg-rose-500'}`} />
+                {realtimeStatus === 'online' ? 'Ativo (Online)' : realtimeStatus === 'connecting' ? 'Conectando' : 'Indisponível'}
               </span>
             </div>
           </div>
@@ -183,7 +219,7 @@ export default function CollectionRecentReadsPanel({
         </div>
 
         {/* Linha de Filtros Compactos */}
-        <div className="grid grid-cols-2 gap-2 pt-1 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 pt-1 text-xs">
           <div className="flex items-center gap-1 bg-secondary/30 rounded-lg px-2 py-1.5 border border-border/30">
             <Calendar className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
             <select
@@ -201,6 +237,30 @@ export default function CollectionRecentReadsPanel({
           <div className="flex items-center gap-1 bg-secondary/30 rounded-lg px-2 py-1.5 border border-border/30">
             <Filter className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
             <select
+              value={shiftScope}
+              onChange={(e) => setShiftScope(e.target.value)}
+              className="bg-transparent w-full text-[11px] font-semibold text-foreground focus-visible:outline-none cursor-pointer"
+            >
+              <option value="all">Todos os turnos</option>
+              <option value="current">{shift || 'Turno atual'}</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1 bg-secondary/30 rounded-lg px-2 py-1.5 border border-border/30">
+            <Filter className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            <select
+              value={operatorScope}
+              onChange={(e) => setOperatorScope(e.target.value)}
+              className="bg-transparent w-full text-[11px] font-semibold text-foreground focus-visible:outline-none cursor-pointer"
+            >
+              <option value="cell">Toda a célula</option>
+              <option value="mine" disabled={!operatorId}>Minhas coletas</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1 bg-secondary/30 rounded-lg px-2 py-1.5 border border-border/30">
+            <Filter className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="bg-transparent w-full text-[11px] font-semibold text-foreground focus-visible:outline-none cursor-pointer"
@@ -209,6 +269,9 @@ export default function CollectionRecentReadsPanel({
               <option value="approved">Aprovadas</option>
               <option value="rejected">Reprovadas</option>
               <option value="blocked">Bloqueadas</option>
+              <option value="duplicated">Duplicadas</option>
+              <option value="not_found">Não localizadas</option>
+              <option value="error">Erros de sincronismo</option>
             </select>
           </div>
         </div>
@@ -247,6 +310,7 @@ export default function CollectionRecentReadsPanel({
               isSelected={selectedPiece && (selectedPiece.piece_uid === read.traceability_code || selectedPiece.id === read.piece_id)}
               onSelect={handleSelect}
               onReject={onRejectPiece}
+              onCreateOccurrence={onCreateOccurrence}
               onOpenTraceability={onOpenTraceability}
               canReject={canReject}
             />

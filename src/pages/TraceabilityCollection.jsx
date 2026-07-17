@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertOctagon, RadioTower, ScanLine } from 'lucide-react';
+import { RadioTower, ScanLine } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '@/components/ui/PageHeader';
-import { Button } from '@/components/ui/button';
 import TraceabilityScannerPanel from '@/components/traceability/TraceabilityScannerPanel';
-import TraceabilityKpiCards from '@/components/traceability/TraceabilityKpiCards';
 import RfidReadinessPanel from '@/components/traceability/RfidReadinessPanel';
 import OccurrenceQuickDialog from '@/components/entry/OccurrenceQuickDialog';
 import CollectionQueuePanel from '@/components/entry/CollectionQueuePanel';
@@ -18,20 +16,48 @@ import {
   processProductionReading,
 } from '@/lib/traceabilityService';
 import { registerReadingOccurrence } from '@/lib/productionHistoryService';
-import { supabase } from '@/lib/supabaseClient';
 
 // Novos componentes operacionais da célula
 import CollectionRecentReadsPanel from '@/components/collection/CollectionRecentReadsPanel';
 import CollectionPieceDetailPanel from '@/components/collection/CollectionPieceDetailPanel';
 import CollectionRejectPieceModal from '@/components/collection/CollectionRejectPieceModal';
 import CollectionPieceTraceabilityDrawer from '@/components/collection/CollectionPieceTraceabilityDrawer';
-import { getPieceTraceability, rejectPieceFromCollection, getCollectionKpis, requestPieceReplacement } from '@/lib/collectionService';
+import TraceabilityKpiCards from '@/components/traceability/TraceabilityKpiCards';
+import {
+  getPieceTraceability,
+  rejectPieceFromCollection,
+  getCollectionKpis,
+  requestPieceReplacement,
+  subscribeToCollectionHistory,
+  unsubscribeFromCollectionHistory
+} from '@/lib/collectionService';
 
 function currentShift() {
   const hour = new Date().getHours();
   if (hour >= 6 && hour < 14) return '1º Turno';
   if (hour >= 14 && hour < 22) return '2º Turno';
   return '3º Turno';
+}
+
+function getShiftRange(shift, reference = new Date()) {
+  const start = new Date(reference);
+  const end = new Date(reference);
+
+  if (shift === '1º Turno') {
+    start.setHours(6, 0, 0, 0);
+    end.setHours(14, 0, 0, 0);
+  } else if (shift === '2º Turno') {
+    start.setHours(14, 0, 0, 0);
+    end.setHours(22, 0, 0, 0);
+  } else {
+    if (reference.getHours() < 6) start.setDate(start.getDate() - 1);
+    start.setHours(22, 0, 0, 0);
+    end.setTime(start.getTime());
+    end.setDate(end.getDate() + 1);
+    end.setHours(6, 0, 0, 0);
+  }
+
+  return { dateFrom: start.toISOString(), dateTo: end.toISOString() };
 }
 
 function isClosedLotContext(feedback) {
@@ -66,14 +92,14 @@ export default function TraceabilityCollection({ embedded = false }) {
         }
         return parsed;
       }
-    } catch (_) {}
+    } catch {}
     return null;
   });
 
   const updateFeedback = useCallback((newFeedback) => {
     if (isClosedLotContext(newFeedback)) {
       setFeedback(null);
-      try { localStorage.removeItem('traceability-last-feedback'); } catch (_) {}
+      try { localStorage.removeItem('traceability-last-feedback'); } catch {}
       return;
     }
     setFeedback(newFeedback);
@@ -88,6 +114,13 @@ export default function TraceabilityCollection({ embedded = false }) {
             lot_code: newFeedback.lot.lot_code,
             current_status: newFeedback.lot.current_status,
             status: newFeedback.lot.status,
+            progress_percent: newFeedback.lot.progress_percent,
+          } : null,
+          order: newFeedback.order ? {
+            id: newFeedback.order.id,
+            order_code: newFeedback.order.order_code,
+            order_number: newFeedback.order.order_number,
+            customer_name: newFeedback.order.customer_name,
           } : null,
           item: newFeedback.item ? {
             id: newFeedback.item.id,
@@ -112,11 +145,12 @@ export default function TraceabilityCollection({ embedded = false }) {
             status: newFeedback.reading.status,
             is_rework: newFeedback.reading.is_rework,
           } : null,
+          lot_progress_percent: newFeedback.lot_progress_percent,
         };
         localStorage.setItem('traceability-last-feedback', JSON.stringify(toSave));
-      } catch (_) {}
+      } catch {}
     } else {
-      try { localStorage.removeItem('traceability-last-feedback'); } catch (_) {}
+      try { localStorage.removeItem('traceability-last-feedback'); } catch {}
     }
   }, []);
 
@@ -139,6 +173,7 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   const [shift, setShift] = useState(() => opSession?.shift || currentShift());
   const [machine, setMachine] = useState(null);
+  const shiftRange = useMemo(() => getShiftRange(shift), [shift]);
 
   // Sincronizar célula e turno quando a sessão operacional mudar
   useEffect(() => {
@@ -187,87 +222,57 @@ export default function TraceabilityCollection({ embedded = false }) {
   };
 
   // KPIs consistentes com a fonte do histórico de coletas
-  const { data: kpis = {}, refetch: refetchKpis } = useQuery({
-    queryKey: ['collection-kpis', cellName, machine?.id, refreshReadsSignal],
+  const { data: kpis = {} } = useQuery({
+    queryKey: ['collection-kpis', cellName, machine?.id, shift, shiftRange.dateFrom, shiftRange.dateTo],
     queryFn: () => getCollectionKpis({
       cellName,
       workstationId: machine?.id || null,
-      operatorId: operatorId || null,
-      shift: shift || null
+      shift: shift || null,
+      dateFrom: shiftRange.dateFrom,
+      dateTo: shiftRange.dateTo,
     }),
+    enabled: !!cellName,
     initialData: { total: 0, approved: 0, rejected: 0, blocked: 0 },
     staleTime: 0,
     refetchOnMount: true,
     retry: false,
   });
 
-  const { data: cellStats = { expected: 0, approved: 0, rejected: 0, pending: 0, rework: 0, replacement: 0 }, refetch: refetchCellStats } = useQuery({
-    queryKey: ['cell-detailed-stats', cellName, refreshReadsSignal],
-    queryFn: async () => {
-      if (!cellName) return { expected: 0, approved: 0, rejected: 0, pending: 0, rework: 0, replacement: 0 };
-      
-      let cellCode = cellName.toLowerCase();
-      if (cellName === 'Borda' || cellName === 'Bordo') cellCode = 'edge';
-      else if (cellName === 'Usinagem') cellCode = 'cnc';
-      else if (cellName === 'Furação') cellCode = 'drill';
-      else if (cellName === 'Corte') cellCode = 'cut';
-      else if (cellName === 'Marcenaria') cellCode = 'joinery';
-      else if (cellName === 'Embalagem') cellCode = 'packaging';
-      else if (cellName === 'Expedição') cellCode = 'shipping';
-
-      const { count: expected } = await supabase
-        .from('production_pieces')
-        .select('*', { count: 'exact', head: true })
-        .contains('route_steps', [cellCode])
-        .neq('status', 'cancelled');
-
-      const { count: approved } = await supabase
-        .from('production_stage_readings')
-        .select('*', { count: 'exact', head: true })
-        .eq('step_name', cellCode)
-        .eq('status', 'approved');
-
-      const { count: rejected } = await supabase
-        .from('production_stage_readings')
-        .select('*', { count: 'exact', head: true })
-        .eq('step_name', cellCode)
-        .eq('status', 'rejected');
-
-      const { count: rework } = await supabase
-        .from('production_pieces')
-        .select('*', { count: 'exact', head: true })
-        .contains('route_steps', [cellCode])
-        .eq('rework_status', 'in_progress');
-
-      const { count: replacement } = await supabase
-        .from('production_pieces')
-        .select('*', { count: 'exact', head: true })
-        .contains('route_steps', [cellCode])
-        .eq('replacement_status', 'in_production');
-
-      const pending = Math.max(0, (expected || 0) - (approved || 0));
-
-      return {
-        expected: expected || 0,
-        approved: approved || 0,
-        rejected: rejected || 0,
-        pending,
-        rework: rework || 0,
-        replacement: replacement || 0
-      };
-    },
-    enabled: !!cellName,
-    staleTime: 5000
-  });
+  const cellStats = {
+    expected: Number(kpis.expected) || 0,
+    approved: Number(kpis.approved) || 0,
+    rejected: Number(kpis.rejected) || 0,
+    pending: Number(kpis.pending) || 0,
+    rework: Number(kpis.rework) || 0,
+    replacement: Number(kpis.replacement) || 0,
+  };
 
   const refreshData = useCallback(() => {
-    refetchKpis();
-    refetchCellStats();
+    queryClient.invalidateQueries({ queryKey: ['collection-kpis'] });
     queryClient.invalidateQueries({ queryKey: ['stageReadings', cellName, machine?.id] });
     queryClient.invalidateQueries({ queryKey: ['production'] });
     queryClient.invalidateQueries({ queryKey: ['production-lots'] });
     queryClient.invalidateQueries({ queryKey: ['occurrences'] });
-  }, [queryClient, cellName, machine, refetchKpis, refetchCellStats]);
+    setRefreshReadsSignal(prev => prev + 1);
+  }, [queryClient, cellName, machine]);
+
+  // Realtime subscription to refresh KPIs and readings on any collection events
+  useEffect(() => {
+    if (!cellName) return;
+    console.log('Subscribing to realtime collection events for parent KPIs in cell:', cellName);
+    const channel = subscribeToCollectionHistory({
+      cellName,
+      channelSuffix: 'parent',
+      callback: (payload) => {
+        console.log('Realtime collection event received in parent:', payload);
+        refreshData();
+      }
+    });
+    return () => {
+      console.log('Unsubscribing from realtime collection events for parent cell:', cellName);
+      unsubscribeFromCollectionHistory(channel);
+    };
+  }, [cellName, refreshData]);
 
   // Busca silenciosa das timeline da peça ativa
   useEffect(() => {
@@ -373,17 +378,16 @@ export default function TraceabilityCollection({ embedded = false }) {
           piece_name: result.item?.name || result.item?.piece_name || 'Peça Lida',
           lot_id: result.lot?.id,
           lot_code: result.lot?.lot_code || 'LOTE-N/A',
-          order_number: result.lot?.order_number || result.lot?.order_code || 'N/A',
-          client_name: result.lot?.client_name || result.lot?.customer_name || 'Móvel Planejado',
-          current_stage: result.route?.step_name || result.item?.current_step,
-          current_stage_name: result.route?.step_name || result.item?.current_step,
+          order_number: result.order?.order_number || result.order?.order_code || 'N/A',
+          client_name: result.order?.customer_name || 'Cliente não informado',
+          current_stage: result.route?.step_name || result.item?.current_stage || result.item?.current_step,
+          current_stage_name: result.route?.step_name || result.item?.current_stage || result.item?.current_step,
           operator_name: operator,
           status: result.status || 'approved',
           route: [],
           completedSteps: []
         };
         setSelectedPiece(tempPiece);
-        setRefreshReadsSignal(prev => prev + 1);
 
         return result;
       } catch (error) {
@@ -474,19 +478,20 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   const handleOpenReadingOccurrence = useCallback((reading) => {
     const now = new Date();
+    const readingStatus = reading.event_status || reading.status;
     setReadingOccurrenceSuggestion({
-      type: reading.status === 'rejected' ? 'quality' : 'low_efficiency',
+      type: readingStatus === 'rejected' ? 'quality' : 'low_efficiency',
       cell: reading.cell_name || cellName,
       cell_name: reading.cell_name || cellName,
       shift: reading.shift || shift,
       date: reading.date || now.toISOString().slice(0, 10),
       operator: reading.operator || operator,
-      stage_reading_id: reading.id,
-      tag_value: reading.tag_value,
+      stage_reading_id: reading.reading_id || null,
+      tag_value: reading.traceability_code || reading.raw_value || reading.tag_value,
       lot_id: reading.lot_id || null,
-      lot_code: null,
-      severity: reading.status === 'rejected' ? 'high' : 'medium',
-      reason: reading.status === 'rejected' ? 'Qualidade / Refugo' : 'Outros',
+      lot_code: reading.lot_code || null,
+      severity: readingStatus === 'rejected' ? 'high' : 'medium',
+      reason: readingStatus === 'rejected' ? 'Qualidade / Refugo' : 'Outros',
       notes: '',
       quantity: 0,
       downtime: 0,
@@ -602,47 +607,51 @@ export default function TraceabilityCollection({ embedded = false }) {
 
       {/* Detalhamento de Peças da Estação / Célula */}
       {cellName && (
-        <div className="bg-card border border-border/60 rounded-2xl p-4 shadow-sm space-y-3">
-          <div className="flex justify-between items-center">
-            <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-              Painel de Integridade da Estação: {cellName}
-            </h4>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[10px] text-muted-foreground font-semibold">Monitoramento em Tempo Real</span>
+        <div className="space-y-4">
+          {/* Painel de Integridade da Estação */}
+          <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-4">
+            <div className="flex justify-between items-center pb-2">
+              <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                Painel de Integridade da Estação: {cellName}
+              </h4>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-xs text-muted-foreground font-medium">Monitoramento em Tempo Real</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="bg-secondary/10 border border-border/30 rounded-xl p-3">
+                <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Previsto</p>
+                <p className="text-xl font-extrabold text-foreground mt-1 tabular-nums">{cellStats.expected}</p>
+              </div>
+              <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-xl p-3">
+                <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Aprovado</p>
+                <p className="text-xl font-extrabold text-emerald-600 mt-1 tabular-nums">{cellStats.approved}</p>
+              </div>
+              <div className="bg-rose-500/5 border border-rose-500/10 rounded-xl p-3">
+                <p className="text-[10px] text-rose-600 font-bold uppercase tracking-wider">Reprovado</p>
+                <p className="text-xl font-extrabold text-rose-600 mt-1 tabular-nums">{cellStats.rejected}</p>
+              </div>
+              <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3">
+                <p className="text-[10px] text-amber-600 font-bold uppercase tracking-wider">Pendente</p>
+                <p className="text-xl font-extrabold text-amber-600 mt-1 tabular-nums">{cellStats.pending}</p>
+              </div>
+              <div className="bg-purple-500/5 border border-purple-500/10 rounded-xl p-3">
+                <p className="text-[10px] text-purple-600 font-bold uppercase tracking-wider">Retrabalho</p>
+                <p className="text-xl font-extrabold text-purple-600 mt-1 tabular-nums">{cellStats.rework}</p>
+              </div>
+              <div className="bg-sky-500/5 border border-sky-500/10 rounded-xl p-3">
+                <p className="text-[10px] text-sky-600 font-bold uppercase tracking-wider">Reposição</p>
+                <p className="text-xl font-extrabold text-sky-600 mt-1 tabular-nums">{cellStats.replacement}</p>
+              </div>
             </div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <div className="bg-secondary/20 border border-border/40 rounded-xl p-3">
-              <p className="text-[10px] text-muted-foreground font-semibold uppercase">Previsto</p>
-              <p className="text-xl font-extrabold text-foreground mt-1 tabular-nums">{cellStats.expected}</p>
-            </div>
-            <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-xl p-3">
-              <p className="text-[10px] text-emerald-600 font-semibold uppercase">Aprovado</p>
-              <p className="text-xl font-extrabold text-emerald-600 mt-1 tabular-nums">{cellStats.approved}</p>
-            </div>
-            <div className="bg-rose-500/5 border border-rose-500/10 rounded-xl p-3">
-              <p className="text-[10px] text-rose-600 font-semibold uppercase">Reprovado</p>
-              <p className="text-xl font-extrabold text-rose-600 mt-1 tabular-nums">{cellStats.rejected}</p>
-            </div>
-            <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3">
-              <p className="text-[10px] text-amber-600 font-semibold uppercase">Pendente</p>
-              <p className="text-xl font-extrabold text-amber-600 mt-1 tabular-nums">{cellStats.pending}</p>
-            </div>
-            <div className="bg-purple-500/5 border border-purple-500/10 rounded-xl p-3">
-              <p className="text-[10px] text-purple-600 font-semibold uppercase">Retrabalho</p>
-              <p className="text-xl font-extrabold text-purple-600 mt-1 tabular-nums">{cellStats.rework}</p>
-            </div>
-            <div className="bg-sky-500/5 border border-sky-500/10 rounded-xl p-3">
-              <p className="text-[10px] text-sky-600 font-semibold uppercase">Reposição</p>
-              <p className="text-xl font-extrabold text-sky-600 mt-1 tabular-nums">{cellStats.replacement}</p>
-            </div>
-          </div>
+
+          {/* Segunda linha: Leituras hoje, Aprovadas, Reprovadas, Bloqueadas */}
+          <TraceabilityKpiCards kpis={kpis} />
         </div>
       )}
-
-      {/* KPIs da Tela */}
-      <TraceabilityKpiCards kpis={kpis} />
 
       {/* Scanner Área */}
       {scanner}
@@ -655,8 +664,10 @@ export default function TraceabilityCollection({ embedded = false }) {
             workstationId={machine?.id}
             operatorId={operatorId}
             shift={shift}
+            selectedPiece={selectedPiece}
             onSelectPiece={setSelectedPiece}
             onRejectPiece={handleOpenRejectModal}
+            onCreateOccurrence={handleOpenReadingOccurrence}
             onOpenTraceability={handleOpenTraceabilityDrawer}
             refreshSignal={refreshReadsSignal}
             canReject={true}

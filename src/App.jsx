@@ -1,3 +1,4 @@
+import React from 'react'
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
@@ -41,6 +42,7 @@ import MesAlertsPage from '@/pages/MesAlertsPage';
 import LotIntegrity from '@/pages/LotIntegrity';
 import IntegrityLogs from '@/pages/IntegrityLogs';
 import { useProductionRealtimeSync } from '@/hooks/useProductionRealtimeSync';
+import { isSupabaseConfigured } from '@/lib/supabaseClient';
 
 
 const AcProdRedirect = () => {
@@ -49,6 +51,28 @@ const AcProdRedirect = () => {
   const target = cleanPath === '' ? '/' : cleanPath;
   return <Navigate to={target} replace />;
 };
+
+const MissingSupabaseConfiguration = () => (
+  <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-5">
+    <section className="w-full max-w-2xl rounded-3xl border border-slate-800 bg-slate-900/80 p-6 md:p-9 shadow-2xl">
+      <div className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-amber-300">
+        Configuração necessária
+      </div>
+      <h1 className="mt-5 text-2xl md:text-3xl font-bold">O simulador abriu corretamente</h1>
+      <p className="mt-3 text-sm md:text-base leading-relaxed text-slate-300">
+        Falta somente informar a conexão pública do Supabase. Nenhum dado de produção será enviado enquanto essa configuração estiver ausente.
+      </p>
+      <div className="mt-6 rounded-2xl border border-slate-700 bg-slate-950 p-4 font-mono text-sm text-emerald-300 space-y-2 overflow-x-auto">
+        <p>cp .env.example .env</p>
+        <p>npm install</p>
+        <p>npm run dev</p>
+      </div>
+      <p className="mt-5 text-sm text-slate-400">
+        No arquivo <strong className="text-slate-200">.env</strong>, preencha <strong className="text-slate-200">VITE_SUPABASE_URL</strong> e <strong className="text-slate-200">VITE_SUPABASE_ANON_KEY</strong>. O passo a passo completo está em GUIA_IMPLANTACAO_COLETA_PCP.md.
+      </p>
+    </section>
+  </main>
+);
 
 
 
@@ -156,6 +180,41 @@ const AuthenticatedApp = () => {
 
 
 function App() {
+  React.useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      // 1. Recarrega a página quando uma nova versão do Service Worker assume o controle
+      let refreshing = false;
+      const handleControllerChange = () => {
+        if (!refreshing) {
+          refreshing = true;
+          window.location.reload();
+        }
+      };
+      navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+
+      // 2. Verifica por novas atualizações em segundo plano a cada 5 minutos
+      navigator.serviceWorker.ready.then((registration) => {
+        const intervalId = setInterval(() => {
+          registration.update().catch((err) => {
+            console.error('Erro ao verificar atualizações do Service Worker:', err);
+          });
+        }, 1000 * 60 * 5); // 5 minutos
+
+        return () => {
+          clearInterval(intervalId);
+        };
+      });
+
+      return () => {
+        navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
+      };
+    }
+  }, []);
+
+  if (!isSupabaseConfigured) {
+    return <MissingSupabaseConfiguration />;
+  }
+
   const routerBase = import.meta.env.BASE_URL === '/'
     ? ''
     : import.meta.env.BASE_URL.replace(/\/$/, '');

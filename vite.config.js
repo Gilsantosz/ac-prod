@@ -71,6 +71,7 @@ export default defineConfig(({ mode }) => {
       },
       VitePWA({
         registerType: 'autoUpdate',
+        injectRegister: 'inline',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icons/*.png'],
         manifest: {
           id: normalizedBase,
@@ -81,19 +82,19 @@ export default defineConfig(({ mode }) => {
           background_color: '#f3f4f6',
           display: 'standalone',
           display_override: ['standalone', 'fullscreen', 'minimal-ui'],
-          orientation: 'landscape',
+          orientation: 'any',
           scope: baseWithoutTrailingSlash || '/',
           start_url: normalizedBase,
           lang: 'pt-BR',
           icons: [
             {
-              src: `${normalizedBase}icons/icon-192.png`,
+              src: `${normalizedBase}icons/icon-192-v2.png`,
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any maskable',
             },
             {
-              src: `${normalizedBase}icons/icon-512.png`,
+              src: `${normalizedBase}icons/icon-512-v2.png`,
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any maskable',
@@ -101,6 +102,8 @@ export default defineConfig(({ mode }) => {
           ],
         },
         workbox: {
+          skipWaiting: true,
+          clientsClaim: true,
           // Cache estático
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,

@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import PageHeader from '@/components/ui/PageHeader';
 import {
   Box, Plus, CheckCircle, RefreshCw, Package, ArrowRight,
-  Lock, Unlock, Trash2, QrCode, Play, AlertCircle, Search, Layers, X
+  Lock, Unlock, Trash2, QrCode, Play, AlertCircle, Search, Layers
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -235,7 +235,7 @@ export default function PackagingPage() {
         </head>
         <body onload="window.print(); window.close();">
           <div class="box">
-            <div class="title">AC.Prod MES - EMBALAGEM</div>
+            <div class="title">Leo Flow — Embalagem</div>
             <div class="code">${volume.volume_code}</div>
             <div class="meta">
               <strong>LOTE:</strong> ${selectedLot?.lot_code}<br/>

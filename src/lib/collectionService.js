@@ -3,6 +3,23 @@ import { auditLog, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { createReworkOrder } from '@/lib/reworkService';
 import { registerTraceabilityRejection } from '@/lib/traceabilityService';
 
+async function resolveCellId(cellId, cellName) {
+  const trimmedName = cellName?.trim();
+  if (cellId || !trimmedName) return cellId || null;
+  const { data: cells, error } = await supabase
+    .from('cells')
+    .select('id')
+    .ilike('name', trimmedName)
+    .limit(1);
+  if (error) {
+    console.error('resolveCellId error:', error);
+    throw error;
+  }
+  const result = cells?.[0]?.id || null;
+  console.log('resolveCellId:', { cellName: trimmedName, result });
+  return result;
+}
+
 /**
  * Busca o histórico de coletas usando a RPC otimizada do Supabase.
  */
@@ -19,16 +36,22 @@ export async function getCollectionHistory({
   dateFrom = null,
   dateTo = null
 }) {
-  // Se o cellName for passado mas o cellId não, tentamos resolver o cellId para a RPC
-  let resolvedCellId = cellId;
-  if (!resolvedCellId && cellName) {
-    const { data: cell } = await supabase
-      .from('cells')
-      .select('id')
-      .eq('name', cellName)
-      .maybeSingle();
-    resolvedCellId = cell?.id || null;
-  }
+  const trimmedName = cellName?.trim();
+  const resolvedCellId = await resolveCellId(cellId, trimmedName);
+
+  console.log('rpc get_collection_history call:', {
+    p_cell_id: resolvedCellId,
+    p_workstation_id: workstationId,
+    p_operator_id: operatorId,
+    p_shift: shift,
+    p_status: status,
+    p_lot_id: lotId,
+    p_limit: limit,
+    p_offset: offset,
+    p_date_from: dateFrom,
+    p_date_to: dateTo,
+    p_cell_name: trimmedName
+  });
 
   const { data, error } = await supabase.rpc('get_collection_history', {
     p_cell_id: resolvedCellId,
@@ -41,10 +64,14 @@ export async function getCollectionHistory({
     p_offset: offset,
     p_date_from: dateFrom,
     p_date_to: dateTo,
-    p_cell_name: cellName
+    p_cell_name: trimmedName
   });
 
-  if (error) throw error;
+  if (error) {
+    console.error('rpc get_collection_history error:', error);
+    throw error;
+  }
+  console.log('rpc get_collection_history response length:', data?.length);
   return data || [];
 }
 
@@ -62,15 +89,8 @@ export async function getCollectionHistoryCount({
   dateFrom = null,
   dateTo = null
 }) {
-  let resolvedCellId = cellId;
-  if (!resolvedCellId && cellName) {
-    const { data: cell } = await supabase
-      .from('cells')
-      .select('id')
-      .eq('name', cellName)
-      .maybeSingle();
-    resolvedCellId = cell?.id || null;
-  }
+  const trimmedName = cellName?.trim();
+  const resolvedCellId = await resolveCellId(cellId, trimmedName);
 
   const { data, error } = await supabase.rpc('get_collection_history_count', {
     p_cell_id: resolvedCellId,
@@ -81,7 +101,7 @@ export async function getCollectionHistoryCount({
     p_lot_id: lotId,
     p_date_from: dateFrom,
     p_date_to: dateTo,
-    p_cell_name: cellName
+    p_cell_name: trimmedName
   });
 
   if (error) throw error;
@@ -91,25 +111,34 @@ export async function getCollectionHistoryCount({
 /**
  * Inscreve no Supabase Realtime para escutar alterações de coletas na célula/posto
  */
-export function subscribeToCollectionHistory({ cellName, cellId, callback }) {
-  const channelName = `collection-history-${cellName || cellId || 'all'}`;
-  
+export function subscribeToCollectionHistory({ cellName, cellId, callback, onStatus, channelSuffix = '' }) {
+  const trimmedName = cellName?.trim();
+  const suffix = channelSuffix ? `-${channelSuffix}` : '';
+  const channelName = `collection-history-${trimmedName || cellId || 'all'}${suffix}`;
+  const changeConfig = {
+    event: '*',
+    schema: 'public',
+    table: 'production_collection_events',
+  };
+  if (trimmedName) changeConfig.filter = `cell_name=eq.${trimmedName}`;
+
   const channel = supabase
     .channel(channelName)
     .on(
       'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'production_stage_readings'
-      },
+      changeConfig,
       (payload) => {
         callback(payload);
       }
     )
-    .subscribe();
+    .subscribe((status) => onStatus?.(status));
 
   return channel;
+}
+
+export function unsubscribeFromCollectionHistory(channel) {
+  if (!channel) return Promise.resolve();
+  return supabase.removeChannel(channel);
 }
 
 /**
@@ -124,26 +153,40 @@ export async function getCollectionKpis({
   dateFrom = null,
   dateTo = null
 }) {
-  let query = supabase
-    .from('production_stage_readings')
-    .select('status, quantity');
-
   // Resolve nome da célula a partir do ID se necessário
   let resolvedCellName = cellName;
   if (cellId && !resolvedCellName) {
     const { data: cell } = await supabase.from('cells').select('name').eq('id', cellId).maybeSingle();
     resolvedCellName = cell?.name;
   }
+  if (!resolvedCellName) {
+    return { total: 0, approved: 0, rejected: 0, blocked: 0, expected: 0, pending: 0, rework: 0, replacement: 0 };
+  }
+
+  const { data: snapshot, error: snapshotError } = await supabase.rpc('get_collection_cell_snapshot', {
+    p_cell_name: resolvedCellName,
+    p_workstation_id: workstationId,
+    p_shift: shift,
+    p_date_from: dateFrom,
+    p_date_to: dateTo,
+  });
+  if (!snapshotError) return snapshot || {};
+
+  const snapshotUnavailable = snapshotError.code === 'PGRST202'
+    || /get_collection_cell_snapshot|schema cache/i.test(snapshotError.message || '');
+  if (!snapshotUnavailable) throw snapshotError;
+
+  // Compatibilidade durante a aplicação da migration 032.
+  let query = supabase
+    .from('production_stage_readings')
+    .select('status, quantity');
+
   if (resolvedCellName) query = query.eq('cell_name', resolvedCellName);
 
   if (workstationId) query = query.eq('machine_id', workstationId);
   
-  // Resolve nome do operador se operatorId for fornecido
   if (operatorId) {
-    const { data: profile } = await supabase.from('profiles').select('name').eq('id', operatorId).maybeSingle();
-    if (profile?.name) {
-      query = query.eq('operator', profile.name);
-    }
+    query = query.eq('operator_id', operatorId);
   }
 
   if (shift) query = query.eq('shift', shift);
@@ -154,15 +197,22 @@ export async function getCollectionKpis({
   if (error) throw error;
 
   const rows = data || [];
-  const approved = rows.filter(r => r.status === 'approved').reduce((sum, r) => sum + (r.quantity || 1), 0);
-  const rejected = rows.filter(r => r.status === 'rejected').reduce((sum, r) => sum + (r.quantity || 1), 0);
-  const blocked = rows.filter(r => ['blocked', 'duplicated'].includes(r.status)).reduce((sum, r) => sum + (r.quantity || 1), 0);
+  const quantityOf = (row) => Math.max(Number(row.quantity) || 1, 1);
+  const approved = rows.filter(r => r.status === 'approved').reduce((sum, r) => sum + quantityOf(r), 0);
+  const rejected = rows.filter(r => r.status === 'rejected').reduce((sum, r) => sum + quantityOf(r), 0);
+  const blocked = rows.filter(r => ['blocked', 'duplicated'].includes(r.status)).reduce((sum, r) => sum + quantityOf(r), 0);
 
   return {
     total: approved + rejected + blocked,
     approved,
     rejected,
-    blocked
+    blocked,
+    expected: approved,
+    pending: 0,
+    rework: 0,
+    replacement: 0,
+    active_lots: 0,
+    active_pcp_batches: 0,
   };
 }
 

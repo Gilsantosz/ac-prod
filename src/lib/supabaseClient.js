@@ -2,8 +2,15 @@ import { createClient } from '@supabase/supabase-js';
 
 // ✅ SEGURO: Apenas a chave anon (pública) é usada no frontend.
 // A SERVICE_ROLE_KEY nunca é usada aqui — toda autorização é controlada por RLS no PostgreSQL.
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const configuredSupabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const configuredSupabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+export const isSupabaseConfigured = Boolean(configuredSupabaseUrl && configuredSupabaseAnonKey);
+
+// O cliente exige URL/chave não vazias ainda durante a carga do JavaScript.
+// Os valores abaixo só impedem uma tela branca quando o .env ainda não existe;
+// App.jsx interrompe o sistema antes de qualquer consulta e mostra a orientação.
+const supabaseUrl = configuredSupabaseUrl || 'https://unconfigured-ac-prod.supabase.co';
+const supabaseAnonKey = configuredSupabaseAnonKey || 'public-anon-key-not-configured';
 const supabaseProjectRef = (() => {
   try { return new URL(supabaseUrl).hostname.split('.')[0]; }
   catch { return 'unconfigured'; }
@@ -119,7 +126,7 @@ if (authStorage && !authStorage.getItem(FALLBACK_SESSION_KEY)) {
   }
 }
 
-if (!supabaseUrl || !supabaseAnonKey) {
+if (!isSupabaseConfigured) {
   console.error(
     '[Leo Flow] Supabase não configurado. Crie um arquivo .env com VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.'
   );

@@ -371,7 +371,7 @@ async function getFunctionErrorMessage(error, fallback) {
   }
 }
 
-export default function XmlImportTab() {
+export default function XmlImportTab({ onSwitchToPcp }) {
   const [file, setFile] = useState(null);
   const [fileContent, setFileContent] = useState(null);
   const [fileType, setFileType] = useState('xml');
@@ -501,6 +501,36 @@ export default function XmlImportTab() {
       toast.error('Selecione um arquivo .xml, .xlsx, .csv ou .tsv');
       return;
     }
+
+    // Auto-detectar PCP padrão V1
+    let isPcp = false;
+    if (type === 'xlsx') {
+      try {
+        const arrayBuffer = await f.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        const firstCell = sheetData[0]?.[0] ? String(sheetData[0][0]) : '';
+        if (firstCell.startsWith('PCP;') || firstCell.includes(';')) {
+          isPcp = true;
+        }
+      } catch (err) {
+        console.error('Error auto-detecting PCP:', err);
+      }
+    } else if (['csv', 'tsv'].includes(type)) {
+      const text = await f.text();
+      if (text.startsWith('PCP;') || text.includes(';PCP;')) {
+        isPcp = true;
+      }
+    }
+
+    if (isPcp && onSwitchToPcp) {
+      toast.info('Arquivo do Padrão PCP detectado! Alternando aba de importação...');
+      onSwitchToPcp(f);
+      return;
+    }
+
     setFile(f);
     setFileType(type);
     setDuplicateInfo(null);
@@ -522,7 +552,7 @@ export default function XmlImportTab() {
     }
     setFileContent(content);
     await parseFile(content, type, f.name);
-  }, []);
+  }, [onSwitchToPcp]);
 
   // ─── Parse via Edge Function ou local ──────────────────────
   const parseFile = async (content, type, name) => {

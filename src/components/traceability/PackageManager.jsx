@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { supabase } from '@/lib/supabaseClient';
-import { auditLog, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -150,7 +148,7 @@ export default function PackageManager({ trace }) {
         </head>
         <body onload="window.print(); window.close();">
           <div class="label-box">
-            <div class="title">AC.Prod MES — Volume</div>
+            <div class="title">Leo Flow — Volume</div>
             <div class="code">${volume.volume_code}</div>
             <div class="meta">
               <strong>LOTE:</strong> ${selectedLot?.lot_code}<br/>
@@ -158,7 +156,7 @@ export default function PackageManager({ trace }) {
               <strong>PEDIDO:</strong> ${selectedLot?.production_orders?.order_code || selectedLot?.order_id || ''}<br/>
               <strong>GERADO EM:</strong> ${new Date(volume.created_at).toLocaleString('pt-BR')}<br/>
             </div>
-            <div class="footer">AC.Prod Rastreabilidade de Chão de Fábrica</div>
+            <div class="footer">Leo Flow Rastreabilidade de Chão de Fábrica</div>
           </div>
         </body>
       </html>
