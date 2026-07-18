@@ -134,7 +134,7 @@ function SearchResult({ lot }) {
         </span>
         <span className="flex items-center gap-1 min-w-0">
           <MapPin className="w-3.5 h-3.5 shrink-0" />
-          <span className="truncate">{lot.current_cell || 'Sem célula definida'}</span>
+          <span className="truncate">{translateStage(lot.current_cell) || 'Sem célula definida'}</span>
         </span>
       </div>
 

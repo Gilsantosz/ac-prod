@@ -19,6 +19,7 @@ import {
   simulateTraceabilityTestReading,
 } from '@/lib/traceabilityTestService';
 import confetti from 'canvas-confetti';
+import { translateStage } from '@/hooks/useTraceability';
 
 export default function TraceabilityTestPanel() {
   const queryClient = useQueryClient();
@@ -469,8 +470,8 @@ export default function TraceabilityTestPanel() {
                           <td className="p-2.5">{item.product_name}</td>
                           <td className="p-2.5">
                             <div className="flex items-center gap-1.5">
-                              <Badge variant="outline" className="text-xs">{item.current_step || 'Início'}</Badge>
-                              {item.current_cell && <span className="text-xs text-muted-foreground">({item.current_cell})</span>}
+                              <Badge variant="outline" className="text-xs">{translateStage(item.current_step) || 'Início'}</Badge>
+                              {item.current_cell && <span className="text-xs text-muted-foreground">({translateStage(item.current_cell)})</span>}
                             </div>
                           </td>
                           <td className="p-2.5">

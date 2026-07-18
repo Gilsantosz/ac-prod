@@ -4,10 +4,10 @@ import { base44 } from '@/lib/localDb';
 import { supabase } from '@/lib/supabaseClient';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { Package, Target, Gauge, AlertTriangle, Monitor, Minimize2, LayoutDashboard, FlaskConical, Sun, Moon } from 'lucide-react';
+import { Package, Target, Gauge, AlertTriangle, Monitor, Minimize2, LayoutDashboard, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTheme } from '@/hooks/useTheme';
-import { runSeedTestData } from '@/lib/seedTestData';
+
 import PageHeader from '@/components/ui/PageHeader';
 import { useKiosk } from '@/lib/KioskContext';
 import { useCells } from '@/hooks/useCells';
@@ -80,23 +80,6 @@ export default function Dashboard({ kioskModeOverride = false }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [theme, setTheme] = useTheme();
-  const [seeding, setSeeding] = useState(false);
-  const [seedResult, setSeedResult] = useState(null);
-
-  async function handleSeed() {
-    setSeeding(true);
-    setSeedResult(null);
-    try {
-      const result = await runSeedTestData(10);
-      setSeedResult(result);
-      // Invalida cache para recarregar os dados
-      await queryClient.invalidateQueries();
-    } catch (e) {
-      setSeedResult({ errors: [e.message] });
-    } finally {
-      setSeeding(false);
-    }
-  }
 
   const [filters, setFilters] = useState({
     date: format(new Date(), 'yyyy-MM-dd'),
@@ -336,28 +319,6 @@ export default function Dashboard({ kioskModeOverride = false }) {
             >
               <Monitor className="w-4 h-4" /> Modo Quiosque
             </Button>
-            <Button
-              variant="outline"
-              className="gap-2 bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-900/40 rounded-full shadow-sm"
-              onClick={handleSeed}
-              disabled={seeding}
-              title="Insere 10 dias de dados de produção de teste para validar gráficos"
-            >
-              <FlaskConical className="w-4 h-4" />
-              {seeding ? 'Gerando...' : 'Dados de Teste'}
-            </Button>
-            {seedResult && (
-              <span className={`text-xs rounded-full px-3 py-1.5 border font-medium ${
-                seedResult.errors?.length
-                  ? 'bg-red-50 border-red-200 text-red-600 dark:bg-red-950/30 dark:border-red-800 dark:text-red-400'
-                  : 'bg-green-50 border-green-200 text-green-700 dark:bg-green-950/30 dark:border-green-800 dark:text-green-400'
-              }`}>
-                {seedResult.errors?.length
-                  ? `Erro: ${seedResult.errors[0]}`
-                  : `✓ ${seedResult.entries} lançamentos · ${seedResult.occurrences} ocorrências · ${seedResult.goals} metas · ${seedResult.operators} operadores`
-                }
-              </span>
-            )}
           </div>
         </>
       )}

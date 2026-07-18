@@ -103,7 +103,7 @@ export default function LotCard({ lot, _stage, onAdvance, onBlock, onUnblock }) 
         </div>
         {lot.current_cell && (
           <p className="text-[11px] text-muted-foreground flex items-center gap-1 truncate">
-            <MapPin className="w-3 h-3 shrink-0" /> {lot.current_cell}
+            <MapPin className="w-3 h-3 shrink-0" /> {translateStage(lot.current_cell)}
           </p>
         )}
       </div>

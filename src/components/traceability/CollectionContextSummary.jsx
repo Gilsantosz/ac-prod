@@ -57,7 +57,7 @@ export default function CollectionContextSummary({ feedback, refreshToken }) {
     { icon: User2, label: 'Cliente', value: firstText(order?.customer_trade_name, order?.customer_legal_name, order?.customer_name) },
     { icon: Box, label: 'Produto', value: firstText(item?.product_name, lot?.product_name, lot?.product_code) },
     { icon: Route, label: 'Etapa da leitura', value: translateStage(firstText(feedback?.route?.step_name, item?.current_step, lot?.current_step, lot?.current_stage)) },
-    { icon: MapPin, label: 'Célula da leitura', value: firstText(feedback?.route?.cell_name, item?.current_cell, lot?.current_cell) },
+    { icon: MapPin, label: 'Célula da leitura', value: translateStage(firstText(feedback?.route?.cell_name, item?.current_cell, lot?.current_cell)) },
   ], [feedback?.productionContext?.load_number, feedback?.route?.cell_name, feedback?.route?.step_name, item, lot, order]);
 
   if (!lot && !summary) {
@@ -202,7 +202,7 @@ function MissingPieces({ title, pieces, totalPending, showLot }) {
                 </span>
                 <span className="flex items-center gap-1 min-w-0">
                   <MapPin className="w-3.5 h-3.5 shrink-0" />
-                  <span className="break-words">{piece.current_cell || 'Sem célula definida'}</span>
+                  <span className="break-words">{piece.current_cell ? translateStage(piece.current_cell) : 'Sem célula definida'}</span>
                 </span>
               </div>
               {piece.tag_value && (
