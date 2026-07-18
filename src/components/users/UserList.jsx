@@ -8,74 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   User as UserIcon, Edit3, Trash2, Save, X, LayoutDashboard, PlusCircle, AlertOctagon,
   Boxes, HardHat, LineChart, Zap, Users, KeyRound, Send, BrainCircuit,
-  Plug, GitFork, Box, Truck, BellRing, Layers
+  Plug, GitFork, Box, Truck, BellRing, Layers, ShieldAlert
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCells } from '@/hooks/useCells';
-
-const getDefaultPermissions = (role) => {
-  if (role === 'admin') {
-    return {
-      view_dashboards: true,
-      register_production: true,
-      manage_occurrences: true,
-      manage_cells: true,
-      manage_operators: true,
-      view_reports: true,
-      ai_operations: true,
-      manage_automations: true,
-      manage_users: true,
-      view_pcp: true,
-      manage_pcp: true,
-      manage_routes: true,
-      traceability_collect: true,
-      view_traceability: true,
-      manage_packaging: true,
-      manage_shipping: true,
-      view_mes_alerts: true
-    };
-  } else if (role === 'manager') {
-    return {
-      view_dashboards: true,
-      register_production: true,
-      manage_occurrences: true,
-      manage_cells: false,
-      manage_operators: false,
-      view_reports: true,
-      ai_operations: true,
-      manage_automations: false,
-      manage_users: false,
-      view_pcp: true,
-      manage_pcp: true,
-      manage_routes: true,
-      traceability_collect: true,
-      view_traceability: true,
-      manage_packaging: true,
-      manage_shipping: true,
-      view_mes_alerts: true
-    };
-  } else {
-    return {
-      view_dashboards: true,
-      register_production: true,
-      manage_occurrences: true,
-      manage_cells: false,
-      manage_operators: false,
-      view_reports: false,
-      ai_operations: false,
-      manage_automations: false,
-      manage_users: false,
-      view_pcp: false,
-      manage_pcp: false,
-      manage_routes: false,
-      traceability_collect: true,
-      view_traceability: true,
-      manage_packaging: false,
-      manage_shipping: false,
-      view_mes_alerts: false
-    };
-  }
-};
+import { getDefaultPermissions } from '@/config/appRoutes';
 
 
 const PERMISSION_LABELS = {
@@ -95,7 +32,14 @@ const PERMISSION_LABELS = {
   view_traceability: 'Rastreabilidade',
   manage_packaging: 'Embalagem',
   manage_shipping: 'Expedição',
-  view_mes_alerts: 'Alertas MES'
+  view_mes_alerts: 'Alertas MES',
+  // Novas permissões
+  send_reports: 'Enviar Relatórios',
+  schedule_reports: 'Agendar Relatórios',
+  manage_report_recipients: 'Gerenciar Destinatários',
+  view_report_delivery_logs: 'Histórico de Envios',
+  manage_email_settings: 'Configurar E-mail',
+  view_audit_logs: 'Logs de Auditoria'
 };
 
 
@@ -116,8 +60,16 @@ const PERMISSION_METADATA = [
   { key: 'view_traceability', label: 'Rastreabilidade', icon: Layers },
   { key: 'manage_packaging', label: 'Embalagem', icon: Box },
   { key: 'manage_shipping', label: 'Expedição', icon: Truck },
-  { key: 'view_mes_alerts', label: 'Alertas MES', icon: BellRing }
+  { key: 'view_mes_alerts', label: 'Alertas MES', icon: BellRing },
+  // Novas permissões
+  { key: 'send_reports', label: 'Enviar Relatórios', icon: BellRing },
+  { key: 'schedule_reports', label: 'Agendar Relatórios', icon: Zap },
+  { key: 'manage_report_recipients', label: 'Gerenciar Destinatários', icon: Users },
+  { key: 'view_report_delivery_logs', label: 'Histórico de Envios', icon: LineChart },
+  { key: 'manage_email_settings', label: 'Configurar E-mail', icon: Users, warning: true },
+  { key: 'view_audit_logs', label: 'Logs de Auditoria', icon: ShieldAlert, warning: true }
 ];
+
 
 
 export default function UserList({ users, currentUserId, onUpdate, onDelete, onResetPassword, onResendInvite }) {
@@ -227,8 +179,10 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="operator">Operador / Usuário</SelectItem>
+                  <SelectItem value="supervisor">Supervisor / Líder</SelectItem>
                   <SelectItem value="manager">Gestor</SelectItem>
                   <SelectItem value="admin">Administrador</SelectItem>
+                  <SelectItem value="viewer">Visualizador / Auditor</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -283,8 +237,25 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
             <div className="min-w-0 space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-semibold text-foreground truncate">{user.name || user.email.split('@')[0]}</p>
-                <Badge variant={user.role === 'admin' ? "default" : user.role === 'manager' ? "outline" : "secondary"}>
-                  {user.role === 'admin' ? 'Administrador' : user.role === 'manager' ? 'Gestor' : 'Operador'}
+                <Badge 
+                  variant={user.role === 'admin' ? "default" : user.role === 'manager' ? "outline" : "secondary"}
+                  className={
+                    user.role === 'supervisor' 
+                      ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-600 dark:text-indigo-400 font-medium' 
+                      : user.role === 'viewer'
+                      ? 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400 font-medium'
+                      : ''
+                  }
+                >
+                  {user.role === 'admin' 
+                    ? 'Administrador' 
+                    : user.role === 'manager' 
+                    ? 'Gestor' 
+                    : user.role === 'supervisor' 
+                    ? 'Supervisor' 
+                    : user.role === 'viewer' 
+                    ? 'Visualizador' 
+                    : 'Operador'}
                 </Badge>
                 {user.role !== 'admin' && user.cell && (
                   <Badge variant="outline" className="bg-emerald-500/5 border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-medium">

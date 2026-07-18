@@ -283,11 +283,47 @@ Deno.serve(async (req) => {
     };
     const results = [];
 
+    // Criar a run no banco
+    const runKey = `manual:${job.id}:${new Date().getTime()}`;
+    const { data: run, error: runErr } = await admin
+      .from('report_schedule_runs')
+      .insert({
+        report_job_id: job.id,
+        trigger_source: body.triggerSource || 'ai',
+        scheduled_for: new Date().toISOString(),
+        status: 'processing',
+        idempotency_key: runKey,
+        requested_by: user.id,
+        started_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    const runId = run?.id || null;
+
     for (const recipient of recipients) {
       const { providerResult, success, errorMessage } = await sendEmail(emailProvider, { recipient, subject, html, attachment });
+      
+      // Salvar em report_deliveries
+      await admin.from('report_deliveries').insert({
+        run_id: runId,
+        report_job_id: job.id,
+        profile_id: recipient.profile_id || null,
+        recipient_name_snapshot: recipient.name,
+        recipient_email_snapshot: recipient.email,
+        recipient_email_normalized: recipient.email.toLowerCase(),
+        provider: emailProvider.provider,
+        provider_message_id: providerResult.id || null,
+        status: success ? 'sent' : 'failed',
+        error_message: errorMessage,
+        sent_at: success ? new Date().toISOString() : null,
+        attempt_count: 1
+      });
+
+      // Também salvar em report_email_logs para compatibilidade legada
       await admin.from('report_email_logs').insert({
         report_job_id: job.id,
-        recipient_id: recipient.recipient_id || null,
+        recipient_id: recipient.profile_id || recipient.recipient_id || null,
         recipient_email: recipient.email,
         subject,
         provider: emailProvider.provider,
@@ -297,7 +333,17 @@ Deno.serve(async (req) => {
         sent_by: user.id,
         sent_at: success ? new Date().toISOString() : null,
       });
+
       results.push({ email: recipient.email, name: recipient.name, source: recipient.source, success, error: errorMessage });
+    }
+
+    // Atualizar status da Run
+    if (runId) {
+      const runStatus = results.every(r => r.success) ? 'sent' : results.every(r => !r.success) ? 'failed' : 'partial';
+      await admin.from('report_schedule_runs').update({
+        status: runStatus,
+        finished_at: new Date().toISOString()
+      }).eq('id', runId);
     }
 
     const sent = results.filter((item) => item.success).length;
@@ -319,3 +365,4 @@ Deno.serve(async (req) => {
     return json({ success: false, error: publicError(error) }, statusFor(error));
   }
 });
+

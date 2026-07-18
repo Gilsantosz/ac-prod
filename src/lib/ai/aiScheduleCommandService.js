@@ -34,8 +34,8 @@ function reportLabel(type) {
 export async function createScheduleFromCommand(command, user, options = {}) {
   const resolvedRecs = options.resolvedRecipients
     || await resolveRecipientsFromPrompt(command.rawPrompt || user.prompt || '', user, { explicitRecipients: command.recipients });
-  const recipientIds = resolvedRecs.resolved.map(r => r.id).filter(Boolean);
-  const extraEmails = resolvedRecs.resolved.filter(r => !r.id).map(r => r.email);
+  const recipientIds = resolvedRecs.resolved.map(r => r.profile_id || r.recipient_id).filter(Boolean);
+  const extraEmails = resolvedRecs.resolved.filter(r => !r.profile_id && !r.recipient_id).map(r => r.email);
 
   const payload = {
     name: `${reportLabel(command.reportType)} agendado via Copilot`,
@@ -49,6 +49,7 @@ export async function createScheduleFromCommand(command, user, options = {}) {
     extraEmails,
     templateCode: command.templateCode || 'manager-summary',
   };
+
 
   const schedule = await createScheduledReport(payload, user);
   return {

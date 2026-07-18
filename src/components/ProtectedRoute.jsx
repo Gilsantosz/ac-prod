@@ -3,7 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import { Lock, ShieldAlert, ArrowLeft, LogOut } from 'lucide-react';
-import { pathPermissionMap, permissionLabels } from '@/config/appRoutes';
+import { pathPermissionMap, permissionLabels, getDefaultPermissions } from '@/config/appRoutes';
 import { navTo } from '@/lib/navigation';
 
 
@@ -43,29 +43,23 @@ export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthe
   let hasPermission = true;
   let requiredPermissionLabel = '';
 
-
-
   if (user && user.role !== 'admin') {
     const cleanPath = path.replace(/\/$/, '') || '/';
+    const requiredPermission = pathPermissionMap[cleanPath];
     
-    // Bloquear nível operacional (operator) de páginas restritas (Integração, Células/Metas, Usuários/Operadores)
-    if (user.role === 'operator' && ['/integracoes/promob', '/celulas-metas', '/celulas', '/metas', '/celulas-e-metas', '/cells-goals', '/usuarios', '/operadores'].includes(cleanPath)) {
-      hasPermission = false;
-      requiredPermissionLabel = 'Acesso Reservado para Gestores e Administradores';
-    } else {
-      const requiredPermission = pathPermissionMap[cleanPath];
-      if (requiredPermission) {
-        if (user.permissions && user.permissions[requiredPermission] !== undefined) {
-          hasPermission = !!user.permissions[requiredPermission];
-          if (!hasPermission) {
-            requiredPermissionLabel = `Permissão requerida: ${permissionLabels[requiredPermission]}`;
-          }
-        } else {
-          const allowedPathsForOperators = ['/', '/painel', '/entrada', '/resumo-diario'];
-          if (!allowedPathsForOperators.includes(cleanPath)) {
-            hasPermission = false;
-            requiredPermissionLabel = 'Acesso Reservado para Administradores';
-          }
+    if (requiredPermission) {
+      // Se a permissão está explicitamente definida no perfil do usuário, usamos ela.
+      if (user.permissions && user.permissions[requiredPermission] !== undefined) {
+        hasPermission = !!user.permissions[requiredPermission];
+        if (!hasPermission) {
+          requiredPermissionLabel = `Permissão requerida: ${permissionLabels[requiredPermission] || requiredPermission}`;
+        }
+      } else {
+        // Se não houver override explícito, verifica o padrão do papel
+        const defaultPerms = getDefaultPermissions(user.role);
+        hasPermission = !!defaultPerms[requiredPermission];
+        if (!hasPermission) {
+          requiredPermissionLabel = 'Acesso reservado para perfis autorizados.';
         }
       }
     }

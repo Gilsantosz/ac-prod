@@ -139,21 +139,24 @@ export async function findRecipientByEmail(email, _user) {
 
   const { data: profiles, error: profilesError } = await supabase
     .from('profiles')
-    .select('id,name,email,role,cell,managed_cells,active')
+    .select('id,name,email,role,cell,managed_cells,active,report_delivery_enabled')
     .ilike('email', cleanEmail)
-    .eq('active', true)
-    .in('role', ['admin', 'manager'])
-    .limit(1);
+    .eq('active', true);
 
   if (profilesError) throw new Error(`Não foi possível consultar Usuários/Gestores: ${profilesError.message}`);
-  if (profiles?.length) return fromProfile(profiles[0]);
+  
+  if (profiles?.length) {
+    const p = profiles[0];
+    if (['admin', 'manager', 'supervisor'].includes(p.role) || p.report_delivery_enabled) {
+      return fromProfile(p);
+    }
+  }
 
   const { data: recipients } = await supabase
     .from('report_recipients')
     .select('id,name,email,role_label,recipient_group,cell_filter,active')
     .ilike('email', cleanEmail)
-    .eq('active', true)
-    .limit(1);
+    .eq('active', true);
 
   if (recipients?.length) return fromLegacyRecipient(recipients[0]);
 
@@ -181,7 +184,13 @@ export async function findRecipientsByName(name, _user) {
   if (cleanName.length < 2) return [];
 
   const [profilesResult, recipientsResult, operatorsResult] = await Promise.all([
-    supabase.from('profiles').select('id,name,email,role,cell,managed_cells,active').eq('active', true).in('role', ['admin', 'manager']).ilike('name', `%${cleanName}%`).limit(10),
+    supabase
+      .from('profiles')
+      .select('id,name,email,role,cell,managed_cells,active,report_delivery_enabled')
+      .eq('active', true)
+      .or(`role.in.(admin,manager,supervisor),report_delivery_enabled.eq.true`)
+      .ilike('name', `%${cleanName}%`)
+      .limit(10),
     supabase.from('report_recipients').select('id,name,email,role_label,recipient_group,cell_filter,active').eq('active', true).ilike('name', `%${cleanName}%`).limit(10),
     supabase.from('operators').select('id,name,email,active').eq('active', true).ilike('name', `%${cleanName}%`).limit(10),
   ]);
@@ -202,13 +211,15 @@ export async function findRecipientsByRole(role, _user) {
     targetRoles.push('admin');
   } else if (cleanRole === 'manager' || cleanRole === 'gestor' || cleanRole === 'gestores' || cleanRole === 'gerente' || cleanRole === 'gerência') {
     targetRoles.push('manager', 'admin');
+  } else if (cleanRole === 'supervisor' || cleanRole === 'lider' || cleanRole === 'líder' || cleanRole === 'supervisores') {
+    targetRoles.push('supervisor');
   } else {
     targetRoles.push(cleanRole);
   }
 
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id,name,email,role,cell,managed_cells,active')
+    .select('id,name,email,role,cell,managed_cells,active,report_delivery_enabled')
     .eq('active', true)
     .in('role', targetRoles);
 
@@ -221,9 +232,9 @@ export async function findRecipientsByCell(cellName, _user) {
   // 1. Encontrar profiles cujas managed_cells contêm esta célula
   const { data: allProfiles } = await supabase
     .from('profiles')
-    .select('id,name,email,role,cell,managed_cells,active')
+    .select('id,name,email,role,cell,managed_cells,active,report_delivery_enabled')
     .eq('active', true)
-    .in('role', ['admin', 'manager']);
+    .or(`role.in.(admin,manager,supervisor),report_delivery_enabled.eq.true`);
   
   const matchedProfiles = (allProfiles || []).filter(p => {
     const cells = Array.isArray(p.managed_cells) ? p.managed_cells : [];
@@ -272,7 +283,7 @@ export async function resolveRecipientsFromPrompt(prompt, user, options = {}) {
     }
 
     // 2. Todos os gestores
-    if (cand.toLowerCase() === 'todos os gestores' || cand.toLowerCase() === 'gerencia' || cand.toLowerCase() === 'diretoria') {
+    if (cand.toLowerCase() === 'todos os gestores' || cand.toLowerCase() === 'gerencia' || cand.toLowerCase() === 'diretoria' || cand.toLowerCase() === 'gestores') {
       const gestores = await findRecipientsByRole('manager', user);
       gestores.forEach(g => {
         pushUnique(resolved, g);
@@ -282,13 +293,45 @@ export async function resolveRecipientsFromPrompt(prompt, user, options = {}) {
 
     // 3. Gestores por célula
     if (cand.toLowerCase().startsWith('gestores da ') || cand.toLowerCase().startsWith('gestores do ')) {
-      const cell = cand.replace(/^(gestores da |gestores do )/i, '').trim();
+      const cell = cand.replace(/^(gestores da |gestores do |gestor da |gestor do )/i, '').trim();
       const cellRecs = await findRecipientsByCell(cell, user);
       cellRecs.forEach(r => pushUnique(resolved, r));
       continue;
     }
 
-    // 4. Busca por nome
+    // 4. Busca por grupo de e-mail no banco
+    const { data: matchedGroups } = await supabase
+      .from('email_recipient_groups')
+      .select('id, name')
+      .ilike('name', cand)
+      .eq('active', true)
+      .limit(1);
+
+    if (matchedGroups && matchedGroups.length > 0) {
+      const groupId = matchedGroups[0].id;
+      const { data: members } = await supabase
+        .from('email_recipient_group_members')
+        .select('profile_id, external_email, recipient_name_snapshot, recipient_email_snapshot')
+        .eq('group_id', groupId);
+
+      if (members) {
+        for (const m of members) {
+          if (m.profile_id) {
+            const { data: prof } = await supabase
+              .from('profiles')
+              .select('id,name,email,role,cell,managed_cells,active,report_delivery_enabled')
+              .eq('id', m.profile_id)
+              .single();
+            if (prof) pushUnique(resolved, fromProfile(prof));
+          } else if (m.external_email) {
+            pushUnique(resolved, fromDirectEmail(m.external_email, m.recipient_name_snapshot));
+          }
+        }
+      }
+      continue;
+    }
+
+    // 5. Busca por nome
     const matches = await findRecipientsByName(cand, user);
     if (matches.length === 1) {
       pushUnique(resolved, matches[0]);
@@ -305,3 +348,4 @@ export async function resolveRecipientsFromPrompt(prompt, user, options = {}) {
     notFound,
   };
 }
+

@@ -1,8 +1,22 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
 
+function getSaoPauloDateString(offsetDays = 0) {
+  const d = new Date();
+  if (offsetDays !== 0) {
+    d.setDate(d.getDate() + offsetDays);
+  }
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  return formatter.format(d);
+}
+
 export async function fetchReportDataForType(supabase: any, type: string, schedule: any) {
-  const today = new Date().toISOString().slice(0, 10);
-  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const today = getSaoPauloDateString(0);
+  const yesterday = getSaoPauloDateString(-1);
   const targetDate = schedule.frequency === 'daily' || schedule.frequency === 'workdays' ? yesterday : today;
 
   if (type === 'daily_production' || type === 'shift_closure') {
@@ -15,7 +29,7 @@ export async function fetchReportDataForType(supabase: any, type: string, schedu
   }
 
   if (type === 'oee') {
-    const dateLimit = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+    const dateLimit = getSaoPauloDateString(-7);
     let q = supabase.from('production_entries').select('*').gte('date', dateLimit);
     if (schedule.cell_filter && schedule.cell_filter.length > 0) {
       q = q.in('cell', schedule.cell_filter);
@@ -23,6 +37,7 @@ export async function fetchReportDataForType(supabase: any, type: string, schedu
     const { data: entries } = await q;
     return entries || [];
   }
+
 
   if (type === 'traceability_pending') {
     const { data } = await supabase

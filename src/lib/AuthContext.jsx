@@ -2,6 +2,7 @@ import React, { createContext, useState, useContext, useEffect, useCallback } fr
 import { clearPersistedAuthSession, persistAuthSession, restoreAuthSession, supabase } from '@/lib/supabaseClient';
 import { base44 } from '@/lib/localDb';
 import { navTo } from '@/lib/navigation';
+import { getDefaultPermissions } from '@/config/appRoutes';
 
 const AuthContext = createContext();
 const AUTH_STEP_TIMEOUT_MS = 3000;
@@ -14,70 +15,6 @@ const withTimeout = (promise, timeoutMs, fallback) => Promise.race([
 
 const redirectTo = (path) => {
   navTo(path);
-};
-
-const getDefaultPermissions = (role) => {
-  if (role === 'admin') {
-    return {
-      view_dashboards: true,
-      register_production: true,
-      manage_occurrences: true,
-      manage_cells: true,
-      manage_operators: true,
-      view_reports: true,
-      ai_operations: true,
-      manage_automations: true,
-      manage_users: true,
-      view_pcp: true,
-      manage_pcp: true,
-      manage_routes: true,
-      traceability_collect: true,
-      view_traceability: true,
-      manage_packaging: true,
-      manage_shipping: true,
-      view_mes_alerts: true
-    };
-  } else if (role === 'manager') {
-    return {
-      view_dashboards: true,
-      register_production: true,
-      manage_occurrences: true,
-      manage_cells: false,
-      manage_operators: false,
-      view_reports: true,
-      ai_operations: true,
-      manage_automations: false,
-      manage_users: false,
-      view_pcp: true,
-      manage_pcp: true,
-      manage_routes: true,
-      traceability_collect: true,
-      view_traceability: true,
-      manage_packaging: true,
-      manage_shipping: true,
-      view_mes_alerts: true
-    };
-  } else {
-    return {
-      view_dashboards: true,
-      register_production: true,
-      manage_occurrences: true,
-      manage_cells: false,
-      manage_operators: false,
-      view_reports: false,
-      ai_operations: false,
-      manage_automations: false,
-      manage_users: false,
-      view_pcp: false,
-      manage_pcp: false,
-      manage_routes: false,
-      traceability_collect: true,
-      view_traceability: true,
-      manage_packaging: false,
-      manage_shipping: false,
-      view_mes_alerts: false
-    };
-  }
 };
 
 

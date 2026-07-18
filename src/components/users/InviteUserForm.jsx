@@ -10,70 +10,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCells } from '@/hooks/useCells';
-
-const getDefaultPermissions = (role) => {
-  if (role === 'admin') {
-    return {
-      view_dashboards: true,
-      register_production: true,
-      manage_occurrences: true,
-      manage_cells: true,
-      manage_operators: true,
-      view_reports: true,
-      ai_operations: true,
-      manage_automations: true,
-      manage_users: true,
-      view_pcp: true,
-      manage_pcp: true,
-      manage_routes: true,
-      traceability_collect: true,
-      view_traceability: true,
-      manage_packaging: true,
-      manage_shipping: true,
-      view_mes_alerts: true
-    };
-  } else if (role === 'manager') {
-    return {
-      view_dashboards: true,
-      register_production: true,
-      manage_occurrences: true,
-      manage_cells: false,
-      manage_operators: false,
-      view_reports: true,
-      ai_operations: true,
-      manage_automations: false,
-      manage_users: false,
-      view_pcp: true,
-      manage_pcp: true,
-      manage_routes: true,
-      traceability_collect: true,
-      view_traceability: true,
-      manage_packaging: true,
-      manage_shipping: true,
-      view_mes_alerts: true
-    };
-  } else {
-    return {
-      view_dashboards: true,
-      register_production: true,
-      manage_occurrences: true,
-      manage_cells: false,
-      manage_operators: false,
-      view_reports: false,
-      ai_operations: false,
-      manage_automations: false,
-      manage_users: false,
-      view_pcp: false,
-      manage_pcp: false,
-      manage_routes: false,
-      traceability_collect: true,
-      view_traceability: true,
-      manage_packaging: false,
-      manage_shipping: false,
-      view_mes_alerts: false
-    };
-  }
-};
+import { getDefaultPermissions } from '@/config/appRoutes';
 
 
 const PERMISSION_METADATA = [
@@ -93,9 +30,15 @@ const PERMISSION_METADATA = [
   { key: 'view_traceability', label: 'Rastreabilidade Geral', desc: 'Acessar o Kanban e timeline de peças.', icon: Layers },
   { key: 'manage_packaging', label: 'Gerenciar Embalagem', desc: 'Criar volumes e bipar peças (Scan-to-Pack).', icon: Box },
   { key: 'manage_shipping', label: 'Gerenciar Expedição', desc: 'Realizar checklist de remessas e expedição.', icon: Truck },
-  { key: 'view_mes_alerts', label: 'Alertas MES', desc: 'Visualizar atrasos e gargalos no chão de fábrica.', icon: BellRing }
+  { key: 'view_mes_alerts', label: 'Alertas MES', desc: 'Visualizar atrasos e gargalos no chão de fábrica.', icon: BellRing },
+  // Novas permissões
+  { key: 'send_reports', label: 'Enviar Relatórios', desc: 'Enviar fechamentos e relatórios por e-mail manualmente.', icon: BellRing },
+  { key: 'schedule_reports', label: 'Agendar Relatórios', desc: 'Configurar e-mails automáticos periódicos.', icon: Zap },
+  { key: 'manage_report_recipients', label: 'Gerenciar Destinatários', desc: 'Cadastrar grupos de e-mail e contatos.', icon: Users },
+  { key: 'view_report_delivery_logs', label: 'Histórico de Envios', desc: 'Visualizar logs de e-mails enviados.', icon: LineChart },
+  { key: 'manage_email_settings', label: 'Configurar E-mail', desc: 'Configurar SMTP/Resend e cron (Admin).', icon: Users, warning: true },
+  { key: 'view_audit_logs', label: 'Logs de Auditoria', desc: 'Visualizar logs de auditoria de sistema (Admin).', icon: ShieldAlert, warning: true }
 ];
-
 
 export default function InviteUserForm({ onInvite, saving }) {
   const { activeCells } = useCells();
@@ -105,7 +48,6 @@ export default function InviteUserForm({ onInvite, saving }) {
   const [role, setRole] = useState('operator');
   const [cell, setCell] = useState('none');
   const [permissions, setPermissions] = useState(() => getDefaultPermissions('operator'));
-
 
   // Atualiza as permissões automaticamente quando o papel muda
   useEffect(() => {
@@ -137,7 +79,6 @@ export default function InviteUserForm({ onInvite, saving }) {
     setRole('operator');
     setCell('none');
     setPermissions(getDefaultPermissions('operator'));
-
   };
 
   return (
@@ -167,8 +108,10 @@ export default function InviteUserForm({ onInvite, saving }) {
               <SelectTrigger id="role"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="operator">Operador / Usuário</SelectItem>
+                <SelectItem value="supervisor">Supervisor / Líder</SelectItem>
                 <SelectItem value="manager">Gestor</SelectItem>
                 <SelectItem value="admin">Administrador</SelectItem>
+                <SelectItem value="viewer">Visualizador / Auditor</SelectItem>
               </SelectContent>
             </Select>
           </div>

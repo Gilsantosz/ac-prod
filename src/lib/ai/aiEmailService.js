@@ -77,20 +77,28 @@ function isProviderConfigError(message = '') {
 }
 
 function normalizeProfileRecipient(profile) {
+  const roleLabel = profile.role === 'admin' 
+    ? 'Administrador' 
+    : profile.role === 'manager' 
+    ? 'Gestor' 
+    : profile.role === 'supervisor' 
+    ? 'Supervisor' 
+    : 'Colaborador';
   return {
     id: `profile:${profile.id}`,
     profile_id: profile.id,
     recipient_id: null,
     source: 'profile',
-    source_label: profile.role === 'admin' ? 'Usuário Admin' : 'Usuário Gestor',
-    name: profile.name || profile.email || 'Gestor sem nome',
+    source_label: `Usuário ${roleLabel}`,
+    name: profile.name || profile.email || 'Colaborador sem nome',
     email: String(profile.email || '').trim().toLowerCase(),
-    role_label: profile.role === 'admin' ? 'Administrador' : 'Gestor',
-    recipient_group: 'manager',
+    role_label: roleLabel,
+    recipient_group: ['admin', 'manager', 'supervisor'].includes(profile.role) ? 'manager' : 'other',
     cell_filter: normalizeCells(profile),
     active: profile.active !== false,
   };
 }
+
 
 function normalizeLegacyRecipient(recipient) {
   return {
@@ -156,9 +164,9 @@ export async function listReportRecipients() {
   const [profilesResult, recipientsResult] = await Promise.all([
     supabase
       .from('profiles')
-      .select('id,name,email,role,cell,managed_cells,active')
-      .in('role', ['admin', 'manager'])
+      .select('id,name,email,role,cell,managed_cells,active,report_delivery_enabled')
       .eq('active', true)
+      .or(`role.in.(admin,manager,supervisor),report_delivery_enabled.eq.true`)
       .order('name'),
     supabase
       .from('report_recipients')

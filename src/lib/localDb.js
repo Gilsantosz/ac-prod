@@ -11,6 +11,7 @@
  */
 
 import { clearPersistedAuthSession, persistAuthSession, supabase } from './supabaseClient';
+import { getDefaultPermissions } from '@/config/appRoutes';
 import {
   getProductionMetricRule,
   getUnitLabel,
@@ -58,6 +59,12 @@ const TABLE_MAP = {
   SystemAuditLog: 'system_audit_logs',
   ReportSchedule: 'report_schedules',
   ReportDeliveryLog: 'report_delivery_logs',
+  EmailRecipientGroup: 'email_recipient_groups',
+  EmailRecipientGroupMember: 'email_recipient_group_members',
+  ReportScheduleRecipient: 'report_schedule_recipients',
+  ReportScheduleRun: 'report_schedule_runs',
+  ReportDelivery: 'report_deliveries',
+  ReportDeliveryHistory: 'report_delivery_history',
   BackupPolicy: 'backup_policies',
   BackupFile: 'backup_files',
 };
@@ -549,70 +556,6 @@ const createEntityClient = (entityName) => {
   };
 };
 
-const getDefaultPermissions = (role) => {
-  if (role === 'admin') {
-    return {
-      view_dashboards: true,
-      register_production: true,
-      manage_occurrences: true,
-      manage_cells: true,
-      manage_operators: true,
-      view_reports: true,
-      ai_operations: true,
-      manage_automations: true,
-      manage_users: true,
-      view_pcp: true,
-      manage_pcp: true,
-      manage_routes: true,
-      traceability_collect: true,
-      view_traceability: true,
-      manage_packaging: true,
-      manage_shipping: true,
-      view_mes_alerts: true
-    };
-  } else if (role === 'manager') {
-    return {
-      view_dashboards: true,
-      register_production: true,
-      manage_occurrences: true,
-      manage_cells: false,
-      manage_operators: false,
-      view_reports: true,
-      ai_operations: true,
-      manage_automations: false,
-      manage_users: false,
-      view_pcp: true,
-      manage_pcp: true,
-      manage_routes: true,
-      traceability_collect: true,
-      view_traceability: true,
-      manage_packaging: true,
-      manage_shipping: true,
-      view_mes_alerts: true
-    };
-  } else {
-    return {
-      view_dashboards: true,
-      register_production: true,
-      manage_occurrences: true,
-      manage_cells: false,
-      manage_operators: false,
-      view_reports: false,
-      ai_operations: false,
-      manage_automations: false,
-      manage_users: false,
-      view_pcp: false,
-      manage_pcp: false,
-      manage_routes: false,
-      traceability_collect: true,
-      view_traceability: true,
-      manage_packaging: false,
-      manage_shipping: false,
-      view_mes_alerts: false
-    };
-  }
-};
-
 // ─── Auth wrapper usando Supabase Auth ───────────────────────────────────────
 const auth = {
   me: async () => {
@@ -884,6 +827,12 @@ export const base44 = {
     SystemAuditLog: createEntityClient('SystemAuditLog'),
     ReportSchedule: createEntityClient('ReportSchedule'),
     ReportDeliveryLog: createEntityClient('ReportDeliveryLog'),
+    EmailRecipientGroup: createEntityClient('EmailRecipientGroup'),
+    EmailRecipientGroupMember: createEntityClient('EmailRecipientGroupMember'),
+    ReportScheduleRecipient: createEntityClient('ReportScheduleRecipient'),
+    ReportScheduleRun: createEntityClient('ReportScheduleRun'),
+    ReportDelivery: createEntityClient('ReportDelivery'),
+    ReportDeliveryHistory: createEntityClient('ReportDeliveryHistory'),
     BackupPolicy: createEntityClient('BackupPolicy'),
     BackupFile: createEntityClient('BackupFile'),
   },

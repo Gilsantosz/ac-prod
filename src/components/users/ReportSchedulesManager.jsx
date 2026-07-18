@@ -46,6 +46,7 @@ const emptySchedule = {
   format: 'email_html',
   cell_filter: [],
   recipient_profile_ids: [],
+  recipient_group_ids: [],
   extra_emails: '',
   enabled: true,
 };
@@ -71,7 +72,13 @@ export default function ReportSchedulesManager() {
     initialData: [],
   });
 
-  const managersAndAdmins = users.filter((u) => u.role === 'manager' || u.role === 'admin');
+  const { data: groups = [] } = useQuery({
+    queryKey: ['emailRecipientGroups'],
+    queryFn: () => base44.entities.EmailRecipientGroup.list('-created_at'),
+    initialData: [],
+  });
+
+  const managersAndAdmins = users.filter((u) => u.role === 'manager' || u.role === 'admin' || u.role === 'supervisor' || u.report_delivery_enabled);
 
   // Mutations
   const saveSchedule = useMutation({
@@ -84,6 +91,7 @@ export default function ReportSchedulesManager() {
           ? payload.extra_emails.split(',').map((e) => e.trim()).filter((e) => e.includes('@'))
           : [],
         report_types: payload.report_types || [payload.report_type || 'daily_production'],
+        recipient_group_ids: payload.recipient_group_ids || [],
       };
       return editing
         ? base44.entities.ReportSchedule.update(editing.id, formatted)
@@ -129,6 +137,7 @@ export default function ReportSchedulesManager() {
       format: s.format,
       cell_filter: s.cell_filter || [],
       recipient_profile_ids: s.recipient_profile_ids || [],
+      recipient_group_ids: s.recipient_group_ids || [],
       extra_emails: (s.extra_emails || []).join(', '),
       enabled: s.enabled ?? true,
     });
@@ -164,6 +173,15 @@ export default function ReportSchedulesManager() {
       recipient_profile_ids: f.recipient_profile_ids.includes(userId)
         ? f.recipient_profile_ids.filter((id) => id !== userId)
         : [...f.recipient_profile_ids, userId],
+    }));
+  };
+
+  const handleToggleGroup = (groupId) => {
+    setForm((f) => ({
+      ...f,
+      recipient_group_ids: (f.recipient_group_ids || []).includes(groupId)
+        ? f.recipient_group_ids.filter((id) => id !== groupId)
+        : [...(f.recipient_group_ids || []), groupId],
     }));
   };
 
@@ -354,6 +372,34 @@ export default function ReportSchedulesManager() {
               </div>
             </div>
 
+            {/* Grupos de Destinatários */}
+            {groups.length > 0 && (
+              <div className="space-y-2">
+                <Label>Grupos de Destinatários</Label>
+                <p className="text-xs text-muted-foreground">Todos os membros dos grupos selecionados receberão o e-mail.</p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {groups.map((g) => {
+                    const selected = (form.recipient_group_ids || []).includes(g.id);
+                    return (
+                      <button
+                        key={g.id}
+                        type="button"
+                        onClick={() => handleToggleGroup(g.id)}
+                        className={`px-3 py-1.5 rounded-lg text-xs border transition-colors flex items-center gap-1.5 ${
+                          selected
+                            ? 'bg-indigo-600/10 text-indigo-600 border-indigo-600/40 font-medium dark:text-indigo-400'
+                            : 'bg-transparent text-muted-foreground border-border/60 hover:bg-secondary'
+                        }`}
+                      >
+                        <Users className="w-3.5 h-3.5 text-indigo-500" />
+                        {g.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* E-mails Adicionais */}
             <div className="space-y-2">
               <Label>Destinatários Externos (E-mails Adicionais)</Label>
@@ -435,6 +481,14 @@ export default function ReportSchedulesManager() {
                       <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                         <Users className="w-3.5 h-3.5" />
                         Destinatários: <span className="font-medium text-foreground">{recipientNames.join(', ')}</span>
+                      </p>
+                    )}
+                    {s.recipient_group_ids && s.recipient_group_ids.length > 0 && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-indigo-500" />
+                        Grupos: <span className="font-medium text-foreground">
+                          {s.recipient_group_ids.map((id) => groups.find((g) => g.id === id)?.name).filter(Boolean).join(', ')}
+                        </span>
                       </p>
                     )}
                     {s.extra_emails && s.extra_emails.length > 0 && (
