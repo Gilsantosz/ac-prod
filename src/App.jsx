@@ -144,7 +144,6 @@ const AuthenticatedApp = () => {
           <Route path="/rastreabilidade/embalagem" element={<Navigate to="/rastreabilidade?tab=packaging" replace />} />
           <Route path="/rastreabilidade/expedicao" element={<Navigate to="/rastreabilidade?tab=shipping" replace />} />
           <Route path="/rastreabilidade/alertas" element={<Navigate to="/rastreabilidade?tab=alerts" replace />} />
-          <Route path="/rastreabilidade/testes" element={<Navigate to="/rastreabilidade?tab=test-panel" replace />} />
 
           <Route path="/pcp" element={<PromobIntegration />} />
           <Route path="/pcp/importar" element={<Navigate to="/pcp?tab=import" replace />} />

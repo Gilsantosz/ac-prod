@@ -5,9 +5,9 @@ import { useTraceability } from '@/hooks/useTraceability';
 import LotKanban      from '@/components/traceability/LotKanban';
 import LotSearch      from '@/components/traceability/LotSearch';
 import LotTimeline    from '@/components/traceability/LotTimeline';
-import TraceabilityTestPanel from '@/components/traceability/TraceabilityTestPanel';
+
 import {
-  Layers, Search, GitBranch, RefreshCw, Clock, CheckCircle, Lock, Play,
+  Layers, Search, GitBranch, RefreshCw, Clock, CheckCircle, Lock,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -18,7 +18,7 @@ export default function Traceability() {
   const trace = useTraceability();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
-  const activeTab = ['kanban', 'search', 'timeline', 'test-panel'].includes(requestedTab) ? requestedTab : 'kanban';
+  const activeTab = ['kanban', 'search', 'timeline'].includes(requestedTab) ? requestedTab : 'kanban';
 
   const handleTabChange = (value) => {
     setSearchParams(value === 'kanban' ? {} : { tab: value }, { replace: true });
@@ -63,9 +63,6 @@ export default function Traceability() {
           <TabsTrigger value="timeline" className="gap-2 text-xs sm:text-sm">
             <GitBranch className="w-3.5 h-3.5" /> Histórico
           </TabsTrigger>
-          <TabsTrigger value="test-panel" className="gap-2 text-xs sm:text-sm">
-            <Play className="w-3.5 h-3.5" /> Simulador / Testes
-          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="kanban">
@@ -80,9 +77,6 @@ export default function Traceability() {
           <LotTimeline trace={trace} />
         </TabsContent>
 
-        <TabsContent value="test-panel">
-          <TraceabilityTestPanel />
-        </TabsContent>
       </Tabs>
 
     </div>

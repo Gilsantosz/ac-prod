@@ -8,7 +8,7 @@
 import {
   LayoutDashboard, PlusCircle, ClipboardList, Gauge, Boxes,
   Layers, Plug, AlertOctagon, Trophy, LineChart, BrainCircuit,
-  Zap, Users, Shield, HardDrive, Truck, Box, BellRing, Play, FolderKanban, GitFork, Cpu, ShieldCheck, Wrench
+  Zap, Users, Shield, HardDrive, Truck, Box, BellRing, FolderKanban, GitFork, Cpu, ShieldCheck, Wrench
 } from 'lucide-react';
 
 export const routeGroups = {
@@ -164,17 +164,6 @@ export const appRoutes = [
     showInSidebar: true,
     showInDashboardHub: true,
     tabTarget: 'alerts'
-  },
-  {
-    path: '/rastreabilidade/testes',
-    label: 'Simulador / Testes',
-    description: 'Painel de simulações físicas de bips e geração de dados de teste',
-    icon: Play,
-    group: 'mes',
-    permission: 'view_traceability',
-    showInSidebar: false,
-    showInDashboardHub: true,
-    tabTarget: 'test-panel'
   },
 
   // ─── GRUPO 4: GESTÃO ───────────────────────────────────────────────
@@ -350,7 +339,6 @@ const buildPathPermissionMap = (routes) => {
   map['/rastreabilidade/embalagem'] = 'manage_packaging';
   map['/rastreabilidade/expedicao'] = 'manage_shipping';
   map['/rastreabilidade/alertas'] = 'view_mes_alerts';
-  map['/rastreabilidade/testes'] = 'view_traceability';
   
   map['/pcp/importar'] = 'manage_pcp';
   map['/pcp/historico'] = 'view_pcp';
