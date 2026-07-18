@@ -8,7 +8,7 @@
 import {
   LayoutDashboard, PlusCircle, ClipboardList, Gauge, Boxes,
   Layers, Plug, AlertOctagon, Trophy, LineChart, BrainCircuit,
-  Zap, Users, Shield, HardDrive, Truck, Box, BellRing, Play, FolderKanban, GitFork, Cpu, ShieldCheck
+  Zap, Users, Shield, HardDrive, Truck, Box, BellRing, Play, FolderKanban, GitFork, Cpu, ShieldCheck, Wrench
 } from 'lucide-react';
 
 export const routeGroups = {
@@ -61,6 +61,17 @@ export const appRoutes = [
     permission: 'view_traceability',
     showInSidebar: true,
     showInDashboardHub: true
+  },
+  {
+    path: '/marcenaria',
+    label: 'Marcenaria',
+    description: 'Bancada operacional de Marcenaria — gestão de peças e fluxo manual',
+    icon: Wrench,
+    group: 'operation',
+    permission: 'view_traceability',
+    showInSidebar: true,
+    showInDashboardHub: true,
+    aliases: ['/rastreabilidade/marcenaria']
   },
   {
     path: '/oee',
@@ -335,6 +346,7 @@ const buildPathPermissionMap = (routes) => {
   map['/rastreabilidade/buscar'] = 'view_traceability';
   map['/rastreabilidade/historico'] = 'view_traceability';
   map['/rastreabilidade/marcenaria'] = 'view_traceability';
+  map['/marcenaria'] = 'view_traceability';
   map['/rastreabilidade/embalagem'] = 'manage_packaging';
   map['/rastreabilidade/expedicao'] = 'manage_shipping';
   map['/rastreabilidade/alertas'] = 'view_mes_alerts';

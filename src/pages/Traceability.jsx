@@ -5,11 +5,9 @@ import { useTraceability } from '@/hooks/useTraceability';
 import LotKanban      from '@/components/traceability/LotKanban';
 import LotSearch      from '@/components/traceability/LotSearch';
 import LotTimeline    from '@/components/traceability/LotTimeline';
-import JoineryWorkbench from '@/components/traceability/JoineryWorkbench';
 import TraceabilityTestPanel from '@/components/traceability/TraceabilityTestPanel';
-import OperationalLoginGate from '@/components/entry/OperationalLoginGate';
 import {
-  Layers, Search, GitBranch, Wrench, RefreshCw, Clock, CheckCircle, Lock, Play,
+  Layers, Search, GitBranch, RefreshCw, Clock, CheckCircle, Lock, Play,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -20,7 +18,7 @@ export default function Traceability() {
   const trace = useTraceability();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
-  const activeTab = ['kanban', 'search', 'timeline', 'joinery', 'test-panel'].includes(requestedTab) ? requestedTab : 'kanban';
+  const activeTab = ['kanban', 'search', 'timeline', 'test-panel'].includes(requestedTab) ? requestedTab : 'kanban';
 
   const handleTabChange = (value) => {
     setSearchParams(value === 'kanban' ? {} : { tab: value }, { replace: true });
@@ -46,12 +44,11 @@ export default function Traceability() {
       </div>
 
       {/* ── Stats Rápidos ───────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard icon={Layers}        label="Total Lotes"       value={trace.stats.total}       />
         <StatCard icon={Lock}          label="Bloqueados"         value={trace.stats.blocked}     accent="red" />
         <StatCard icon={Clock}         label="Em Atraso"          value={trace.stats.late}        accent="amber" />
         <StatCard icon={CheckCircle}   label="Finalizados"        value={trace.stats.completed}   accent="green" />
-        <StatCard icon={Wrench}        label="Com Marcenaria"     value={trace.stats.withJoinery} accent="amber" className="hidden xl:flex" />
       </div>
 
       {/* ── Abas ───────────────────────────────────────────── */}
@@ -65,14 +62,6 @@ export default function Traceability() {
           </TabsTrigger>
           <TabsTrigger value="timeline" className="gap-2 text-xs sm:text-sm">
             <GitBranch className="w-3.5 h-3.5" /> Histórico
-          </TabsTrigger>
-          <TabsTrigger value="joinery" className="gap-2 text-xs sm:text-sm">
-            <Wrench className="w-3.5 h-3.5" /> Marcenaria
-            {trace.stats.withJoinery > 0 && (
-              <Badge className="ml-1 text-[10px] px-1.5 py-0 h-4 bg-amber-500 text-white border-0">
-                {trace.stats.withJoinery}
-              </Badge>
-            )}
           </TabsTrigger>
           <TabsTrigger value="test-panel" className="gap-2 text-xs sm:text-sm">
             <Play className="w-3.5 h-3.5" /> Simulador / Testes
@@ -89,12 +78,6 @@ export default function Traceability() {
 
         <TabsContent value="timeline">
           <LotTimeline trace={trace} />
-        </TabsContent>
-
-        <TabsContent value="joinery">
-          <OperationalLoginGate>
-            <JoineryWorkbench trace={trace} />
-          </OperationalLoginGate>
         </TabsContent>
 
         <TabsContent value="test-panel">

@@ -41,6 +41,7 @@ import ShippingPage from '@/pages/ShippingPage';
 import MesAlertsPage from '@/pages/MesAlertsPage';
 import LotIntegrity from '@/pages/LotIntegrity';
 import IntegrityLogs from '@/pages/IntegrityLogs';
+import JoineryPage from '@/pages/JoineryPage';
 import { useProductionRealtimeSync } from '@/hooks/useProductionRealtimeSync';
 import { isSupabaseConfigured } from '@/lib/supabaseClient';
 
@@ -139,7 +140,7 @@ const AuthenticatedApp = () => {
           <Route path="/rastreabilidade/kanban" element={<Navigate to="/rastreabilidade?tab=kanban" replace />} />
           <Route path="/rastreabilidade/buscar" element={<Navigate to="/rastreabilidade?tab=search" replace />} />
           <Route path="/rastreabilidade/historico" element={<Navigate to="/rastreabilidade?tab=timeline" replace />} />
-          <Route path="/rastreabilidade/marcenaria" element={<Navigate to="/rastreabilidade?tab=joinery" replace />} />
+          <Route path="/rastreabilidade/marcenaria" element={<Navigate to="/marcenaria" replace />} />
           <Route path="/rastreabilidade/embalagem" element={<Navigate to="/rastreabilidade?tab=packaging" replace />} />
           <Route path="/rastreabilidade/expedicao" element={<Navigate to="/rastreabilidade?tab=shipping" replace />} />
           <Route path="/rastreabilidade/alertas" element={<Navigate to="/rastreabilidade?tab=alerts" replace />} />
@@ -159,6 +160,7 @@ const AuthenticatedApp = () => {
           <Route path="/alertas-mes" element={<MesAlertsPage />} />
 
           <Route path="/rotas-produtivas" element={<ProductionRoutes />} />
+          <Route path="/marcenaria" element={<JoineryPage />} />
           <Route path="/mes" element={<MesHub />} />
           <Route path="/integridade-lote" element={<LotIntegrity />} />
           <Route path="/logs-integridade" element={<IntegrityLogs />} />
