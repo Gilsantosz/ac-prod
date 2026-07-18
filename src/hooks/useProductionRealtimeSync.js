@@ -28,10 +28,21 @@ const TABLE_TO_QUERY_KEYS = {
     ['machines-admin-list'],
     ['cells-goals-summary'],
   ],
-  production_realtime_counters: [['realtimeCounters']],
-  production_collection_events: [['collectionEvents']],
+  production_realtime_counters: [
+    ['realtimeCounters'],
+    ['collection-kpis'],
+    ['cell-detailed-stats'],
+  ],
+  production_collection_events: [
+    ['collectionEvents'],
+    ['collection-history'],
+    ['collection-kpis'],
+  ],
   production_stage_readings: [
     ['stageReadings'],
+    ['collection-history'],
+    ['collection-kpis'],
+    ['cell-detailed-stats'],
     ['traceability-report-readings'],
     ['test-readings-list'],
     ['test-lot-details'],
@@ -43,12 +54,27 @@ const TABLE_TO_QUERY_KEYS = {
   production_lots: [
     ['production-lots'],
     ['productionLots'],
+    ['trace-search'],
     ['test-lots-list'],
     ['test-lot-details'],
+  ],
+  production_pieces: [
+    ['production-lots'],
+    ['productionLots'],
+    ['trace-search'],
+    ['collection-kpis'],
+    ['pcp-batches'],
+  ],
+  promob_import_batches: [
+    ['production-lots'],
+    ['trace-search'],
+    ['collection-kpis'],
+    ['pcp-batches'],
   ],
   production_lot_items: [
     ['production-lots'],
     ['productionLots'],
+    ['trace-search'],
     ['test-lot-details'],
   ],
   production_routes: [
@@ -65,7 +91,30 @@ const TABLE_TO_QUERY_KEYS = {
     ['production-lots'],
   ],
   packages: [['packages']],
+  packing_volumes: [
+    ['packages'],
+    ['production-lots'],
+    ['trace-search'],
+  ],
+  packing_volume_items: [
+    ['packages'],
+    ['production-lots'],
+    ['trace-search'],
+  ],
   shipments: [['shipments']],
+  shipment_items: [['shipments']],
+  customer_covers: [
+    ['customer-covers'],
+    ['customerCovers'],
+    ['production-lots'],
+    ['trace-search'],
+  ],
+  customer_cover_events: [
+    ['customer-cover-events'],
+    ['customerCoverEvents'],
+    ['lot-events'],
+    ['production-lots'],
+  ],
   operators: [['operators']],
   profiles: [
     ['users'],
@@ -75,6 +124,8 @@ const TABLE_TO_QUERY_KEYS = {
   alert_logs: [
     ['unresolvedAlerts'],
     ['unresolved-alerts-list'],
+    ['all-alerts-list'],
+    ['mes-hub-kpis'],
   ],
 };
 
@@ -129,7 +180,30 @@ export function useProductionRealtimeSync(options = {}) {
         return;
       }
 
-      queryKeys.forEach(triggerInvalidate);
+      // O dashboard mantém uma janela paginada sem limite fixo de 5.000 linhas.
+      // Para cada nova coleta, atualiza essa janela em memória em vez de baixar
+      // novamente todo o mês em todos os monitores conectados.
+      if (table === 'production_entries') {
+        queryClient.setQueriesData({ queryKey: ['production'] }, (current) => {
+          if (!Array.isArray(current)) return current;
+          const rowId = newRow.id || oldRow.id;
+          if (!rowId) return current;
+          if (payload.eventType === 'DELETE') {
+            return current.filter(row => row.id !== rowId);
+          }
+          const normalized = { ...newRow, created_date: newRow.created_at };
+          const existingIndex = current.findIndex(row => row.id === rowId);
+          if (existingIndex < 0) return [normalized, ...current];
+          const next = [...current];
+          next[existingIndex] = { ...next[existingIndex], ...normalized };
+          return next;
+        });
+      }
+
+      queryKeys.forEach((queryKey) => {
+        if (table === 'production_entries' && queryKey[0] === 'production') return;
+        triggerInvalidate(queryKey);
+      });
     };
 
     const realtimeChannelName = [

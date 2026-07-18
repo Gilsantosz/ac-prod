@@ -7,6 +7,7 @@ import LotSearch      from '@/components/traceability/LotSearch';
 import LotTimeline    from '@/components/traceability/LotTimeline';
 import JoineryWorkbench from '@/components/traceability/JoineryWorkbench';
 import TraceabilityTestPanel from '@/components/traceability/TraceabilityTestPanel';
+import OperationalLoginGate from '@/components/entry/OperationalLoginGate';
 import {
   Layers, Search, GitBranch, Wrench, RefreshCw, Clock, CheckCircle, Lock, Play,
 } from 'lucide-react';
@@ -91,7 +92,9 @@ export default function Traceability() {
         </TabsContent>
 
         <TabsContent value="joinery">
-          <JoineryWorkbench trace={trace} />
+          <OperationalLoginGate>
+            <JoineryWorkbench trace={trace} />
+          </OperationalLoginGate>
         </TabsContent>
 
         <TabsContent value="test-panel">
@@ -122,4 +125,3 @@ function StatCard({ icon: Icon, label, value, accent, className }) {
     </div>
   );
 }
-

@@ -7,8 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import PageHeader from '@/components/ui/PageHeader';
 import {
-  Truck, CheckCircle, RefreshCw, Package, Clock, User,
-  QrCode, Play, AlertCircle, Search, Layers, ArrowRight, ShieldAlert, Check
+  Truck, CheckCircle, RefreshCw, Package, Clock,
+  QrCode, Play, AlertCircle, Layers, ArrowRight, Check
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -16,9 +16,10 @@ import {
   scanShipmentItem,
   validateShipmentCompleteness,
   releaseShipment,
-  getMissingShipmentItems,
   getShipmentProgress
 } from '@/lib/shipmentService';
+import { getCustomerCovers } from '@/lib/customerCoverService';
+import { Label } from '@/components/ui/label';
 
 // Função para gerar feedback sonoro nativo via Web Audio API
 const playBeep = (type) => {
@@ -51,7 +52,9 @@ const playBeep = (type) => {
 
 export default function ShippingPage() {
   const qc = useQueryClient();
+  const [activeTab, setActiveTab] = useState('covers'); // 'covers' | 'lots'
   const [selectedLotId, setSelectedLotId] = useState(null);
+  const [selectedCoverId, setSelectedCoverId] = useState(null);
   const [activeShipmentId, setActiveShipmentId] = useState(null);
   const [barcodeInput, setBarcodeInput] = useState('');
   const [isScanning, setIsScanning] = useState(false);
@@ -92,23 +95,37 @@ export default function ShippingPage() {
     l.status === 'packed' || l.status === 'waiting_shipping' || l.status === 'completed'
   );
 
-  // 2. Query: Expedições associadas ao lote ativo
+  // 2. Query: Capas de cliente
+  const { data: covers = [], isLoading: isLoadingCovers, refetch: refetchCovers } = useQuery({
+    queryKey: ['mes-shipping-covers'],
+    queryFn: () => getCustomerCovers(),
+  });
+
+  const readyCovers = covers.filter(c =>
+    c.status === 'packed' || c.status === 'shipped'
+  );
+
+  // 3. Query: Expedições associadas ao lote/capa ativo
   const { data: shipments = [], isLoading: isLoadingShipments, refetch: refetchShipments } = useQuery({
-    queryKey: ['shipments', selectedLotId],
+    queryKey: ['shipments', activeTab === 'covers' ? selectedCoverId : selectedLotId, activeTab],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('shipments')
-        .select('*')
-        .eq('lot_id', selectedLotId)
-        .order('created_at', { ascending: false });
+      const targetId = activeTab === 'covers' ? selectedCoverId : selectedLotId;
+      if (!targetId) return [];
+      let query = supabase.from('shipments').select('*');
+      if (activeTab === 'covers') {
+        query = query.eq('customer_cover_id', targetId);
+      } else {
+        query = query.eq('lot_id', targetId);
+      }
+      const { data, error } = await query.order('created_at', { ascending: false });
       if (error) throw error;
       return data || [];
     },
-    enabled: !!selectedLotId,
+    enabled: activeTab === 'covers' ? !!selectedCoverId : !!selectedLotId,
     initialData: [],
   });
 
-  // 3. Query: Progresso da conferência da expedição selecionada
+  // 4. Query: Progresso da conferência da expedição selecionada
   const { data: progress, isLoading: isLoadingProgress, refetch: refetchProgress } = useQuery({
     queryKey: ['shipment-progress', activeShipmentId],
     queryFn: () => getShipmentProgress(activeShipmentId),
@@ -116,9 +133,10 @@ export default function ShippingPage() {
   });
 
   const selectedLot = lots.find(l => l.id === selectedLotId);
+  const selectedCover = covers.find(c => c.id === selectedCoverId);
   const activeShipment = shipments.find(s => s.id === activeShipmentId);
 
-  // Auto-seleciona a primeira expedição do lote
+  // Auto-seleciona a primeira expedição do lote/capa
   useEffect(() => {
     if (shipments && shipments.length > 0) {
       if (!activeShipmentId || !shipments.some(s => s.id === activeShipmentId)) {
@@ -138,34 +156,55 @@ export default function ShippingPage() {
 
   // KPIs dinâmicos da Expedição
   const kpis = {
-    waiting: readyToShip.filter(l => l.status === 'packed' || l.status === 'waiting_shipping').length,
+    waiting: activeTab === 'covers'
+      ? readyCovers.filter(c => c.status === 'packed').length
+      : readyToShip.filter(l => l.status === 'packed' || l.status === 'waiting_shipping').length,
     inProgress: shipments.filter(s => s.status === 'pending').length,
-    blocked: readyToShip.filter(l => l.status === 'blocked').length,
-    releasedToday: shipments.filter(s => s.status === 'released' && new Date(s.released_at).toDateString() === new Date().toDateString()).length
+    blocked: activeTab === 'covers'
+      ? covers.filter(c => c.status === 'blocked').length
+      : readyToShip.filter(l => l.status === 'blocked').length,
+    releasedToday: shipments.filter(s =>
+      (s.status === 'shipped' || s.status === 'released') &&
+      new Date(s.shipped_at || s.released_at || s.created_at).toDateString() === new Date().toDateString()
+    ).length
   };
 
   const handleCreateShipment = async (e) => {
     e.preventDefault();
-    if (!selectedLot) return;
+    const target = activeTab === 'covers' ? selectedCover : selectedLot;
+    if (!target) return;
 
     try {
-      const code = `EXP-${selectedLot.lot_code}-${Date.now()}`;
-      
-      const { data: shipment, error } = await supabase.from('shipments').insert({
-        order_id:      selectedLot.production_orders?.id || selectedLot.order_id || selectedLot.id,
-        lot_id:        selectedLot.id,
-        shipment_code: code,
+      let code;
+      let payload = {
         carrier:       form.carrier || null,
         vehicle:       form.vehicle || null,
         driver:        form.driver  || null,
         tracking_code: form.tracking_code || null,
         notes:         form.notes   || null,
         status:        'pending',
-      }).select().single();
+      };
+
+      if (activeTab === 'covers') {
+        code = `EXP-${target.cover_code}-${Date.now()}`;
+        payload.customer_cover_id = target.id;
+        payload.shipment_code = code;
+      } else {
+        code = `EXP-${target.lot_code}-${Date.now()}`;
+        payload.order_id = target.production_orders?.id || target.order_id || target.id;
+        payload.lot_id = target.id;
+        payload.shipment_code = code;
+      }
+
+      const { data: shipment, error } = await supabase
+        .from('shipments')
+        .insert(payload)
+        .select()
+        .single();
 
       if (error) throw error;
 
-      await createShipmentChecklist(shipment.id, selectedLot.id);
+      await createShipmentChecklist(shipment.id);
       toast.success('📦 Guia de Expedição e Checklist gerados!');
       refetchShipments();
       setShowForm(false);
@@ -209,9 +248,9 @@ export default function ShippingPage() {
 
     try {
       // Validar completude
-      const isComplete = await validateShipmentCompleteness(activeShipmentId);
-      if (!isComplete) {
-        toast.error('Não é possível liberar: existem volumes pendentes de conferência.');
+      const validation = await validateShipmentCompleteness(activeShipmentId);
+      if (!validation.isValid) {
+        toast.error(`Não é possível liberar: existem ${validation.pending} volumes pendentes de conferência.`);
         playBeep('error');
         return;
       }
@@ -219,7 +258,11 @@ export default function ShippingPage() {
       await releaseShipment(activeShipmentId);
       toast.success('🚀 Carga expedida e integrada com sucesso!');
       refetchShipments();
-      refetchLots();
+      if (activeTab === 'covers') {
+        refetchCovers();
+      } else {
+        refetchLots();
+      }
       refetchProgress();
       playBeep('success');
     } catch (err) {
@@ -300,76 +343,163 @@ export default function ShippingPage() {
         </div>
       </div>
 
+      {/* Selector de Abas do Chão de Fábrica */}
+      <div className="flex gap-2 border-b border-border/40 pb-2">
+        <Button
+          variant={activeTab === 'covers' ? 'default' : 'ghost'}
+          onClick={() => {
+            setActiveTab('covers');
+            setSelectedLotId(null);
+            setSelectedCoverId(null);
+            setActiveShipmentId(null);
+          }}
+          className="rounded-xl px-4 py-2 font-bold"
+        >
+          🗂 Capas de Cliente
+        </Button>
+        <Button
+          variant={activeTab === 'lots' ? 'default' : 'ghost'}
+          onClick={() => {
+            setActiveTab('lots');
+            setSelectedLotId(null);
+            setSelectedCoverId(null);
+            setActiveShipmentId(null);
+          }}
+          className="rounded-xl px-4 py-2 font-bold"
+        >
+          📦 Lotes Individuais
+        </Button>
+      </div>
+
       {/* ── Layout Operacional 3 Colunas ─────────────────────── */}
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
         
-        {/* Coluna 1: Lotes Prontos para Expedição */}
+        {/* Coluna 1: Lotes / Capas Prontas para Expedição */}
         <div className="xl:col-span-1 space-y-3">
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Lotes Prontos</h3>
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+            {activeTab === 'covers' ? 'Capas Embaladas' : 'Lotes Embalados'}
+          </h3>
           
-          {isLoadingLots ? (
-            <div className="text-center py-10 text-muted-foreground">
-              <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />
-              <p className="text-xs">Buscando lotes prontos...</p>
-            </div>
-          ) : readyToShip.length === 0 ? (
-            <div className="text-center py-10 border border-dashed border-border/40 rounded-2xl text-muted-foreground">
-              <Package className="w-6 h-6 mx-auto mb-2 opacity-35" />
-              <p className="text-xs">Nenhum lote pronto para expedir</p>
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-[65vh] overflow-y-auto pr-1">
-              {readyToShip.map(lot => {
-                const isSelected = selectedLotId === lot.id;
-                return (
-                  <button
-                    key={lot.id}
-                    onClick={() => {
-                      setSelectedLotId(lot.id);
-                      setActiveShipmentId(null);
-                    }}
-                    className={cn(
-                      'w-full text-left p-3.5 rounded-xl border transition-all flex flex-col justify-between space-y-2.5',
-                      isSelected
-                        ? 'border-emerald-500/50 bg-emerald-500/5 shadow-sm'
-                        : 'border-border/50 bg-card hover:border-border/80'
-                    )}
-                  >
-                    <div className="flex justify-between items-start gap-2 w-full">
-                      <div>
-                        <span className="font-bold text-sm text-foreground">{lot.lot_code}</span>
-                        <p className="text-xs text-muted-foreground truncate max-w-[155px] mt-0.5">
-                          {lot.production_orders?.customer_name || 'Geral'}
-                        </p>
+          {activeTab === 'covers' ? (
+            isLoadingCovers ? (
+              <div className="text-center py-10 text-muted-foreground">
+                <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />
+                <p className="text-xs">Buscando capas...</p>
+              </div>
+            ) : readyCovers.length === 0 ? (
+              <div className="text-center py-10 border border-dashed border-border/40 rounded-2xl text-muted-foreground">
+                <Package className="w-6 h-6 mx-auto mb-2 opacity-35" />
+                <p className="text-xs">Nenhuma capa pronta para expedir</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[65vh] overflow-y-auto pr-1">
+                {readyCovers.map(cover => {
+                  const isSelected = selectedCoverId === cover.id;
+                  return (
+                    <button
+                      key={cover.id}
+                      onClick={() => {
+                        setSelectedCoverId(cover.id);
+                        setActiveShipmentId(null);
+                      }}
+                      className={cn(
+                        'w-full text-left p-3.5 rounded-xl border transition-all flex flex-col justify-between space-y-2.5',
+                        isSelected
+                          ? 'border-emerald-500/50 bg-emerald-500/5 shadow-sm ring-1 ring-emerald-500/20'
+                          : 'border-border/50 bg-card hover:border-border/80'
+                      )}
+                    >
+                      <div className="flex justify-between items-start gap-2 w-full">
+                        <div>
+                          <span className="font-bold text-sm text-foreground">{cover.customer_name_exact}</span>
+                          <p className="text-xs text-muted-foreground truncate max-w-[155px] mt-0.5 font-mono">
+                            Capa: {cover.cover_code}
+                          </p>
+                        </div>
+                        <Badge className={cn(
+                          'text-[9px] font-bold px-1.5 py-0.5 rounded border-0',
+                          cover.status === 'shipped' ? 'bg-emerald-500 text-white' : 'bg-blue-500 text-white'
+                        )}>
+                          {cover.status === 'shipped' ? 'Expedido' : 'Pronto'}
+                        </Badge>
                       </div>
-                      <Badge className={cn(
-                        'text-[9px] font-bold px-1.5 py-0.5 rounded border-0',
-                        lot.status === 'completed' ? 'bg-emerald-500 text-white' : 'bg-blue-500 text-white'
-                      )}>
-                        {lot.status === 'completed' ? 'Expedido' : 'Embalado'}
-                      </Badge>
-                    </div>
-                    
-                    <div className="text-[10px] text-muted-foreground flex justify-between items-center w-full">
-                      <span>Prazo: {lot.deadline ? new Date(lot.deadline).toLocaleDateString('pt-BR') : 'Sem prazo'}</span>
-                      <span className="font-mono">#ID: {lot.id.substring(0, 5)}</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+                      
+                      <div className="text-[10px] text-muted-foreground flex justify-between items-center w-full">
+                        <span>Lote Geral: {cover.general_lot_code}</span>
+                        <span className="font-mono">{cover.total_lots} lotes</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )
+          ) : (
+            isLoadingLots ? (
+              <div className="text-center py-10 text-muted-foreground">
+                <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />
+                <p className="text-xs">Buscando lotes prontos...</p>
+              </div>
+            ) : readyToShip.length === 0 ? (
+              <div className="text-center py-10 border border-dashed border-border/40 rounded-2xl text-muted-foreground">
+                <Package className="w-6 h-6 mx-auto mb-2 opacity-35" />
+                <p className="text-xs">Nenhum lote pronto para expedir</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[65vh] overflow-y-auto pr-1">
+                {readyToShip.map(lot => {
+                  const isSelected = selectedLotId === lot.id;
+                  return (
+                    <button
+                      key={lot.id}
+                      onClick={() => {
+                        setSelectedLotId(lot.id);
+                        setActiveShipmentId(null);
+                      }}
+                      className={cn(
+                        'w-full text-left p-3.5 rounded-xl border transition-all flex flex-col justify-between space-y-2.5',
+                        isSelected
+                          ? 'border-emerald-500/50 bg-emerald-500/5 shadow-sm'
+                          : 'border-border/50 bg-card hover:border-border/80'
+                      )}
+                    >
+                      <div className="flex justify-between items-start gap-2 w-full">
+                        <div>
+                          <span className="font-bold text-sm text-foreground">{lot.lot_code}</span>
+                          <p className="text-xs text-muted-foreground truncate max-w-[155px] mt-0.5">
+                            {lot.production_orders?.customer_name || 'Geral'}
+                          </p>
+                        </div>
+                        <Badge className={cn(
+                          'text-[9px] font-bold px-1.5 py-0.5 rounded border-0',
+                          lot.status === 'completed' ? 'bg-emerald-500 text-white' : 'bg-blue-500 text-white'
+                        )}>
+                          {lot.status === 'completed' ? 'Expedido' : 'Embalado'}
+                        </Badge>
+                      </div>
+                      
+                      <div className="text-[10px] text-muted-foreground flex justify-between items-center w-full">
+                        <span>Prazo: {lot.deadline ? new Date(lot.deadline).toLocaleDateString('pt-BR') : 'Sem prazo'}</span>
+                        <span className="font-mono">#ID: {lot.id.substring(0, 5)}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )
           )}
         </div>
 
         {/* Coluna 2: Checklist de Carga & Scanner */}
         <div className="xl:col-span-2 space-y-4">
-          {!selectedLotId ? (
+          {!(activeTab === 'covers' ? selectedCoverId : selectedLotId) ? (
             <div className="text-center py-24 border border-dashed border-border/40 bg-card/25 rounded-2xl text-muted-foreground flex flex-col items-center justify-center space-y-3">
               <Truck className="w-12 h-12 text-muted-foreground/30" />
               <div>
                 <p className="font-bold text-foreground text-sm">Nenhuma carga selecionada</p>
                 <p className="text-xs text-muted-foreground mt-1 max-w-[280px]">
-                  Selecione um lote embalado na fila à esquerda para realizar o checklist de volumes e conferência de expedição.
+                  {activeTab === 'covers'
+                    ? 'Selecione uma capa embalada na fila à esquerda para realizar o checklist de volumes e conferência de expedição.'
+                    : 'Selecione um lote embalado na fila à esquerda para realizar o checklist de volumes e conferência de expedição.'}
                 </p>
               </div>
             </div>
@@ -379,9 +509,11 @@ export default function ShippingPage() {
               {/* Header do Lote/Carga */}
               <div className="flex justify-between items-start gap-4 pb-4 border-b border-border/40">
                 <div>
-                  <h4 className="font-extrabold text-foreground text-lg">{selectedLot?.lot_code}</h4>
+                  <h4 className="font-extrabold text-foreground text-lg">
+                    {activeTab === 'covers' ? selectedCover?.cover_code : selectedLot?.lot_code}
+                  </h4>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Cliente: {selectedLot?.production_orders?.customer_name || 'Geral'}
+                    Cliente: {activeTab === 'covers' ? selectedCover?.customer_name_exact : (selectedLot?.production_orders?.customer_name || 'Geral')}
                   </p>
                 </div>
                 
@@ -398,7 +530,7 @@ export default function ShippingPage() {
               {/* Formulário de Criação de Checklist */}
               {showForm && (
                 <form onSubmit={handleCreateShipment} className="bg-secondary/25 border p-4 rounded-xl space-y-3 animate-in slide-in-from-top-2">
-                  <h5 className="text-xs font-bold text-foreground uppercase tracking-wider">Dados do Transporte</h5>
+                  <h5 className="text-xs font-bold text-foreground uppercase tracking-wider">Dados do Transporte ({activeTab === 'covers' ? 'Capa de Cliente' : 'Lote Produtivo'})</h5>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <Label className="text-[10px] text-muted-foreground">Transportadora</Label>
@@ -459,8 +591,8 @@ export default function ShippingPage() {
                     </div>
                     <div>
                       <span className="font-bold text-foreground block">Status</span>
-                      <Badge variant={activeShipment.status === 'released' ? 'default' : 'outline'} className="text-[9px] h-4 mt-0.5">
-                        {activeShipment.status === 'released' ? 'Expedido' : 'Conferindo'}
+                      <Badge variant={activeShipment.status === 'shipped' ? 'default' : 'outline'} className="text-[9px] h-4 mt-0.5">
+                        {activeShipment.status === 'shipped' ? 'Expedido' : 'Conferindo'}
                       </Badge>
                     </div>
                   </div>
@@ -469,7 +601,7 @@ export default function ShippingPage() {
                   {progress && (
                     <div className="space-y-2">
                       <div className="flex justify-between text-xs text-muted-foreground font-semibold">
-                        <span>Volumes Conferidos: {progress.packedCount} / {progress.expectedCount}</span>
+                        <span>Volumes Conferidos: {progress.scanned} / {progress.total}</span>
                         <span className="text-emerald-500 font-bold">{progress.percent}%</span>
                       </div>
                       <div className="w-full bg-secondary h-2.5 rounded-full overflow-hidden">
@@ -568,13 +700,13 @@ export default function ShippingPage() {
                         {progress.percent === 100 ? (
                           <span className="text-emerald-500 font-bold">✔ Carga completa e verificada. Liberação autorizada.</span>
                         ) : (
-                          <span className="text-rose-500 font-bold">⚠ Carga incompleta. Faltando {progress.expectedCount - progress.packedCount} volumes.</span>
+                          <span className="text-rose-500 font-bold">⚠ Carga incompleta. Faltando {progress.total - progress.scanned} volumes.</span>
                         )}
                       </div>
                       
                       <Button
                         onClick={handleReleaseShipment}
-                        disabled={progress.percent < 100 || activeShipment.status === 'released'}
+                        disabled={progress.percent < 100 || activeShipment.status === 'shipped'}
                         className={cn(
                           'gap-2 rounded-xl h-10 font-bold px-5 text-white',
                           progress.percent === 100
@@ -603,7 +735,7 @@ export default function ShippingPage() {
             </Badge>
           </div>
 
-          {!selectedLotId ? (
+          {!(activeTab === 'covers' ? selectedCoverId : selectedLotId) ? (
             <p className="text-xs text-muted-foreground italic text-center py-6">
               Selecione uma carga para verificar os faltantes.
             </p>

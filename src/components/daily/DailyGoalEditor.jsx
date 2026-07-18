@@ -60,7 +60,7 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
     setCapacity('');
     setTarget('');
     setExistingGoalId(null);
-  }, [cellName]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cellName]);   
 
 
   /* ── Auto-fill ao mudar data / turno / célula ──────────── */

@@ -37,6 +37,30 @@ export const STAGE_NEXT = {
   shipping:         'completed',
 };
 
+export function translateStage(code) {
+  if (!code) return 'Sem etapa';
+  const clean = String(code).trim().toLowerCase();
+  
+  const mapping = {
+    'imported': 'Importado',
+    'released': 'Liberado',
+    'cut': 'Corte',
+    'edge': 'Bordo',
+    'cnc': 'Usinagem',
+    'drill': 'Furação',
+    'drill/cnc': 'Usinagem/Furação',
+    'canal': 'Rasgo/Canal',
+    'joinery': 'Marcenaria',
+    'separation': 'Separação',
+    'packaging': 'Embalagem',
+    'waiting_shipping': 'Aguardando Envio',
+    'shipping': 'Expedição',
+    'completed': 'Finalizado',
+  };
+
+  return mapping[clean] || code;
+}
+
 // ─── Hook principal ──────────────────────────────────────────
 export function useTraceability({ stageFilter = null, searchQuery = '', dateRange: _dateRange = null } = {}) {
   const qc = useQueryClient();

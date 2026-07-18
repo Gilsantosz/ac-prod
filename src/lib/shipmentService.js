@@ -18,34 +18,71 @@ export async function createShipmentChecklist(shipmentId) {
 
   const { data: shipment, error: shipErr } = await supabase
     .from('shipments')
-    .select('lot_id, order_id')
+    .select('lot_id, order_id, customer_cover_id')
     .eq('id', shipmentId)
     .single();
 
   if (shipErr) throw shipErr;
 
   const lotId = shipment.lot_id;
+  const coverId = shipment.customer_cover_id;
 
-  // 1. Obter todos os volumes fechados deste lote
-  const { data: volumes } = await supabase
+  let lotIds = [];
+  if (coverId) {
+    const { data: coverLots } = await supabase
+      .from('production_lots')
+      .select('id')
+      .eq('customer_cover_id', coverId);
+    lotIds = coverLots?.map(l => l.id) || [];
+  } else if (lotId) {
+    lotIds = [lotId];
+  }
+
+  if (lotIds.length === 0) {
+    return { success: true, itemsCount: 0 };
+  }
+
+  // 1. Obter todos os volumes fechados
+  let volumesQuery = supabase
     .from('packing_volumes')
     .select('id, volume_code')
-    .eq('lot_id', lotId)
     .eq('status', 'closed');
+  
+  if (coverId) {
+    volumesQuery = volumesQuery.or(`customer_cover_id.eq.${coverId},lot_id.in.(${lotIds.join(',')})`);
+  } else {
+    volumesQuery = volumesQuery.eq('lot_id', lotId);
+  }
+  
+  const { data: volumes, error: volumesErr } = await volumesQuery;
+  if (volumesErr) throw volumesErr;
 
-  // 2. Obter todas as peças deste lote que NÃO estão em nenhum volume
-  const { data: allPieces } = await supabase
+  // 2. Obter todas as peças concluídas
+  let piecesQuery = supabase
     .from('production_pieces')
-    .select('id, traceability_code, requires_packaging')
-    .eq('lot_id', lotId)
-    .eq('status', 'completed'); // Peças que concluíram a rota
+    .select('id, traceability_code, requires_packaging, production_order_id, lot_id')
+    .eq('status', 'completed');
+  
+  if (coverId) {
+    piecesQuery = piecesQuery.in('lot_id', lotIds);
+  } else {
+    piecesQuery = piecesQuery.eq('lot_id', lotId);
+  }
+  
+  const { data: allPieces, error: piecesErr } = await piecesQuery;
+  if (piecesErr) throw piecesErr;
 
   // Obter IDs de peças já embaladas para filtrar as avulsas
-  const { data: packedItems } = await supabase
-    .from('packing_volume_items')
-    .select('piece_id')
-    .in('piece_id', (allPieces || []).map(p => p.id).concat('00000000-0000-0000-0000-000000000000'));
-
+  const pieceIds = (allPieces || []).map(p => p.id);
+  let packedItems = [];
+  if (pieceIds.length > 0) {
+    const { data, error: packedErr } = await supabase
+      .from('packing_volume_items')
+      .select('piece_id')
+      .in('piece_id', pieceIds);
+    if (packedErr) throw packedErr;
+    packedItems = data || [];
+  }
 
   const packedSet = new Set(packedItems?.map(item => item.piece_id) || []);
   const loosePieces = (allPieces || []).filter(p => !packedSet.has(p.id));
@@ -145,7 +182,7 @@ export async function validateShipmentCompleteness(shipmentId) {
 }
 
 /**
- * Libera a expedição fisicamente e altera o status da remessa e do lote para 'shipped'.
+ * Libera a expedição fisicamente e altera o status da remessa, do lote e das capas para 'shipped'.
  * Valida a completude do checklist no banco.
  * 
  * @param {string} shipmentId - UUID da remessa
@@ -160,13 +197,24 @@ export async function releaseShipment(shipmentId, notes = '') {
     throw new Error(`Expedição bloqueada! Existem ${validation.pending} itens pendentes de bipagem e sem exceção liberada.`);
   }
 
+  // Obter remessa
+  const { data: shipment, error: findErr } = await supabase
+    .from('shipments')
+    .select('id, lot_id, customer_cover_id, shipment_code')
+    .eq('id', shipmentId)
+    .single();
+  
+  if (findErr) throw findErr;
+
+  const shippedBy = (await supabase.auth.getUser()).data.user?.id || null;
+
   // Atualizar a remessa
-  const { data: shipment, error: shipErr } = await supabase
+  const { data: updatedShipment, error: shipErr } = await supabase
     .from('shipments')
     .update({
       status: 'shipped',
       shipped_at: new Date().toISOString(),
-      shipped_by: (await supabase.auth.getUser()).data.user?.id || null,
+      shipped_by: shippedBy,
       notes: notes || null
     })
     .eq('id', shipmentId)
@@ -175,24 +223,69 @@ export async function releaseShipment(shipmentId, notes = '') {
 
   if (shipErr) throw shipErr;
 
-  // Atualizar status do lote de forma segura
-  const { error: lotErr } = await supabase.rpc('update_production_lot_status_safely', {
-    p_lot_id: shipment.lot_id,
-    p_new_status: 'shipped'
-  });
+  if (shipment.customer_cover_id) {
+    const coverId = shipment.customer_cover_id;
 
-  if (lotErr) throw lotErr;
+    // Atualizar a capa
+    await supabase
+      .from('customer_covers')
+      .update({
+        status: 'shipped',
+        shipped_at: new Date().toISOString(),
+        shipped_by: shippedBy
+      })
+      .eq('id', coverId);
 
-  // Registrar logs produtivos legados para compatibilidade
-  await supabase.from('lot_step_events').insert({
-    lot_id: shipment.lot_id,
-    step_code: 'shipping',
-    event_type: 'finish',
-    notes: `Expedição oficial liberada 100% conferida: ${shipment.shipment_code}`,
-    quantity: 0
-  });
+    // Obter lotes da capa
+    const { data: coverLots } = await supabase
+      .from('production_lots')
+      .select('id, lot_code')
+      .eq('customer_cover_id', coverId);
+    
+    if (coverLots) {
+      for (const lot of coverLots) {
+        await supabase.rpc('update_production_lot_status_safely', {
+          p_lot_id: lot.id,
+          p_new_status: 'shipped'
+        });
 
-  return shipment;
+        await supabase.from('lot_step_events').insert({
+          lot_id: lot.id,
+          step_code: 'shipping',
+          event_type: 'finish',
+          notes: `Expedição oficial da capa liberada 100% conferida: ${shipment.shipment_code}`,
+          quantity: 0
+        });
+      }
+    }
+
+    // Atualizar as peças correspondentes aos lotes da capa
+    const lotIds = coverLots?.map(l => l.id) || [];
+    if (lotIds.length > 0) {
+      await supabase
+        .from('production_pieces')
+        .update({ current_stage: 'Expedição', status: 'completed' })
+        .in('lot_id', lotIds);
+    }
+  } else if (shipment.lot_id) {
+    // Atualizar status do lote de forma segura
+    const { error: lotErr } = await supabase.rpc('update_production_lot_status_safely', {
+      p_lot_id: shipment.lot_id,
+      p_new_status: 'shipped'
+    });
+    if (lotErr) throw lotErr;
+
+    // Registrar logs produtivos legados para compatibilidade
+    await supabase.from('lot_step_events').insert({
+      lot_id: shipment.lot_id,
+      step_code: 'shipping',
+      event_type: 'finish',
+      notes: `Expedição oficial liberada 100% conferida: ${shipment.shipment_code}`,
+      quantity: 0
+    });
+  }
+
+  return updatedShipment;
 }
 
 /**
@@ -304,10 +397,15 @@ export async function getShipmentProgress(shipmentId) {
 
   return {
     total,
+    totalItems: total,
+    expectedCount: total,
     scanned,
+    packedCount: scanned,
     exceptions,
     pendingCount: pending.length,
+    pending: pending.length,
     percent: total > 0 ? Math.round(((scanned + exceptions) / total) * 100) : 0,
-    pendingItems: pending
+    pendingItems: pending,
+    items: items || []
   };
 }

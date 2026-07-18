@@ -247,7 +247,9 @@ BEGIN
     SELECT piece_id FROM public.production_tags
     WHERE (tag_value = v_normalized OR UPPER(tag_value) = UPPER(v_normalized)) AND active = true AND piece_id IS NOT NULL
   )
-  SELECT COUNT(*), MIN(id) INTO v_count, v_piece.id FROM matches;
+  SELECT COUNT(*), (SELECT id FROM matches ORDER BY id LIMIT 1)
+  INTO v_count, v_piece.id
+  FROM matches;
 
   IF v_count = 0 THEN
     -- Verificar se existe de forma inativa nas tags

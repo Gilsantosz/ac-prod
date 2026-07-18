@@ -3,12 +3,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabaseClient';
-import { ACTIVE_ALERTS_QUERY_KEY, runOperationalAlertDiagnostics } from '@/lib/operationalAlertService';
+import { ACTIVE_ALERTS_QUERY_KEY, runOperationalAlertDiagnostics, resolveAlertManually } from '@/lib/operationalAlertService';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { Bell, Check, AlertTriangle, BellRing } from 'lucide-react';
+import { Bell, Check, AlertTriangle, BellRing, RefreshCw } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -50,11 +50,16 @@ export default function NotificationCenter() {
   useEffect(() => {
     if (!user) return;
     
+    // Restringe o diagnóstico automático periódico apenas para administradores/gestores/supervisores
+    const canRunAutoDiag = ['admin', 'manager', 'supervisor'].includes(user.role);
+    if (!canRunAutoDiag) return;
+
     // Executa diagnóstico inicial
     runOperationalAlertDiagnostics()
       .then(() => {
         queryClient.invalidateQueries({ queryKey: ['unresolvedAlerts'] });
         queryClient.invalidateQueries({ queryKey: ACTIVE_ALERTS_QUERY_KEY });
+        queryClient.invalidateQueries({ queryKey: ['mes-hub-kpis'] });
       })
       .catch((err) => {
         console.error('[NotificationCenter] Falha no diagnóstico de alertas inicial:', err);
@@ -66,6 +71,7 @@ export default function NotificationCenter() {
         .then(() => {
           queryClient.invalidateQueries({ queryKey: ['unresolvedAlerts'] });
           queryClient.invalidateQueries({ queryKey: ACTIVE_ALERTS_QUERY_KEY });
+          queryClient.invalidateQueries({ queryKey: ['mes-hub-kpis'] });
         })
         .catch((err) => {
           console.error('[NotificationCenter] Falha no diagnóstico de alertas periódico:', err);
@@ -100,27 +106,21 @@ export default function NotificationCenter() {
   // Mutação para resolver a notificação no banco
   const resolveAlert = useMutation({
     mutationFn: async (alertId) => {
-      const { data, error } = await supabase
-        .from('alert_logs')
-        .update({
-          resolved: true,
-          resolved_at: new Date().toISOString(),
-          resolved_by: user?.id,
-        })
-        .eq('id', alertId)
-        .select();
-
-      if (error) throw error;
+      const data = await resolveAlertManually(alertId, 'Resolvido via Central de Notificações');
+      if (!data) {
+        throw new Error('Nenhuma linha foi atualizada no banco.');
+      }
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unresolvedAlerts'] });
       queryClient.invalidateQueries({ queryKey: ACTIVE_ALERTS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ['mes-hub-kpis'] });
       toast.success('Notificação marcada como resolvida.');
     },
     onError: (err) => {
       console.error('Falha ao resolver notificação:', err);
-      toast.error('Erro ao resolver notificação.');
+      toast.error(`Erro ao resolver notificação: ${err.message || 'Erro de banco'}`);
     },
   });
 
@@ -207,7 +207,11 @@ export default function NotificationCenter() {
                           onClick={() => resolveAlert.mutate(a.id)}
                           disabled={resolveAlert.isPending}
                         >
-                          <Check className="w-3.5 h-3.5" />
+                          {resolveAlert.isPending && resolveAlert.variables === a.id ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Check className="w-3.5 h-3.5" />
+                          )}
                           <span>Resolvido</span>
                         </Button>
                       </div>

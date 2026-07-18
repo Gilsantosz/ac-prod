@@ -1,25 +1,22 @@
 import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
-import { auditLog, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  Truck, CheckCircle, RefreshCw, Package, Clock, User, Hash, CalendarDays,
-  QrCode, Play, AlertCircle, ShieldAlert, Check, ArrowRight
+  Truck, CheckCircle, RefreshCw,
+  QrCode, Play, AlertCircle, ShieldAlert, Check
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   createShipmentChecklist,
   scanShipmentItem,
-  validateShipmentCompleteness,
   releaseShipment,
   createShipmentException,
-  getMissingShipmentItems,
   getShipmentProgress
 } from '@/lib/shipmentService';
 

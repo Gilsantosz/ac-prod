@@ -176,11 +176,16 @@ export async function deactivateCell(id) {
 }
 
 export async function deleteCell(id) {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('cells')
     .delete()
-    .eq('id', id);
+    .eq('id', id)
+    .select('id');
   if (error) throw error;
+  // Se nenhuma linha foi retornada, o RLS bloqueou silenciosamente a exclusão
+  if (!data || data.length === 0) {
+    throw new Error('Sem permissão para excluir esta célula. Verifique seu perfil de acesso (admin ou gerente).');
+  }
   return true;
 }
 

@@ -156,7 +156,9 @@ ON CONFLICT (code) DO NOTHING;
 CREATE OR REPLACE FUNCTION sync_production_lot_item_to_piece()
 RETURNS trigger AS $$
 DECLARE
-  v_lot_item record;
+  -- %ROWTYPE mantém os campos acessíveis como NULL quando a peça não veio da
+  -- tabela legada lot_items (caso normal da nova importação PCP).
+  v_lot_item public.lot_items%ROWTYPE;
   v_piece_id uuid;
   v_uid text;
   v_tcode text;
@@ -218,15 +220,15 @@ BEGIN
       COALESCE(v_order_id, (SELECT order_id FROM public.production_lots WHERE id = NEW.lot_id)),
       NEW.lot_id,
       NULL,
-      COALESCE(NEW.environment_name, v_lot_item.environment),
+      COALESCE(NEW.environment_name, v_lot_item.environment_name),
       COALESCE(NEW.product_name, v_lot_item.piece_name, 'Peça sem nome'),
-      v_lot_item.description,
+      NULL,
       v_lot_item.material,
       v_lot_item.color,
       COALESCE(v_lot_item.thickness, 0),
       COALESCE(v_lot_item.width, 0),
       COALESCE(v_lot_item.height, 0),
-      COALESCE(v_lot_item.length, 0),
+      COALESCE(v_lot_item.depth, 0),
       v_lot_item.edge_front,
       v_lot_item.edge_back,
       v_lot_item.edge_left,
@@ -275,7 +277,13 @@ BEGIN
   ELSE
     -- Atualizar peça existente
     UPDATE public.production_pieces SET
-      current_stage = NEW.current_step,
+      -- Nas peças PCP a etapa canônica já foi atualizada pela RPC transacional
+      -- usando o código da rota (cut, edge, joinery...). Não substituir esse
+      -- código pelo rótulo legado traduzido (Corte, Borda, Marcenaria...).
+      current_stage = CASE
+        WHEN to_jsonb(production_pieces)->>'pcp_import_batch_id' IS NULL THEN NEW.current_step
+        ELSE current_stage
+      END,
       status = CASE 
         WHEN NEW.status = 'completed' THEN 'completed'
         WHEN NEW.status = 'cancelled' THEN 'cancelled'
@@ -288,7 +296,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$;
+$$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_sync_production_lot_item_to_piece ON public.production_lot_items;
 CREATE TRIGGER trg_sync_production_lot_item_to_piece
@@ -345,7 +353,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$$;
+$$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_sync_reading_to_event ON public.production_stage_readings;
 CREATE TRIGGER trg_sync_reading_to_event

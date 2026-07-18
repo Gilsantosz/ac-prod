@@ -274,7 +274,7 @@ WITH entry_summary AS (
     COUNT(*) AS entries_count
   FROM public.production_entries e
   WHERE COALESCE(e.approval_status, 'valid') = 'valid'
-  GROUP BY e.date, e.shift, e.cell, metric_unit, metric_unit_label, metric_name
+  GROUP BY 1, 2, 3, 4, 5, 6, 7
 ),
 goal_summary AS (
   SELECT

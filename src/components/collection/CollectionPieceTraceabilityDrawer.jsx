@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Clock, User, Box, Layers, RefreshCw, CheckCircle, AlertTriangle, AlertOctagon, Copy, ClipboardCheck } from 'lucide-react';
+import { User, Layers, RefreshCw, AlertTriangle, AlertOctagon, Copy, ClipboardCheck } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';

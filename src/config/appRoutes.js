@@ -8,8 +8,7 @@
 import {
   LayoutDashboard, PlusCircle, ClipboardList, Gauge, Boxes,
   Layers, Plug, AlertOctagon, Trophy, LineChart, BrainCircuit,
-  Zap, Users, Shield, HardDrive, Truck, Box, BellRing, Play,
-  Settings, FolderKanban, GitFork, Cpu, ShieldCheck
+  Zap, Users, Shield, HardDrive, Truck, Box, BellRing, Play, FolderKanban, GitFork, Cpu, ShieldCheck
 } from 'lucide-react';
 
 export const routeGroups = {

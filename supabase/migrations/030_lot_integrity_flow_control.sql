@@ -993,7 +993,12 @@ $$;
 -- 10. GRANTS
 -- ─────────────────────────────────────────────────────────────
 GRANT EXECUTE ON FUNCTION public.select_route_template_for_piece(public.production_pieces) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.populate_piece_route_steps(uuid) TO authenticated;
+DO $$
+BEGIN
+  IF to_regprocedure('public.populate_piece_route_steps(uuid)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.populate_piece_route_steps(uuid) TO authenticated;
+  END IF;
+END $$;
 GRANT EXECUTE ON FUNCTION public.validar_fluxo_da_peca(uuid, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.process_production_reading(jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_piece_replacement(uuid, text, text) TO authenticated;

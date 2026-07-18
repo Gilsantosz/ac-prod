@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/lib/localDb';
+import { supabase } from '@/lib/supabaseClient';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Package, Target, Gauge, AlertTriangle, Monitor, Minimize2, LayoutDashboard, FlaskConical, Sun, Moon } from 'lucide-react';
@@ -42,8 +43,38 @@ import { useEfficiencyDropAlert } from '@/hooks/useEfficiencyDropAlert';
 import DailyProductionCard from '@/components/dashboard/DailyProductionCard';
 import DashboardLayoutSettings from '@/components/dashboard/DashboardLayoutSettings';
 import RealtimeCellProgressPanel from '@/components/dashboard/RealtimeCellProgressPanel';
+import GeneralLotProgressPanel from '@/components/dashboard/GeneralLotProgressPanel';
 
-const PANEL_IDS = ['realtimeProgress', 'monthlyTracker', 'dailyProduction', 'charts', 'weeklyRanking', 'effDrop', 'goalProgress', 'goalProjection', 'weeklyTrend', 'highPerformers'];
+const PANEL_IDS = ['realtimeProgress', 'generalLotProgress', 'monthlyTracker', 'dailyProduction', 'charts', 'weeklyRanking', 'effDrop', 'goalProgress', 'goalProjection', 'weeklyTrend', 'highPerformers'];
+
+async function fetchDashboardProductionEntries(referenceDate) {
+  const reference = new Date(`${referenceDate}T12:00:00`);
+  const rangeStart = new Date(reference.getFullYear(), reference.getMonth(), 1);
+  rangeStart.setDate(rangeStart.getDate() - 7);
+  const rangeEnd = new Date(reference.getFullYear(), reference.getMonth() + 1, 1);
+  rangeEnd.setDate(rangeEnd.getDate() + 1);
+
+  const startDate = format(rangeStart, 'yyyy-MM-dd');
+  const endDate = format(rangeEnd, 'yyyy-MM-dd');
+  const pageSize = 1000;
+  const rows = [];
+
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabase
+      .from('production_entries')
+      .select('*')
+      .gte('date', startDate)
+      .lt('date', endDate)
+      .order('date', { ascending: false })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows.map(row => ({ ...row, created_date: row.created_at }));
+}
 
 export default function Dashboard({ kioskModeOverride = false }) {
   const navigate = useNavigate();
@@ -74,8 +105,8 @@ export default function Dashboard({ kioskModeOverride = false }) {
   });
 
   const { data: all = [] } = useQuery({
-    queryKey: ['production'],
-    queryFn: () => base44.entities.ProductionEntry.list('-date', 5000),
+    queryKey: ['production', filters.date],
+    queryFn: () => fetchDashboardProductionEntries(filters.date),
     initialData: [],
     staleTime: 0,
     refetchOnMount: true,
@@ -254,6 +285,7 @@ export default function Dashboard({ kioskModeOverride = false }) {
 
   const panels = useMemo(() => [
     { id: 'realtimeProgress', title: 'Produção em Tempo Real', node: <RealtimeCellProgressPanel date={filters.date} kioskCell={kioskCell} filterCell={kiosk ? kioskCell : filters.cell} /> },
+    { id: 'generalLotProgress', title: 'Lotes Gerais PCP', node: <GeneralLotProgressPanel /> },
     { id: 'monthlyTracker', title: 'Acompanhamento Mensal', node: <MonthlyGoalTracker tracking={monthlyTracking} cellTrackings={cellMonthlyTrackings} /> },
     { id: 'dailyProduction', title: 'Produção Diária', node: <DailyProductionCard filtered={filtered} kiosk={kiosk} kioskCell={kioskCell} /> },
     { id: 'weeklyRanking', title: 'Ranking Semanal', node: <WeeklyRankingPanel ranking={ranking} /> },

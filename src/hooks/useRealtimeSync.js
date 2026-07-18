@@ -13,7 +13,7 @@ const TABLE_TO_QUERY_KEY = {
   production_daily_goals: ['production-daily-goals', 'productionDailyGoals', 'dailyGoals', 'collection-kpis', 'cells-goals-summary'],
   automation_rules: ['automationRules'],
   profiles: ['users', 'me'],
-  alert_logs: ['unresolvedAlerts', 'unresolved-alerts-list'],
+  alert_logs: ['unresolvedAlerts', 'unresolved-alerts-list', 'all-alerts-list', 'mes-hub-kpis'],
 };
 
 /**

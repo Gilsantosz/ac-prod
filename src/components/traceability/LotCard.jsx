@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { STAGE_NEXT, KANBAN_STAGES } from '@/hooks/useTraceability';
+import { STAGE_NEXT, KANBAN_STAGES, translateStage } from '@/hooks/useTraceability';
 import { Button } from '@/components/ui/button';
 import {
   ChevronRight, AlertCircle, Lock, Unlock,
@@ -95,7 +95,7 @@ export default function LotCard({ lot, _stage, onAdvance, onBlock, onUnblock }) 
 
       <div className="space-y-1">
         <div className="flex justify-between text-[11px] text-muted-foreground">
-          <span className="truncate">Atual: {lot.current_step || 'Sem etapa'}</span>
+          <span className="truncate">Atual: {translateStage(lot.current_step)}</span>
           <strong className="text-foreground">{percent}%</strong>
         </div>
         <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
@@ -112,7 +112,7 @@ export default function LotCard({ lot, _stage, onAdvance, onBlock, onUnblock }) 
         <div className="space-y-1 border-t border-border/60 pt-2">
           {routeProgress.slice(0, 4).map((step) => (
             <div key={step.id || `${step.step_order}-${step.step_name}`} className="flex items-center justify-between gap-2 text-[11px]">
-              <span className="truncate text-muted-foreground">{step.step_name}</span>
+              <span className="truncate text-muted-foreground">{translateStage(step.step_name)}</span>
               <span className={cn(
                 'font-semibold shrink-0',
                 step.pending === 0 ? 'text-emerald-600' : step.collected > 0 ? 'text-amber-600' : 'text-muted-foreground'

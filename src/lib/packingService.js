@@ -160,30 +160,73 @@ export async function closeVolume(volumeId) {
 
   if (error) throw new Error(`Falha ao fechar volume: ${error.message}`);
 
-  // Verificar se todos os volumes deste lote estão fechados e se todas as peças do lote foram embaladas
-  // Se sim, avança status do lote para packed / waiting_shipping
   const lotId = data.lot_id;
-  const { data: allPieces } = await supabase
-    .from('production_pieces')
-    .select('id, requires_packaging')
-    .eq('lot_id', lotId);
+  const coverId = data.customer_cover_id;
 
-  const expectedToPack = allPieces?.filter(p => p.requires_packaging !== false) || [];
+  if (coverId) {
+    // ─── Fluxo por Capa de Cliente ───
+    const { data: coverLots } = await supabase
+      .from('production_lots')
+      .select('id')
+      .eq('customer_cover_id', coverId);
+    const lotIds = coverLots?.map(l => l.id) || [];
 
-  // Obter IDs de todas as peças já embaladas para este lote
-  const { data: allLotVolumes } = await supabase
-    .from('packing_volumes')
-    .select('id, status')
-    .eq('lot_id', lotId);
+    const { data: allCoverPieces } = await supabase
+      .from('production_pieces')
+      .select('id, requires_packaging')
+      .in('lot_id', lotIds);
+    const expectedToPack = allCoverPieces?.filter(p => p.requires_packaging !== false) || [];
 
-  const allClosed = allLotVolumes?.every(v => v.status === 'closed') || false;
+    const { data: allCoverVolumes } = await supabase
+      .from('packing_volumes')
+      .select('id, status')
+      .eq('customer_cover_id', coverId);
+    const allClosed = allCoverVolumes?.every(v => v.status === 'closed') || false;
 
-  // Se todos os volumes do lote estiverem fechados, atualiza o status do lote
-  if (allClosed) {
-    await supabase.rpc('update_production_lot_status_safely', {
-      p_lot_id: lotId,
-      p_new_status: 'packed'
-    });
+    const coverVolumeIds = allCoverVolumes?.map(v => v.id) || [];
+    const { data: packedItems } = await supabase
+      .from('packing_volume_items')
+      .select('piece_id')
+      .in('volume_id', coverVolumeIds);
+    const packedSet = new Set(packedItems?.map(item => item.piece_id) || []);
+
+    const allPiecesPacked = expectedToPack.every(p => packedSet.has(p.id));
+
+    if (allClosed && allPiecesPacked) {
+      await supabase
+        .from('customer_covers')
+        .update({ status: 'packed', closed_at: new Date().toISOString() })
+        .eq('id', coverId);
+
+      for (const lId of lotIds) {
+        await supabase.rpc('update_production_lot_status_safely', {
+          p_lot_id: lId,
+          p_new_status: 'packed'
+        });
+      }
+    }
+  } else if (lotId) {
+    // ─── Fluxo Legado por Lote Único ───
+    const { data: allPieces } = await supabase
+      .from('production_pieces')
+      .select('id, requires_packaging')
+      .eq('lot_id', lotId);
+
+    const expectedToPack = allPieces?.filter(p => p.requires_packaging !== false) || [];
+
+    const { data: allLotVolumes } = await supabase
+      .from('packing_volumes')
+      .select('id, status')
+      .eq('lot_id', lotId);
+
+    const allClosed = allLotVolumes?.every(v => v.status === 'closed') || false;
+
+    if (allClosed) {
+      await supabase.rpc('update_production_lot_status_safely', {
+        p_lot_id: lotId,
+        p_new_status: 'packed'
+      });
+    }
   }
 
   return data;
@@ -220,11 +263,34 @@ export async function reopenVolumeWithPermission(volumeId) {
 
   if (error) throw new Error(`Erro ao reabrir volume: ${error.message}`);
 
-  // Reverter status do lote para waiting_packaging/in_progress
-  await supabase.rpc('update_production_lot_status_safely', {
-    p_lot_id: data.lot_id,
-    p_new_status: 'waiting_packaging'
-  });
+  const lotId = data.lot_id;
+  const coverId = data.customer_cover_id;
+
+  if (coverId) {
+    await supabase
+      .from('customer_covers')
+      .update({ status: 'packing', closed_at: null, closed_by: null })
+      .eq('id', coverId);
+
+    const { data: coverLots } = await supabase
+      .from('production_lots')
+      .select('id')
+      .eq('customer_cover_id', coverId);
+    
+    if (coverLots) {
+      for (const lot of coverLots) {
+        await supabase.rpc('update_production_lot_status_safely', {
+          p_lot_id: lot.id,
+          p_new_status: 'waiting_packaging'
+        });
+      }
+    }
+  } else if (lotId) {
+    await supabase.rpc('update_production_lot_status_safely', {
+      p_lot_id: lotId,
+      p_new_status: 'waiting_packaging'
+    });
+  }
 
   return data;
 }
@@ -253,23 +319,51 @@ export async function getVolumeItems(volumeId) {
 }
 
 /**
- * Retorna o progresso de embalagem de um lote.
+ * Retorna o progresso de embalagem de um lote ou de uma capa de cliente.
  * Mostra total de peças esperadas, embaladas, faltantes e volumes criados.
- * 
- * @param {string} lotId - UUID do lote
  */
-export async function getPackingProgress(lotId) {
-  if (!lotId) throw new Error('Lote é obrigatório.');
+export async function getPackingProgress(id, isCover = false) {
+  if (!id) throw new Error('ID é obrigatório.');
 
-  // Obter peças totais do lote que requerem embalagem
-  const { data: pieces, error: piecesErr } = await supabase
-    .from('production_pieces')
-    .select('id, piece_uid, piece_name, status, current_stage, requires_packaging')
-    .eq('lot_id', lotId);
+  let pieces = [];
+  let piecesErr = null;
+
+  if (isCover) {
+    const { data: coverLots, error: lotsErr } = await supabase
+      .from('production_lots')
+      .select('id')
+      .eq('customer_cover_id', id);
+    if (lotsErr) throw lotsErr;
+
+    const lotIds = coverLots?.map(l => l.id) || [];
+    if (lotIds.length > 0) {
+      const res = await supabase
+        .from('production_pieces')
+        .select('id, piece_uid, piece_name, status, current_stage, requires_packaging')
+        .in('lot_id', lotIds);
+      pieces = res.data || [];
+      piecesErr = res.error;
+    }
+  } else {
+    const res = await supabase
+      .from('production_pieces')
+      .select('id, piece_uid, piece_name, status, current_stage, requires_packaging')
+      .eq('lot_id', id);
+    pieces = res.data || [];
+    piecesErr = res.error;
+  }
 
   if (piecesErr) throw piecesErr;
 
   const expectedPieces = pieces?.filter(p => p.requires_packaging !== false) || [];
+
+  let volumesQuery = supabase.from('packing_volumes').select('*');
+  if (isCover) {
+    volumesQuery = volumesQuery.eq('customer_cover_id', id);
+  } else {
+    volumesQuery = volumesQuery.eq('lot_id', id);
+  }
+  const { data: volumes } = await volumesQuery.order('created_at', { ascending: true });
 
   if (expectedPieces.length === 0) {
     return {
@@ -278,11 +372,10 @@ export async function getPackingProgress(lotId) {
       totalMissing: 0,
       percent: 0,
       missingPieces: [],
-      volumes: []
+      volumes: volumes || []
     };
   }
 
-  // Obter peças já embaladas para esses IDs
   const pieceIds = expectedPieces.map(p => p.id);
   const { data: packedItems, error: packedErr } = await supabase
     .from('packing_volume_items')
@@ -295,13 +388,6 @@ export async function getPackingProgress(lotId) {
   
   const packed = expectedPieces.filter(p => packedSet.has(p.id));
   const missing = expectedPieces.filter(p => !packedSet.has(p.id));
-
-  // Buscar volumes
-  const { data: volumes } = await supabase
-    .from('packing_volumes')
-    .select('*')
-    .eq('lot_id', lotId)
-    .order('volume_number', { ascending: true });
 
   return {
     totalExpected: expectedPieces.length,

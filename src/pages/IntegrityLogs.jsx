@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { FileText, RefreshCw, Search, Calendar, User, SlidersHorizontal, Loader2, Download } from 'lucide-react';
+import { FileText, RefreshCw, Search, Calendar, SlidersHorizontal, Loader2, Download } from 'lucide-react';
 
 export default function IntegrityLogs() {
   const [lotSearch, setLotSearch] = useState('');

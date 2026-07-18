@@ -14,6 +14,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { fetchCollectionContextSummary } from '@/lib/productionHistoryService';
+import { translateStage } from '@/hooks/useTraceability';
 
 export default function CollectionContextSummary({ feedback, refreshToken }) {
   const lotId = feedback?.lot?.id || feedback?.productionContext?.lot?.id || null;
@@ -55,7 +56,7 @@ export default function CollectionContextSummary({ feedback, refreshToken }) {
     { icon: Layers3, label: 'Peça lida', value: firstText(item?.item_code, item?.piece_code, item?.product_code) },
     { icon: User2, label: 'Cliente', value: firstText(order?.customer_trade_name, order?.customer_legal_name, order?.customer_name) },
     { icon: Box, label: 'Produto', value: firstText(item?.product_name, lot?.product_name, lot?.product_code) },
-    { icon: Route, label: 'Etapa da leitura', value: firstText(feedback?.route?.step_name, item?.current_step, lot?.current_step, lot?.current_stage) },
+    { icon: Route, label: 'Etapa da leitura', value: translateStage(firstText(feedback?.route?.step_name, item?.current_step, lot?.current_step, lot?.current_stage)) },
     { icon: MapPin, label: 'Célula da leitura', value: firstText(feedback?.route?.cell_name, item?.current_cell, lot?.current_cell) },
   ], [feedback?.productionContext?.load_number, feedback?.route?.cell_name, feedback?.route?.step_name, item, lot, order]);
 
@@ -197,7 +198,7 @@ function MissingPieces({ title, pieces, totalPending, showLot }) {
               <div className="grid sm:grid-cols-2 gap-1 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1 min-w-0">
                   <Route className="w-3.5 h-3.5 shrink-0" />
-                  <span className="break-words">{piece.current_step || 'Sem etapa definida'}</span>
+                  <span className="break-words">{piece.current_step ? translateStage(piece.current_step) : 'Sem etapa definida'}</span>
                 </span>
                 <span className="flex items-center gap-1 min-w-0">
                   <MapPin className="w-3.5 h-3.5 shrink-0" />

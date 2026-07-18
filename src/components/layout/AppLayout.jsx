@@ -1,11 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import {
-  LayoutDashboard, PlusCircle, LogOut, AlertOctagon, Zap,
-  LineChart, Boxes, Users, Gauge,
-  ClipboardList, Trophy, Sun, Moon, Menu, X,
-  ChevronLeft, Layers, Plug, Shield, HardDrive,
-  BrainCircuit,
+import { LogOut, Sun, Moon, Menu, X,
+  ChevronLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { KioskProvider, useKiosk } from '@/lib/KioskContext';

@@ -1,19 +1,13 @@
 import { useEffect } from 'react';
 import { PlusCircle, LogOut } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
 import { useOperatorSession } from '@/hooks/useOperatorSession';
-import { useOfflineSync } from '@/hooks/useOfflineSync';
-import { base44 } from '@/lib/localDb';
 import { Button } from '@/components/ui/button';
 import PageHeader from '@/components/ui/PageHeader';
-import SyncStatus from '@/components/entry/SyncStatus';
 import TraceabilityCollection from '@/pages/TraceabilityCollection';
 import OperationalLoginGate from '@/components/entry/OperationalLoginGate';
 
 export default function CollectionPage() {
   const { isLoggedIn, logout } = useOperatorSession();
-  const queryClient = useQueryClient();
 
   // Ao sair da página (desmontar o componente), o login deve ser pedido novamente
   useEffect(() => {
@@ -21,16 +15,6 @@ export default function CollectionPage() {
       logout();
     };
   }, [logout]);
-
-  const createEntry = (data) =>
-    base44.entities.ProductionEntry.create(data).then(() => {
-      queryClient.invalidateQueries({ queryKey: ['production'] });
-    });
-
-  const { online, pending, syncing } = useOfflineSync(
-    createEntry,
-    (n) => toast.success(`${n} registro(s) sincronizado(s)`)
-  );
 
   return (
     <OperationalLoginGate>
@@ -41,7 +25,6 @@ export default function CollectionPage() {
           icon={PlusCircle}
           actions={
             <div className="flex items-center gap-3">
-              <SyncStatus online={online} pending={pending} syncing={syncing} />
               {isLoggedIn && (
                 <Button
                   variant="outline"

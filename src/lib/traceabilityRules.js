@@ -8,7 +8,7 @@ export function normalizeTagValue(rawValue) {
   if (/^\]D2/.test(upper) || /^(01|10|21)\d{8,}/.test(upper)) {
     return { tagValue: upper, tagType: 'datamatrix', tagFormat: 'datamatrix' };
   }
-  if (/^[A-F0-9]{24}$/.test(upper) || /^EPC[-:_]/.test(upper)) {
+  if (/^[A-F0-9]{24}$/.test(upper) || /^EPC(?:-|:|_)/.test(upper)) {
     return { tagValue: upper.replace(/\s+/g, ''), tagType: 'rfid_epc', tagFormat: /^[A-F0-9]{24}$/.test(upper) ? 'epc96' : 'epc_custom' };
   }
   if (/^https?:\/\//i.test(compact) || /^[{[]/.test(compact) || /^QR[:_-]/i.test(compact)) {

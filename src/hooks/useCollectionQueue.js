@@ -26,6 +26,7 @@ export function useCollectionQueue(processFn, options = {}) {
     hasSlowEnqueue: false,
   });
   const [flushing, setFlushing] = useState(false);
+  const flushingRef = useRef(false);
   const processFnRef = useRef(processFn);
   processFnRef.current = processFn;
 
@@ -36,14 +37,48 @@ export function useCollectionQueue(processFn, options = {}) {
     setStats(s);
   }, [cellName, machineId]);
 
-  // Recuperação de processamento travado periódico
-  useEffect(() => {
-    recoverStaleProcessingEvents();
-    const interval = setInterval(() => {
-      recoverStaleProcessingEvents();
-    }, 30000);
-    return () => clearInterval(interval);
+  const withQueueLock = useCallback(async (task) => {
+    if (navigator.locks?.request) {
+      return navigator.locks.request('acprod-collection-sync', task);
+    }
+    return task();
   }, []);
+
+  const flush = useCallback(async () => {
+    if (flushingRef.current || !navigator.onLine) return;
+
+    await withQueueLock(async () => {
+      if (flushingRef.current || !navigator.onLine) return;
+      flushingRef.current = true;
+      setFlushing(true);
+      try {
+        await recoverStaleProcessingEvents();
+        await flushCollectionQueue(processFnRef.current);
+      } finally {
+        flushingRef.current = false;
+        setFlushing(false);
+        await refreshStats();
+      }
+    });
+  }, [refreshStats, withQueueLock]);
+
+  // Recupera eventos interrompidos e tenta sincronizar também quando a página
+  // já é aberta online (não apenas após um evento offline -> online).
+  useEffect(() => {
+    let cancelled = false;
+
+    const recoverAndFlush = async () => {
+      await recoverStaleProcessingEvents();
+      if (!cancelled && navigator.onLine) await flush();
+    };
+
+    recoverAndFlush();
+    const interval = setInterval(recoverAndFlush, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [flush]);
 
   // Escuta eventos de mudança da fila
   useEffect(() => {
@@ -53,28 +88,25 @@ export function useCollectionQueue(processFn, options = {}) {
     return () => window.removeEventListener('collection-queue-changed', handler);
   }, [refreshStats]);
 
-  // Flush automático quando voltar online
+  // Flush automático ao reconectar, voltar para a aba ou focar a janela.
   useEffect(() => {
-    const onOnline = async () => {
+    const tryFlush = async () => {
+      if (!navigator.onLine) return;
       const s = await getQueueStats();
-      if (s.pending > 0) flush();
+      if (s.pending > 0) await flush();
     };
-    window.addEventListener('online', onOnline);
-    return () => window.removeEventListener('online', onOnline);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const flush = useCallback(async () => {
-    if (flushing || !navigator.onLine) return;
-    setFlushing(true);
-    try {
-      await recoverStaleProcessingEvents(); // recuperar antes do flush
-      await flushCollectionQueue(processFnRef.current);
-    } finally {
-      setFlushing(false);
-      refreshStats();
-    }
-  }, [flushing, refreshStats]);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') tryFlush();
+    };
+    window.addEventListener('online', tryFlush);
+    window.addEventListener('focus', tryFlush);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('online', tryFlush);
+      window.removeEventListener('focus', tryFlush);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [flush]);
 
   const enqueue = useCallback(async (payload, enqueueOpts = {}) => {
     const id = await enqueueCollectionEvent(payload);
@@ -86,10 +118,12 @@ export function useCollectionQueue(processFn, options = {}) {
   }, [flush, refreshStats]);
 
   const processNow = useCallback(async (clientEventId) => {
-    const result = await processCollectionEvent(clientEventId, processFnRef.current);
+    const result = await withQueueLock(() => (
+      processCollectionEvent(clientEventId, processFnRef.current)
+    ));
     await refreshStats();
     return result;
-  }, [refreshStats]);
+  }, [refreshStats, withQueueLock]);
 
   const retryQueueErrors = useCallback(async () => {
     const count = await retryErrors();

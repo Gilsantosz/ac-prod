@@ -6,9 +6,9 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  Cpu, LayoutDashboard, PlusCircle, Layers, Plug, GitFork,
-  Box, Truck, BellRing, ClipboardList, Shield, HardDrive,
-  ArrowRight, Activity, Bell, AlertTriangle, ShieldCheck
+  Cpu, PlusCircle, Layers, Plug, GitFork,
+  Box, Truck, BellRing, ClipboardList, Shield,
+  ArrowRight, Activity, Bell, ShieldCheck
 } from 'lucide-react';
 
 export default function MesHub() {

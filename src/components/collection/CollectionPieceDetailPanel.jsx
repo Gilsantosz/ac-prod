@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { Layers, User, Clock, AlertTriangle, ShieldAlert, CheckCircle, RefreshCw, AlertOctagon, HelpCircle } from 'lucide-react';
+import { Layers, User, Clock, RefreshCw, AlertOctagon, HelpCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';

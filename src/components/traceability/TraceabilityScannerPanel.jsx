@@ -221,6 +221,30 @@ export default function TraceabilityScannerPanel({ mode, onModeChange, onRead, l
             )}
           </div>
           <p className="text-sm font-medium leading-relaxed">{feedback.message}</p>
+          {(feedback.item || feedback.lot || feedback.order) && (
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 pt-2 mt-1 border-t border-current/15 text-xs">
+              <div>
+                <span className="block opacity-70">Peça</span>
+                <strong className="font-mono break-all">{feedback.item?.traceability_code || feedback.item?.piece_uid || feedback.reading?.tag_value || '—'}</strong>
+              </div>
+              <div>
+                <span className="block opacity-70">Lote cliente</span>
+                <strong>{feedback.lot?.lot_code || '—'}</strong>
+              </div>
+              <div>
+                <span className="block opacity-70">Pedido / OP</span>
+                <strong>{feedback.order?.order_number || feedback.order?.order_code || '—'}</strong>
+              </div>
+              <div>
+                <span className="block opacity-70">Cliente</span>
+                <strong>{feedback.order?.customer_name || '—'}</strong>
+              </div>
+              <div>
+                <span className="block opacity-70">Andamento do lote</span>
+                <strong>{Number(feedback.lot_progress_percent ?? feedback.lot?.progress_percent ?? 0).toFixed(1)}%</strong>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
