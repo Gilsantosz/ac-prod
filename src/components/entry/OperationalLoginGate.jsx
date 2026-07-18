@@ -58,7 +58,7 @@ export default function OperationalLoginGate({ children }) {
           onSubmit={handleSubmit} 
           className="bg-card/70 backdrop-blur-xl border border-border/80 rounded-2xl p-6 sm:p-8 shadow-xl shadow-foreground/5 space-y-5 transition-all duration-300"
         >
-          {/* Input: Nome do Operador */}
+          {/* Input: Nome/Login do Operador */}
           <div className="space-y-2">
             <Label 
               htmlFor="op-name" 
@@ -66,7 +66,7 @@ export default function OperationalLoginGate({ children }) {
                 isFocused === 'name' ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
               }`}
             >
-              <User className="w-3.5 h-3.5" /> Nome do operador
+              <User className="w-3.5 h-3.5" /> Nome/Login do operador
             </Label>
             <div className="relative">
               <Input
@@ -75,7 +75,7 @@ export default function OperationalLoginGate({ children }) {
                 onChange={(e) => setName(e.target.value)}
                 onFocus={() => setIsFocused('name')}
                 onBlur={() => setIsFocused(null)}
-                placeholder="Ex: Carlos Silva"
+                placeholder="Ex: carlos.silva ou Carlos Silva"
                 required
                 autoComplete="off"
                 autoFocus

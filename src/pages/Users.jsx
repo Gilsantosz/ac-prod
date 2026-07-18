@@ -89,62 +89,21 @@ export default function Users() {
 
   const deleteUser = useMutation({
     mutationFn: async (id) => {
-      const userToDelete = users.find(u => u.id === id);
-      if (userToDelete?.name) {
-        try {
-          const list = await base44.entities.Operator.list();
-          const op = list.find(o => o.name?.toLowerCase() === userToDelete.name?.toLowerCase());
-          if (op?.id) {
-            await base44.entities.Operator.delete(op.id);
-          }
-        } catch (err) {
-          console.error('Erro ao deletar operador integrado:', err);
-        }
-      }
       return base44.users.deleteUser(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      queryClient.invalidateQueries({ queryKey: ['operators'] });
-      toast.success('Colaborador e operador integrado excluídos.');
+      toast.success('Colaborador excluído.');
     },
     onError: () => toast.error('Falha ao excluir colaborador'),
   });
 
-  const handleInvite = async (email, role, name, password, permissions, cell, extraData) => {
+  const handleInvite = async (email, role, name, password, permissions, cell) => {
     setSaving(true);
     try {
       await invite.mutateAsync({ email, role, name, password, permissions, cell });
-      
-      if (extraData && extraData.registration) {
-        const opResult = await base44.entities.Operator.create({
-          name,
-          registration: extraData.registration,
-          primary_cell: cell || null,
-          cells: cell ? [cell] : [],
-          shift: extraData.shift || null,
-          login_enabled: true,
-          active: true
-        });
-
-        // Pré-logar este operador no sessionStorage
-        const sessionPayload = {
-          id: opResult.id,
-          name: name,
-          registration: extraData.registration,
-          primary_cell: cell || null,
-          cells: cell ? [cell] : [],
-          shift: extraData.shift || null,
-          login_enabled: true,
-          expires_at: Date.now() + 8 * 60 * 60 * 1000 // 8 horas
-        };
-        sessionStorage.setItem('acprod_operator_session', JSON.stringify(sessionPayload));
-        window.dispatchEvent(new Event('operator-session-changed'));
-        
-        toast.success(`Operador ${name} cadastrado e logado para a Entrada de Produção!`);
-      }
     } catch (err) {
-      console.error('Erro ao integrar cadastro de operador:', err);
+      console.error('Erro ao cadastrar usuário:', err);
     } finally {
       setSaving(false);
     }

@@ -67,7 +67,7 @@ function isClosedLotContext(feedback) {
 
 export default function TraceabilityCollection({ embedded = false }) {
   const { user } = useAuth();
-  const { session: opSession } = useOperatorSession();
+  const { session: opSession, setContext: setOpSessionContext } = useOperatorSession();
   const { activeCells, isLoading: cellsLoading } = useCells();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState('scanner');
@@ -165,8 +165,16 @@ export default function TraceabilityCollection({ embedded = false }) {
   const operator = opSession?.name || user?.name || user?.email || '';
   const operatorId = opSession?.id || null;
 
+  // Listas de células autorizadas
+  const displayCells = useMemo(() => {
+    return opSession && opSession.cells?.length ? opSession.cells : activeCells;
+  }, [opSession, activeCells]);
+
   const [cellName, setCellName] = useState(() => {
-    if (opSession?.primary_cell) return opSession.primary_cell;
+    if (opSession?.primary_cell) {
+      const pCell = opSession.cells?.find(c => c.id === opSession.primary_cell);
+      if (pCell) return pCell.name;
+    }
     try { return user?.cell || localStorage.getItem('traceability-cell') || ''; }
     catch { return user?.cell || ''; }
   });
@@ -177,7 +185,10 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   // Sincronizar célula e turno quando a sessão operacional mudar
   useEffect(() => {
-    if (opSession?.primary_cell) setCellName(opSession.primary_cell);
+    if (opSession?.primary_cell) {
+      const pCell = opSession.cells?.find(c => c.id === opSession.primary_cell);
+      if (pCell) setCellName(pCell.name);
+    }
     if (opSession?.shift) setShift(opSession.shift);
   }, [opSession?.primary_cell, opSession?.shift]);
 
@@ -195,13 +206,21 @@ export default function TraceabilityCollection({ embedded = false }) {
     initialData: [],
   });
 
+  // Filtrar máquinas autorizadas do operador para a célula selecionada
+  const displayMachines = useMemo(() => {
+    if (!opSession || !opSession.machines?.length) return machines;
+    const selectedCellObj = opSession.cells.find(c => c.name === cellName || c.id === cellName);
+    if (!selectedCellObj) return [];
+    return opSession.machines.filter(m => m.cell_id === selectedCellObj.id);
+  }, [opSession, machines, cellName]);
+
   // Auto-selecionar ou recuperar máquina
   useEffect(() => {
-    if (machines.length === 1) {
-      setMachine(machines[0]);
-    } else if (machines.length > 1) {
+    if (displayMachines.length === 1) {
+      setMachine(displayMachines[0]);
+    } else if (displayMachines.length > 1) {
       const savedId = sessionStorage.getItem(`selected-machine-id-${cellName}`);
-      const savedMachine = machines.find(m => m.id === savedId);
+      const savedMachine = displayMachines.find(m => m.id === savedId);
       if (savedMachine) {
         setMachine(savedMachine);
       } else {
@@ -210,7 +229,23 @@ export default function TraceabilityCollection({ embedded = false }) {
     } else {
       setMachine(null);
     }
-  }, [machines, cellName]);
+  }, [displayMachines, cellName]);
+
+  // Sincronizar o contexto da sessão operacional no servidor
+  useEffect(() => {
+    if (!opSession?.token || !cellName) return;
+    const selectedCellObj = displayCells.find(c => c.name === cellName);
+    if (!selectedCellObj?.id) return;
+
+    const syncContext = async () => {
+      try {
+        await setOpSessionContext(selectedCellObj.id, machine?.id || null, 'Coletor Chão de Fábrica');
+      } catch (err) {
+        console.error('Erro ao sincronizar contexto com o servidor:', err);
+      }
+    };
+    syncContext();
+  }, [opSession?.token, cellName, machine?.id, displayCells, setOpSessionContext]);
 
   const handleMachineChange = (selected) => {
     setMachine(selected);
@@ -534,7 +569,7 @@ export default function TraceabilityCollection({ embedded = false }) {
     />
   ), [mode, handleRead, feedback, cellName, shift, operator, machine]);
 
-  const isCellLocked = !!(opSession?.primary_cell);
+  const isCellLocked = !!(opSession && opSession.cells?.length <= 1);
 
   return (
     <div className={pageClass}>
@@ -554,8 +589,8 @@ export default function TraceabilityCollection({ embedded = false }) {
             className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm disabled:opacity-60 font-medium"
             required
           >
-            <option value="">{cellsLoading ? 'Carregando células...' : activeCells.length ? 'Selecione a célula' : 'Nenhuma célula ativa'}</option>
-            {activeCells.map((cell) => <option key={cell.id} value={cell.name}>{cell.name}</option>)}
+            <option value="">{cellsLoading ? 'Carregando células...' : displayCells.length ? 'Selecione a célula' : 'Nenhuma célula ativa'}</option>
+            {displayCells.map((cell) => <option key={cell.id} value={cell.name}>{cell.name}</option>)}
           </select>
           {isCellLocked && <p className="text-[11px] text-muted-foreground">Célula definida pelo login operacional.</p>}
         </div>
@@ -566,14 +601,14 @@ export default function TraceabilityCollection({ embedded = false }) {
             id="traceability-machine"
             value={machine?.id || ''}
             onChange={(e) => {
-              const selected = machines.find(m => m.id === e.target.value);
+              const selected = displayMachines.find(m => m.id === e.target.value);
               handleMachineChange(selected || null);
             }}
             disabled={machinesLoading || !cellName}
             className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm disabled:opacity-60 font-medium"
           >
-            <option value="">{machinesLoading ? 'Carregando máquinas...' : machines.length ? 'Todas as máquinas' : 'Nenhuma máquina cadastrada'}</option>
-            {machines.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            <option value="">{machinesLoading ? 'Carregando máquinas...' : displayMachines.length ? 'Todas as máquinas' : 'Nenhuma máquina cadastrada'}</option>
+            {displayMachines.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </div>
 

@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
+import { getOperatorSession } from '@/lib/operatorSessionService';
 import {
   normalizeTagValue,
   validateProductionStep as validateProductionStepRule,
@@ -266,7 +267,12 @@ async function processWithRepository(clean, repository, now) {
 
 export async function processProductionReading(payload, dependencies = {}) {
   const now = dependencies.now instanceof Date ? dependencies.now : new Date();
-  const clean = normalizePayload(payload || {}, now);
+  const session = getOperatorSession();
+  const sessionToken = payload?.operatorSessionToken || payload?.operator_session_token || session?.token || null;
+  const clean = normalizePayload({
+    ...payload,
+    operatorSessionToken: sessionToken
+  }, now);
   if (!clean.rawValue) {
     return standardResult({ message: 'Informe uma identificação produtiva válida.' });
   }

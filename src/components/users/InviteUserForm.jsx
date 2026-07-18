@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCells } from '@/hooks/useCells';
-import { Switch } from '@/components/ui/switch';
 
 const getDefaultPermissions = (role) => {
   if (role === 'admin') {
@@ -105,10 +104,6 @@ export default function InviteUserForm({ onInvite, saving }) {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('operator');
   const [cell, setCell] = useState('none');
-  const [registration, setRegistration] = useState('');
-  const [shift, setShift] = useState('');
-  const [createOperator, setCreateOperator] = useState(true);
-  
   const [permissions, setPermissions] = useState(() => getDefaultPermissions('operator'));
 
 
@@ -133,14 +128,7 @@ export default function InviteUserForm({ onInvite, saving }) {
       return;
     }
 
-    const extraData = role === 'operator' && createOperator ? {
-      registration: registration.trim(),
-      shift: shift || '',
-      login_enabled: true
-    } : null;
-    
-    // Passando a senha informada
-    await onInvite(email.trim(), role, name.trim(), password.trim(), permissions, cell === 'none' ? '' : cell, extraData);
+    await onInvite(email.trim(), role, name.trim(), password.trim(), permissions, cell === 'none' ? '' : cell);
     
     // Limpar campos
     setName('');
@@ -148,9 +136,6 @@ export default function InviteUserForm({ onInvite, saving }) {
     setPassword('');
     setRole('operator');
     setCell('none');
-    setRegistration('');
-    setShift('');
-    setCreateOperator(true);
     setPermissions(getDefaultPermissions('operator'));
 
   };
@@ -201,37 +186,7 @@ export default function InviteUserForm({ onInvite, saving }) {
           </div>
         </div>
 
-        {role === 'operator' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-muted/40 border border-border/50 rounded-xl">
-            <div className="space-y-2">
-              <Label htmlFor="registration">Matrícula (Senha Operacional)</Label>
-              <Input
-                id="registration"
-                value={registration}
-                onChange={(e) => setRegistration(e.target.value)}
-                placeholder="Ex: 00123"
-                required={createOperator}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="shift">Turno do Operador</Label>
-              <Select value={shift} onValueChange={setShift}>
-                <SelectTrigger id="shift"><SelectValue placeholder="Selecione o turno" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1º Turno">1º Turno</SelectItem>
-                  <SelectItem value="2º Turno">2º Turno</SelectItem>
-                  <SelectItem value="3º Turno">3º Turno</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2.5 pt-7">
-              <Switch id="create-operator" checked={createOperator} onCheckedChange={setCreateOperator} />
-              <Label htmlFor="create-operator" className="text-xs font-semibold cursor-pointer">
-                Habilitar Login na Entrada de Produção
-              </Label>
-            </div>
-          </div>
-        )}
+
 
         <div className="space-y-3">
           <Label className="text-sm font-semibold flex items-center gap-1.5 text-foreground">

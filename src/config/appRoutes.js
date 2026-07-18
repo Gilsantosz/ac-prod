@@ -8,7 +8,7 @@
 import {
   LayoutDashboard, PlusCircle, ClipboardList, Gauge, Boxes,
   Layers, Plug, AlertOctagon, Trophy, LineChart, BrainCircuit,
-  Zap, Users, Shield, HardDrive, Truck, Box, BellRing, FolderKanban, GitFork, Cpu, ShieldCheck, Wrench
+  Zap, Users, Shield, HardDrive, Truck, Box, BellRing, FolderKanban, GitFork, Cpu, ShieldCheck, Wrench, HardHat
 } from 'lucide-react';
 
 export const routeGroups = {
@@ -233,8 +233,18 @@ export const appRoutes = [
   {
     path: '/usuarios',
     label: 'Usuários',
-    description: 'Cadastro de operadores, perfis de acesso e sessões ativas',
+    description: 'Gestão de usuários administrativos, e-mails e permissões de acesso',
     icon: Users,
+    group: 'admin',
+    permission: 'manage_users',
+    showInSidebar: true,
+    showInDashboardHub: true
+  },
+  {
+    path: '/operadores',
+    label: 'Operadores',
+    description: 'Gestão de operadores da fábrica, turnos e postos autorizados',
+    icon: HardHat,
     group: 'admin',
     permission: 'manage_operators',
     showInSidebar: true,

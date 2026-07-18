@@ -28,6 +28,7 @@ import CellsAndGoals from '@/pages/CellsAndGoals';
 import Gamification from '@/pages/Gamification';
 import Reports from '@/pages/Reports';
 import Users from '@/pages/Users';
+import Operators from '@/pages/Operators';
 import Traceability from '@/pages/Traceability';
 import PromobIntegration from '@/pages/PromobIntegration';
 import SystemLogs from '@/pages/SystemLogs';
@@ -129,7 +130,7 @@ const AuthenticatedApp = () => {
           <Route path="/automacoes" element={<Automations />} />
           <Route path="/celulas-metas" element={<CellsAndGoals />} />
           <Route path="/gamificacao" element={<Gamification />} />
-          <Route path="/operadores" element={<Navigate to="/usuarios?tab=operators" replace />} />
+          <Route path="/operadores" element={<Operators />} />
           <Route path="/metas" element={<Navigate to="/celulas-metas" replace />} />
           <Route path="/celulas" element={<Navigate to="/celulas-metas" replace />} />
           <Route path="/usuarios" element={<Users />} />
