@@ -75,6 +75,21 @@ describe('TraceabilityScannerPanel', () => {
     expect(screen.getByRole('status')).toHaveClass('border-red-300');
   });
 
+  it('posiciona o contexto do lote logo após o leitor e antes do feedback', () => {
+    renderPanel({
+      readerContext: <div data-testid="reader-context">Lote geral 15587</div>,
+      feedback: { success: true, status: 'approved', message: 'Baixa concluída' },
+    });
+
+    const reader = screen.getByLabelText('Identificação produtiva').closest('form');
+    const readerContext = screen.getByTestId('reader-context');
+    const feedback = screen.getByRole('status');
+    const siblings = [...reader.parentElement.children];
+
+    expect(siblings.indexOf(readerContext)).toBe(siblings.indexOf(reader) + 1);
+    expect(siblings.indexOf(readerContext)).toBeLessThan(siblings.indexOf(feedback));
+  });
+
   it('não cria evento para uma leitura vazia ou inválida', () => {
     const { onRead } = renderPanel();
     const input = screen.getByLabelText('Identificação produtiva');

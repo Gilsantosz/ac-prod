@@ -598,8 +598,38 @@ export default function TraceabilityCollection({ embedded = false }) {
       shift={shift}
       operator={operator}
       machine={machine}
+      readerContext={currentGeneralLot?.general_lot_code ? (
+        <div
+          data-testid="collection-lot-banner"
+          className="rounded-2xl border-2 border-emerald-600 bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-800 px-5 py-4 text-white shadow-lg shadow-emerald-950/15"
+        >
+          <div className="grid gap-4 sm:grid-cols-[1.2fr_1fr_auto] sm:items-center">
+            <div>
+              <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-emerald-200">Lote geral em coleta</p>
+              <p className="mt-1 font-mono text-4xl font-black leading-none tracking-wider sm:text-5xl">
+                {currentGeneralLot.general_lot_code}
+              </p>
+            </div>
+            <div className="border-emerald-500/40 sm:border-l sm:pl-5">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-200">Lote do cliente</p>
+              <p className="mt-1 font-mono text-2xl font-extrabold">
+                {currentClientLotCode || 'Aguardando leitura'}
+              </p>
+              {feedback?.order?.customer_name && (
+                <p className="mt-1 truncate text-xs font-medium text-emerald-100">{feedback.order.customer_name}</p>
+              )}
+            </div>
+            <div className="rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-left sm:text-right">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-100">Andamento geral</p>
+              <p className="mt-1 text-2xl font-black tabular-nums">
+                {Number(currentGeneralLot.progress_percent || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
     />
-  ), [mode, handleRead, feedback, cellName, shift, operator, machine]);
+  ), [mode, handleRead, feedback, cellName, shift, operator, machine, currentGeneralLot, currentClientLotCode]);
 
   const isCellLocked = !!(opSession && opSession.cells?.length <= 1);
 
@@ -722,35 +752,6 @@ export default function TraceabilityCollection({ embedded = false }) {
 
       {/* Scanner Área */}
       {scanner}
-
-      {/* Identidade produtiva logo após o leitor para conferência da equipe */}
-      {currentGeneralLot?.general_lot_code && (
-        <div className="rounded-2xl border-2 border-emerald-600 bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-800 px-5 py-4 text-white shadow-lg shadow-emerald-950/15">
-          <div className="grid gap-4 sm:grid-cols-[1.2fr_1fr_auto] sm:items-center">
-            <div>
-              <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-emerald-200">Lote geral em coleta</p>
-              <p className="mt-1 font-mono text-4xl font-black leading-none tracking-wider sm:text-5xl">
-                {currentGeneralLot.general_lot_code}
-              </p>
-            </div>
-            <div className="border-emerald-500/40 sm:border-l sm:pl-5">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-200">Lote do cliente</p>
-              <p className="mt-1 font-mono text-2xl font-extrabold">
-                {currentClientLotCode || 'Aguardando leitura'}
-              </p>
-              {feedback?.order?.customer_name && (
-                <p className="mt-1 truncate text-xs font-medium text-emerald-100">{feedback.order.customer_name}</p>
-              )}
-            </div>
-            <div className="rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-left sm:text-right">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-100">Andamento geral</p>
-              <p className="mt-1 text-2xl font-black tabular-nums">
-                {Number(currentGeneralLot.progress_percent || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 2 Colunas: Últimas leituras da célula e Detalhe da peça selecionada */}
       <div className="grid md:grid-cols-2 gap-6 items-stretch">

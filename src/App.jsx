@@ -183,34 +183,46 @@ const AuthenticatedApp = () => {
 
 function App() {
   React.useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      // 1. Recarrega a página quando uma nova versão do Service Worker assume o controle
-      let refreshing = false;
-      const handleControllerChange = () => {
-        if (!refreshing) {
-          refreshing = true;
-          window.location.reload();
-        }
-      };
-      navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+    if (!('serviceWorker' in navigator)) return undefined;
 
-      // 2. Verifica por novas atualizações em segundo plano a cada 5 minutos
-      navigator.serviceWorker.ready.then((registration) => {
-        const intervalId = setInterval(() => {
-          registration.update().catch((err) => {
-            console.error('Erro ao verificar atualizações do Service Worker:', err);
-          });
-        }, 1000 * 60 * 5); // 5 minutos
+    let refreshing = false;
+    let intervalId;
+    let registration;
 
-        return () => {
-          clearInterval(intervalId);
-        };
+    const handleControllerChange = () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    };
+
+    const checkForUpdate = () => {
+      registration?.update().catch((err) => {
+        console.error('Erro ao verificar atualizações do Service Worker:', err);
       });
+    };
 
-      return () => {
-        navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
-      };
-    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') checkForUpdate();
+    };
+
+    navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+    window.addEventListener('focus', checkForUpdate);
+    window.addEventListener('online', checkForUpdate);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    navigator.serviceWorker.ready.then((readyRegistration) => {
+      registration = readyRegistration;
+      checkForUpdate();
+      intervalId = window.setInterval(checkForUpdate, 1000 * 60 * 5);
+    });
+
+    return () => {
+      navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
+      window.removeEventListener('focus', checkForUpdate);
+      window.removeEventListener('online', checkForUpdate);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (intervalId) window.clearInterval(intervalId);
+    };
   }, []);
 
   if (!isSupabaseConfigured) {
