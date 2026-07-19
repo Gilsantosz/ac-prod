@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
+import { fetchGeneralLotTracking } from '@/lib/lotTrackingService';
+import { ClientLotHierarchy, GeneralLotSummaryCard } from '@/components/lot-tracking/LotTrackingCards';
 import PageHeader from '@/components/ui/PageHeader';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,12 +15,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { 
-  ShieldCheck, AlertTriangle, RefreshCw, CheckCircle2, ShieldAlert, FileText, UserCheck, XOctagon, Loader2, Info
+  ShieldCheck, AlertTriangle, RefreshCw, CheckCircle2, ShieldAlert, FileText, UserCheck,
+  XOctagon, Loader2, Info, Search, ChartNoAxesCombined, Layers3
 } from 'lucide-react';
 
 export default function LotIntegrity() {
   const qc = useQueryClient();
+  const [selectedBatchId, setSelectedBatchId] = useState('');
   const [selectedLotId, setSelectedLotId] = useState('');
+  const [generalLotSearch, setGeneralLotSearch] = useState('');
   const [activeTab, setActiveTab] = useState('integrity');
 
   // Liberação Especial Modal State
@@ -29,20 +35,38 @@ export default function LotIntegrity() {
     impact: 'Nenhum impacto na montagem'
   });
 
-  // Queries - Listar Lotes Ativos
-  const { data: activeLots = [], isLoading: loadingLots } = useQuery({
-    queryKey: ['activeLotsForIntegrity'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('production_lots')
-        .select('id, lot_code, status, progress_percent')
-        .neq('status', 'cancelled')
-        .neq('status', 'closed')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return data || [];
-    }
+  // O primeiro nível é sempre o lote geral importado pelo PCP.
+  const { data: generalTracking, isLoading: loadingGeneralLots } = useQuery({
+    queryKey: ['general-lot-tracking', 'overview'],
+    queryFn: () => fetchGeneralLotTracking({ limit: 50 }),
+    refetchInterval: 60_000,
   });
+
+  const generalLots = generalTracking?.general_lots || [];
+
+  useEffect(() => {
+    if (!selectedBatchId && generalLots.length === 1) {
+      setSelectedBatchId(generalLots[0].batch_id);
+    }
+  }, [generalLots, selectedBatchId]);
+
+  const { data: selectedTracking, isLoading: loadingSelectedBatch } = useQuery({
+    queryKey: ['general-lot-tracking', 'batch', selectedBatchId],
+    queryFn: () => fetchGeneralLotTracking({ batchId: selectedBatchId, limit: 1 }),
+    enabled: Boolean(selectedBatchId),
+    refetchInterval: 30_000,
+  });
+
+  const selectedGeneralLot = selectedTracking?.general_lots?.[0]
+    || generalLots.find((lot) => lot.batch_id === selectedBatchId)
+    || null;
+
+  const filteredGeneralLots = useMemo(() => {
+    const term = generalLotSearch.trim().toLocaleLowerCase('pt-BR');
+    if (!term) return generalLots;
+    return generalLots.filter((lot) => [lot.general_lot_code, lot.file_name]
+      .some((value) => String(value || '').toLocaleLowerCase('pt-BR').includes(term)));
+  }, [generalLots, generalLotSearch]);
 
   // Query - Calcular Integridade do Lote Selecionado
   const { data: integrityData = null, isLoading: loadingIntegrity, refetch: refetchIntegrity } = useQuery({
@@ -144,7 +168,8 @@ export default function LotIntegrity() {
     onSuccess: () => {
       toast.success('Lote encerrado com sucesso!');
       setSelectedLotId('');
-      qc.invalidateQueries({ queryKey: ['activeLotsForIntegrity'] });
+      qc.invalidateQueries({ queryKey: ['general-lot-tracking'] });
+      qc.invalidateQueries({ queryKey: ['lot-tracking-dashboard'] });
     },
     onError: (err) => {
       toast.error(err.message || 'Falha ao encerrar o lote.');
@@ -171,6 +196,8 @@ export default function LotIntegrity() {
       qc.invalidateQueries({ queryKey: ['problematicPieces', selectedLotId] });
       qc.invalidateQueries({ queryKey: ['outOfFlowReadings', selectedLotId] });
       qc.invalidateQueries({ queryKey: ['integrityAuditLogs', selectedLotId] });
+      qc.invalidateQueries({ queryKey: ['general-lot-tracking'] });
+      qc.invalidateQueries({ queryKey: ['lot-tracking-dashboard'] });
     },
     onError: (err) => {
       toast.error(err.message || 'Falha ao autorizar liberação especial.');
@@ -202,6 +229,8 @@ export default function LotIntegrity() {
   const handleRefreshAll = () => {
     refetchIntegrity();
     refetchOutOfFlow();
+    qc.invalidateQueries({ queryKey: ['general-lot-tracking'] });
+    qc.invalidateQueries({ queryKey: ['lot-tracking-dashboard'] });
     qc.invalidateQueries({ queryKey: ['problematicPieces', selectedLotId] });
     qc.invalidateQueries({ queryKey: ['integrityAuditLogs', selectedLotId] });
     toast.success('Dados atualizados!');
@@ -209,44 +238,102 @@ export default function LotIntegrity() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
-      <PageHeader 
-        title="Painel de Integridade de Lote" 
-        subtitle="Controle de sequenciamento operacional, retrabalhos, reposições e autorização de encerramento." 
-        icon={ShieldCheck} 
-      />
+      <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-4">
+        <PageHeader
+          title="Painel de Integridade de Lote"
+          subtitle="Rastreabilidade hierárquica do lote geral, seus lotes de clientes e todas as etapas até a separação."
+          icon={ShieldCheck}
+        />
+        <Button asChild variant="outline" className="rounded-xl gap-2 border-border/60 shrink-0">
+          <Link to="/acompanhamento-lotes">
+            <ChartNoAxesCombined className="w-4 h-4" /> Abrir dashboard de acompanhamento
+          </Link>
+        </Button>
+      </div>
 
-      {/* Seletor de Lote */}
-      <Card className="p-4 border-border/60 shadow-sm flex flex-col md:flex-row gap-4 items-end justify-between bg-card">
-        <div className="space-y-1.5 flex-1 min-w-[280px]">
-          <Label htmlFor="lot-select" className="text-xs font-bold text-muted-foreground uppercase">Selecione o Lote Produtivo</Label>
-          <select
-            id="lot-select"
-            value={selectedLotId}
-            onChange={(e) => setSelectedLotId(e.target.value)}
-            className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm font-medium"
-          >
-            <option value="">-- Selecione um lote ativo --</option>
-            {activeLots.map((lot) => (
-              <option key={lot.id} value={lot.id}>
-                {lot.lot_code} ({lot.progress_percent || 0}% Concluído) - {lot.status}
-              </option>
-            ))}
-          </select>
+      <Card className="p-5 border-border/60 shadow-sm space-y-4 bg-card">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-xs font-black text-primary">1</span>
+              <h2 className="text-sm font-extrabold text-foreground">Escolha primeiro o lote geral carregado pelo PCP</h2>
+            </div>
+            <p className="mt-1 ml-9 text-xs text-muted-foreground">Exemplo: 15587. Os lotes de clientes aparecerão somente dentro dele.</p>
+          </div>
+          <div className="relative w-full md:w-80">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              value={generalLotSearch}
+              onChange={(event) => setGeneralLotSearch(event.target.value)}
+              placeholder="Buscar lote geral..."
+              className="pl-9 rounded-xl"
+            />
+          </div>
         </div>
 
-        {selectedLotId && (
-          <Button onClick={handleRefreshAll} variant="outline" size="sm" className="h-10 rounded-xl gap-2 font-medium shrink-0 border-border/60">
-            <RefreshCw className="w-4 h-4" /> Recarregar Dados
-          </Button>
+        {loadingGeneralLots ? (
+          <div className="flex justify-center py-8"><Loader2 className="w-7 h-7 animate-spin text-primary" /></div>
+        ) : filteredGeneralLots.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border/80 p-8 text-center text-sm text-muted-foreground">
+            Nenhum lote geral ativo foi encontrado.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredGeneralLots.map((lot) => (
+              <GeneralLotSummaryCard
+                key={lot.batch_id}
+                lot={lot}
+                selected={lot.batch_id === selectedBatchId}
+                onSelect={(nextLot) => {
+                  setSelectedBatchId(nextLot.batch_id);
+                  setSelectedLotId('');
+                }}
+              />
+            ))}
+          </div>
         )}
       </Card>
 
+      {selectedBatchId && (
+        <section className="space-y-4">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/10 text-xs font-black text-violet-700">2</span>
+                <h2 className="text-sm font-extrabold text-foreground">Lotes de clientes do lote geral {selectedGeneralLot?.general_lot_code}</h2>
+              </div>
+              <p className="mt-1 ml-9 text-xs text-muted-foreground">Clientes com o mesmo nome permanecem juntos e seus lotes continuam rastreados separadamente.</p>
+            </div>
+            <Button onClick={handleRefreshAll} variant="outline" size="sm" className="h-9 rounded-xl gap-2 font-medium shrink-0 border-border/60">
+              <RefreshCw className="w-4 h-4" /> Atualizar em tempo real
+            </Button>
+          </div>
+
+          {loadingSelectedBatch ? (
+            <Card className="flex justify-center py-12 border-border/60"><Loader2 className="w-7 h-7 animate-spin text-primary" /></Card>
+          ) : (
+            <ClientLotHierarchy
+              clientLots={selectedGeneralLot?.client_lots || []}
+              selectedLotId={selectedLotId}
+              onSelect={(lot) => {
+                setSelectedLotId(lot.lot_id);
+                setActiveTab('integrity');
+              }}
+            />
+          )}
+        </section>
+      )}
+
       {!selectedLotId ? (
         <Card className="p-12 text-center text-muted-foreground border-dashed border-border/80 flex flex-col items-center justify-center space-y-3">
-          <Info className="w-10 h-10 text-muted-foreground/30" />
+          {selectedBatchId ? <Layers3 className="w-10 h-10 text-muted-foreground/30" /> : <Info className="w-10 h-10 text-muted-foreground/30" />}
           <div>
-            <p className="font-bold text-foreground">Aguardando Lote</p>
-            <p className="text-xs text-muted-foreground mt-1">Selecione um lote produtivo acima para abrir o centro de integridade do lote.</p>
+            <p className="font-bold text-foreground">{selectedBatchId ? 'Selecione um lote de cliente' : 'Selecione o lote geral'}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {selectedBatchId
+                ? 'Clique em um dos lotes de cliente acima para abrir a auditoria detalhada, anomalias e histórico.'
+                : 'A hierarquia produtiva será aberta depois que um lote geral for selecionado.'}
+            </p>
           </div>
         </Card>
       ) : (

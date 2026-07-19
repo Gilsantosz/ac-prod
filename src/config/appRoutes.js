@@ -8,7 +8,8 @@
 import {
   LayoutDashboard, PlusCircle, ClipboardList, Gauge, Boxes,
   Layers, Plug, AlertOctagon, Trophy, LineChart, BrainCircuit,
-  Zap, Users, Shield, HardDrive, Truck, Box, BellRing, FolderKanban, GitFork, Cpu, ShieldCheck, Wrench, HardHat
+  Zap, Users, Shield, HardDrive, Truck, Box, BellRing, FolderKanban, GitFork, Cpu, ShieldCheck, Wrench, HardHat,
+  ChartNoAxesCombined
 } from 'lucide-react';
 
 export const routeGroups = {
@@ -57,6 +58,16 @@ export const appRoutes = [
     label: 'Integridade do Lote',
     description: 'Painel de controle de integridade de lotes, gargalos e fechamento',
     icon: ShieldCheck,
+    group: 'operation',
+    permission: 'view_traceability',
+    showInSidebar: true,
+    showInDashboardHub: true
+  },
+  {
+    path: '/acompanhamento-lotes',
+    label: 'Acompanhamento de Lotes',
+    description: 'Dashboard de andamento e previsão dos lotes gerais até a separação',
+    icon: ChartNoAxesCombined,
     group: 'operation',
     permission: 'view_traceability',
     showInSidebar: true,
@@ -496,5 +507,4 @@ export const getDefaultPermissions = (role) => {
     };
   }
 };
-
 

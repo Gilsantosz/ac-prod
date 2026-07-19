@@ -21,6 +21,83 @@ const item = {
   current_step: 'Corte',
 };
 const routeStep = { id: 'route-cut', step_name: 'Corte', cell_name: 'Corte', step_order: 1 };
+const trackingStages = [
+  { stage_code: 'cut', stage_label: 'Corte', stage_order: 1, required_pieces: 30, completed_pieces: 12, remaining_pieces: 18, progress_percent: 40, estimated_remaining_minutes: 36 },
+  { stage_code: 'edge', stage_label: 'Borda', stage_order: 2, required_pieces: 30, completed_pieces: 2, remaining_pieces: 28, progress_percent: 6.67, estimated_remaining_minutes: 84 },
+  { stage_code: 'cnc', stage_label: 'Usinagem', stage_order: 3, required_pieces: 10, completed_pieces: 0, remaining_pieces: 10, progress_percent: 0, estimated_remaining_minutes: 50 },
+  { stage_code: 'joinery', stage_label: 'Marcenaria', stage_order: 4, required_pieces: 2, completed_pieces: 0, remaining_pieces: 2, progress_percent: 0, estimated_remaining_minutes: 40 },
+];
+const generalLotTracking = {
+  generated_at: now,
+  model_window_days: 90,
+  prediction_target: 'ready_for_separation',
+  stage_models: trackingStages.map((stage, index) => ({
+    stage_code: stage.stage_code,
+    stage_label: stage.stage_label,
+    stage_order: stage.stage_order,
+    sample_count: index === 0 ? 211 : 1,
+    observed_days: index === 0 ? 1 : 0,
+    minutes_per_piece: [2.06, 3, 5, 20][index],
+    p80_minutes_per_piece: [2.06, 3.75, 6.25, 25][index],
+    confidence: index === 0 ? 'medium' : 'low',
+    model_source: index === 0 ? 'learned' : 'baseline',
+  })),
+  general_lots: [{
+    batch_id: 'batch-15587',
+    general_lot_code: '15587',
+    file_name: '15587-teste.xlsx',
+    status: 'processed',
+    total_pieces: 60,
+    ready_for_separation_pieces: 0,
+    total_operations: 144,
+    completed_operations: 26,
+    progress_percent: 18.06,
+    client_lots_count: 2,
+    customers_count: 1,
+    blocked_pieces: 0,
+    rework_pieces: 0,
+    replacement_pieces: 0,
+    integrity_percent: 100,
+    stages: trackingStages,
+    bottleneck_stage: 'Borda',
+    estimated_remaining_minutes: 210,
+    predicted_ready_at: '2026-06-19T14:30:00.000Z',
+    forecast_confidence: 'low',
+    forecast_status: 'on_track',
+    client_lots: [],
+  }],
+};
+
+function trackingPayload(includeClientLots) {
+  if (!includeClientLots) return generalLotTracking;
+  const clientLots = ['143332', '143403'].map((lotCode, index) => ({
+    lot_id: `client-lot-${index + 1}`,
+    lot_code: lotCode,
+    customer_name: 'MARINA MARIA PASETTI DE SOUZA CATANZARO',
+    status: 'in_progress',
+    current_stage: 'cut',
+    total_pieces: 30,
+    ready_for_separation_pieces: 0,
+    total_operations: 72,
+    completed_operations: 13,
+    progress_percent: 18.06,
+    blocked_pieces: 0,
+    rework_pieces: 0,
+    replacement_pieces: 0,
+    integrity_percent: 100,
+    stages: trackingStages,
+    bottleneck_stage: 'Borda',
+    estimated_remaining_minutes: 105,
+    predicted_ready_at: '2026-06-19T12:45:00.000Z',
+    forecast_confidence: 'low',
+    forecast_status: 'on_track',
+    ready_for_separation: false,
+  }));
+  return {
+    ...generalLotTracking,
+    general_lots: [{ ...generalLotTracking.general_lots[0], client_lots }],
+  };
+}
 
 const MIME_TYPES = {
   '.css': 'text/css',
@@ -90,6 +167,7 @@ async function mockSupabase(page) {
       register_production: true,
       manage_occurrences: true,
       view_reports: true,
+      view_traceability: true,
     },
   };
 
@@ -140,6 +218,10 @@ async function mockSupabase(page) {
       ]);
     }
     if (path.endsWith('/rest/v1/production_stage_readings')) return fulfill(state.readings);
+
+    if (path.endsWith('/rest/v1/rpc/get_general_lot_tracking')) {
+      return fulfill(trackingPayload(Boolean(request.postDataJSON()?.p_batch_id)));
+    }
 
     if (path.endsWith('/rest/v1/rpc/process_production_reading')) {
       const payload = request.postDataJSON()?.p_payload || {};
@@ -281,4 +363,28 @@ test('fluxo principal de entrada e rastreabilidade produtiva', async ({ page }) 
   await expect(page.getByText('Leituras hoje')).toBeVisible();
   await expect(page.getByText('Reprovadas')).toBeVisible();
   expect(state.readings).toHaveLength(2);
+});
+
+test('exibe lote geral antes dos lotes de clientes e abre o dashboard preditivo', async ({ page }) => {
+  await serveStaticBuild(page);
+  await mockSupabase(page);
+  await page.goto('login');
+
+  await page.getByLabel('E-mail').fill('operador.teste@leo.com.br');
+  await page.getByLabel('Senha').fill('SenhaTeste123!');
+  await page.getByRole('button', { name: 'Entrar' }).click();
+
+  await page.goto('integridade-lote');
+  await expect(page.getByRole('heading', { name: 'Painel de Integridade de Lote' })).toBeVisible();
+  await expect(page.getByText('Lote geral')).toBeVisible();
+  await expect(page.getByText('15587', { exact: true })).toBeVisible();
+  await expect(page.getByText('143332', { exact: true })).toBeVisible();
+  await expect(page.getByText('143403', { exact: true })).toBeVisible();
+  await expect(page.getByText('2 lotes na mesma capa')).toBeVisible();
+
+  await page.goto('acompanhamento-lotes');
+  await expect(page.getByRole('heading', { name: 'Acompanhamento e Previsão de Lotes' })).toBeVisible();
+  await expect(page.getByText('O prazo mostrado termina antes da embalagem')).toBeVisible();
+  await expect(page.getByText('Tempo aprendido por etapa')).toBeVisible();
+  await expect(page.getByText('Prontas para separação')).toBeVisible();
 });
