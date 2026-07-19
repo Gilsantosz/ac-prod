@@ -105,15 +105,15 @@ export async function setOperatorSessionContext(cellId, machineId = null, statio
   if (!data?.success) throw new Error(data?.error || 'Falha ao definir posto operacional.');
 
   // Obter detalhes dos nomes para atualizar localmente
-  const cellObj = session.cells.find(c => c.id === cellId);
-  const machObj = session.machines.find(m => m.id === machineId);
+  const cellObj = (session.cells || []).find(c => c.id === cellId);
+  const machObj = (session.machines || []).find(m => m.id === machineId);
 
   const updatedSession = {
     ...session,
     selected_cell_id: cellId,
-    selected_cell_name: cellObj?.name || 'Célula',
+    selected_cell_name: data.cell_name || cellObj?.name || 'Célula',
     selected_machine_id: machineId,
-    selected_machine_name: machObj?.name || null,
+    selected_machine_name: data.machine_name || machObj?.name || null,
     selected_station_name: stationName
   };
 

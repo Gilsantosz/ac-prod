@@ -169,6 +169,10 @@ export async function getCollectionKpis({
     p_shift: shift,
     p_date_from: dateFrom,
     p_date_to: dateTo,
+    // Informar os sete argumentos seleciona de forma inequívoca a versão
+    // acumulativa do RPC (lote ativo + atividade do turno).
+    p_pcp_import_batch_id: null,
+    p_lot_id: null,
   });
   if (!snapshotError) return snapshot || {};
 

@@ -167,7 +167,7 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   // Listas de células autorizadas
   const displayCells = useMemo(() => {
-    return opSession && opSession.cells?.length ? opSession.cells : activeCells;
+    return opSession ? (opSession.cells || []) : activeCells;
   }, [opSession, activeCells]);
 
   const [cellName, setCellName] = useState(() => {
@@ -237,15 +237,31 @@ export default function TraceabilityCollection({ embedded = false }) {
     const selectedCellObj = displayCells.find(c => c.name === cellName);
     if (!selectedCellObj?.id) return;
 
+    const desiredMachineId = machine?.id || null;
+    if (
+      opSession.selected_cell_id === selectedCellObj.id
+      && (opSession.selected_machine_id || null) === desiredMachineId
+      && opSession.selected_station_name === 'Coletor Chão de Fábrica'
+    ) return;
+
     const syncContext = async () => {
       try {
-        await setOpSessionContext(selectedCellObj.id, machine?.id || null, 'Coletor Chão de Fábrica');
+        await setOpSessionContext(selectedCellObj.id, desiredMachineId, 'Coletor Chão de Fábrica');
       } catch (err) {
         console.error('Erro ao sincronizar contexto com o servidor:', err);
       }
     };
     syncContext();
-  }, [opSession?.token, cellName, machine?.id, displayCells, setOpSessionContext]);
+  }, [
+    opSession?.token,
+    opSession?.selected_cell_id,
+    opSession?.selected_machine_id,
+    opSession?.selected_station_name,
+    cellName,
+    machine?.id,
+    displayCells,
+    setOpSessionContext,
+  ]);
 
   const handleMachineChange = (selected) => {
     setMachine(selected);
@@ -271,6 +287,7 @@ export default function TraceabilityCollection({ embedded = false }) {
     staleTime: 0,
     refetchOnMount: true,
     retry: false,
+    refetchInterval: 15_000,
   });
 
   const cellStats = {
@@ -281,6 +298,7 @@ export default function TraceabilityCollection({ embedded = false }) {
     rework: Number(kpis.rework) || 0,
     replacement: Number(kpis.replacement) || 0,
   };
+  const activeGeneralLots = Array.isArray(kpis.active_general_lots) ? kpis.active_general_lots : [];
 
   const refreshData = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['collection-kpis'] });
@@ -650,6 +668,11 @@ export default function TraceabilityCollection({ embedded = false }) {
                 Painel de Integridade da Estação: {cellName}
               </h4>
               <div className="flex items-center gap-2">
+                {activeGeneralLots[0]?.general_lot_code && (
+                  <span className="rounded-full border border-emerald-500/20 bg-emerald-500/5 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                    Lote geral {activeGeneralLots[0].general_lot_code} · {Number(activeGeneralLots[0].progress_percent || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%
+                  </span>
+                )}
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 <span className="text-xs text-muted-foreground font-medium">Monitoramento em Tempo Real</span>
               </div>
