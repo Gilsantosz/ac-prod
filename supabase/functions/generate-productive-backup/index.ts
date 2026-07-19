@@ -25,8 +25,35 @@ serve(async (req) => {
     );
     supabaseClient = supabase;
 
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    const authorization = req.headers.get("Authorization") || "";
+    const token = authorization.replace(/^Bearer\s+/i, "");
+    if (!token) throw new Error("Autenticação necessária");
+
+    let callerRole = "service_role";
+    let callerId: string | null = null;
+    if (token !== serviceRoleKey) {
+      const { data: authResult, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !authResult.user) throw new Error("Sessão inválida ou expirada");
+      callerId = authResult.user.id;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role, active")
+        .eq("id", callerId)
+        .maybeSingle();
+      if (!profile || profile.active === false || !["admin", "manager"].includes(profile.role)) {
+        throw new Error("Permissão insuficiente para gerar backups produtivos");
+      }
+      callerRole = profile.role;
+    }
+
     const { orderId, lotId, batchId, xmlContent, parsedData, requestedBy, type } =
       await req.json();
+
+    if (type === 'full_snapshot' && !["admin", "service_role"].includes(callerRole)) {
+      throw new Error("Apenas administradores podem gerar o snapshot completo");
+    }
+    const effectiveRequestedBy = callerId || requestedBy || null;
 
     if (type === 'full_snapshot') {
       const now = new Date();
@@ -89,7 +116,7 @@ serve(async (req) => {
         storage_path:    snapPath,
         file_size:       snapBytes.length,
         revision:        1,
-        generated_by:    requestedBy || null,
+        generated_by:    effectiveRequestedBy,
         expires_at:      addYears(now, 4).toISOString(),
         status:          "available",
       }).select().single();
@@ -99,7 +126,7 @@ serve(async (req) => {
 
     if (!orderId) throw new Error("orderId é obrigatório");
     batchIdParam = batchId || null;
-    requestedByParam = requestedBy || null;
+    requestedByParam = effectiveRequestedBy;
 
     // ─── Busca dados completos da OP ─────────────────────────
     const { data: order } = await supabase
@@ -189,7 +216,7 @@ serve(async (req) => {
           storage_path:      path,
           file_size:         xmlContent.length,
           revision,
-          generated_by:      requestedBy || null,
+          generated_by:      effectiveRequestedBy,
           expires_at:        addYears(now, 4).toISOString(),
           status:            "available",
         });
@@ -226,7 +253,7 @@ serve(async (req) => {
         storage_path:    jsonPath,
         file_size:       jsonBytes.length,
         revision,
-        generated_by:    requestedBy || null,
+        generated_by:    effectiveRequestedBy,
         expires_at:      addYears(now, 4).toISOString(),
         status:          "available",
       });
@@ -261,7 +288,7 @@ serve(async (req) => {
       storage_path:    snapPath,
       file_size:       snapBytes.length,
       revision,
-      generated_by:    requestedBy || null,
+      generated_by:    effectiveRequestedBy,
       expires_at:      addYears(now, 4).toISOString(),
       status:          "available",
     });
@@ -303,7 +330,7 @@ serve(async (req) => {
       storage_path:    manifestPath,
       file_size:       manifestBytes.length,
       revision,
-      generated_by:    requestedBy || null,
+      generated_by:    effectiveRequestedBy,
       expires_at:      addYears(now, 4).toISOString(),
       status:          "available",
     }).select().single();
@@ -317,7 +344,7 @@ serve(async (req) => {
 
       await supabase.from("pcp_import_logs").insert({
         import_file_id: batchId,
-        user_id: requestedBy || null,
+        user_id: effectiveRequestedBy,
         action: "backup_created",
         message: `Backup automático de 4 anos criado com sucesso (${filesToCreate.length + 1} arquivos)`,
         severity: "info",

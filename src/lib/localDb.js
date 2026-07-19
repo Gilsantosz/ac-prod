@@ -557,6 +557,38 @@ const createEntityClient = (entityName) => {
 };
 
 // ─── Auth wrapper usando Supabase Auth ───────────────────────────────────────
+const requireRegisteredProfile = async (user) => {
+  const { data: profile, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!profile) {
+    const accessError = new Error('Este e-mail ainda não foi cadastrado pelo administrador.');
+    accessError.code = 'USER_NOT_REGISTERED';
+    throw accessError;
+  }
+  if (profile.active === false) {
+    const accessError = new Error('Esta conta está desativada. Procure o administrador.');
+    accessError.code = 'USER_INACTIVE';
+    throw accessError;
+  }
+
+  return {
+    id: user.id,
+    email: profile.email || user.email,
+    name: profile.name,
+    role: profile.role,
+    cell: profile.cell || '',
+    permissions: profile.permissions || getDefaultPermissions(profile.role),
+    dashboard_layout: profile.dashboard_layout || null,
+    managed_cells: profile.managed_cells || [],
+    active: true,
+  };
+};
+
 const auth = {
   me: async () => {
     // Valida a sessão com o servidor do Supabase para evitar "sessões fantasma"
@@ -568,24 +600,7 @@ const auth = {
     }
 
     // Buscar perfil com dados de negócio da tabela profiles
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-
-    // Se erro de RLS ou perfil não existe, usa metadados do Auth como fallback
-    const meta = user.user_metadata || {};
-    return {
-      id: user.id,
-      email: user.email,
-      name: profile?.name || meta.name || user.email?.split('@')[0] || '',
-      role: profile?.role || meta.role || 'operator',
-      cell: profile?.cell || meta.cell || '',
-      permissions: profile?.permissions || meta.permissions || getDefaultPermissions(profile?.role || meta.role || 'operator'),
-
-      dashboard_layout: profile?.dashboard_layout || null,
-    };
+    return requireRegisteredProfile(user);
   },
 
   updateMe: async (updateData) => {
@@ -611,36 +626,19 @@ const auth = {
       err.status = 401;
       throw err;
     }
-    persistAuthSession(data.session);
-
-    const user = data.user;
-    const meta = user.user_metadata || {};
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-
-    return {
-      id: user.id,
-      email: user.email,
-      name: profile?.name || meta.name || user.email?.split('@')[0] || '',
-      role: profile?.role || meta.role || 'operator',
-      cell: profile?.cell || meta.cell || '',
-      permissions: profile?.permissions || meta.permissions || getDefaultPermissions(profile?.role || meta.role || 'operator'),
-
-      dashboard_layout: profile?.dashboard_layout || null,
-    };
+    try {
+      const profile = await requireRegisteredProfile(data.user);
+      persistAuthSession(data.session);
+      return profile;
+    } catch (profileError) {
+      clearPersistedAuthSession();
+      await supabase.auth.signOut();
+      throw profileError;
+    }
   },
 
-  register: async ({ email, password, name = '' }) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { name } },
-    });
-    if (error) throw new Error(error.message);
-    return { success: true, message: 'Registro realizado com sucesso.' };
+  register: async () => {
+    throw new Error('O cadastro público está desativado. Solicite acesso a um administrador.');
   },
 
   verifyOtp: async ({ email, otpCode }) => {
@@ -689,7 +687,10 @@ const auth = {
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: `${window.location.origin}${base}${cleanPath}` },
+      options: {
+        redirectTo: `${window.location.origin}${base}${cleanPath}`,
+        ...(provider === 'azure' ? { scopes: 'email' } : {}),
+      },
     });
     if (error) throw new Error(error.message);
   },
@@ -698,58 +699,30 @@ const auth = {
 // ─── Users management (admin only — operações seguras via RLS) ───────────────
 const users = {
   inviteUser: async (email, role, name = '', password = '', permissions = null, cell = '') => {
-    // 1. Criar usuário via Supabase Auth com metadata
     const defaultPermissions = getDefaultPermissions(role);
-
-
     const finalPermissions = permissions || defaultPermissions;
-
-    // Criar um cliente temporário sem persistência de sessão para não deslogar o administrador atual
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    const tempSupabase = createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
-    });
-
-    // Registrar usuário normalmente usando o cliente temporário
-    const { data, error } = await tempSupabase.auth.signUp({
-      email,
-      password: password || 'Senha@' + Math.random().toString(36).slice(2, 10),
-      options: {
-        data: {
-          name: name || email.split('@')[0],
-          role,
-          permissions: JSON.stringify(finalPermissions),
-          cell,
-        },
-      },
-    });
-
-    if (error) throw new Error(error.message);
-
-    // Se o usuário já existe no Auth (identities vazia em contas com confirmação de email ativa)
-    if (data.user && data.user.identities && data.user.identities.length === 0) {
-      throw new Error("Este e-mail já está cadastrado no sistema. Se for necessário recriar o perfil, o usuário anterior deve ser removido primeiro.");
-    }
-
-    // 2. Atualizar perfil com campos adicionais (usando o cliente principal autenticado do admin)
-    if (data.user) {
-      await supabase.from('profiles').upsert({
-        id: data.user.id,
-        name: name || email.split('@')[0],
+    const { data, error } = await supabase.functions.invoke('admin-users', {
+      body: {
+        action: 'create',
         email,
+        password,
+        name: name || email.split('@')[0],
         role,
-        cell,
         permissions: finalPermissions,
-      });
-    }
+        cell,
+      },
+    });
 
-    return { id: data.user?.id, email, name, role, cell };
+    if (error) {
+      let message = error.message;
+      try {
+        const details = await error.context?.json();
+        message = details?.error || details?.message || message;
+      } catch { /* resposta sem JSON */ }
+      throw new Error(message || 'Não foi possível criar o usuário.');
+    }
+    if (!data?.success) throw new Error(data?.error || 'Não foi possível criar o usuário.');
+    return data.user;
   },
 
   listUsers: async () => {

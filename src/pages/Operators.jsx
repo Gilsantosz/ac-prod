@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   HardHat, Plus, Edit2, CheckCircle, XCircle, Unlock,
-  Search, History, MapPin, Cpu, Clock, RefreshCw, KeyRound
+  Search, History, MapPin, Cpu, Clock, RefreshCw, KeyRound, Trash2, ShieldAlert
 } from 'lucide-react';
 
 import PageHeader from '@/components/ui/PageHeader';
@@ -13,17 +13,20 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useCells } from '@/hooks/useCells';
+import { useAuth } from '@/lib/AuthContext';
 import { fetchProductionMachines } from '@/lib/traceabilityService';
 import {
   fetchOperators,
   createOperator,
   updateOperator,
+  deleteOperator,
   unlockOperator,
   fetchAccessAttempts
 } from '@/lib/operatorAdminService';
 
 export default function Operators() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   
   // Modais
@@ -31,6 +34,7 @@ export default function Operators() {
   const [selectedOperator, setSelectedOperator] = useState(null);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [historyLoginName, setHistoryLoginName] = useState(null);
+  const [operatorToDelete, setOperatorToDelete] = useState(null);
 
   // Queries
   const { data: operators = [], isLoading: loadingOperators, refetch: refetchOperators } = useQuery({
@@ -85,6 +89,17 @@ export default function Operators() {
       toast.success('Operador desbloqueado com sucesso!');
     },
     onError: (err) => toast.error(err.message || 'Erro ao desbloquear operador')
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: ({ id, confirmation }) => deleteOperator(id, confirmation),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['operators-admin-list'] });
+      queryClient.invalidateQueries({ queryKey: ['operators'] });
+      toast.success('Operador excluído. O nome foi preservado nos históricos produtivos.');
+      setOperatorToDelete(null);
+    },
+    onError: (err) => toast.error(err.message || 'Erro ao excluir operador')
   });
 
   // Filtragem de operadores local
@@ -291,6 +306,17 @@ export default function Operators() {
                   >
                     {op.active ? 'Desativar' : 'Reativar'}
                   </Button>
+                  {user?.role === 'admin' && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setOperatorToDelete(op)}
+                      className="h-8 w-8 rounded-lg text-rose-600 hover:bg-rose-500/10 hover:text-rose-700"
+                      title="Excluir operador definitivamente"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </div>
               </Card>
             );
@@ -323,6 +349,66 @@ export default function Operators() {
           onClose={() => setHistoryModalOpen(false)}
         />
       )}
+
+      {operatorToDelete && (
+        <DeleteOperatorModal
+          operator={operatorToDelete}
+          loading={deleteMut.isPending}
+          onClose={() => setOperatorToDelete(null)}
+          onConfirm={(confirmation) => deleteMut.mutate({
+            id: operatorToDelete.id,
+            confirmation,
+          })}
+        />
+      )}
+    </div>
+  );
+}
+
+function DeleteOperatorModal({ operator, loading, onClose, onConfirm }) {
+  const [confirmation, setConfirmation] = useState('');
+  const confirmed = confirmation === operator.name;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      <Card className="w-full max-w-lg rounded-2xl border-rose-500/30 bg-card p-6 shadow-xl">
+        <div className="flex items-start gap-3">
+          <div className="rounded-xl bg-rose-500/10 p-2.5 text-rose-600">
+            <ShieldAlert className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-foreground">Excluir operador definitivamente</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              O acesso, os vínculos e as sessões serão removidos. O nome permanecerá gravado nas coletas e eventos já realizados para preservar a rastreabilidade.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 space-y-2">
+          <Label htmlFor="delete-operator-confirmation">
+            Digite <strong>{operator.name}</strong> para confirmar
+          </Label>
+          <Input
+            id="delete-operator-confirmation"
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+            autoComplete="off"
+          />
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose} disabled={loading}>Cancelar</Button>
+          <Button
+            variant="destructive"
+            disabled={!confirmed || loading}
+            onClick={() => onConfirm(confirmation)}
+            className="gap-2"
+          >
+            <Trash2 className="h-4 w-4" />
+            {loading ? 'Excluindo...' : 'Excluir operador'}
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }

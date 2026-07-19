@@ -17,7 +17,11 @@ function getSaoPauloDateString(offsetDays = 0) {
 export async function fetchReportDataForType(supabase: any, type: string, schedule: any) {
   const today = getSaoPauloDateString(0);
   const yesterday = getSaoPauloDateString(-1);
-  const targetDate = schedule.frequency === 'daily' || schedule.frequency === 'workdays' ? yesterday : today;
+  const explicitDate = /^\d{4}-\d{2}-\d{2}$/.test(String(schedule.report_date || ''))
+    ? String(schedule.report_date)
+    : null;
+  const targetDate = explicitDate
+    || (schedule.period_mode === 'previous_day' ? yesterday : today);
 
   if (type === 'daily_production' || type === 'shift_closure') {
     let q = supabase.from('production_entries').select('*').eq('date', targetDate);

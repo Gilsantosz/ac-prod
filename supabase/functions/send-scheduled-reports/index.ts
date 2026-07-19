@@ -28,6 +28,37 @@ Deno.serve(async (req) => {
     try { body = await req.json(); } catch { body = {}; }
 
     const { scheduleId, test } = body;
+
+    if (scheduleId) {
+      const authorization = req.headers.get('Authorization') || '';
+      const token = authorization.replace(/^Bearer\s+/i, '');
+      if (!token) throw new Error('Autenticação necessária para executar um relatório manual.');
+
+      const { data: authData, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !authData.user) throw new Error('Sessão inválida ou expirada.');
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role, active, permissions')
+        .eq('id', authData.user.id)
+        .maybeSingle();
+
+      const canSend = profile?.active !== false && (
+        ['admin', 'manager'].includes(profile?.role)
+        || profile?.permissions?.send_reports === true
+        || profile?.permissions?.schedule_reports === true
+        || profile?.permissions?.manage_automations === true
+      );
+      if (!canSend) throw new Error('Sem permissão para executar relatórios por e-mail.');
+    } else {
+      const cronSecret = req.headers.get('x-cron-secret') || '';
+      const { data: validCronSecret, error: secretError } = await supabase
+        .rpc('verify_report_cron_secret', { p_secret: cronSecret });
+      if (secretError || validCronSecret !== true) {
+        throw new Error('Chamada de agendamento não autorizada.');
+      }
+    }
+
     const lockToken = crypto.randomUUID();
     const results = [];
 
@@ -112,16 +143,18 @@ Deno.serve(async (req) => {
         if (schedule.recipient_profile_ids && schedule.recipient_profile_ids.length > 0) {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, name, email')
+            .select('id, name, email, role, report_delivery_enabled')
             .in('id', schedule.recipient_profile_ids)
             .eq('active', true);
 
           if (profiles) {
-            profiles.forEach(p => {
+            profiles
+              .filter(p => ['admin', 'manager', 'supervisor'].includes(p.role) || p.report_delivery_enabled === true)
+              .forEach(p => {
               if (p.email) {
                 recipientsList.push({ email: p.email.trim().toLowerCase(), name: p.name || p.email, profile_id: p.id });
               }
-            });
+              });
           }
         }
 
@@ -129,7 +162,7 @@ Deno.serve(async (req) => {
         if (schedule.recipient_group_ids && schedule.recipient_group_ids.length > 0) {
           const { data: groupMembers } = await supabase
             .from('email_recipient_group_members')
-            .select('profile_id, external_email, recipient_name_snapshot, recipient_email_snapshot')
+            .select('profile_id')
             .in('group_id', schedule.recipient_group_ids);
 
           if (groupMembers) {
@@ -137,31 +170,16 @@ Deno.serve(async (req) => {
               if (m.profile_id) {
                 const { data: p } = await supabase
                   .from('profiles')
-                  .select('id, name, email')
+                  .select('id, name, email, role, report_delivery_enabled')
                   .eq('id', m.profile_id)
                   .eq('active', true)
                   .single();
-                if (p && p.email) {
+                if (p && p.email && (['admin', 'manager', 'supervisor'].includes(p.role) || p.report_delivery_enabled === true)) {
                   recipientsList.push({ email: p.email.trim().toLowerCase(), name: p.name || p.email, profile_id: p.id });
                 }
-              } else if (m.external_email) {
-                recipientsList.push({
-                  email: m.external_email.trim().toLowerCase(),
-                  name: m.recipient_name_snapshot || m.external_email,
-                });
               }
             }
           }
-        }
-
-        // C. Adicionar e-mails extras
-        if (schedule.extra_emails && schedule.extra_emails.length > 0) {
-          schedule.extra_emails.forEach((email: string) => {
-            const cleanEmail = email.trim().toLowerCase();
-            if (cleanEmail && cleanEmail.includes('@')) {
-              recipientsList.push({ email: cleanEmail, name: cleanEmail.split('@')[0] });
-            }
-          });
         }
 
         // Remover duplicados por e-mail

@@ -9,6 +9,7 @@ export async function sendEmail(opts: {
   const resendKey = Deno.env.get('RESEND_API_KEY');
   const smtpUser = Deno.env.get('SMTP_USER');
   const smtpPass = Deno.env.get('SMTP_PASS');
+  const reportFrom = Deno.env.get('REPORT_FROM_EMAIL') || 'AC.Prod MES <alertas@acprod.com.br>';
 
   if (resendKey) {
     console.log(`Usando Resend API para envio para ${opts.recipients.join(', ')}`);
@@ -20,7 +21,7 @@ export async function sendEmail(opts: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          from: 'AC.Prod MES <alertas@acprod.com.br>',
+          from: reportFrom,
           to: opts.recipients,
           subject: opts.subject,
           html: opts.html,

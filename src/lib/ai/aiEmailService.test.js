@@ -79,7 +79,7 @@ describe('aiEmailService', () => {
 
     const result = await sendReportEmail({
       reportJobId: 'job-1',
-      recipientEmails: ['gildemar.pereira@leomadeiras.com.br'],
+      recipientProfileIds: ['profile-1'],
       subject: '[Leo Flow] Resumo de Produção - 07/07/2026',
     });
 
@@ -92,7 +92,8 @@ describe('aiEmailService', () => {
       enabled: false,
       report_type: 'daily_production',
       format: 'email_html',
-      extra_emails: ['gildemar.pereira@leomadeiras.com.br'],
+      recipient_profile_ids: ['profile-1'],
+      extra_emails: [],
     }));
   });
 });

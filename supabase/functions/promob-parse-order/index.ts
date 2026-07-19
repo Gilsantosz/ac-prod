@@ -3,6 +3,7 @@
 // Esta função é usada internamente pelas outras Edge Functions
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { XMLParser } from "npm:fast-xml-parser@4.5.0";
 import * as XLSX from "npm:xlsx@0.18.5";
 
@@ -15,6 +16,27 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
+    if (req.method !== "POST") throw new Error("Método não permitido");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    const authorization = req.headers.get("Authorization") || "";
+    const token = authorization.replace(/^Bearer\s+/i, "");
+    if (!token) throw new Error("Autenticação necessária");
+
+    if (token !== serviceRoleKey) {
+      const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
+      const { data: authResult, error: authError } = await admin.auth.getUser(token);
+      if (authError || !authResult.user) throw new Error("Sessão inválida ou expirada");
+      const { data: profile } = await admin
+        .from("profiles")
+        .select("role, active")
+        .eq("id", authResult.user.id)
+        .maybeSingle();
+      if (!profile || profile.active === false || !["admin", "manager"].includes(profile.role)) {
+        throw new Error("Permissão insuficiente para processar arquivos PCP");
+      }
+    }
+
     const body = await req.json();
     const xmlContent = body.xmlContent || body.fileContent;
     const fileType = body.fileType || "xml";

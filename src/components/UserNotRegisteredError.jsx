@@ -1,6 +1,9 @@
 import React from 'react';
+import { useAuth } from '@/lib/AuthContext';
 
 const UserNotRegisteredError = () => {
+  const { authError, logout } = useAuth();
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-b from-white to-slate-50">
       <div className="max-w-md w-full p-8 bg-white rounded-lg shadow-lg border border-slate-100">
@@ -12,7 +15,7 @@ const UserNotRegisteredError = () => {
           </div>
           <h1 className="text-3xl font-bold text-slate-900 mb-4">Acesso Restrito</h1>
           <p className="text-slate-600 mb-8">
-            Você não está cadastrado para usar esta aplicação. Por favor, entre em contato com o administrador do sistema para solicitar acesso.
+            {authError?.message || 'Você não está cadastrado para usar esta aplicação. Entre em contato com o administrador do sistema para solicitar acesso.'}
           </p>
           <div className="p-4 bg-slate-50 rounded-md text-sm text-slate-600">
             <p>Se você acredita que isso é um erro, você pode:</p>
@@ -22,6 +25,13 @@ const UserNotRegisteredError = () => {
               <li>Tentar sair do sistema e fazer login novamente</li>
             </ul>
           </div>
+          <button
+            type="button"
+            onClick={() => logout(true)}
+            className="mt-6 w-full rounded-lg bg-[#00552f] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#004326]"
+          >
+            Voltar para o login
+          </button>
         </div>
       </div>
     </div>

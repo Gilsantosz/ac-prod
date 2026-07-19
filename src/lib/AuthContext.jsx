@@ -17,6 +17,14 @@ const redirectTo = (path) => {
   navTo(path);
 };
 
+const profileAccessError = (code, message) => {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+};
+
+const isAccessDeniedError = (error) => ['USER_NOT_REGISTERED', 'USER_INACTIVE'].includes(error?.code);
+
 
 const resolveSessionUser = async (session) => {
   if (!session?.user) return { user: null, shouldSignOut: false };
@@ -56,52 +64,52 @@ export const AuthProvider = ({ children }) => {
           .from('profiles')
           .select('*')
           .eq('id', supabaseUser.id)
-          .single(),
+          .maybeSingle(),
         AUTH_STEP_TIMEOUT_MS,
         { data: null, error: { message: 'Timeout', code: 'TIMEOUT' } },
       );
 
-      if (error && error.code !== 'PGRST116') {
-        console.warn('[Leo Flow] Erro ao buscar perfil:', error);
+      if (error?.code === 'TIMEOUT') {
+        throw profileAccessError('PROFILE_UNAVAILABLE', 'Não foi possível validar seu acesso agora. Tente novamente.');
+      }
+      if (error) throw error;
+      if (!profile) {
+        throw profileAccessError('USER_NOT_REGISTERED', 'Este e-mail ainda não foi cadastrado pelo administrador.');
+      }
+      if (profile.active === false) {
+        throw profileAccessError('USER_INACTIVE', 'Esta conta está desativada. Procure o administrador.');
       }
 
-      const meta = supabaseUser.user_metadata || {};
-      const userRole = profile?.role || meta.role || 'operator';
+      const userRole = profile.role;
       return {
         id: supabaseUser.id,
-        email: supabaseUser.email,
-        name: profile?.name || meta.name || supabaseUser.email?.split('@')[0] || '',
+        email: profile.email || supabaseUser.email,
+        name: profile.name,
         role: userRole,
-        cell: profile?.cell || meta.cell || '',
-        permissions: profile?.permissions || meta.permissions || getDefaultPermissions(userRole),
-        dashboard_layout: profile?.dashboard_layout || null,
-        managed_cells: profile?.managed_cells || [],
+        cell: profile.cell || '',
+        permissions: profile.permissions || getDefaultPermissions(userRole),
+        dashboard_layout: profile.dashboard_layout || null,
+        managed_cells: profile.managed_cells || [],
+        report_delivery_enabled: profile.report_delivery_enabled === true,
+        receives_daily_report: profile.receives_daily_report === true,
+        active: true,
       };
 
     } catch (err) {
       console.error('[Leo Flow] Erro no catch de fetchProfile:', err);
-      const meta = supabaseUser.user_metadata || {};
-      return {
-        id: supabaseUser.id,
-        email: supabaseUser.email,
-        name: meta.name || supabaseUser.email?.split('@')[0] || '',
-        role: meta.role || 'operator',
-        cell: meta.cell || '',
-        permissions: {
-          view_dashboards: true,
-          register_production: true,
-          manage_occurrences: true,
-          manage_cells: false,
-          manage_operators: false,
-          view_reports: false,
-          ai_operations: false,
-          manage_automations: false,
-          manage_users: false,
-        },
-        dashboard_layout: null,
-        managed_cells: [],
-      };
+      throw err;
     }
+  }, []);
+
+  const rejectUnauthorizedSession = useCallback(async (error) => {
+    clearPersistedAuthSession();
+    setUser(null);
+    setIsAuthenticated(false);
+    setAuthError({
+      type: isAccessDeniedError(error) ? 'user_not_registered' : 'auth_required',
+      message: error?.message || 'Não foi possível validar o acesso.',
+    });
+    await withTimeout(supabase.auth.signOut(), AUTH_STEP_TIMEOUT_MS, null);
   }, []);
 
   // ─── Inicialização do estado de autenticação ─────────────────────────────────
@@ -147,10 +155,15 @@ export const AuthProvider = ({ children }) => {
           if (!isMounted || initTimedOut) return;
 
           if (user) {
-            const profile = await fetchProfile(user);
-            if (!isMounted || initTimedOut) return;
-            setUser(profile);
-            setIsAuthenticated(true);
+            try {
+              const profile = await fetchProfile(user);
+              if (!isMounted || initTimedOut) return;
+              setUser(profile);
+              setIsAuthenticated(true);
+              setAuthError(null);
+            } catch (profileError) {
+              if (isMounted) await rejectUnauthorizedSession(profileError);
+            }
           } else if (shouldSignOut) {
             // Sessão inválida no servidor — limpa localmente
             if (isMounted) {
@@ -194,14 +207,15 @@ export const AuthProvider = ({ children }) => {
 
         if (event === 'SIGNED_IN' && session?.user) {
           try {
-            persistAuthSession(session);
             const profile = await fetchProfile(session.user);
             if (!isMounted) return;
+            persistAuthSession(session);
             setUser(profile);
             setIsAuthenticated(true);
             setAuthError(null);
           } catch (err) {
             console.error('[Leo Flow] Erro ao carregar perfil após login:', err);
+            if (isMounted) await rejectUnauthorizedSession(err);
           }
         } else if (event === 'SIGNED_OUT') {
           clearPersistedAuthSession();
@@ -224,7 +238,7 @@ export const AuthProvider = ({ children }) => {
       authEventTimers.forEach((timer) => clearTimeout(timer));
       subscription.unsubscribe();
     };
-  }, [fetchProfile]);
+  }, [fetchProfile, rejectUnauthorizedSession]);
 
   // ─── checkUserAuth — compatibilidade com ProtectedRoute ──────────────────────
   const checkUserAuth = useCallback(async () => {
@@ -243,10 +257,14 @@ export const AuthProvider = ({ children }) => {
         const { user, shouldSignOut } = await resolveSessionUser(restoredSession);
 
         if (user) {
-          const profile = await fetchProfile(user);
-          setUser(profile);
-          setIsAuthenticated(true);
-          setAuthError(null);
+          try {
+            const profile = await fetchProfile(user);
+            setUser(profile);
+            setIsAuthenticated(true);
+            setAuthError(null);
+          } catch (profileError) {
+            await rejectUnauthorizedSession(profileError);
+          }
         } else if (shouldSignOut) {
           setUser(null);
           setIsAuthenticated(false);
@@ -268,7 +286,7 @@ export const AuthProvider = ({ children }) => {
       setIsLoadingAuth(false);
       setAuthChecked(true);
     }
-  }, [fetchProfile]);
+  }, [fetchProfile, rejectUnauthorizedSession]);
 
   // ─── Login ────────────────────────────────────────────────────────────────────
   const login = async (email, password) => {
@@ -287,7 +305,7 @@ export const AuthProvider = ({ children }) => {
       return profile;
     } catch (error) {
       setAuthError({
-        type: 'invalid_credentials',
+        type: isAccessDeniedError(error) ? 'user_not_registered' : 'invalid_credentials',
         message: error.message || 'Credenciais inválidas',
       });
       throw error;
@@ -318,6 +336,7 @@ export const AuthProvider = ({ children }) => {
   const logout = async (shouldRedirect = true) => {
     setUser(null);
     setIsAuthenticated(false);
+    setAuthError(null);
     setAuthChecked(true);
     try {
       clearPersistedAuthSession();

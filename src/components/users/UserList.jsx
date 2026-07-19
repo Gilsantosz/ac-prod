@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   User as UserIcon, Edit3, Trash2, Save, X, LayoutDashboard, PlusCircle, AlertOctagon,
   Boxes, HardHat, LineChart, Zap, Users, KeyRound, Send, BrainCircuit,
-  Plug, GitFork, Box, Truck, BellRing, Layers, ShieldAlert
+  Plug, GitFork, Box, Truck, BellRing, Layers, ShieldAlert, MailCheck
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCells } from '@/hooks/useCells';
@@ -110,6 +110,8 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
   const [editRole, setEditRole] = useState(user.role || 'operator');
   const [editCell, setEditCell] = useState(user.cell || 'none');
   const [editPermissions, setEditPermissions] = useState(() => user.permissions || getDefaultPermissions(user.role || 'operator'));
+  const [editReportDelivery, setEditReportDelivery] = useState(Boolean(user.report_delivery_enabled));
+  const [editDailyReport, setEditDailyReport] = useState(Boolean(user.receives_daily_report));
 
 
   const isSelf = user.id === currentUserId;
@@ -130,6 +132,8 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
       role: editRole,
       cell: editCell === 'none' ? '' : editCell, // Enviando a célula vinculada no payload
       permissions: editPermissions,
+      report_delivery_enabled: editReportDelivery,
+      receives_daily_report: editReportDelivery && editDailyReport,
     });
 
     setIsEditing(false);
@@ -141,6 +145,8 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
     setEditRole(user.role || 'operator');
     setEditCell(user.cell || 'none');
     setEditPermissions(user.permissions || getDefaultPermissions(user.role || 'operator'));
+    setEditReportDelivery(Boolean(user.report_delivery_enabled));
+    setEditDailyReport(Boolean(user.receives_daily_report));
 
     setIsEditing(false);
   };
@@ -198,6 +204,37 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 rounded-xl border border-border/60 bg-muted/20 p-4 sm:grid-cols-2">
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={editReportDelivery}
+                onChange={(event) => {
+                  setEditReportDelivery(event.target.checked);
+                  if (!event.target.checked) setEditDailyReport(false);
+                }}
+                className="mt-1 h-4 w-4 rounded border-input text-primary"
+              />
+              <span>
+                <span className="block text-sm font-semibold">Disponível para relatórios e IA</span>
+                <span className="block text-xs text-muted-foreground">Pode ser selecionado como destinatário.</span>
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={editDailyReport}
+                disabled={!editReportDelivery}
+                onChange={(event) => setEditDailyReport(event.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-input text-primary disabled:opacity-50"
+              />
+              <span>
+                <span className="block text-sm font-semibold">Fechamento produtivo</span>
+                <span className="block text-xs text-muted-foreground">Horário configurado na aba Agendamentos.</span>
+              </span>
+            </label>
           </div>
 
 
@@ -263,6 +300,11 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
                   </Badge>
                 )}
                 {isSelf && <Badge variant="outline" className="bg-secondary/40 border-primary/20 text-primary">Você</Badge>}
+                {user.report_delivery_enabled && (
+                  <Badge variant="outline" className="gap-1 bg-blue-500/5 border-blue-500/20 text-blue-600 dark:text-blue-400">
+                    <MailCheck className="h-3 w-3" /> E-mails/IA
+                  </Badge>
+                )}
               </div>
               <p className="text-sm text-muted-foreground truncate">{user.email}</p>
               

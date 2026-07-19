@@ -34,18 +34,18 @@ describe('aiActionExecutor', () => {
     expect(res.content).toContain('Você não possui permissão');
   });
 
-  it('requests confirmation for external domain emails', async () => {
+  it('rejects email recipients that are not registered users', async () => {
     canExecuteAiAction.mockReturnValue(true);
     resolveRecipientsFromPrompt.mockResolvedValue({
-      resolved: [{ name: 'Joao', email: 'joao@externo.com' }],
+      resolved: [],
       ambiguous: [],
-      notFound: [],
+      notFound: ['joao@externo.com'],
     });
 
     const user = { id: 'u1', role: 'manager', email: 'user@empresa.com' };
     const res = await executeAiAction({ action: 'send_report_email', rawPrompt: 'Mande para joao@externo.com' }, { user });
-    expect(res.pendingAction.type).toBe('send_report_email');
-    expect(res.content).toContain('domínio de e-mail externo');
+    expect(res.pendingAction).toBeUndefined();
+    expect(res.content).toContain('nome ou e-mail do gestor');
   });
 
   it('runs generation and email sending when fully confirmed', async () => {
