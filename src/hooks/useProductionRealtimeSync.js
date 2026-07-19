@@ -40,6 +40,7 @@ const TABLE_TO_QUERY_KEYS = {
   ],
   production_stage_readings: [
     ['stageReadings'],
+    ['production-lots'],
     ['collection-history'],
     ['collection-kpis'],
     ['cell-detailed-stats'],
