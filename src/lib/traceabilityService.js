@@ -488,5 +488,22 @@ export async function fetchProductionMachines(cellName) {
   }
   const { data, error } = await query.order('name');
   if (error) throw error;
-  return data || [];
+
+  // production_machines mantém a célula pelo nome. A interface administrativa,
+  // porém, trabalha com UUIDs; faça a tradução em um único ponto para evitar
+  // listas de máquinas vazias no cadastro de operadores.
+  const { data: cells, error: cellsError } = await supabase
+    .from('cells')
+    .select('id, name')
+    .eq('active', true);
+  if (cellsError) throw cellsError;
+
+  const cellIdByName = new Map(
+    (cells || []).map((cell) => [cell.name?.trim().toLocaleLowerCase('pt-BR'), cell.id])
+  );
+
+  return (data || []).map((machine) => ({
+    ...machine,
+    cell_id: cellIdByName.get(machine.cell_name?.trim().toLocaleLowerCase('pt-BR')) || null,
+  }));
 }

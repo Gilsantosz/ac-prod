@@ -25,81 +25,20 @@ export async function fetchOperators() {
 }
 
 export async function createOperator(operatorData) {
-  const { name, login_name, registration, shift, primary_cell_id, primary_machine_id } = operatorData;
-
-  const { data, error } = await supabase
-    .from('operators')
-    .insert([{
-      name: name.trim(),
-      login_name: login_name.trim(),
-      registration: registration.trim(),
-      shift: shift || null,
-      primary_cell_id: primary_cell_id || null,
-      primary_machine_id: primary_machine_id || null,
-      active: true
-    }])
-    .select()
-    .single();
-
-  if (error) throw error;
-
-  await updateAssignments(
-    data.id, 
-    operatorData.cell_ids || [], 
-    operatorData.machine_ids || [], 
-    primary_cell_id, 
-    primary_machine_id
-  );
-
-  return data;
+  return saveOperator(null, operatorData);
 }
 
 export async function updateOperator(id, operatorData) {
-  const { name, login_name, registration, shift, primary_cell_id, primary_machine_id, active } = operatorData;
-
-  const updatePayload = {
-    name: name.trim(),
-    login_name: login_name.trim(),
-    shift: shift || null,
-    primary_cell_id: primary_cell_id || null,
-    primary_machine_id: primary_machine_id || null,
-    active: active !== false
-  };
-
-  if (registration && registration.trim()) {
-    updatePayload.registration = registration.trim();
-  }
-
-  const { data, error } = await supabase
-    .from('operators')
-    .update(updatePayload)
-    .eq('id', id)
-    .select()
-    .single();
-
-  if (error) throw error;
-
-  await updateAssignments(
-    id, 
-    operatorData.cell_ids || [], 
-    operatorData.machine_ids || [], 
-    primary_cell_id, 
-    primary_machine_id
-  );
-
-  return data;
+  return saveOperator(id, operatorData);
 }
 
 export async function unlockOperator(id) {
-  const { data, error } = await supabase
-    .from('operators')
-    .update({
-      failed_login_count: 0,
-      locked_until: null
-    })
-    .eq('id', id);
+  const { data, error } = await supabase.rpc('admin_unlock_operator', {
+    p_operator_id: id,
+  });
 
   if (error) throw error;
+  if (!data?.success) throw new Error(data?.error || 'Não foi possível desbloquear o operador.');
   return data;
 }
 
@@ -119,44 +58,20 @@ export async function fetchAccessAttempts(loginName = null) {
   return data || [];
 }
 
-async function updateAssignments(operatorId, cellIds, machineIds, primaryCellId, primaryMachineId) {
-  // 1. Limpar e re-inserir vínculos com Células
-  await supabase
-    .from('operator_cell_assignments')
-    .delete()
-    .eq('operator_id', operatorId);
+async function saveOperator(operatorId, operatorData) {
+  const { data, error } = await supabase.rpc('admin_upsert_operator', {
+    p_operator_id: operatorId,
+    p_data: {
+      ...operatorData,
+      name: operatorData.name?.trim(),
+      login_name: operatorData.login_name?.trim().toLowerCase().replace(/\s+/g, '.'),
+      registration: operatorData.registration?.trim() || null,
+      cell_ids: operatorData.cell_ids || [],
+      machine_ids: operatorData.machine_ids || [],
+    },
+  });
 
-  if (cellIds.length > 0) {
-    const cellInserts = cellIds.map(cellId => ({
-      operator_id: operatorId,
-      cell_id: cellId,
-      is_primary: cellId === primaryCellId,
-      active: true
-    }));
-
-    const { error: cellErr } = await supabase
-      .from('operator_cell_assignments')
-      .insert(cellInserts);
-    if (cellErr) throw cellErr;
-  }
-
-  // 2. Limpar e re-inserir vínculos com Máquinas
-  await supabase
-    .from('operator_machine_assignments')
-    .delete()
-    .eq('operator_id', operatorId);
-
-  if (machineIds.length > 0) {
-    const machInserts = machineIds.map(machId => ({
-      operator_id: operatorId,
-      machine_id: machId,
-      is_primary: machId === primaryMachineId,
-      active: true
-    }));
-
-    const { error: machErr } = await supabase
-      .from('operator_machine_assignments')
-      .insert(machInserts);
-    if (machErr) throw machErr;
-  }
+  if (error) throw error;
+  if (!data?.success) throw new Error(data?.error || 'Não foi possível salvar o operador.');
+  return data.operator;
 }

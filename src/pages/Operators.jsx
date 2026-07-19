@@ -93,7 +93,7 @@ export default function Operators() {
     return (
       op.name?.toLowerCase().includes(term) ||
       op.login_name?.toLowerCase().includes(term) ||
-      op.registration?.toLowerCase().includes(term)
+      op.registration_normalized?.toLowerCase().includes(term)
     );
   });
 
@@ -246,6 +246,11 @@ export default function Operators() {
                       {activeMachinesCount} Máquina(s)
                     </span>
                   </div>
+                  {activeCellsCount === 0 && (
+                    <p className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2.5 py-2 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                      Sem célula vinculada — edite o operador para liberar o acesso à coleta.
+                    </p>
+                  )}
                 </div>
 
                 {/* Botões de Ação */}
@@ -396,6 +401,8 @@ function OperatorFormModal({ operator, activeCells, allMachines, onClose, onSubm
     if (!name.trim()) return toast.warning('Informe o nome.');
     if (!loginName.trim()) return toast.warning('Informe o login.');
     if (!operator && !registration.trim()) return toast.warning('Informe a matrícula.');
+    if (!primaryCellId) return toast.warning('Selecione a célula principal do operador.');
+    if (!cellIds.includes(primaryCellId)) return toast.warning('A célula principal deve estar entre as células autorizadas.');
 
     // Validar login_name format (alfanumérico e ponto apenas)
     const loginNormalized = loginName.toLowerCase().trim().replace(/\s+/g, '.');
@@ -496,7 +503,7 @@ function OperatorFormModal({ operator, activeCells, allMachines, onClose, onSubm
                 onChange={(e) => handlePrimaryCellChange(e.target.value)}
                 className="w-full h-10 rounded-xl border border-input bg-background/50 focus:bg-background px-3 text-sm font-medium"
               >
-                <option value="">Nenhuma</option>
+                <option value="">Selecione a célula</option>
                 {activeCells.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
@@ -528,7 +535,7 @@ function OperatorFormModal({ operator, activeCells, allMachines, onClose, onSubm
           <div className="space-y-4">
             <div>
               <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Acesso e Postos Autorizados</h4>
-              <p className="text-[11px] text-muted-foreground">Selecione quais células e postos este operador está autorizado a operar.</p>
+              <p className="text-[11px] text-muted-foreground">Selecione as células autorizadas. Se nenhuma máquina for marcada, o operador poderá usar qualquer máquina ativa dessas células.</p>
             </div>
 
             <div className="grid sm:grid-cols-2 gap-6">
