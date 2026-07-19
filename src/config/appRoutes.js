@@ -138,8 +138,8 @@ export const appRoutes = [
     icon: GitFork,
     group: 'pcp',
     permission: 'manage_routes',
-    showInSidebar: true,
-    showInDashboardHub: true
+    showInSidebar: false,
+    showInDashboardHub: false
   },
 
   // ─── GRUPO 3: CHÃO DE FÁBRICA MES ──────────────────────────────────
