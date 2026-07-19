@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 export default function LotCard({ lot, _stage, onAdvance, onBlock, onUnblock }) {
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [blockReason, setBlockReason] = useState('');
+  const [showAllStages, setShowAllStages] = useState(false);
 
   const order = lot.production_orders || {};
   const items = lot.production_lot_items || lot.lot_items || [];
@@ -27,9 +28,13 @@ export default function LotCard({ lot, _stage, onAdvance, onBlock, onUnblock }) 
   const nextStage = STAGE_NEXT[lot.current_stage];
   const nextStageLabel = KANBAN_STAGES.find(s => s.code === nextStage)?.label;
   const total = Number(progress.total || items.length || lot.planned_quantity || 0);
-  const collected = Number(progress.completed || 0);
-  const pending = Number(progress.pending || Math.max(0, total - collected));
+  const completedPieces = Number(progress.completed || 0);
+  const pending = Number(progress.pending || Math.max(0, total - completedPieces));
   const percent = Math.max(0, Math.min(100, Number(progress.percent || 0)));
+  const totalRouteOperations = routeProgress.reduce((sum, step) => sum + Number(step.total || 0), 0);
+  const collectedRouteOperations = routeProgress.reduce((sum, step) => sum + Number(step.collected || 0), 0);
+  const visibleRouteProgress = showAllStages ? routeProgress : routeProgress.slice(0, 4);
+  const hiddenStageCount = Math.max(0, routeProgress.length - 4);
 
   const handleBlock = () => {
     if (!blockReason.trim()) return;
@@ -75,10 +80,10 @@ export default function LotCard({ lot, _stage, onAdvance, onBlock, onUnblock }) 
           {total} pç
         </span>
         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/25 dark:text-emerald-300 flex items-center gap-0.5">
-          <CheckCircle2 className="w-2.5 h-2.5" /> {collected} colet.
+          <CheckCircle2 className="w-2.5 h-2.5" /> {completedPieces} peças finalizadas
         </span>
         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/25 dark:text-amber-300">
-          {pending} faltam
+          {pending} pendentes
         </span>
         {dueDate && (
           <span className={cn(
@@ -95,12 +100,17 @@ export default function LotCard({ lot, _stage, onAdvance, onBlock, onUnblock }) 
 
       <div className="space-y-1">
         <div className="flex justify-between text-[11px] text-muted-foreground">
-          <span className="truncate">Atual: {translateStage(lot.current_step)}</span>
-          <strong className="text-foreground">{percent}%</strong>
+          <span className="truncate">Etapa atual real: {translateStage(lot.current_step)}</span>
+          <strong className="text-foreground">{percent}% real</strong>
         </div>
         <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
           <div className="h-full bg-[#2d9c4a]" style={{ width: `${percent}%` }} />
         </div>
+        {totalRouteOperations > 0 && (
+          <p className="text-[10px] text-muted-foreground">
+            Base: {collectedRouteOperations}/{totalRouteOperations} operações confirmadas
+          </p>
+        )}
         {lot.current_cell && (
           <p className="text-[11px] text-muted-foreground flex items-center gap-1 truncate">
             <MapPin className="w-3 h-3 shrink-0" /> {translateStage(lot.current_cell)}
@@ -110,7 +120,11 @@ export default function LotCard({ lot, _stage, onAdvance, onBlock, onUnblock }) 
 
       {routeProgress.length > 0 && (
         <div className="space-y-1 border-t border-border/60 pt-2">
-          {routeProgress.slice(0, 4).map((step) => (
+          <div className="flex items-center justify-between gap-2 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <span>Coletas por etapa</span>
+            <span>Real / previsto</span>
+          </div>
+          {visibleRouteProgress.map((step) => (
             <div key={step.id || `${step.step_order}-${step.step_name}`} className="flex items-center justify-between gap-2 text-[11px]">
               <span className="truncate text-muted-foreground">{translateStage(step.step_name)}</span>
               <span className={cn(
@@ -122,7 +136,13 @@ export default function LotCard({ lot, _stage, onAdvance, onBlock, onUnblock }) 
             </div>
           ))}
           {routeProgress.length > 4 && (
-            <p className="text-[10px] text-muted-foreground">+ {routeProgress.length - 4} etapas na rota</p>
+            <button
+              type="button"
+              onClick={() => setShowAllStages((current) => !current)}
+              className="text-[10px] font-medium text-[#2d9c4a] hover:underline"
+            >
+              {showAllStages ? 'Recolher etapas' : `Ver mais ${hiddenStageCount} ${hiddenStageCount === 1 ? 'etapa' : 'etapas'}`}
+            </button>
           )}
         </div>
       )}

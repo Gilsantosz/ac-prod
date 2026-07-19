@@ -92,6 +92,30 @@ function stageFromStep(value, fallback = 'imported') {
   return STEP_STAGE_MAP[key] || STEP_STAGE_MAP[normalizeKey(value)] || fallback;
 }
 
+function stepKey(value) {
+  const key = normalizeKey(value).replace(/\s+/g, '_');
+  return STEP_STAGE_MAP[key] || key;
+}
+
+function isActivePiece(piece = {}) {
+  return !['cancelled', 'replaced'].includes(normalizeStatus(piece.status));
+}
+
+function buildApprovedPieceSteps(readings = []) {
+  return new Set(
+    readings
+      .filter((reading) => reading.status === 'approved' && reading.piece_id)
+      .map((reading) => `${reading.piece_id}::${stepKey(reading.step_name)}`)
+  );
+}
+
+function hasPieceStepEvidence(piece, step, approvedPieceSteps) {
+  if (COMPLETED_STATUSES.has(normalizeStatus(piece.status))) return true;
+  const targetStep = stepKey(step);
+  const completedSteps = new Set((piece.completed_steps || []).map(stepKey));
+  return completedSteps.has(targetStep) || approvedPieceSteps.has(`${piece.id}::${targetStep}`);
+}
+
 function normalizeOrder(order = null) {
   if (!order) return null;
   return {
@@ -176,32 +200,16 @@ function buildRouteProgress(lot, items = [], readings = [], routes = []) {
   const approvedReadings = readings.filter((reading) => reading.status === 'approved');
   const rejectedReadings = readings.filter((reading) => reading.status === 'rejected');
   const total = Math.max(items.length, toNumber(lot?.planned_quantity));
-
-  const currentStepName = lot?.current_step || lot?.current_stage;
-  const currentStepIndex = sortedRoutes.findIndex(
-    (r) => normalizeKey(r.step_name) === normalizeKey(currentStepName)
-  );
   const isFinished = lot?.status === 'completed' || lot?.status === 'shipped' || lot?.current_stage === 'completed' || lot?.current_step === 'Finalizado';
 
-  return sortedRoutes.map((route, idx) => {
-    const stepReadings = approvedReadings.filter((reading) => normalizeKey(reading.step_name) === normalizeKey(route.step_name));
+  return sortedRoutes.map((route) => {
+    const stepReadings = approvedReadings.filter((reading) => stepKey(reading.step_name) === stepKey(route.step_name));
     const itemIds = uniqueValues(stepReadings.map((reading) => reading.item_id));
     let collected = itemIds.length || stepReadings.reduce((sum, reading) => sum + (toNumber(reading.quantity) || 1), 0);
 
-    if (collected === 0) {
-      if (isFinished) {
-        collected = total;
-      } else if (currentStepIndex !== -1) {
-        if (idx < currentStepIndex) {
-          collected = total;
-        } else if (idx === currentStepIndex) {
-          const progressCompleted = toNumber(lot?.completed ?? lot?.collected ?? lot?.approved_quantity ?? lot?.produced_quantity);
-          collected = Math.min(total, progressCompleted);
-        }
-      }
-    }
+    if (collected === 0 && isFinished) collected = total;
 
-    const rejected = rejectedReadings.filter((reading) => normalizeKey(reading.step_name) === normalizeKey(route.step_name)).length;
+    const rejected = rejectedReadings.filter((reading) => stepKey(reading.step_name) === stepKey(route.step_name)).length;
     const pending = Math.max(0, total - collected);
     return {
       id: route.id,
@@ -222,7 +230,9 @@ function buildRouteProgress(lot, items = [], readings = [], routes = []) {
 const PIECE_ROUTE_ORDER = ['cut', 'edge', 'drill', 'cnc', 'canal', 'maranello', 'portajoias', 'sorrento', 'usi_especial', 'rasgo_freggio', 'joinery', 'separation', 'packaging', 'shipping'];
 
 function routesFromPieces(pieces = [], lotId = null) {
-  const steps = uniqueValues(pieces.flatMap((piece) => Array.isArray(piece.route_steps) ? piece.route_steps : []));
+  const steps = uniqueValues(
+    pieces.flatMap((piece) => Array.isArray(piece.route_steps) ? piece.route_steps.map(stepKey) : [])
+  );
   return steps
     .sort((a, b) => {
       const aIndex = PIECE_ROUTE_ORDER.indexOf(normalizeKey(a));
@@ -239,46 +249,23 @@ function routesFromPieces(pieces = [], lotId = null) {
     }));
 }
 
-function buildPieceRouteProgress(lot, pieces = [], readings = []) {
-  const routes = routesFromPieces(pieces, lot?.id);
-  const approvedByPieceStep = new Set(
-    readings
-      .filter((reading) => reading.status === 'approved' && reading.piece_id)
-      .map((reading) => `${reading.piece_id}::${normalizeKey(reading.step_name)}`)
-  );
+export function buildPieceRouteProgress(lot, pieces = [], readings = []) {
+  const activePieces = pieces.filter(isActivePiece);
+  const routes = routesFromPieces(activePieces, lot?.id);
+  const approvedByPieceStep = buildApprovedPieceSteps(readings);
 
-  const currentStepName = lot?.current_step || lot?.current_stage;
-  const currentStepIndex = routes.findIndex(
-    (r) => normalizeKey(r.step_name) === normalizeKey(currentStepName)
-  );
-  const isFinished = lot?.status === 'completed' || lot?.status === 'shipped' || lot?.current_stage === 'completed' || lot?.current_step === 'Finalizado';
-
-  return routes.map((route, idx) => {
-    const requiredPieces = pieces.filter((piece) => (
-      (piece.route_steps || []).some((step) => normalizeKey(step) === normalizeKey(route.step_name))
+  return routes.map((route) => {
+    const requiredPieces = activePieces.filter((piece) => (
+      (piece.route_steps || []).some((step) => stepKey(step) === stepKey(route.step_name))
     ));
-    let collected = requiredPieces.filter((piece) => (
-      (piece.completed_steps || []).some((step) => normalizeKey(step) === normalizeKey(route.step_name))
-      || approvedByPieceStep.has(`${piece.id}::${normalizeKey(route.step_name)}`)
+    const collected = requiredPieces.filter((piece) => (
+      hasPieceStepEvidence(piece, route.step_name, approvedByPieceStep)
     )).length;
     const total = requiredPieces.length;
 
-    if (collected === 0 && total > 0) {
-      if (isFinished) {
-        collected = total;
-      } else if (currentStepIndex !== -1) {
-        if (idx < currentStepIndex) {
-          collected = total;
-        } else if (idx === currentStepIndex) {
-          const progressCompleted = toNumber(lot?.completed ?? lot?.collected ?? lot?.approved_quantity ?? lot?.produced_quantity);
-          collected = Math.min(total, progressCompleted);
-        }
-      }
-    }
-
     const rejected = readings.filter((reading) => (
       reading.status === 'rejected'
-      && normalizeKey(reading.step_name) === normalizeKey(route.step_name)
+      && stepKey(reading.step_name) === stepKey(route.step_name)
     )).length;
     return {
       ...route,
@@ -292,23 +279,36 @@ function buildPieceRouteProgress(lot, pieces = [], readings = []) {
   });
 }
 
-function buildPieceProgress(pieces = [], fallback = {}) {
-  const active = pieces.filter((piece) => !['cancelled', 'replaced'].includes(normalizeStatus(piece.status)));
+export function buildPieceProgress(pieces = [], readings = [], fallback = {}) {
+  const active = pieces.filter(isActivePiece);
+  const approvedByPieceStep = buildApprovedPieceSteps(readings);
+  const approvedPieceIds = new Set(
+    readings
+      .filter((reading) => reading.status === 'approved' && reading.piece_id)
+      .map((reading) => reading.piece_id)
+  );
   const total = active.length;
   const completed = active.filter((piece) => COMPLETED_STATUSES.has(normalizeStatus(piece.status))).length;
   const blocked = active.filter((piece) => BLOCKED_STATUSES.has(normalizeStatus(piece.status))).length;
   const inProgress = active.filter((piece) => (
     !COMPLETED_STATUSES.has(normalizeStatus(piece.status))
     && !BLOCKED_STATUSES.has(normalizeStatus(piece.status))
-    && Array.isArray(piece.completed_steps)
-    && piece.completed_steps.length > 0
+    && (
+      (Array.isArray(piece.completed_steps) && piece.completed_steps.length > 0)
+      || approvedPieceIds.has(piece.id)
+    )
   )).length;
-  const totalOperations = active.reduce((sum, piece) => sum + (piece.route_steps?.length || 0), 0);
+  const totalOperations = active.reduce(
+    (sum, piece) => sum + uniqueValues((piece.route_steps || []).map(stepKey)).length,
+    0
+  );
   const completedOperations = active.reduce((sum, piece) => {
-    const required = new Set((piece.route_steps || []).map(normalizeKey));
-    return sum + uniqueValues((piece.completed_steps || []).map(normalizeKey)).filter((step) => required.has(step)).length;
+    const required = uniqueValues((piece.route_steps || []).map(stepKey));
+    return sum + required.filter((step) => hasPieceStepEvidence(piece, step, approvedByPieceStep)).length;
   }, 0);
-  const calculatedPercent = totalOperations > 0 ? Math.round((completedOperations / totalOperations) * 100) : 0;
+  const calculatedPercent = totalOperations > 0
+    ? Number(((completedOperations / totalOperations) * 100).toFixed(2))
+    : Math.max(0, Math.min(100, toNumber(fallback.progress_percent)));
 
   return {
     total,
@@ -318,49 +318,39 @@ function buildPieceProgress(pieces = [], fallback = {}) {
     inProgress,
     approvedReadings: completedOperations,
     rejectedReadings: 0,
-    percent: Math.max(calculatedPercent, toNumber(fallback.progress_percent)),
+    percent: calculatedPercent,
   };
 }
 
-function buildLotRuntimeSummary(lot, items = [], readings = [], routes = [], tags = [], pieces = []) {
+export function buildLotRuntimeSummary(lot, items = [], readings = [], routes = [], tags = [], pieces = []) {
   const pieceRoutes = routesFromPieces(pieces, lot?.id);
   const sortedRoutes = sortRoutes(pieceRoutes.length ? pieceRoutes : routes);
   const derivedItems = deriveItemStates(items, readings, sortedRoutes);
   const progress = pieces.length
-    ? buildPieceProgress(pieces, lot)
+    ? buildPieceProgress(pieces, readings, lot)
     : buildProgress(items, readings, lot?.planned_quantity, lot, sortedRoutes);
   const routeProgress = pieces.length
     ? buildPieceRouteProgress(lot, pieces, readings)
     : buildRouteProgress(lot, items, readings, sortedRoutes);
   const latestApproved = sortReadings(readings.filter((reading) => reading.status === 'approved')).at(-1) || null;
-  const latestRouteIndex = routeIndex(sortedRoutes, latestApproved?.step_name);
-  const nextRoute = latestRouteIndex >= 0 ? sortedRoutes[latestRouteIndex + 1] || null : null;
   const allCollected = progress.total > 0 && progress.pending === 0;
-  const currentPieceStep = pieces
-    .filter((piece) => piece.status !== 'planned' && !COMPLETED_STATUSES.has(normalizeStatus(piece.status)))
-    .reduce((counts, piece) => {
-      const step = piece.current_stage;
-      if (step) counts.set(step, (counts.get(step) || 0) + 1);
-      return counts;
-    }, new Map());
-  const dominantPieceStep = [...currentPieceStep.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-  const currentRoute = allCollected
-    ? null
-    : nextRoute || sortedRoutes.find((route) => route.step_name === lot?.current_step) || sortedRoutes[0] || null;
+  const firstIncompleteRoute = routeProgress.find((step) => step.total > 0 && step.pending > 0) || null;
+  const currentRoute = allCollected ? null : firstIncompleteRoute || sortedRoutes[0] || null;
   const isInitialStage = ['imported', 'released'].includes(lot?.current_stage);
+  const hasProductionEvidence = progress.approvedReadings > 0 || !!latestApproved;
   const currentStage = allCollected
     ? 'completed'
-    : (isInitialStage && !latestApproved && !dominantPieceStep)
+    : (isInitialStage && !hasProductionEvidence)
       ? lot.current_stage
-      : stageFromStep(dominantPieceStep || currentRoute?.step_name || lot?.current_step || lot?.current_stage, stageFromStep(lot?.current_stage, 'imported'));
+      : stageFromStep(currentRoute?.step_name || currentRoute?.stage_code || lot?.current_step || lot?.current_stage, stageFromStep(lot?.current_stage, 'imported'));
 
   return {
     currentStage,
     currentStep: allCollected
       ? 'Finalizado'
-      : (isInitialStage && !latestApproved && !dominantPieceStep)
+      : (isInitialStage && !hasProductionEvidence)
         ? (lot?.current_stage === 'released' ? 'Liberado' : 'Importado')
-        : firstValue(dominantPieceStep, currentRoute?.step_name, lot?.current_step, lot?.current_stage),
+        : firstValue(currentRoute?.step_name, lot?.current_step, lot?.current_stage),
     currentCell: allCollected ? '' : firstValue(currentRoute?.cell_name, lot?.current_cell),
     latestReading: latestApproved,
     progress,
