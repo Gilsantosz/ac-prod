@@ -191,10 +191,11 @@ export default function TraceabilityScannerPanel({
           onBlur={refocus}
           loading={loading}
           ready={contextReady}
+          afterInput={readerContext}
         />
       )}
 
-      {readerContext}
+      {(mode === 'camera' || mode === 'rfid') && readerContext}
 
       {feedback && (
         <div

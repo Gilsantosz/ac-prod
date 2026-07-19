@@ -75,19 +75,24 @@ describe('TraceabilityScannerPanel', () => {
     expect(screen.getByRole('status')).toHaveClass('border-red-300');
   });
 
-  it('posiciona o contexto do lote logo após o leitor e antes do feedback', () => {
+  it('posiciona o contexto do lote logo após o campo do leitor e antes do botão', () => {
     renderPanel({
       readerContext: <div data-testid="reader-context">Lote geral 15587</div>,
       feedback: { success: true, status: 'approved', message: 'Baixa concluída' },
     });
 
-    const reader = screen.getByLabelText('Identificação produtiva').closest('form');
+    const input = screen.getByLabelText('Identificação produtiva');
+    const inputContainer = input.parentElement;
+    const reader = input.closest('form');
     const readerContext = screen.getByTestId('reader-context');
-    const feedback = screen.getByRole('status');
     const siblings = [...reader.parentElement.children];
+    const formChildren = [...reader.children];
 
-    expect(siblings.indexOf(readerContext)).toBe(siblings.indexOf(reader) + 1);
-    expect(siblings.indexOf(readerContext)).toBeLessThan(siblings.indexOf(feedback));
+    expect(formChildren.indexOf(readerContext)).toBe(formChildren.indexOf(inputContainer) + 1);
+    expect(formChildren.indexOf(readerContext)).toBeLessThan(
+      formChildren.indexOf(screen.getByRole('button', { name: 'Processar leitura' }))
+    );
+    expect(siblings.indexOf(reader)).toBeLessThan(siblings.indexOf(screen.getByRole('status')));
   });
 
   it('não cria evento para uma leitura vazia ou inválida', () => {
