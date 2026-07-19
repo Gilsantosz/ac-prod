@@ -15,6 +15,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  migrate:
+    name: Database Migrations
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy Migrations
+        run: |
+          if [ -n "${{ secrets.SUPABASE_ACCESS_TOKEN }}" ] && [ -n "${{ secrets.SUPABASE_DB_PASSWORD }}" ]; then
+            PROJECT_REF="${{ secrets.SUPABASE_PROJECT_ID }}"
+            if [ -z "$PROJECT_REF" ]; then
+              PROJECT_REF="uozuzdfvnufsjsonswag"
+            fi
+            supabase db push --project-ref "$PROJECT_REF"
+          else
+            echo "Aviso: Segredos Supabase (SUPABASE_ACCESS_TOKEN e SUPABASE_DB_PASSWORD) nao configurados no GitHub. Pulando migracao automatica."
+          fi
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
   build:
     name: Build
     runs-on: ubuntu-latest
