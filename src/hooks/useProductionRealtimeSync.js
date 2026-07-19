@@ -37,6 +37,8 @@ const TABLE_TO_QUERY_KEYS = {
     ['collectionEvents'],
     ['collection-history'],
     ['collection-kpis'],
+    ['general-lot-tracking'],
+    ['lot-tracking-dashboard'],
   ],
   production_stage_readings: [
     ['stageReadings'],
@@ -47,6 +49,8 @@ const TABLE_TO_QUERY_KEYS = {
     ['traceability-report-readings'],
     ['test-readings-list'],
     ['test-lot-details'],
+    ['general-lot-tracking'],
+    ['lot-tracking-dashboard'],
   ],
   production_orders: [
     ['production-orders'],
@@ -58,6 +62,8 @@ const TABLE_TO_QUERY_KEYS = {
     ['trace-search'],
     ['test-lots-list'],
     ['test-lot-details'],
+    ['general-lot-tracking'],
+    ['lot-tracking-dashboard'],
   ],
   production_pieces: [
     ['production-lots'],
@@ -65,12 +71,16 @@ const TABLE_TO_QUERY_KEYS = {
     ['trace-search'],
     ['collection-kpis'],
     ['pcp-batches'],
+    ['general-lot-tracking'],
+    ['lot-tracking-dashboard'],
   ],
   promob_import_batches: [
     ['production-lots'],
     ['trace-search'],
     ['collection-kpis'],
     ['pcp-batches'],
+    ['general-lot-tracking'],
+    ['lot-tracking-dashboard'],
   ],
   production_lot_items: [
     ['production-lots'],

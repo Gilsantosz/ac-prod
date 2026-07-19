@@ -40,6 +40,7 @@ import PackagingPage from '@/pages/PackagingPage';
 import ShippingPage from '@/pages/ShippingPage';
 import MesAlertsPage from '@/pages/MesAlertsPage';
 import LotIntegrity from '@/pages/LotIntegrity';
+import LotTrackingDashboard from '@/pages/LotTrackingDashboard';
 import IntegrityLogs from '@/pages/IntegrityLogs';
 import JoineryPage from '@/pages/JoineryPage';
 import { useProductionRealtimeSync } from '@/hooks/useProductionRealtimeSync';
@@ -162,6 +163,7 @@ const AuthenticatedApp = () => {
           <Route path="/marcenaria" element={<JoineryPage />} />
           <Route path="/mes" element={<MesHub />} />
           <Route path="/integridade-lote" element={<LotIntegrity />} />
+          <Route path="/acompanhamento-lotes" element={<LotTrackingDashboard />} />
           <Route path="/logs-integridade" element={<IntegrityLogs />} />
 
           <Route path="/integracoes/promob" element={<Navigate to="/pcp" replace />} />
