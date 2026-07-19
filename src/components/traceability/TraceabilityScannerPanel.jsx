@@ -5,7 +5,18 @@ import ScannerModeSelector from './ScannerModeSelector';
 import MobileCameraScanner from './MobileCameraScanner';
 import RfidReadinessPanel from './RfidReadinessPanel';
 
-export default function TraceabilityScannerPanel({ mode, onModeChange, onRead, loading, feedback, cellName, shift, operator, machine }) {
+export default function TraceabilityScannerPanel({
+  mode,
+  onModeChange,
+  onRead,
+  loading,
+  feedback,
+  cellName,
+  shift,
+  operator,
+  machine,
+  readerContext,
+}) {
   const [value, setValue] = useState('');
   const inputRef = useRef(null);
   const submittingRef = useRef(false);
@@ -180,8 +191,11 @@ export default function TraceabilityScannerPanel({ mode, onModeChange, onRead, l
           onBlur={refocus}
           loading={loading}
           ready={contextReady}
+          afterInput={readerContext}
         />
       )}
+
+      {(mode === 'camera' || mode === 'rfid') && readerContext}
 
       {feedback && (
         <div

@@ -3,7 +3,16 @@ import { Barcode, CheckCircle2, Keyboard, Loader2, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-const ProductionTagInput = forwardRef(function ProductionTagInput({ mode, value, onChange, onSubmit, onBlur, loading, ready = true }, ref) {
+const ProductionTagInput = forwardRef(function ProductionTagInput({
+  mode,
+  value,
+  onChange,
+  onSubmit,
+  onBlur,
+  loading,
+  ready = true,
+  afterInput,
+}, ref) {
   const [confirmed, setConfirmed] = useState(false);
   const manual = mode === 'manual';
 
@@ -35,6 +44,8 @@ const ProductionTagInput = forwardRef(function ProductionTagInput({ mode, value,
           aria-label="Identificação produtiva"
         />
       </div>
+
+      {afterInput}
 
       {manual && (
         <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
