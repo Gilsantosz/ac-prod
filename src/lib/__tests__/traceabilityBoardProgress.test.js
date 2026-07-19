@@ -60,7 +60,7 @@ describe('andamento real do Kanban de rastreabilidade', () => {
       expect.objectContaining({ step_name: 'edge', total: 30, collected: 0 }),
       expect.objectContaining({ step_name: 'joinery', total: 1, collected: 1 }),
     ]));
-    expect(runtime.progress.percent).toBeCloseTo(1.64, 2);
+    expect(runtime.progress.percent).toBe(0);
     expect(runtime.currentStage).toBe('cut');
   });
 });

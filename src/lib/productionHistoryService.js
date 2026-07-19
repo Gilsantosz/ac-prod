@@ -344,6 +344,16 @@ export function buildLotRuntimeSummary(lot, items = [], readings = [], routes = 
       ? lot.current_stage
       : stageFromStep(currentRoute?.step_name || currentRoute?.stage_code || lot?.current_step || lot?.current_stage, stageFromStep(lot?.current_stage, 'imported'));
 
+  const activeStep = routeProgress.find(
+    (step) => stepKey(step.step_name) === stepKey(currentRoute?.step_name || lot?.current_step || lot?.current_stage)
+  );
+
+  if (activeStep) {
+    progress.completed = activeStep.collected;
+    progress.pending = activeStep.pending;
+    progress.percent = activeStep.percent;
+  }
+
   return {
     currentStage,
     currentStep: allCollected
