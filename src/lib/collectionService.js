@@ -151,7 +151,9 @@ export async function getCollectionKpis({
   operatorId = null,
   shift = null,
   dateFrom = null,
-  dateTo = null
+  dateTo = null,
+  pcpImportBatchId = null,
+  lotId = null,
 }) {
   // Resolve nome da célula a partir do ID se necessário
   let resolvedCellName = cellName;
@@ -171,8 +173,8 @@ export async function getCollectionKpis({
     p_date_to: dateTo,
     // Informar os sete argumentos seleciona de forma inequívoca a versão
     // acumulativa do RPC (lote ativo + atividade do turno).
-    p_pcp_import_batch_id: null,
-    p_lot_id: null,
+    p_pcp_import_batch_id: pcpImportBatchId,
+    p_lot_id: lotId,
   });
   if (!snapshotError) return snapshot || {};
 

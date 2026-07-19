@@ -115,6 +115,7 @@ export default function TraceabilityCollection({ embedded = false }) {
             current_status: newFeedback.lot.current_status,
             status: newFeedback.lot.status,
             progress_percent: newFeedback.lot.progress_percent,
+            pcp_import_batch_id: newFeedback.lot.pcp_import_batch_id,
           } : null,
           order: newFeedback.order ? {
             id: newFeedback.order.id,
@@ -274,13 +275,22 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   // KPIs consistentes com a fonte do histórico de coletas
   const { data: kpis = {} } = useQuery({
-    queryKey: ['collection-kpis', cellName, machine?.id, shift, shiftRange.dateFrom, shiftRange.dateTo],
+    queryKey: [
+      'collection-kpis',
+      cellName,
+      machine?.id,
+      shift,
+      shiftRange.dateFrom,
+      shiftRange.dateTo,
+      feedback?.lot?.pcp_import_batch_id || null,
+    ],
     queryFn: () => getCollectionKpis({
       cellName,
       workstationId: machine?.id || null,
       shift: shift || null,
       dateFrom: shiftRange.dateFrom,
       dateTo: shiftRange.dateTo,
+      pcpImportBatchId: feedback?.lot?.pcp_import_batch_id || null,
     }),
     enabled: !!cellName,
     initialData: { total: 0, approved: 0, rejected: 0, blocked: 0 },
@@ -299,6 +309,10 @@ export default function TraceabilityCollection({ embedded = false }) {
     replacement: Number(kpis.replacement) || 0,
   };
   const activeGeneralLots = Array.isArray(kpis.active_general_lots) ? kpis.active_general_lots : [];
+  const currentGeneralLot = activeGeneralLots.find(
+    (lot) => lot.id === feedback?.lot?.pcp_import_batch_id
+  ) || activeGeneralLots[0] || null;
+  const currentClientLotCode = feedback?.lot?.lot_code || selectedPiece?.lot_code || null;
 
   const refreshData = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['collection-kpis'] });
@@ -650,6 +664,35 @@ export default function TraceabilityCollection({ embedded = false }) {
         </div>
       </div>
 
+      {/* Identidade produtiva em destaque para orientar a equipe da estação */}
+      {currentGeneralLot?.general_lot_code && (
+        <div className="rounded-2xl border-2 border-emerald-600 bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-800 px-5 py-4 text-white shadow-lg shadow-emerald-950/15">
+          <div className="grid gap-4 sm:grid-cols-[1.2fr_1fr_auto] sm:items-center">
+            <div>
+              <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-emerald-200">Lote geral em coleta</p>
+              <p className="mt-1 font-mono text-4xl font-black leading-none tracking-wider sm:text-5xl">
+                {currentGeneralLot.general_lot_code}
+              </p>
+            </div>
+            <div className="border-emerald-500/40 sm:border-l sm:pl-5">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-200">Lote do cliente</p>
+              <p className="mt-1 font-mono text-2xl font-extrabold">
+                {currentClientLotCode || 'Aguardando leitura'}
+              </p>
+              {feedback?.order?.customer_name && (
+                <p className="mt-1 truncate text-xs font-medium text-emerald-100">{feedback.order.customer_name}</p>
+              )}
+            </div>
+            <div className="rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-left sm:text-right">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-100">Andamento geral</p>
+              <p className="mt-1 text-2xl font-black tabular-nums">
+                {Number(currentGeneralLot.progress_percent || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Painel de status da fila */}
       <CollectionQueuePanel
         stats={queueStats}
@@ -668,11 +711,6 @@ export default function TraceabilityCollection({ embedded = false }) {
                 Painel de Integridade da Estação: {cellName}
               </h4>
               <div className="flex items-center gap-2">
-                {activeGeneralLots[0]?.general_lot_code && (
-                  <span className="rounded-full border border-emerald-500/20 bg-emerald-500/5 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
-                    Lote geral {activeGeneralLots[0].general_lot_code} · {Number(activeGeneralLots[0].progress_percent || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%
-                  </span>
-                )}
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 <span className="text-xs text-muted-foreground font-medium">Monitoramento em Tempo Real</span>
               </div>
