@@ -15,7 +15,7 @@ describe('aiRecipientResolver', () => {
     vi.clearAllMocks();
   });
 
-  it('resolves direct email addresses without creating legacy recipients', async () => {
+  it('rejects direct email addresses that are not registered profiles', async () => {
     const mockInsert = vi.fn();
 
     vi.mocked(supabase.from).mockImplementation((table) => {
@@ -49,7 +49,8 @@ describe('aiRecipientResolver', () => {
 
     const res = await resolveRecipientsFromPrompt('Envie o OEE para joao@empresa.com', { email: 'admin@empresa.com' });
     expect(mockInsert).not.toHaveBeenCalled();
-    expect(res.resolved[0]).toMatchObject({ id: null, source: 'direct', email: 'joao@empresa.com' });
+    expect(res.resolved).toEqual([]);
+    expect(res.notFound).toContain('joao@empresa.com');
   });
 
   it('resolves current signed-in user when prompt asks for sender/self', async () => {

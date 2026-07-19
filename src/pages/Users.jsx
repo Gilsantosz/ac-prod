@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { base44 } from '@/lib/localDb';
+import { supabase } from '@/lib/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -17,6 +18,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 
 export default function Users() {
@@ -33,11 +35,10 @@ export default function Users() {
   const [editingGroup, setEditingGroup] = useState(null);
   const [groupForm, setGroupForm] = useState({ name: '', description: '' });
   const [groupMembers, setGroupMembers] = useState([]); // Array de { id, profile_id, external_email, name, email }
-  const [newMemberEmail, setNewMemberEmail] = useState('');
   const [newMemberProfileId, setNewMemberProfileId] = useState('none');
 
   // States para Diagnósticos
-  const [diagnosticEmail, setDiagnosticEmail] = useState('');
+  const [diagnosticProfileId, setDiagnosticProfileId] = useState('none');
   const [sendingDiagnostic, setSendingDiagnostic] = useState(false);
 
   // Carregar dados de autenticação do usuário atual
@@ -91,6 +92,13 @@ export default function Users() {
     enabled: canManageUsers,
   });
 
+  const { data: reportSchedules = [] } = useQuery({
+    queryKey: ['reportSchedules'],
+    queryFn: () => base44.entities.ReportSchedule.list('-created_at'),
+    initialData: [],
+    enabled: canManageUsers,
+  });
+
   // Mutations
   const invite = useMutation({
     mutationFn: ({ email, role, name, password, permissions, cell }) =>
@@ -103,7 +111,7 @@ export default function Users() {
   });
 
   const updateUser = useMutation({
-    mutationFn: ({ id, payload }) => base44.entities.User.update(id, payload),
+    mutationFn: ({ id, payload }) => base44.users.updateUser(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       queryClient.invalidateQueries({ queryKey: ['me'] });
@@ -118,8 +126,43 @@ export default function Users() {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success('Colaborador excluído.');
     },
-    onError: () => toast.error('Falha ao excluir colaborador'),
+    onError: (error) => toast.error(error?.message || 'Falha ao excluir colaborador'),
   });
+
+  const handleInvite = async (email, role, name, password, permissions, cell, reportSettings = {}) => {
+    setSaving(true);
+    try {
+      const created = await invite.mutateAsync({ email, role, name, password, permissions, cell });
+      if (created?.id && reportSettings.report_delivery_enabled) {
+        await base44.users.updateUser(created.id, {
+          report_delivery_enabled: true,
+          receives_daily_report: Boolean(reportSettings.receives_daily_report),
+        });
+        queryClient.invalidateQueries({ queryKey: ['users'] });
+      }
+      return created;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleResetPassword = async (email) => {
+    try {
+      await base44.auth.resetPasswordRequest(email);
+      toast.success(`E-mail de redefinição enviado para ${email}.`);
+    } catch (error) {
+      toast.error(error?.message || 'Não foi possível enviar o e-mail de redefinição.');
+    }
+  };
+
+  const handleResendInvite = async (email) => {
+    try {
+      await base44.auth.resetPasswordRequest(email);
+      toast.success(`Novo link de acesso enviado para ${email}.`);
+    } catch (error) {
+      toast.error(error?.message || 'Não foi possível reenviar o acesso.');
+    }
+  };
 
   // Salvar grupo
   const saveGroupMutation = useMutation({
@@ -136,20 +179,20 @@ export default function Users() {
 
       // 2. Resolver membros novos e excluir antigos
       // Nota: Para simplificar, apagamos membros atuais do grupo no banco e inserimos novamente
-      const { data: existingMembers } = await base44.supabase
+      const { data: existingMembers } = await supabase
         .from('email_recipient_group_members')
         .select('id')
         .eq('group_id', groupId);
 
       if (existingMembers && existingMembers.length > 0) {
-        await base44.supabase
+        await supabase
           .from('email_recipient_group_members')
           .delete()
           .in('id', existingMembers.map(m => m.id));
       }
 
       for (const m of members) {
-        await base44.supabase
+        await supabase
           .from('email_recipient_group_members')
           .insert({
             group_id: groupId,
@@ -233,22 +276,8 @@ export default function Users() {
         }]);
       }
       setNewMemberProfileId('none');
-    } else if (newMemberEmail.trim()) {
-      const email = newMemberEmail.trim().toLowerCase();
-      if (!email.includes('@')) {
-        toast.error('Insira um e-mail válido.');
-        return;
-      }
-      if (groupMembers.some(m => m.external_email === email)) {
-        toast.error('Este e-mail já está no grupo.');
-        return;
-      }
-      setGroupMembers(prev => [...prev, {
-        external_email: email,
-        name: email.split('@')[0],
-        email: email
-      }]);
-      setNewMemberEmail('');
+    } else {
+      toast.error('Selecione um colaborador previamente cadastrado.');
     }
   };
 
@@ -261,13 +290,13 @@ export default function Users() {
     setGroupForm({ name: group.name, description: group.description || '' });
 
     // Buscar membros do banco
-    const { data: members, error } = await base44.supabase
+    const { data: members, error } = await supabase
       .from('email_recipient_group_members')
       .select('*')
       .eq('group_id', group.id);
 
     if (!error && members) {
-      setGroupMembers(members.map(m => ({
+      setGroupMembers(members.filter(m => m.profile_id).map(m => ({
         id: m.id,
         profile_id: m.profile_id,
         external_email: m.external_email,
@@ -279,20 +308,39 @@ export default function Users() {
 
   // Disparar envio de diagnóstico
   const handleSendDiagnosticReport = async () => {
-    if (!diagnosticEmail.trim() || !diagnosticEmail.includes('@')) {
-      toast.error('Por favor, informe um endereço de e-mail válido.');
+    if (diagnosticProfileId === 'none') {
+      toast.error('Selecione um gestor cadastrado para receber o teste.');
       return;
     }
     setSendingDiagnostic(true);
     try {
-      const { data, error } = await base44.functions.invoke('send-report-email', {
-        body: {
-          recipientEmail: diagnosticEmail.trim(),
-          reportType: 'executive_summary',
-          triggerSource: 'test'
-        }
+      const now = new Date();
+      const schedule = await base44.entities.ReportSchedule.create({
+        name: 'Diagnóstico de e-mail AC.Prod',
+        enabled: false,
+        report_type: 'executive_summary',
+        report_types: ['executive_summary'],
+        time_local: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:00`,
+        timezone: 'America/Sao_Paulo',
+        frequency: 'daily',
+        format: 'email_html',
+        cell_filter: [],
+        recipient_profile_ids: [diagnosticProfileId],
+        recipient_group_ids: [],
+        extra_emails: [],
       });
-      if (error) throw error;
+
+      try {
+        const { data, error } = await base44.functions.invoke('send-scheduled-reports', {
+          body: { scheduleId: schedule.id, test: true }
+        });
+        if (error) throw error;
+        const failed = data?.processed?.find((item) => item?.success === false || item?.status === 'failed');
+        if (!data?.success || failed) throw new Error(failed?.error || data?.error || 'O envio não foi concluído.');
+        if (!data?.processed?.length) throw new Error('O serviço não processou o relatório de teste.');
+      } finally {
+        await base44.entities.ReportSchedule.delete(schedule.id).catch(() => null);
+      }
       toast.success('E-mail de teste de diagnóstico enviado com sucesso!');
       refetchHistory();
     } catch (e) {
@@ -322,6 +370,11 @@ export default function Users() {
       </div>
     );
   }
+
+  const latestDelivery = deliveryHistory[0] || null;
+  const latestDeliverySent = latestDelivery?.status === 'sent';
+  const enabledSchedules = reportSchedules.filter((schedule) => schedule.enabled);
+  const schedulesReady = enabledSchedules.length > 0 && enabledSchedules.every((schedule) => schedule.next_run_at);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
@@ -472,6 +525,13 @@ export default function Users() {
         {/* ─── 3. ABA AGENDAMENTOS ────────────────────────────────── */}
         {canManageUsers && (
           <TabsContent value="schedules" className="space-y-6">
+            <Card className="border-blue-500/20 bg-blue-500/5 p-4 text-sm text-muted-foreground">
+              <p className="font-semibold text-foreground">Cadastro do e-mail de fechamento produtivo</p>
+              <p className="mt-1">
+                Primeiro habilite o colaborador em <strong>Contas → Disponível para relatórios e IA</strong>.
+                Depois, nesta aba, crie o agendamento, selecione o gestor, o horário, a frequência e os relatórios que ele receberá.
+              </p>
+            </Card>
             <ReportSchedulesManager />
           </TabsContent>
         )}
@@ -533,26 +593,13 @@ export default function Users() {
                           <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="none">Selecione colaborador...</SelectItem>
-                            {users.map(u => (
+                            {users
+                              .filter(u => ['admin', 'manager', 'supervisor'].includes(u.role) || u.report_delivery_enabled)
+                              .map(u => (
                               <SelectItem key={u.id} value={u.id}>{u.name || u.email}</SelectItem>
-                            ))}
+                              ))}
                           </SelectContent>
                         </Select>
-                        <Button type="button" size="icon" onClick={handleAddMemberToForm} variant="outline" className="shrink-0 h-9 w-9">
-                          <Plus className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Adicionar E-mail Externo */}
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">Ou E-mail Externo</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="diretoria@leo.com"
-                          value={newMemberEmail}
-                          onChange={(e) => setNewMemberEmail(e.target.value)}
-                        />
                         <Button type="button" size="icon" onClick={handleAddMemberToForm} variant="outline" className="shrink-0 h-9 w-9">
                           <Plus className="w-4 h-4" />
                         </Button>
@@ -738,26 +785,40 @@ export default function Users() {
                 </div>
 
                 <div className="space-y-3.5">
-                  <div className="flex justify-between items-center p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20">
+                  <div className={`flex justify-between items-center p-3 rounded-xl border ${latestDeliverySent ? 'bg-emerald-500/5 border-emerald-500/20' : latestDelivery ? 'bg-rose-500/5 border-rose-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
                     <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                      <CheckCircle2 className={`w-5 h-5 ${latestDeliverySent ? 'text-emerald-500' : latestDelivery ? 'text-rose-500' : 'text-amber-500'}`} />
                       <div>
                         <p className="text-sm font-semibold text-foreground">Conexão do Provedor de E-mail</p>
-                        <p className="text-[10px] text-muted-foreground">Resend API ativa & Credenciais autenticadas</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {latestDeliverySent
+                            ? `Último envio confirmado em ${new Date(latestDelivery.created_at).toLocaleString('pt-BR')}`
+                            : latestDelivery
+                              ? latestDelivery.error_message || 'O último envio não foi concluído.'
+                              : 'Sem entrega recente para validar. Use o teste ao lado.'}
+                        </p>
                       </div>
                     </div>
-                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">Saudável</Badge>
+                    <Badge variant="outline" className={latestDeliverySent ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-amber-500/10 text-amber-700 border-amber-500/20'}>
+                      {latestDeliverySent ? 'Saudável' : latestDelivery ? 'Atenção' : 'Não validado'}
+                    </Badge>
                   </div>
 
-                  <div className="flex justify-between items-center p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20">
+                  <div className={`flex justify-between items-center p-3 rounded-xl border ${schedulesReady ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
                     <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                      <CheckCircle2 className={`w-5 h-5 ${schedulesReady ? 'text-emerald-500' : 'text-amber-500'}`} />
                       <div>
-                        <p className="text-sm font-semibold text-foreground">Serviço Cron do Servidor</p>
-                        <p className="text-[10px] text-muted-foreground">Supabase claim-schedules ativado</p>
+                        <p className="text-sm font-semibold text-foreground">Serviço de Agendamento</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {schedulesReady
+                            ? `${enabledSchedules.length} agendamento(s) ativo(s) com próxima execução calculada.`
+                            : 'Nenhum agendamento ativo e pronto. Configure-o na aba Agendamentos.'}
+                        </p>
                       </div>
                     </div>
-                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">Ativo</Badge>
+                    <Badge variant="outline" className={schedulesReady ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-amber-500/10 text-amber-700 border-amber-500/20'}>
+                      {schedulesReady ? 'Ativo' : 'Configurar'}
+                    </Badge>
                   </div>
                 </div>
               </Card>
@@ -770,15 +831,21 @@ export default function Users() {
 
                 <div className="space-y-4">
                   <div className="space-y-1">
-                    <Label htmlFor="diagEmail">E-mail de Destino</Label>
+                    <Label>Gestor cadastrado</Label>
                     <div className="flex gap-2">
-                      <Input
-                        id="diagEmail"
-                        type="email"
-                        value={diagnosticEmail}
-                        onChange={(e) => setDiagnosticEmail(e.target.value)}
-                        placeholder="Ex: gestor@empresa.com"
-                      />
+                      <Select value={diagnosticProfileId} onValueChange={setDiagnosticProfileId}>
+                        <SelectTrigger className="flex-1"><SelectValue placeholder="Selecione o destinatário" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Selecione um gestor...</SelectItem>
+                          {users
+                            .filter((user) => user.active !== false && (['admin', 'manager', 'supervisor'].includes(user.role) || user.report_delivery_enabled))
+                            .map((user) => (
+                              <SelectItem key={user.id} value={user.id}>
+                                {user.name || user.email} — {user.email}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
                       <Button
                         onClick={handleSendDiagnosticReport}
                         disabled={sendingDiagnostic}
@@ -796,9 +863,9 @@ export default function Users() {
 
                   <div className="bg-muted/40 p-3 rounded-xl border border-border/40 text-[10px] text-muted-foreground font-mono space-y-1">
                     <p className="font-semibold text-foreground text-xs font-sans mb-1">Passos de Validação do Teste:</p>
-                    <p>1. Chamada HTTP autenticada à Edge Function 'send-report-email'</p>
+                    <p>1. Validação do gestor cadastrado e da sessão administrativa</p>
                     <p>2. Compilação do template HTML em América/São_Paulo fuso horário</p>
-                    <p>3. Envio seguro via API Resend</p>
+                    <p>3. Envio pelo provedor configurado no Supabase</p>
                     <p>4. Registro de log de auditoria da entrega</p>
                   </div>
                 </div>

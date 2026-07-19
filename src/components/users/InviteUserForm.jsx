@@ -48,6 +48,8 @@ export default function InviteUserForm({ onInvite, saving }) {
   const [role, setRole] = useState('operator');
   const [cell, setCell] = useState('none');
   const [permissions, setPermissions] = useState(() => getDefaultPermissions('operator'));
+  const [reportDeliveryEnabled, setReportDeliveryEnabled] = useState(false);
+  const [receivesDailyReport, setReceivesDailyReport] = useState(false);
 
   // Atualiza as permissões automaticamente quando o papel muda
   useEffect(() => {
@@ -65,12 +67,23 @@ export default function InviteUserForm({ onInvite, saving }) {
     e.preventDefault();
     if (!name.trim() || !email.trim() || !password.trim()) return;
 
-    if (password.trim().length < 6) {
-      alert("A senha de acesso deve ter pelo menos 6 caracteres.");
+    if (password.trim().length < 8) {
+      alert("A senha de acesso deve ter pelo menos 8 caracteres.");
       return;
     }
 
-    await onInvite(email.trim(), role, name.trim(), password.trim(), permissions, cell === 'none' ? '' : cell);
+    await onInvite(
+      email.trim(),
+      role,
+      name.trim(),
+      password.trim(),
+      permissions,
+      cell === 'none' ? '' : cell,
+      {
+        report_delivery_enabled: reportDeliveryEnabled,
+        receives_daily_report: receivesDailyReport,
+      },
+    );
     
     // Limpar campos
     setName('');
@@ -79,6 +92,8 @@ export default function InviteUserForm({ onInvite, saving }) {
     setRole('operator');
     setCell('none');
     setPermissions(getDefaultPermissions('operator'));
+    setReportDeliveryEnabled(false);
+    setReceivesDailyReport(false);
   };
 
   return (
@@ -100,7 +115,7 @@ export default function InviteUserForm({ onInvite, saving }) {
           </div>
           <div className="space-y-2 md:col-span-1">
             <Label htmlFor="password">Senha de Acesso</Label>
-            <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="mínimo 6 caracteres" required />
+            <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="mínimo 8 caracteres" required />
           </div>
           <div className="space-y-2 md:col-span-1">
             <Label htmlFor="role">Papel</Label>
@@ -127,6 +142,37 @@ export default function InviteUserForm({ onInvite, saving }) {
               </SelectContent>
             </Select>
           </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 rounded-xl border border-border/60 bg-muted/20 p-4 sm:grid-cols-2">
+          <label className="flex cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              checked={reportDeliveryEnabled}
+              onChange={(event) => {
+                setReportDeliveryEnabled(event.target.checked);
+                if (!event.target.checked) setReceivesDailyReport(false);
+              }}
+              className="mt-1 h-4 w-4 rounded border-input text-primary"
+            />
+            <span>
+              <span className="block text-sm font-semibold text-foreground">Disponível para e-mails e comandos da IA</span>
+              <span className="block text-xs text-muted-foreground">Permite selecionar este colaborador como destinatário de relatórios.</span>
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              checked={receivesDailyReport}
+              disabled={!reportDeliveryEnabled}
+              onChange={(event) => setReceivesDailyReport(event.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-input text-primary disabled:opacity-50"
+            />
+            <span>
+              <span className="block text-sm font-semibold text-foreground">Destinatário de fechamento produtivo</span>
+              <span className="block text-xs text-muted-foreground">O horário e o conteúdo são definidos na aba Agendamentos.</span>
+            </span>
+          </label>
         </div>
 
 

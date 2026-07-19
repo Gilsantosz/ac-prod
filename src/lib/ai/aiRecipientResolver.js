@@ -53,39 +53,6 @@ function fromProfile(profile) {
   };
 }
 
-function fromLegacyRecipient(recipient) {
-  return {
-    ...recipient,
-    id: `recipient:${recipient.id}`,
-    profile_id: null,
-    recipient_id: recipient.id,
-    source: 'report_recipients',
-    source_label: 'Legado IA',
-    name: recipient.name || recipient.email,
-    email: String(recipient.email || '').trim().toLowerCase(),
-    role_label: recipient.role_label || 'Destinatário',
-    recipient_group: recipient.recipient_group || 'manager',
-    cell_filter: normalizeCells(recipient),
-    active: recipient.active !== false,
-  };
-}
-
-function fromDirectEmail(email, name = '') {
-  const cleanEmail = String(email || '').trim().toLowerCase();
-  return {
-    id: null,
-    profile_id: null,
-    recipient_id: null,
-    source: 'direct',
-    source_label: 'E-mail direto',
-    name: name || cleanEmail.split('@')[0],
-    email: cleanEmail,
-    role_label: 'Destinatário direto',
-    recipient_group: 'other',
-    active: true,
-  };
-}
-
 function isCurrentUserRecipient(value) {
   return CURRENT_USER_RECIPIENTS.has(normalizeText(value));
 }
@@ -97,17 +64,18 @@ function promptRequestsCurrentUser(prompt) {
 }
 
 function fromCurrentUser(user = {}) {
-  if (!isValidEmail(user.email)) return null;
+  const eligible = ['admin', 'manager', 'supervisor'].includes(user.role) || user.report_delivery_enabled === true;
+  if (!eligible || !isValidEmail(user.email) || !user.id) return null;
   const base = {
-    id: ['admin', 'manager'].includes(user.role) && user.id ? `profile:${user.id}` : null,
-    profile_id: ['admin', 'manager'].includes(user.role) ? user.id || null : null,
+    id: `profile:${user.id}`,
+    profile_id: user.id,
     recipient_id: null,
-    source: ['admin', 'manager'].includes(user.role) ? 'profile' : 'direct',
-    source_label: user.role === 'admin' ? 'Usuário Admin' : user.role === 'manager' ? 'Usuário Gestor' : 'Usuário atual',
+    source: 'profile',
+    source_label: user.role === 'admin' ? 'Usuário Admin' : 'Usuário Gestor',
     name: user.name || user.email,
     email: String(user.email).trim().toLowerCase(),
     role_label: user.role === 'admin' ? 'Administrador' : user.role === 'manager' ? 'Gestor' : 'Solicitante',
-    recipient_group: ['admin', 'manager'].includes(user.role) ? 'manager' : 'other',
+    recipient_group: 'manager',
     cell_filter: normalizeCells(user),
     active: user.active !== false,
   };
@@ -152,14 +120,6 @@ export async function findRecipientByEmail(email, _user) {
     }
   }
 
-  const { data: recipients } = await supabase
-    .from('report_recipients')
-    .select('id,name,email,role_label,recipient_group,cell_filter,active')
-    .ilike('email', cleanEmail)
-    .eq('active', true);
-
-  if (recipients?.length) return fromLegacyRecipient(recipients[0]);
-
   return null;
 }
 
@@ -174,7 +134,6 @@ export async function ensureRecipientsForEmail(recipients = [], user) {
       resolved.push(existing);
       continue;
     }
-    resolved.push(fromDirectEmail(email, rec.name));
   }
   return resolved;
 }
@@ -183,25 +142,17 @@ export async function findRecipientsByName(name, _user) {
   const cleanName = String(name || '').trim().replace(/[%_]/g, '');
   if (cleanName.length < 2) return [];
 
-  const [profilesResult, recipientsResult, operatorsResult] = await Promise.all([
-    supabase
+  const profilesResult = await supabase
       .from('profiles')
       .select('id,name,email,role,cell,managed_cells,active,report_delivery_enabled')
       .eq('active', true)
       .or(`role.in.(admin,manager,supervisor),report_delivery_enabled.eq.true`)
       .ilike('name', `%${cleanName}%`)
-      .limit(10),
-    supabase.from('report_recipients').select('id,name,email,role_label,recipient_group,cell_filter,active').eq('active', true).ilike('name', `%${cleanName}%`).limit(10),
-    supabase.from('operators').select('id,name,email,active').eq('active', true).ilike('name', `%${cleanName}%`).limit(10),
-  ]);
+      .limit(10);
 
   if (profilesResult.error) throw new Error(`Não foi possível consultar Usuários/Gestores: ${profilesResult.error.message}`);
 
-  return dedupeRecipients([
-    ...(profilesResult.data || []).map(fromProfile),
-    ...(recipientsResult.data || []).map(fromLegacyRecipient),
-    ...(operatorsResult.data || []).map((operator) => fromDirectEmail(operator.email, operator.name)),
-  ]);
+  return dedupeRecipients((profilesResult.data || []).map(fromProfile));
 }
 
 export async function findRecipientsByRole(role, _user) {
@@ -241,21 +192,7 @@ export async function findRecipientsByCell(cellName, _user) {
     return cells.some(c => String(c).trim().toLowerCase() === cleanCell);
   });
 
-  // 2. Encontrar report_recipients que possuem filtro de célula para esta célula
-  const { data: recs } = await supabase
-    .from('report_recipients')
-    .select('id,name,email,role_label,recipient_group,cell_filter,active')
-    .eq('active', true);
-  
-  const matchedRecs = (recs || []).filter(r => {
-    const cells = Array.isArray(r.cell_filter) ? r.cell_filter : [];
-    return cells.some(c => String(c).trim().toLowerCase() === cleanCell);
-  });
-
-  return dedupeRecipients([
-    ...matchedProfiles.map(fromProfile),
-    ...matchedRecs.map(fromLegacyRecipient),
-  ]);
+  return dedupeRecipients(matchedProfiles.map(fromProfile));
 }
 
 export async function resolveRecipientsFromPrompt(prompt, user, options = {}) {
@@ -279,6 +216,7 @@ export async function resolveRecipientsFromPrompt(prompt, user, options = {}) {
     if (EMAIL_PATTERN.test(cand)) {
       const ensured = await ensureRecipientsForEmail([{ email: cand }], user);
       if (ensured.length > 0) resolved.push(ensured[0]);
+      else notFound.push(cand);
       continue;
     }
 
@@ -311,7 +249,7 @@ export async function resolveRecipientsFromPrompt(prompt, user, options = {}) {
       const groupId = matchedGroups[0].id;
       const { data: members } = await supabase
         .from('email_recipient_group_members')
-        .select('profile_id, external_email, recipient_name_snapshot, recipient_email_snapshot')
+        .select('profile_id')
         .eq('group_id', groupId);
 
       if (members) {
@@ -323,8 +261,6 @@ export async function resolveRecipientsFromPrompt(prompt, user, options = {}) {
               .eq('id', m.profile_id)
               .single();
             if (prof) pushUnique(resolved, fromProfile(prof));
-          } else if (m.external_email) {
-            pushUnique(resolved, fromDirectEmail(m.external_email, m.recipient_name_snapshot));
           }
         }
       }
@@ -348,4 +284,3 @@ export async function resolveRecipientsFromPrompt(prompt, user, options = {}) {
     notFound,
   };
 }
-

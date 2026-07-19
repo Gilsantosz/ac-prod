@@ -1,146 +1,46 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
 
-Deno.serve(async (req) => {
-  // Configuração de CORS
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      }
-    });
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+});
+
+// Mantida somente por compatibilidade com versões antigas do frontend.
+// Os destinatários são resolvidos no momento de cada envio; não é necessário
+// exportar a agenda de usuários do AC.Prod para o provedor de e-mail.
+Deno.serve(async (request) => {
+  if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (request.method !== 'POST') return json({ success: false, error: 'Método não permitido.' }, 405);
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  const token = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+  if (!supabaseUrl || !serviceRoleKey || !token) return json({ success: false, error: 'Autenticação necessária.' }, 401);
+
+  const admin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data: authResult, error: authError } = await admin.auth.getUser(token);
+  if (authError || !authResult.user) return json({ success: false, error: 'Sessão inválida ou expirada.' }, 401);
+
+  const { data: caller } = await admin
+    .from('profiles')
+    .select('role, active')
+    .eq('id', authResult.user.id)
+    .maybeSingle();
+  if (!caller || caller.active === false || caller.role !== 'admin') {
+    return json({ success: false, error: 'Apenas administradores podem gerenciar destinatários.' }, 403);
   }
 
-  try {
-    const resendKey = Deno.env.get('RESEND_API_KEY');
-    if (!resendKey) {
-      return new Response(JSON.stringify({ error: 'RESEND_API_KEY não configurada.' }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-      });
-    }
-
-    let body = {};
-    try { body = await req.json(); } catch { body = {}; }
-
-    const { action, email, oldEmail, name } = body;
-    if (!action || !email) {
-      return new Response(JSON.stringify({ error: 'Parâmetros action e email são obrigatórios.' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-      });
-    }
-
-    const parts = (name || '').trim().split(/\s+/);
-    const firstName = parts[0] || '';
-    const lastName = parts.slice(1).join(' ') || '';
-
-    // Headers comuns do Resend
-    const headers = {
-      'Authorization': `Bearer ${resendKey}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'supabase-edge-function/1.0'
-    };
-
-    if (action === 'create') {
-      console.log(`Criando contato no Resend: ${email} (${name})`);
-      const res = await fetch('https://api.resend.com/contacts', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          email,
-          firstName,
-          lastName,
-          unsubscribed: false
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(`Erro ao criar contato: ${JSON.stringify(data)}`);
-      }
-      return new Response(JSON.stringify({ success: true, data }), {
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-      });
-    }
-
-    if (action === 'update') {
-      console.log(`Atualizando contato no Resend de ${oldEmail || email} para ${email} (${name})`);
-      
-      // 1. Procurar e remover o contato antigo (se o e-mail mudou, ou o próprio e-mail atual)
-      const emailToFind = oldEmail || email;
-      const listRes = await fetch('https://api.resend.com/contacts', {
-        method: 'GET',
-        headers
-      });
-      const listData = await listRes.json();
-      if (listRes.ok && listData.data) {
-        const existing = listData.data.find((c: any) => c.email?.toLowerCase() === emailToFind.toLowerCase());
-        if (existing) {
-          console.log(`Removendo contato antigo do Resend com ID ${existing.id}`);
-          await fetch(`https://api.resend.com/contacts/${existing.id}`, {
-            method: 'DELETE',
-            headers
-          });
-        }
-      }
-
-      // 2. Criar o contato com os novos dados
-      const res = await fetch('https://api.resend.com/contacts', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          email,
-          firstName,
-          lastName,
-          unsubscribed: false
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(`Erro ao recriar contato atualizado: ${JSON.stringify(data)}`);
-      }
-      return new Response(JSON.stringify({ success: true, data }), {
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-      });
-    }
-
-    if (action === 'delete') {
-      console.log(`Removendo contato do Resend: ${email}`);
-      const listRes = await fetch('https://api.resend.com/contacts', {
-        method: 'GET',
-        headers
-      });
-      const listData = await listRes.json();
-      if (listRes.ok && listData.data) {
-        const existing = listData.data.find((c: any) => c.email?.toLowerCase() === email.toLowerCase());
-        if (existing) {
-          console.log(`Encontrado contato com ID ${existing.id}, deletando...`);
-          const delRes = await fetch(`https://api.resend.com/contacts/${existing.id}`, {
-            method: 'DELETE',
-            headers
-          });
-          const delData = await delRes.json();
-          return new Response(JSON.stringify({ success: true, data: delData }), {
-            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-          });
-        }
-      }
-      return new Response(JSON.stringify({ success: true, message: 'Contato não encontrado no Resend.' }), {
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-      });
-    }
-
-    return new Response(JSON.stringify({ error: `Ação ${action} não suportada.` }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-    });
-
-  } catch (error: any) {
-    console.error('Erro na Edge Function syncResendContact:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-    });
-  }
+  return json({
+    success: true,
+    synchronized: false,
+    message: 'Destinatário mantido apenas no AC.Prod e resolvido com segurança no momento do envio.',
+  });
 });

@@ -34,8 +34,7 @@ function reportLabel(type) {
 export async function createScheduleFromCommand(command, user, options = {}) {
   const resolvedRecs = options.resolvedRecipients
     || await resolveRecipientsFromPrompt(command.rawPrompt || user.prompt || '', user, { explicitRecipients: command.recipients });
-  const recipientIds = resolvedRecs.resolved.map(r => r.profile_id || r.recipient_id).filter(Boolean);
-  const extraEmails = resolvedRecs.resolved.filter(r => !r.profile_id && !r.recipient_id).map(r => r.email);
+  const recipientIds = resolvedRecs.resolved.map(r => r.profile_id).filter(Boolean);
 
   const payload = {
     name: `${reportLabel(command.reportType)} agendado via Copilot`,
@@ -45,8 +44,7 @@ export async function createScheduleFromCommand(command, user, options = {}) {
     options: { requestedByAi: true },
     frequency: command.schedule?.frequency || 'daily',
     timeLocal: command.schedule?.timeLocal || '07:00',
-    recipientIds,
-    extraEmails,
+    recipientProfileIds: recipientIds,
     templateCode: command.templateCode || 'manager-summary',
   };
 

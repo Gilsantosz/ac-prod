@@ -115,9 +115,7 @@ export async function createScheduledReport(payload, user) {
   const refs = splitRecipientRefs(payload.recipientIds || []);
   const body = {
     ...payload,
-    recipientIds: refs.reportRecipientIds,
     recipientProfileIds: [...new Set([...(payload.recipientProfileIds || []), ...refs.profileIds])],
-    recipientEmails: [...new Set([...(payload.recipientEmails || []), ...(payload.extraEmails || []), ...refs.recipientEmails])],
     filters: normalizeAiFilters(payload.filters),
     requestedBy: user?.id,
   };

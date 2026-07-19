@@ -53,29 +53,12 @@ function asArray(value: any): string[] {
 
 function splitRefs(body: any) {
   const profileIds = new Set<string>(asArray(body.recipientProfileIds || body.profileIds));
-  const reportRecipientIds = new Set<string>();
-  const recipientEmails = new Set<string>(asArray(body.recipientEmails || body.emails).map((email) => email.toLowerCase()).filter((email) => EMAIL_PATTERN.test(email)));
-
-  asArray(body.extraEmails).forEach((email) => {
-    const clean = email.toLowerCase();
-    if (EMAIL_PATTERN.test(clean)) recipientEmails.add(clean);
-  });
-
-  if (Array.isArray(body.directRecipients)) {
-    body.directRecipients.forEach((recipient: any) => {
-      const email = String(recipient?.email || '').trim().toLowerCase();
-      if (EMAIL_PATTERN.test(email)) recipientEmails.add(email);
-    });
-  }
 
   asArray(body.recipientIds).forEach((value) => {
     if (value.startsWith('profile:')) profileIds.add(value.slice('profile:'.length));
-    else if (value.startsWith('recipient:')) reportRecipientIds.add(value.slice('recipient:'.length));
-    else if (EMAIL_PATTERN.test(value)) recipientEmails.add(value.toLowerCase());
-    else reportRecipientIds.add(value);
   });
 
-  return { profileIds: [...profileIds], reportRecipientIds: [...reportRecipientIds], recipientEmails: [...recipientEmails] };
+  return { profileIds: [...profileIds] };
 }
 
 function dedupeRecipients(recipients: any[]) {
@@ -96,39 +79,22 @@ async function resolveRecipients(admin: any, body: any) {
   if (refs.profileIds.length) {
     const { data, error } = await admin
       .from('profiles')
-      .select('id,name,email,role,active')
+      .select('id,name,email,role,active,report_delivery_enabled')
       .in('id', refs.profileIds)
-      .eq('active', true)
-      .in('role', ['admin', 'manager']);
+      .eq('active', true);
     if (error) throw error;
-    (data || []).forEach((profile: any) => recipients.push({
+    (data || [])
+      .filter((profile: any) => ['admin', 'manager', 'supervisor'].includes(profile.role) || profile.report_delivery_enabled === true)
+      .forEach((profile: any) => recipients.push({
       source: 'profile',
       profile_id: profile.id,
       recipient_id: null,
       name: profile.name || profile.email,
       email: profile.email,
       role: profile.role,
-    }));
+      }));
   }
 
-  if (refs.reportRecipientIds.length) {
-    const { data, error } = await admin
-      .from('report_recipients')
-      .select('id,name,email,role_label,active')
-      .in('id', refs.reportRecipientIds)
-      .eq('active', true);
-    if (error) throw error;
-    (data || []).forEach((recipient: any) => recipients.push({
-      source: 'report_recipients',
-      profile_id: null,
-      recipient_id: recipient.id,
-      name: recipient.name || recipient.email,
-      email: recipient.email,
-      role: recipient.role_label,
-    }));
-  }
-
-  refs.recipientEmails.forEach((email) => recipients.push({ source: 'direct', profile_id: null, recipient_id: null, name: email, email }));
   return dedupeRecipients(recipients);
 }
 
@@ -365,4 +331,3 @@ Deno.serve(async (req) => {
     return json({ success: false, error: publicError(error) }, statusFor(error));
   }
 });
-

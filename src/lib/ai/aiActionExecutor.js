@@ -77,29 +77,9 @@ export async function executeAiAction(actionPlan, { user, conversationContext = 
     }
   }
 
-  // 3. Confirmations (External Domains, Cancelations, High Volumes)
+  // 3. Confirmação para envios em volume. Destinatários externos não são aceitos:
+  // todos já foram validados contra a página de Usuários.
   if (action === 'send_report_email' && resolvedRecs) {
-    const userDomain = String(user?.email || '').split('@')[1]?.toLowerCase();
-    const externalRecs = resolvedRecs.resolved.filter(r => {
-      const recDomain = String(r.email || '').split('@')[1]?.toLowerCase();
-      return recDomain && recDomain !== userDomain;
-    });
-
-    // Se for e-mail externo e não estiver na flag confirmada
-    if (externalRecs.length > 0 && !actionPlan.confirmedExternal) {
-      return {
-        content: `Atenção: O destinatário "${externalRecs[0].email}" possui um domínio de e-mail externo. Confirma o envio?`,
-        pendingAction: {
-          type: 'send_report_email',
-          payload: { ...actionPlan, confirmedExternal: true },
-        },
-        actions: [
-          { label: 'Confirmar envio externo', action: 'confirm_pending_action' },
-          { label: 'Cancelar', action: 'cancel_pending_action' },
-        ],
-      };
-    }
-
     if (resolvedRecs.resolved.length > 10 && !actionPlan.confirmedVolume) {
       return {
         content: `Você está prestes a enviar este relatório para ${resolvedRecs.resolved.length} destinatários. Confirma o envio em massa?`,

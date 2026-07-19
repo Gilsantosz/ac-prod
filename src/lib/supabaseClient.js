@@ -17,77 +17,41 @@ const supabaseProjectRef = (() => {
 })();
 const AUTH_STORAGE_KEY = `ac-prod-auth-${supabaseProjectRef}`;
 const FALLBACK_SESSION_KEY = `ac-prod-auth-fallback-${supabaseProjectRef}`;
-const WINDOW_NAME_STORAGE_PREFIX = 'AC_PROD_AUTH_STORAGE:';
+const inMemoryAuthStorage = new Map();
 
 const createBrowserAuthStorage = () => {
   if (typeof window === 'undefined') return undefined;
-
-  const readWindowNameStore = () => {
-    if (!window.name?.startsWith(WINDOW_NAME_STORAGE_PREFIX)) return {};
-    try {
-      return JSON.parse(window.name.slice(WINDOW_NAME_STORAGE_PREFIX.length)) || {};
-    } catch {
-      return {};
-    }
-  };
-
-  const writeWindowNameStore = (store) => {
-    window.name = `${WINDOW_NAME_STORAGE_PREFIX}${JSON.stringify(store)}`;
-  };
-
-  const readCookie = (key) => {
-    try {
-      const prefix = `${encodeURIComponent(key)}=`;
-      return document.cookie
-        .split('; ')
-        .find((row) => row.startsWith(prefix))
-        ?.slice(prefix.length);
-    } catch {
-      return null;
-    }
-  };
-
-  const writeCookie = (key, value) => {
-    try {
-      document.cookie = `${encodeURIComponent(key)}=${encodeURIComponent(value)}; path=/; max-age=31536000; SameSite=Lax`;
-    } catch { /* fallback para window.name abaixo */ }
-  };
-
-  const removeCookie = (key) => {
-    try {
-      document.cookie = `${encodeURIComponent(key)}=; path=/; max-age=0; SameSite=Lax`;
-    } catch { /* noop */ }
-  };
 
   return {
     getItem: (key) => {
       try {
         const stored = window.localStorage?.getItem(key);
         if (stored) return stored;
-      } catch { /* fallback para cookie abaixo */ }
-
-      const cookieValue = readCookie(key);
-      if (cookieValue) return decodeURIComponent(cookieValue);
-
-      return readWindowNameStore()[key] || null;
+      } catch { /* fallback para sessionStorage abaixo */ }
+      try {
+        const stored = window.sessionStorage?.getItem(key);
+        if (stored) return stored;
+      } catch { /* fallback em memória abaixo */ }
+      return inMemoryAuthStorage.get(key) || null;
     },
     setItem: (key, value) => {
-      try { window.localStorage?.setItem(key, value); }
-      catch { /* fallback para cookie abaixo */ }
-      writeCookie(key, value);
-
-      const windowNameStore = readWindowNameStore();
-      windowNameStore[key] = value;
-      writeWindowNameStore(windowNameStore);
+      let persisted = false;
+      try {
+        window.localStorage?.setItem(key, value);
+        persisted = true;
+      } catch { /* fallback para sessionStorage abaixo */ }
+      if (!persisted) {
+        try { window.sessionStorage?.setItem(key, value); }
+        catch { /* fallback em memória abaixo */ }
+      }
+      inMemoryAuthStorage.set(key, value);
     },
     removeItem: (key) => {
       try { window.localStorage?.removeItem(key); }
       catch { /* noop */ }
-      removeCookie(key);
-
-      const windowNameStore = readWindowNameStore();
-      delete windowNameStore[key];
-      writeWindowNameStore(windowNameStore);
+      try { window.sessionStorage?.removeItem(key); }
+      catch { /* noop */ }
+      inMemoryAuthStorage.delete(key);
     },
   };
 };

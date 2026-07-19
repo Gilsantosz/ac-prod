@@ -161,37 +161,17 @@ export function splitRecipientRefs(recipientRefs = []) {
 }
 
 export async function listReportRecipients() {
-  const [profilesResult, recipientsResult] = await Promise.all([
-    supabase
+  const profilesResult = await supabase
       .from('profiles')
       .select('id,name,email,role,cell,managed_cells,active,report_delivery_enabled')
       .eq('active', true)
       .or(`role.in.(admin,manager,supervisor),report_delivery_enabled.eq.true`)
-      .order('name'),
-    supabase
-      .from('report_recipients')
-      .select('id,name,email,role_label,recipient_group,cell_filter,active')
-      .eq('active', true)
-      .order('name'),
-  ]);
+      .order('name');
 
   if (profilesResult.error) throw new Error(`Não foi possível consultar a aba Gestores/Usuários: ${profilesResult.error.message}`);
 
   const profileRecipients = (profilesResult.data || []).map(normalizeProfileRecipient);
-  let legacyRecipients = [];
-  let warning = '';
-
-  if (recipientsResult.error) {
-    if (isAiSchemaUnavailable(recipientsResult.error)) {
-      warning = 'Fonte oficial ativa: aba Usuários/Gestores. O cadastro legado da IA não foi encontrado e foi ignorado.';
-    } else {
-      warning = `Fonte oficial ativa: aba Usuários/Gestores. Cadastro legado da IA ignorado: ${recipientsResult.error.message}`;
-    }
-  } else {
-    legacyRecipients = (recipientsResult.data || []).map(normalizeLegacyRecipient);
-  }
-
-  return { data: dedupeRecipients([...profileRecipients, ...legacyRecipients]), warning };
+  return { data: dedupeRecipients(profileRecipients), warning: 'Fonte oficial: Usuários → Contas, com recebimento de relatórios habilitado.' };
 }
 
 // Mantido apenas para compatibilidade com instalações antigas. A tela nova não usa mais este cadastro.
@@ -249,17 +229,6 @@ async function getFunctionErrorMessage(error, fallback) {
   }
 }
 
-async function fetchLegacyRecipientEmails(reportRecipientIds = []) {
-  if (!reportRecipientIds.length) return [];
-  const { data, error } = await supabase
-    .from('report_recipients')
-    .select('email')
-    .in('id', reportRecipientIds)
-    .eq('active', true);
-  if (error) return [];
-  return [...new Set((data || []).map((row) => String(row.email || '').trim().toLowerCase()).filter(isValidEmail))];
-}
-
 async function fetchReportJob(reportJobId) {
   const { data, error } = await supabase
     .from('report_jobs')
@@ -303,13 +272,9 @@ async function deleteOneOffSchedule(scheduleId) {
   }
 }
 
-async function sendReportEmailViaScheduledFallback({ reportJobId, profileIds, reportRecipientIds, emails, subject }) {
-  const [job, legacyEmails] = await Promise.all([
-    fetchReportJob(reportJobId),
-    fetchLegacyRecipientEmails(reportRecipientIds),
-  ]);
-  const extraEmails = [...new Set([...emails, ...legacyEmails])];
-  if (!profileIds.length && !extraEmails.length) throw new Error('Selecione pelo menos um destinatário.');
+async function sendReportEmailViaScheduledFallback({ reportJobId, profileIds, subject }) {
+  const job = await fetchReportJob(reportJobId);
+  if (!profileIds.length) throw new Error('Selecione pelo menos um gestor cadastrado.');
 
   const reportType = mapScheduledReportType(job.report_type);
   const now = new Date();
@@ -322,7 +287,7 @@ async function sendReportEmailViaScheduledFallback({ reportJobId, profileIds, re
     cell_filter: normalizeScheduleCells(job.filters),
     stage_filter: [],
     recipient_profile_ids: profileIds,
-    extra_emails: extraEmails,
+    extra_emails: [],
     frequency: frequencyForScheduledFallback(job.filters, now),
     time_local: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:00`,
     timezone: 'America/Sao_Paulo',
@@ -350,40 +315,31 @@ async function sendReportEmailViaScheduledFallback({ reportJobId, profileIds, re
   }
 }
 
-export async function sendReportEmail({ reportJobId, recipientIds = [], recipientProfileIds = [], recipientEmails = [], templateCode, subject, message }) {
+export async function sendReportEmail({ reportJobId, recipientIds = [], recipientProfileIds = [], templateCode, subject, message }) {
   const refs = splitRecipientRefs(recipientIds);
   const profileIds = [...new Set([...refs.profileIds, ...toArray(recipientProfileIds)])];
-  const reportRecipientIds = [...new Set(refs.reportRecipientIds)];
-  const emails = [...new Set([...refs.recipientEmails, ...toArray(recipientEmails).map((email) => String(email).trim().toLowerCase()).filter(isValidEmail)])];
 
-  if (!profileIds.length && !reportRecipientIds.length && !emails.length) throw new Error('Selecione pelo menos um destinatário.');
+  if (!profileIds.length) throw new Error('Selecione pelo menos um gestor cadastrado em Usuários.');
 
-  const body = { reportJobId, recipientIds: reportRecipientIds, recipientProfileIds: profileIds, recipientEmails: emails, templateCode, subject, message };
+  const body = { reportJobId, recipientProfileIds: profileIds, templateCode, subject, message };
   const { data, error } = await supabase.functions.invoke('send-report-email', { body });
   if (error) {
     const errorMessage = await getFunctionErrorMessage(error, 'O serviço de e-mail não respondeu.');
     if (isProviderConfigError(errorMessage)) {
-      return sendReportEmailViaScheduledFallback({ reportJobId, profileIds, reportRecipientIds, emails, subject });
+      return sendReportEmailViaScheduledFallback({ reportJobId, profileIds, subject });
     }
     throw new Error(errorMessage);
   }
   if (!data?.success) {
     const errorMessage = data?.error || data?.message || 'O envio não foi concluído.';
     if (isProviderConfigError(errorMessage)) {
-      return sendReportEmailViaScheduledFallback({ reportJobId, profileIds, reportRecipientIds, emails, subject });
+      return sendReportEmailViaScheduledFallback({ reportJobId, profileIds, subject });
     }
     throw new Error(errorMessage);
   }
   return data;
 }
 
-export async function sendReportEmailSmart({ directRecipients = [], ...payload }) {
-  const directEmails = toArray(directRecipients)
-    .map((recipient) => String(recipient?.email || '').trim().toLowerCase())
-    .filter(isValidEmail);
-
-  return sendReportEmail({
-    ...payload,
-    recipientEmails: [...toArray(payload.recipientEmails), ...directEmails],
-  });
+export async function sendReportEmailSmart(payload) {
+  return sendReportEmail(payload);
 }

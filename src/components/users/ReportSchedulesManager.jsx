@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
-import { Loader2, Plus, Calendar, Clock, FileText, Users, Send, Settings, Trash2, Edit3, X, Mail } from 'lucide-react';
+import { Loader2, Plus, Calendar, Clock, FileText, Users, Send, Settings, Trash2, Edit3, X } from 'lucide-react';
 import { useCells } from '@/hooks/useCells';
 
 const REPORT_TYPES = [
@@ -47,7 +47,6 @@ const emptySchedule = {
   cell_filter: [],
   recipient_profile_ids: [],
   recipient_group_ids: [],
-  extra_emails: '',
   enabled: true,
 };
 
@@ -87,9 +86,7 @@ export default function ReportSchedulesManager() {
         ...payload,
         // Garante formato TIME correto (HH:MM:SS)
         time_local: payload.time_local.length === 5 ? `${payload.time_local}:00` : payload.time_local,
-        extra_emails: payload.extra_emails
-          ? payload.extra_emails.split(',').map((e) => e.trim()).filter((e) => e.includes('@'))
-          : [],
+        extra_emails: [],
         report_types: payload.report_types || [payload.report_type || 'daily_production'],
         recipient_group_ids: payload.recipient_group_ids || [],
       };
@@ -138,7 +135,6 @@ export default function ReportSchedulesManager() {
       cell_filter: s.cell_filter || [],
       recipient_profile_ids: s.recipient_profile_ids || [],
       recipient_group_ids: s.recipient_group_ids || [],
-      extra_emails: (s.extra_emails || []).join(', '),
       enabled: s.enabled ?? true,
     });
     setShowForm(true);
@@ -400,17 +396,6 @@ export default function ReportSchedulesManager() {
               </div>
             )}
 
-            {/* E-mails Adicionais */}
-            <div className="space-y-2">
-              <Label>Destinatários Externos (E-mails Adicionais)</Label>
-              <p className="text-xs text-muted-foreground">Digite e-mails separados por vírgula (Ex: diretor@leo.com.br, supervisor@leo.com.br).</p>
-              <Input
-                value={form.extra_emails}
-                onChange={(e) => setForm((f) => ({ ...f, extra_emails: e.target.value }))}
-                placeholder="email1@empresa.com, email2@empresa.com"
-              />
-            </div>
-
             {/* Ações */}
             <div className="flex justify-end gap-2 pt-3 border-t border-border/40">
               <Button type="button" variant="outline" onClick={() => { setShowForm(false); setEditing(null); }} className="gap-2">
@@ -489,12 +474,6 @@ export default function ReportSchedulesManager() {
                         Grupos: <span className="font-medium text-foreground">
                           {s.recipient_group_ids.map((id) => groups.find((g) => g.id === id)?.name).filter(Boolean).join(', ')}
                         </span>
-                      </p>
-                    )}
-                    {s.extra_emails && s.extra_emails.length > 0 && (
-                      <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                        <Mail className="w-3.5 h-3.5" />
-                        E-mails extras: <span className="font-medium text-foreground">{(s.extra_emails).join(', ')}</span>
                       </p>
                     )}
                     {s.cell_filter && s.cell_filter.length > 0 && (

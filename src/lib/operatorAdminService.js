@@ -42,6 +42,17 @@ export async function unlockOperator(id) {
   return data;
 }
 
+export async function deleteOperator(id, confirmation) {
+  const { data, error } = await supabase.rpc('admin_delete_operator', {
+    p_operator_id: id,
+    p_confirmation: confirmation,
+  });
+
+  if (error) throw error;
+  if (!data?.success) throw new Error(data?.error || 'Não foi possível excluir o operador.');
+  return data;
+}
+
 export async function fetchAccessAttempts(loginName = null) {
   let query = supabase
     .from('operator_access_attempts')
