@@ -85,6 +85,40 @@ export default function LotTrackingDashboard() {
     attention: result.attention + (['attention', 'delayed'].includes(lot.forecast_status) ? 1 : 0),
   }), { pieces: 0, ready: 0, attention: 0 }), [generalLots]);
 
+  const allClientLots = useMemo(() => {
+    return generalLots.flatMap((generalLot) =>
+      (generalLot.client_lots || []).map((cl) => ({
+        ...cl,
+        general_lot_code: generalLot.general_lot_code,
+      }))
+    );
+  }, [generalLots]);
+
+  const advancedLots = useMemo(() => {
+    return allClientLots
+      .filter((lot) => {
+        const stages = lot.stages || [];
+        const cutStage = stages.find((s) => s.stage_code === 'cut');
+        const edgeStage = stages.find((s) => s.stage_code === 'edge');
+        const cncStage = stages.find((s) => s.stage_code === 'cnc');
+        const joineryStage = stages.find((s) => s.stage_code === 'joinery');
+
+        const cutCompleted = !cutStage || cutStage.remaining_pieces === 0;
+        const edgeCompleted = !edgeStage || edgeStage.remaining_pieces === 0;
+        const cncCompleted = !cncStage || cncStage.remaining_pieces === 0;
+        const joineryPending = joineryStage && joineryStage.required_pieces > 0 && joineryStage.remaining_pieces > 0;
+
+        return cutCompleted && edgeCompleted && cncCompleted && joineryPending;
+      })
+      .sort((a, b) => {
+        const aJoinery = a.stages.find((s) => s.stage_code === 'joinery');
+        const bJoinery = b.stages.find((s) => s.stage_code === 'joinery');
+        const aPercent = aJoinery ? (aJoinery.progress_percent || 0) : 0;
+        const bPercent = bJoinery ? (bJoinery.progress_percent || 0) : 0;
+        return bPercent - aPercent;
+      });
+  }, [allClientLots]);
+
   const modelData = (tracking?.stage_models || []).map((model) => ({
     name: model.stage_label,
     media: Number(model.minutes_per_piece || 0),
@@ -175,6 +209,68 @@ export default function LotTrackingDashboard() {
               </div>
             </Card>
           </div>
+
+          {advancedLots.length > 0 && (
+            <Card className="p-5 border-amber-300/40 bg-amber-500/[0.02] dark:border-amber-800/20 space-y-4">
+              <div>
+                <h2 className="text-base font-extrabold text-foreground flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+                  Lotes na Fase Final (Apenas Marcenaria Pendente)
+                </h2>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Lotes com Corte, Borda e Usinagem concluídos, aguardando finalização das peças de Marcenaria.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {advancedLots.map((lot) => {
+                  const joineryStage = lot.stages.find((s) => s.stage_code === 'joinery');
+                  const joineryPercent = joineryStage ? Math.round(joineryStage.progress_percent || 0) : 0;
+                  const completed = joineryStage ? joineryStage.completed_pieces : 0;
+                  const totalStagePieces = joineryStage ? joineryStage.required_pieces : 0;
+
+                  return (
+                    <Card key={lot.lot_id} className="p-4 border-border/60 space-y-3 hover:shadow-md transition-shadow bg-card">
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="min-w-0">
+                          <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+                            Geral: {lot.general_lot_code}
+                          </p>
+                          <h3 className="font-extrabold text-sm text-foreground truncate mt-0.5">
+                            Lote {lot.lot_code}
+                          </h3>
+                          <p className="text-xs text-muted-foreground truncate" title={lot.customer_name}>
+                            {lot.customer_name}
+                          </p>
+                        </div>
+                        <Badge variant="outline" className="text-[10px] border-amber-500/30 bg-amber-500/10 text-amber-700 shrink-0">
+                          Marcenaria
+                        </Badge>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between text-[11px] text-muted-foreground">
+                          <span>Progresso da Marcenaria</span>
+                          <span className="font-bold text-foreground">{completed}/{totalStagePieces} pçs ({joineryPercent}%)</span>
+                        </div>
+                        <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-amber-500 rounded-full transition-all duration-300"
+                            style={{ width: `${joineryPercent}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between items-center text-[11px] pt-1 text-muted-foreground border-t border-border/60">
+                        <span>Previsão de término:</span>
+                        <span className="font-bold text-foreground">{formatForecastDate(lot.predicted_ready_at)}</span>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
 
           <section className="space-y-3">
             <div>
