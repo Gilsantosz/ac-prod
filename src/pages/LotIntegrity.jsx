@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
-import { fetchGeneralLotTracking } from '@/lib/lotTrackingService';
+import { fetchGeneralLotTracking, calculateLotBalance } from '@/lib/lotTrackingService';
 import { ClientLotHierarchy, GeneralLotSummaryCard } from '@/components/lot-tracking/LotTrackingCards';
 import PageHeader from '@/components/ui/PageHeader';
 import { Card } from '@/components/ui/card';
@@ -25,6 +25,20 @@ export default function LotIntegrity() {
   const [selectedLotId, setSelectedLotId] = useState('');
   const [generalLotSearch, setGeneralLotSearch] = useState('');
   const [activeTab, setActiveTab] = useState('integrity');
+
+  // Filtros dos lotes de clientes
+  const [clientLotSearch, setClientLotSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all'); // all, started, not_started, completed
+  const [filterCell, setFilterCell] = useState('all'); // all, cut, edge, cnc, joinery
+  const [filterBalance, setFilterBalance] = useState('all'); // all, balanced, unbalanced
+
+  // Resetar filtros ao trocar o lote geral
+  useEffect(() => {
+    setClientLotSearch('');
+    setFilterStatus('all');
+    setFilterCell('all');
+    setFilterBalance('all');
+  }, [selectedBatchId]);
 
   // Liberação Especial Modal State
   const [releaseModalOpen, setReleaseModalOpen] = useState(false);
@@ -60,6 +74,55 @@ export default function LotIntegrity() {
   const selectedGeneralLot = selectedTracking?.general_lots?.[0]
     || generalLots.find((lot) => lot.batch_id === selectedBatchId)
     || null;
+
+  const originalClientLots = useMemo(() => {
+    return selectedGeneralLot?.client_lots || [];
+  }, [selectedGeneralLot]);
+
+  const filteredClientLots = useMemo(() => {
+    let lots = originalClientLots;
+
+    // 1. Busca por texto (Código ou Cliente)
+    if (clientLotSearch.trim()) {
+      const term = clientLotSearch.trim().toLocaleLowerCase('pt-BR');
+      lots = lots.filter(lot => 
+        String(lot.lot_code || '').toLocaleLowerCase('pt-BR').includes(term) ||
+        String(lot.customer_name || '').toLocaleLowerCase('pt-BR').includes(term)
+      );
+    }
+
+    // 2. Filtro de Status / Andamento
+    if (filterStatus === 'started') {
+      lots = lots.filter(lot => (lot.progress_percent || 0) > 0 && (lot.progress_percent || 0) < 100);
+    } else if (filterStatus === 'not_started') {
+      lots = lots.filter(lot => (lot.progress_percent || 0) === 0);
+    } else if (filterStatus === 'completed') {
+      lots = lots.filter(lot => (lot.progress_percent || 0) === 100);
+    }
+
+    // 3. Filtro de Célula Concluída
+    if (filterCell !== 'all') {
+      lots = lots.filter(lot => {
+        const stage = lot.stages?.find(s => s.stage_code === filterCell);
+        return stage && (stage.progress_percent || 0) === 100;
+      });
+    }
+
+    // 4. Filtro de Equilíbrio
+    if (filterBalance !== 'all') {
+      lots = lots.filter(lot => {
+        const score = calculateLotBalance(lot);
+        if (filterBalance === 'balanced') {
+          return score >= 75;
+        } else if (filterBalance === 'unbalanced') {
+          return score < 75;
+        }
+        return true;
+      });
+    }
+
+    return lots;
+  }, [originalClientLots, clientLotSearch, filterStatus, filterCell, filterBalance]);
 
   const filteredGeneralLots = useMemo(() => {
     const term = generalLotSearch.trim().toLocaleLowerCase('pt-BR');
@@ -309,11 +372,77 @@ export default function LotIntegrity() {
             </Button>
           </div>
 
+          {/* BARRA DE FILTROS DE LOTES DE CLIENTES */}
+          <Card className="p-4 border-border/60 shadow-sm bg-card/60 backdrop-blur-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+            {/* Busca */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-muted-foreground">Buscar Cliente ou Lote</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  value={clientLotSearch}
+                  onChange={(e) => setClientLotSearch(e.target.value)}
+                  placeholder="Ex: Alexandre, 143345..."
+                  className="pl-9 rounded-xl h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            {/* Status / Andamento */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-muted-foreground">Andamento / Status</Label>
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="w-full h-9 rounded-xl border border-input bg-background px-3 text-xs font-semibold focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+              >
+                <option value="all">Todos os andamentos</option>
+                <option value="started">Lotes Iniciados (Em andamento)</option>
+                <option value="not_started">Lotes Não Iniciados (0%)</option>
+                <option value="completed">Lotes Concluídos (100%)</option>
+              </select>
+            </div>
+
+            {/* Células Concluídas */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-muted-foreground">Célula Concluída</Label>
+              <select
+                value={filterCell}
+                onChange={(e) => setFilterCell(e.target.value)}
+                className="w-full h-9 rounded-xl border border-input bg-background px-3 text-xs font-semibold focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+              >
+                <option value="all">Todas as células</option>
+                <option value="cut">Corte Concluído (100%)</option>
+                <option value="edge">Borda Concluída (100%)</option>
+                <option value="cnc">Usinagem Concluída (100%)</option>
+                <option value="joinery">Marcenaria Concluída (100%)</option>
+              </select>
+            </div>
+
+            {/* Equilíbrio de Etapas */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-muted-foreground">Equilíbrio de Etapas</Label>
+              <select
+                value={filterBalance}
+                onChange={(e) => setFilterBalance(e.target.value)}
+                className="w-full h-9 rounded-xl border border-input bg-background px-3 text-xs font-semibold focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+              >
+                <option value="all">Todos os níveis de equilíbrio</option>
+                <option value="balanced">{"Mais Equilibrados (Var. < 25%)"}</option>
+                <option value="unbalanced">{"Menos Equilibrados (Var. >= 25%)"}</option>
+              </select>
+            </div>
+          </Card>
+
           {loadingSelectedBatch ? (
             <Card className="flex justify-center py-12 border-border/60"><Loader2 className="w-7 h-7 animate-spin text-primary" /></Card>
+          ) : originalClientLots.length > 0 && filteredClientLots.length === 0 ? (
+            <Card className="p-8 border-dashed text-center text-sm text-muted-foreground">
+              Nenhum lote de cliente corresponde aos filtros selecionados. Experimente limpar ou ajustar os filtros.
+            </Card>
           ) : (
             <ClientLotHierarchy
-              clientLots={selectedGeneralLot?.client_lots || []}
+              clientLots={filteredClientLots}
               selectedLotId={selectedLotId}
               onSelect={(lot) => {
                 setSelectedLotId(lot.lot_id);

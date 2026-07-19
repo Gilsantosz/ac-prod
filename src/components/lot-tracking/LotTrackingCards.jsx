@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarClock, CheckCircle2, ChevronRight, Factory, Layers3, PackageCheck, UsersRound } from 'lucide-react';
+import { AlertTriangle, CalendarClock, CheckCircle2, ChevronRight, Factory, Layers3, PackageCheck, UsersRound, Scale } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import {
@@ -7,6 +7,7 @@ import {
   getConfidenceMeta,
   getForecastStatusMeta,
   groupClientLotsByCustomer,
+  calculateLotBalance,
 } from '@/lib/lotTrackingService';
 
 function ProgressBar({ value = 0, tone = 'bg-primary' }) {
@@ -127,6 +128,7 @@ export function ClientLotHierarchy({ clientLots = [], selectedLotId, onSelect })
               const selected = selectedLotId === lot.lot_id;
               const status = getForecastStatusMeta(lot.forecast_status);
               const problems = Number(lot.blocked_pieces || 0) + Number(lot.rework_pieces || 0) + Number(lot.replacement_pieces || 0);
+              const balance = calculateLotBalance(lot);
 
               return (
                 <button
@@ -155,13 +157,23 @@ export function ClientLotHierarchy({ clientLots = [], selectedLotId, onSelect })
                         <span className="flex items-center gap-1 text-muted-foreground"><PackageCheck className="w-3.5 h-3.5" /> Peças</span>
                         <strong className="block mt-1">{lot.ready_for_separation_pieces || 0}/{lot.total_pieces || 0}</strong>
                       </div>
-                      <div className="col-span-2 flex items-center justify-between rounded-xl bg-secondary/35 px-3 py-2">
-                        <span className="text-muted-foreground">Previsão: {formatForecastDate(lot.predicted_ready_at)}</span>
-                        {problems > 0 ? (
-                          <span className="flex items-center gap-1 font-bold text-rose-600"><AlertTriangle className="w-3.5 h-3.5" /> {problems}</span>
-                        ) : (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                        )}
+                      <div className="col-span-2 flex flex-col gap-1.5 rounded-xl bg-secondary/35 p-3">
+                        <div className="flex items-center justify-between w-full">
+                          <span className="text-muted-foreground">Previsão: {formatForecastDate(lot.predicted_ready_at)}</span>
+                          {problems > 0 ? (
+                            <span className="flex items-center gap-1 font-bold text-rose-600"><AlertTriangle className="w-3.5 h-3.5" /> {problems}</span>
+                          ) : (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between w-full pt-1.5 border-t border-border/20">
+                          <span className="flex items-center gap-1 text-muted-foreground">
+                            <Scale className="w-3.5 h-3.5 text-primary" /> Equilíbrio
+                          </span>
+                          <span className={`font-bold ${balance >= 75 ? 'text-emerald-600' : balance >= 50 ? 'text-amber-600' : 'text-rose-600'}`}>
+                            {balance}%
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <ChevronRight className={`hidden xl:block w-5 h-5 ${selected ? 'text-primary' : 'text-muted-foreground'}`} />

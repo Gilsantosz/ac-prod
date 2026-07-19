@@ -97,3 +97,13 @@ export function groupClientLotsByCustomer(clientLots = []) {
   }, {});
 }
 
+export function calculateLotBalance(lot) {
+  const activeStages = lot.stages?.filter(s => s.required_pieces > 0) || [];
+  if (activeStages.length <= 1) return 100;
+  const progresses = activeStages.map(s => s.progress_percent || 0);
+  const maxProg = Math.max(...progresses);
+  const minProg = Math.min(...progresses);
+  return Math.round(100 - (maxProg - minProg));
+}
+
+
