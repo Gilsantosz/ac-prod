@@ -42,6 +42,61 @@ export async function registerManualQuantitativeEntry(payload = {}) {
   // Fallback via JS caso a RPC ainda não esteja ativa no banco
   console.warn('RPC register_manual_quantitative_production indisponível, executando fallback com cascata:', rpcError?.message);
 
+  // 0. Busca/Cria a Ordem de Produção (production_orders)
+  let orderId = null;
+  const { data: existingOrders } = await supabase
+    .from('production_orders')
+    .select('id')
+    .ilike('order_code', generalLotCode)
+    .limit(1);
+
+  if (existingOrders && existingOrders.length > 0) {
+    orderId = existingOrders[0].id;
+  } else {
+    const { data: newOrder } = await supabase
+      .from('production_orders')
+      .insert({
+        order_code: generalLotCode,
+        customer_name: 'Lote Geral PCP (Digitado)',
+        promob_project_name: `Lote Manual PCP ${generalLotCode}`,
+        source: 'manual',
+        status: 'released',
+        notes: notes || 'Lote cadastrado diretamente via Entrada Manual PCP',
+        created_at: new Date().toISOString(),
+      })
+      .select('id')
+      .maybeSingle();
+    orderId = newOrder?.id || null;
+  }
+
+  // 0.1 Cria o registro de importação no PCP (promob_import_batches)
+  let batchId = null;
+  const { data: existingBatches } = await supabase
+    .from('promob_import_batches')
+    .select('id')
+    .ilike('file_name', `%${generalLotCode}%`)
+    .limit(1);
+
+  if (existingBatches && existingBatches.length > 0) {
+    batchId = existingBatches[0].id;
+  } else {
+    const { data: newBatch } = await supabase
+      .from('promob_import_batches')
+      .insert({
+        file_name: `LOTE-MANUAL-${generalLotCode}`,
+        original_file_name: `Lote_Manual_${generalLotCode}.manual`,
+        file_type: 'manual',
+        status: 'processed',
+        total_parts: quantity,
+        generated_op_id: orderId,
+        notes: `Entrada PCP Manual sem Arquivo — Lote ${generalLotCode}`,
+        created_at: new Date().toISOString(),
+      })
+      .select('id')
+      .maybeSingle();
+    batchId = newBatch?.id || null;
+  }
+
   // 1. Busca/Cria o Lote Geral
   let lotId = null;
   const { data: existingLots } = await supabase
@@ -56,6 +111,7 @@ export async function registerManualQuantitativeEntry(payload = {}) {
     const { data: newLot, error: lotErr } = await supabase
       .from('production_lots')
       .insert({
+        order_id: orderId,
         lot_code: generalLotCode,
         general_lot_code: generalLotCode,
         total_items: quantity,

@@ -1,8 +1,8 @@
 -- ============================================================
--- Migration 052: Baixa Automática em Cascata para Entradas Manuais PCP
--- Ao registrar um Lote Geral no PCP ou ao dar baixa na Embalagem,
--- o sistema gera automaticamente o volume produzido em todas as 4 células:
--- Corte, Bordo, Usinagem e Embalagem.
+-- Migration 052: Cadastro e Baixa de Lote Geral PCP sem Arquivo
+-- Ao registrar um Lote Geral (ex: 14537 com 2000 peças) diretamente no PCP,
+-- o sistema cadastra a OP, o Lote, o Registro em promob_import_batches e
+-- gera a produção em cascata nas 4 células (Corte, Bordo, Usinagem e Embalagem).
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION public.register_manual_quantitative_production(p_payload jsonb)
@@ -20,8 +20,10 @@ DECLARE
   v_unit_of_measure text := COALESCE(NULLIF(TRIM(p_payload->>'unit_of_measure'), ''), 'pecas');
   v_notes text := NULLIF(TRIM(COALESCE(p_payload->>'notes', p_payload->>'observacao', '')), '');
   v_date date := COALESCE(NULLIF(p_payload->>'date', '')::date, current_date);
-  v_cascade boolean := COALESCE((p_payload->>'cascade_all_cells')::boolean, (p_payload->>'cascade')::boolean, LOWER(v_cell_name) = 'embalagem', false);
+  v_cascade boolean := COALESCE((p_payload->>'cascade_all_cells')::boolean, (p_payload->>'cascade')::boolean, LOWER(v_cell_name) = 'embalagem', true);
   
+  v_order_id uuid;
+  v_batch_id uuid;
   v_lot_id uuid;
   v_piece_id uuid;
   v_reading_id uuid;
@@ -29,13 +31,69 @@ DECLARE
 
   v_target_cells text[] := ARRAY['Corte', 'Bordo', 'Usinagem', 'Embalagem'];
   v_curr_cell text;
-  v_created_readings jsonb := '[]'::jsonb;
 BEGIN
   IF v_general_lot_code = '' THEN
-    RAISE EXCEPTION 'O código do Lote Geral é obrigatório para lançamento manual PCP.';
+    RAISE EXCEPTION 'O código do Lote Geral é obrigatório para cadastro de lote PCP.';
   END IF;
 
-  -- 1. Localiza ou cria o Lote Geral na tabela production_lots
+  -- 1. Cria ou recupera a Ordem de Produção (production_orders)
+  SELECT id INTO v_order_id
+  FROM public.production_orders
+  WHERE UPPER(TRIM(order_code)) = v_general_lot_code
+  LIMIT 1;
+
+  IF v_order_id IS NULL THEN
+    INSERT INTO public.production_orders (
+      order_code,
+      customer_name,
+      promob_project_name,
+      source,
+      status,
+      notes,
+      created_at
+    ) VALUES (
+      v_general_lot_code,
+      'Lote Geral PCP (Digitado)',
+      'Lote Manual PCP ' || v_general_lot_code,
+      'manual',
+      'released',
+      COALESCE(v_notes, 'Lote cadastrado diretamente via Entrada Manual PCP'),
+      now()
+    )
+    RETURNING id INTO v_order_id;
+  END IF;
+
+  -- 2. Cria ou recupera o Registro do Lote PCP (promob_import_batches) para aparecer no Histórico PCP
+  SELECT id INTO v_batch_id
+  FROM public.promob_import_batches
+  WHERE file_name = 'LOTE-MANUAL-' || v_general_lot_code
+     OR notes ILIKE '%' || v_general_lot_code || '%'
+  LIMIT 1;
+
+  IF v_batch_id IS NULL THEN
+    INSERT INTO public.promob_import_batches (
+      file_name,
+      original_file_name,
+      file_type,
+      status,
+      total_parts,
+      generated_op_id,
+      notes,
+      created_at
+    ) VALUES (
+      'LOTE-MANUAL-' || v_general_lot_code,
+      'Lote_Manual_' || v_general_lot_code || '.manual',
+      'manual',
+      'processed',
+      v_quantity,
+      v_order_id,
+      'Entrada PCP Manual sem Arquivo — Lote ' || v_general_lot_code,
+      now()
+    )
+    RETURNING id INTO v_batch_id;
+  END IF;
+
+  -- 3. Localiza ou cria o Lote Geral na tabela production_lots
   SELECT id INTO v_lot_id
   FROM public.production_lots
   WHERE UPPER(TRIM(lot_code)) = v_general_lot_code OR UPPER(TRIM(general_lot_code)) = v_general_lot_code
@@ -43,12 +101,14 @@ BEGIN
 
   IF v_lot_id IS NULL THEN
     INSERT INTO public.production_lots (
+      order_id,
       lot_code,
       general_lot_code,
       total_items,
       status,
       created_at
     ) VALUES (
+      v_order_id,
       v_general_lot_code,
       v_general_lot_code,
       v_quantity,
@@ -58,15 +118,17 @@ BEGIN
     RETURNING id INTO v_lot_id;
   END IF;
 
-  -- 2. Cria/Associa uma peça sintética de agrupamento para o lançamento manual do lote
+  -- 4. Cria/Associa uma peça sintética de agrupamento para o lançamento manual do lote
   INSERT INTO public.production_pieces (
     lot_id,
+    pcp_import_batch_id,
     traceability_code,
     description,
     status,
     created_at
   ) VALUES (
     v_lot_id,
+    v_batch_id,
     v_general_lot_code || '-MANUAL-' || to_char(now(), 'HH24MISS'),
     'Lançamento Manual Quantitativo — ' || v_general_lot_code,
     'in_production',
@@ -74,7 +136,7 @@ BEGIN
   )
   RETURNING id INTO v_piece_id;
 
-  -- 3. Se a opção de cascata for verdadeira ou for Embalagem, gera baixa para TODAS as 4 células
+  -- 5. Se a opção de cascata for verdadeira, gera baixa para TODAS as 4 células (Corte, Bordo, Usinagem, Embalagem)
   IF v_cascade THEN
     FOREACH v_curr_cell IN ARRAY v_target_cells LOOP
       INSERT INTO public.production_stage_readings (
@@ -220,6 +282,8 @@ BEGIN
 
   RETURN jsonb_build_object(
     'success', true,
+    'order_id', v_order_id,
+    'batch_id', v_batch_id,
     'lot_id', v_lot_id,
     'piece_id', v_piece_id,
     'general_lot_code', v_general_lot_code,
