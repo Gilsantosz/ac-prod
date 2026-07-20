@@ -280,14 +280,6 @@ export async function getPieceTraceability(pieceIdOrCode) {
     route = routeData || [];
   }
 
-  // Fallback para route_steps extraídos do PCP caso a tabela production_routes esteja vazia
-  if ((!route || route.length === 0) && Array.isArray(resolvedPiece.route_steps)) {
-    route = resolvedPiece.route_steps.map((step, idx) => ({
-      step_name: step,
-      step_order: idx + 1
-    }));
-  }
-
   return {
     piece: resolvedPiece,
     readings: readings || [],

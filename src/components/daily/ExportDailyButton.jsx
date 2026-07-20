@@ -20,7 +20,11 @@ export default function ExportDailyButton({ date, shift, cell, summary, disabled
   };
 
   return (
-    <Button variant="outline" onClick={handleExport} disabled={disabled || loading} className="gap-2 bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full shadow-sm">
+    <Button
+      onClick={handleExport}
+      disabled={disabled || loading}
+      className="gap-2 bg-[#1A2238] hover:bg-[#111728] text-white font-bold rounded-xl h-10 px-5 shadow-sm text-xs"
+    >
       {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
       Exportar Relatório
     </Button>

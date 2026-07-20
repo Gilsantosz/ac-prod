@@ -9,7 +9,7 @@ import {
   LayoutDashboard, PlusCircle, ClipboardList, Gauge, Boxes,
   Layers, Plug, AlertOctagon, Trophy, LineChart, BrainCircuit,
   Zap, Users, Shield, HardDrive, Truck, Box, BellRing, FolderKanban, GitFork, Cpu, ShieldCheck, Wrench, HardHat,
-  ChartNoAxesCombined, RefreshCw
+  ChartNoAxesCombined
 } from 'lucide-react';
 
 export const routeGroups = {
@@ -138,8 +138,8 @@ export const appRoutes = [
     icon: GitFork,
     group: 'pcp',
     permission: 'manage_routes',
-    showInSidebar: false,
-    showInDashboardHub: false
+    showInSidebar: true,
+    showInDashboardHub: true
   },
 
   // ─── GRUPO 3: CHÃO DE FÁBRICA MES ──────────────────────────────────
@@ -175,16 +175,6 @@ export const appRoutes = [
     showInSidebar: true,
     showInDashboardHub: true,
     tabTarget: 'alerts'
-  },
-  {
-    path: '/reposicao',
-    label: 'Reposição',
-    description: 'Gestão de peças reprovadas e reinserções sem registro prévio',
-    icon: RefreshCw,
-    group: 'mes',
-    permission: 'view_traceability',
-    showInSidebar: true,
-    showInDashboardHub: true
   },
 
   // ─── GRUPO 4: GESTÃO ───────────────────────────────────────────────

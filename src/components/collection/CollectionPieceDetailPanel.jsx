@@ -4,22 +4,6 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import PieceProductionFlow from './PieceProductionFlow';
 
-const STAGE_LABELS = {
-  cut: 'Corte',
-  edge: 'Borda',
-  drill: 'Furação',
-  cnc: 'Usinagem',
-  canal: 'Canal',
-  maranello: 'Maranello',
-  portajoias: 'Porta Joias',
-  sorrento: 'Sorrento',
-  usi_especial: 'Usinagem Especial',
-  rasgo_freggio: 'Rasgo Freggio',
-  joinery: 'Marcenaria',
-  separation: 'Separação',
-  packaging: 'Embalagem'
-};
-
 export default function CollectionPieceDetailPanel({
   piece,
   events = [],
@@ -56,13 +40,9 @@ export default function CollectionPieceDetailPanel({
   const isRejected = piece.status === 'rejected';
   const isBlocked = piece.status === 'blocked';
   const isRework = piece.status === 'rework';
-  const isApproved = piece.status === 'approved' || piece.status === 'active' || piece.status === 'in_progress' || piece.status === 'completed';
+  const isApproved = piece.status === 'approved' || piece.status === 'active';
 
   const getStatusBadge = () => {
-    if (piece.is_replacement) {
-      if (isRejected) return <Badge className="bg-rose-500 text-white border-0 text-xs">REPROVADA REPOSIÇÃO</Badge>;
-      return <Badge className="bg-emerald-500 text-white border-0 text-xs">APROVADA REPOSIÇÃO</Badge>;
-    }
     if (isRejected) return <Badge className="bg-rose-500 text-white border-0 text-xs">REPROVADA</Badge>;
     if (isBlocked) return <Badge className="bg-amber-500 text-white border-0 text-xs">BLOQUEADA</Badge>;
     if (isRework) return <Badge className="bg-purple-500 text-white border-0 text-xs">RETRABALHO</Badge>;
@@ -74,12 +54,8 @@ export default function CollectionPieceDetailPanel({
     if (isRejected) return 'border-rose-500/20 bg-rose-500/5 text-rose-700 dark:text-rose-400';
     if (isBlocked) return 'border-amber-500/20 bg-amber-500/5 text-amber-700 dark:text-amber-400';
     if (isRework) return 'border-purple-500/20 bg-purple-500/5 text-purple-700 dark:text-purple-400';
-    if (piece.is_replacement) return 'border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400';
     return 'border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400';
   };
-
-  const currentStageRaw = piece.current_stage_name || piece.current_stage || '';
-  const displayCurrentStage = STAGE_LABELS[String(currentStageRaw).toLowerCase()] || currentStageRaw || 'Não iniciada';
 
   return (
     <div className="bg-card border border-border/60 rounded-2xl p-5 space-y-5 flex flex-col justify-between">
@@ -121,7 +97,7 @@ export default function CollectionPieceDetailPanel({
         </div>
         <div className="space-y-0.5">
           <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Etapa Atual</span>
-          <p className="font-bold text-foreground">{displayCurrentStage}</p>
+          <p className="font-bold text-foreground">{piece.current_stage_name || piece.current_stage || 'Não iniciada'}</p>
         </div>
         <div className="space-y-0.5">
           <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Última Leitura Por</span>

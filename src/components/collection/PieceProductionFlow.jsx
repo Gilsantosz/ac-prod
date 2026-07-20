@@ -1,22 +1,6 @@
 import { Check, AlertTriangle, Play } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const STAGE_LABELS = {
-  cut: 'Corte',
-  edge: 'Borda',
-  drill: 'Furação',
-  cnc: 'Usinagem',
-  canal: 'Canal',
-  maranello: 'Maranello',
-  portajoias: 'Porta Joias',
-  sorrento: 'Sorrento',
-  usi_especial: 'Usinagem Especial',
-  rasgo_freggio: 'Rasgo Freggio',
-  joinery: 'Marcenaria',
-  separation: 'Separação',
-  packaging: 'Embalagem'
-};
-
 export default function PieceProductionFlow({
   route = [],
   currentStage = '',
@@ -40,15 +24,9 @@ export default function PieceProductionFlow({
   return (
     <div className={cn("flex flex-wrap items-center gap-y-3 gap-x-2 text-xs font-semibold select-none", className)}>
       {route.map((step, idx) => {
-        const stepRawName = step.step_name || step.name;
-        const stepName = String(stepRawName || '').trim().toLowerCase();
-        const displayLabel = STAGE_LABELS[stepName] || stepRawName;
-
-        const currentStageClean = String(currentStage || '').trim().toLowerCase();
-
-        const isCompleted = completedSteps.some(s => String(s || '').trim().toLowerCase() === stepName) || 
-                            (idx < route.findIndex(s => String(s.step_name || s.name || '').trim().toLowerCase() === currentStageClean));
-        const isCurrent = stepName === currentStageClean;
+        const stepName = step.step_name || step.name;
+        const isCompleted = completedSteps.includes(stepName) || (idx < route.findIndex(s => (s.step_name || s.name) === currentStage));
+        const isCurrent = stepName === currentStage;
         
         let badgeColor = 'bg-secondary text-muted-foreground border-border/50';
         let Icon = null;
@@ -73,13 +51,13 @@ export default function PieceProductionFlow({
         }
 
         return (
-          <div key={stepRawName} className="flex items-center gap-1.5">
+          <div key={stepName} className="flex items-center gap-1.5">
             <div className={cn(
               "px-2.5 py-1.5 rounded-xl border flex items-center gap-1.5 transition-all duration-200",
               badgeColor
             )}>
               {Icon}
-              <span className="truncate max-w-[100px] sm:max-w-none">{displayLabel}</span>
+              <span className="truncate max-w-[100px] sm:max-w-none">{stepName}</span>
             </div>
             {idx < route.length - 1 && (
               <span className="text-muted-foreground/35 select-none font-bold">→</span>

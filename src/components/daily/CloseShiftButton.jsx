@@ -43,7 +43,12 @@ export default function CloseShiftButton({ date, disabled }) {
   };
 
   return (
-    <Button variant="outline" onClick={handleSend} disabled={disabled || loading} className="gap-2 bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full shadow-sm">
+    <Button
+      variant="outline"
+      onClick={handleSend}
+      disabled={disabled || loading}
+      className="gap-2 bg-card border border-border/80 text-foreground hover:bg-secondary/50 font-bold rounded-xl h-10 px-5 shadow-sm text-xs"
+    >
       {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
       Enviar Fechamento
     </Button>
