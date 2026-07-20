@@ -113,7 +113,6 @@ export async function registerManualQuantitativeEntry(payload = {}) {
       .insert({
         order_id: orderId,
         lot_code: generalLotCode,
-        total_items: quantity,
         status: 'in_progress',
         created_at: new Date().toISOString(),
       })
@@ -229,7 +228,7 @@ export async function listManualEntries({ date = null, cellName = null, limit = 
 export async function fetchAvailableGeneralLots(limit = 100) {
   const { data, error } = await supabase
     .from('production_lots')
-    .select('id, lot_code, total_items, created_at')
+    .select('id, lot_code, created_at')
     .order('created_at', { ascending: false })
     .limit(limit);
 
@@ -240,12 +239,11 @@ export async function fetchAvailableGeneralLots(limit = 100) {
 
   const map = new Map();
   (data || []).forEach((item) => {
-    const code = String(item.general_lot_code || item.lot_code || '').trim().toUpperCase();
+    const code = String(item.lot_code || '').trim().toUpperCase();
     if (code && !map.has(code)) {
       map.set(code, {
         id: item.id,
         code,
-        totalItems: item.total_items || 0,
         createdAt: item.created_at,
       });
     }
