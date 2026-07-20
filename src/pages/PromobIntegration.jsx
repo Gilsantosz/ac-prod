@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/lib/supabaseClient';
 import {
   Upload, Plug, History, FileText, Database, Shield, Settings, Download, Search,
-  RefreshCw, Trash2, Check, Lock, Cloud, GitFork
+  RefreshCw, Trash2, Check, Lock, Cloud
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -563,19 +563,7 @@ export default function PromobIntegration() {
           </div>
         </button>
 
-        <Button
-          asChild
-          variant="outline"
-          className="p-3 border rounded-2xl text-left bg-card hover:bg-secondary/15 transition-all text-xs flex flex-col justify-between items-start min-h-[85px] border-border/60 h-auto hover:text-foreground active:scale-100"
-        >
-          <Link to="/rotas-produtivas" className="w-full">
-            <GitFork className="w-4.5 h-4.5 text-violet-500" />
-            <div>
-              <p className="font-bold text-foreground">Rotas Produtivas</p>
-              <p className="text-[10px] text-muted-foreground">Sequências MES</p>
-            </div>
-          </Link>
-        </Button>
+
       </div>
 
 

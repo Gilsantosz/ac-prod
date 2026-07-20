@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  Cpu, PlusCircle, Layers, Plug, GitFork,
+  Cpu, PlusCircle, Layers, Plug,
   Box, Truck, BellRing, ClipboardList, Shield,
   ArrowRight, Activity, Bell, ShieldCheck
 } from 'lucide-react';
@@ -44,16 +44,7 @@ export default function MesHub() {
       badgeColor: 'bg-emerald-500/10 text-emerald-500',
       info: 'Importe arquivos XML/CSV e crie lotes de produção.'
     },
-    {
-      title: 'Rotas Produtivas',
-      description: 'Sequenciamento lógico de postos produtivos',
-      icon: GitFork,
-      path: '/rotas-produtivas',
-      group: 'PCP e Engenharia',
-      status: 'Configurável',
-      badgeColor: 'bg-indigo-500/10 text-indigo-500',
-      info: 'Mapeie o fluxo das peças entre Corte, Bordo, Usinagem e Embalagem.'
-    },
+
     {
       title: 'Coleta / Bipagem',
       description: 'Lançamento de leituras físicas nas células',
