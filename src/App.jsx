@@ -43,6 +43,7 @@ import LotIntegrity from '@/pages/LotIntegrity';
 import LotTrackingDashboard from '@/pages/LotTrackingDashboard';
 import IntegrityLogs from '@/pages/IntegrityLogs';
 import JoineryPage from '@/pages/JoineryPage';
+import ReplacementPage from '@/pages/ReplacementPage';
 import { useProductionRealtimeSync } from '@/hooks/useProductionRealtimeSync';
 import { isSupabaseConfigured } from '@/lib/supabaseClient';
 
@@ -158,6 +159,7 @@ const AuthenticatedApp = () => {
           <Route path="/embalagem" element={<PackagingPage />} />
           <Route path="/expedicao" element={<ShippingPage />} />
           <Route path="/alertas-mes" element={<MesAlertsPage />} />
+          <Route path="/reposicao" element={<ReplacementPage />} />
 
           <Route path="/rotas-produtivas" element={<ProductionRoutes />} />
           <Route path="/marcenaria" element={<JoineryPage />} />
