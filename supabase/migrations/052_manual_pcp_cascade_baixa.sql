@@ -27,7 +27,6 @@ DECLARE
   v_lot_id uuid;
   v_piece_id uuid;
   v_reading_id uuid;
-  v_event_id uuid;
 
   v_target_cells text[] := ARRAY['Corte', 'Bordo', 'Usinagem', 'Embalagem'];
   v_curr_cell text;
@@ -93,23 +92,21 @@ BEGIN
     RETURNING id INTO v_batch_id;
   END IF;
 
-  -- 3. Localiza ou cria o Lote Geral na tabela production_lots
+  -- 3. Localiza ou cria o Lote Geral na tabela production_lots (usa lot_code)
   SELECT id INTO v_lot_id
   FROM public.production_lots
-  WHERE UPPER(TRIM(lot_code)) = v_general_lot_code OR UPPER(TRIM(general_lot_code)) = v_general_lot_code
+  WHERE UPPER(TRIM(lot_code)) = v_general_lot_code
   LIMIT 1;
 
   IF v_lot_id IS NULL THEN
     INSERT INTO public.production_lots (
       order_id,
       lot_code,
-      general_lot_code,
       total_items,
       status,
       created_at
     ) VALUES (
       v_order_id,
-      v_general_lot_code,
       v_general_lot_code,
       v_quantity,
       'in_progress',

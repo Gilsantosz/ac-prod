@@ -97,12 +97,12 @@ export async function registerManualQuantitativeEntry(payload = {}) {
     batchId = newBatch?.id || null;
   }
 
-  // 1. Busca/Cria o Lote Geral
+  // 1. Busca/Cria o Lote Geral na tabela production_lots
   let lotId = null;
   const { data: existingLots } = await supabase
     .from('production_lots')
     .select('id')
-    .or(`lot_code.ilike.${generalLotCode},general_lot_code.ilike.${generalLotCode}`)
+    .ilike('lot_code', generalLotCode)
     .limit(1);
 
   if (existingLots && existingLots.length > 0) {
@@ -113,7 +113,6 @@ export async function registerManualQuantitativeEntry(payload = {}) {
       .insert({
         order_id: orderId,
         lot_code: generalLotCode,
-        general_lot_code: generalLotCode,
         total_items: quantity,
         status: 'in_progress',
         created_at: new Date().toISOString(),
@@ -204,7 +203,7 @@ export async function registerManualQuantitativeEntry(payload = {}) {
 export async function listManualEntries({ date = null, cellName = null, limit = 50 } = {}) {
   let query = supabase
     .from('production_stage_readings')
-    .select('*, production_lots(lot_code, general_lot_code)')
+    .select('*, production_lots(lot_code)')
     .or('is_manual.eq.true,entry_type.eq.manual_quantitativo')
     .order('created_at', { ascending: false })
     .limit(limit);
@@ -230,7 +229,7 @@ export async function listManualEntries({ date = null, cellName = null, limit = 
 export async function fetchAvailableGeneralLots(limit = 100) {
   const { data, error } = await supabase
     .from('production_lots')
-    .select('id, lot_code, general_lot_code, total_items, created_at')
+    .select('id, lot_code, total_items, created_at')
     .order('created_at', { ascending: false })
     .limit(limit);
 
