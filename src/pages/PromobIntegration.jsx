@@ -37,7 +37,7 @@ export default function PromobIntegration() {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
   const activeTab = ['import', 'history', 'orders', 'logs', 'backup', 'settings'].includes(requestedTab) ? requestedTab : 'import';
-  const [importMode, setImportMode] = useState('promob');
+  const [importMode, setImportMode] = useState('manual');
   const [preselectedPcpFile, setPreselectedPcpFile] = useState(null);
   
   // Estados para o Histórico de Importações
@@ -584,29 +584,41 @@ export default function PromobIntegration() {
 
       <Tabs defaultValue="import" value={activeTab} onValueChange={handleTabChange} className="space-y-6">
 
-        {/* ── 1. Importar Arquivo ───────────────────────────────── */}
+        {/* ── 1. Entrada / Importação do PCP ─────────────────────────── */}
         <TabsContent value="import" className="space-y-6 outline-none">
-          <div className="flex border-b border-border/40 pb-2 gap-4">
+          <div className="flex border-b border-border/40 pb-2 gap-4 flex-wrap">
+            <button
+              onClick={() => setImportMode('manual')}
+              className={cn(
+                "pb-2 text-xs font-extrabold transition-all relative flex items-center gap-1.5",
+                importMode === 'manual' ? "text-[#2d9c4a] border-b-2 border-[#2d9c4a]" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Edit3 className="w-3.5 h-3.5 text-amber-500" /> Entrada Manual Digitada (Sem Arquivo)
+            </button>
             <button
               onClick={() => setImportMode('promob')}
               className={cn(
-                "pb-2 text-xs font-bold transition-all relative",
+                "pb-2 text-xs font-bold transition-all relative flex items-center gap-1.5",
                 importMode === 'promob' ? "text-[#2d9c4a] border-b-2 border-[#2d9c4a]" : "text-muted-foreground hover:text-foreground"
               )}
             >
-              Integração Promob (XML/CSV)
+              <Upload className="w-3.5 h-3.5" /> Integração Promob (XML/CSV)
             </button>
             <button
               onClick={() => setImportMode('pcp')}
               className={cn(
-                "pb-2 text-xs font-bold transition-all relative",
+                "pb-2 text-xs font-bold transition-all relative flex items-center gap-1.5",
                 importMode === 'pcp' ? "text-[#2d9c4a] border-b-2 border-[#2d9c4a]" : "text-muted-foreground hover:text-foreground"
               )}
             >
-              Padrão PCP Traceabilidade (XLSX, CSV, TSV, TXT, HTML, XML)
+              <FileText className="w-3.5 h-3.5" /> Padrão PCP Traceabilidade (XLSX, CSV)
             </button>
           </div>
-          {importMode === 'promob' ? (
+
+          {importMode === 'manual' ? (
+            <PcpManualQuantitativeTab />
+          ) : importMode === 'promob' ? (
             <XmlImportTab onSwitchToPcp={(file) => {
               setImportMode('pcp');
               setPreselectedPcpFile(file);
