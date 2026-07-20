@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
-import { Edit3, Save, Layers, CheckCircle2, RefreshCw, Hash, User, Clock, FileText, Info } from 'lucide-react';
+import { Edit3, Save, CheckCircle2, RefreshCw, Hash, User, FileText, Info, Building2 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -196,15 +196,14 @@ export default function ManualProductionEntryPage() {
                 </div>
               </div>
 
-              {/* Célula e Turno */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
+              {/* Célula Produtiva */}
+              <div className="space-y-1.5 sm:col-span-2">
                   <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                    <Layers className="w-3.5 h-3.5 text-indigo-500" /> Célula Produtiva
+                    <Building2 className="w-3.5 h-3.5 text-[#2d9c4a]" /> Célula Produtiva
                   </Label>
                   <Select value={selectedCell} onValueChange={setSelectedCell}>
                     <SelectTrigger className="rounded-xl h-10 text-xs font-semibold bg-background/60">
-                      <SelectValue placeholder="Selecione a célula" />
+                      <SelectValue placeholder="Selecione a célula (Corte, Bordo, Usinagem, Embalagem)" />
                     </SelectTrigger>
                     <SelectContent className="rounded-xl">
                       {activeCells.map((cell) => (
@@ -212,55 +211,22 @@ export default function ManualProductionEntryPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-violet-500" /> Turno de Trabalho
-                  </Label>
-                  <Select value={shift} onValueChange={setShift}>
-                    <SelectTrigger className="rounded-xl h-10 text-xs font-semibold bg-background/60">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-xl">
-                      {SHIFTS.map((s) => (
-                        <SelectItem key={s} value={s}>{s}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
               </div>
 
-              {/* Quantidade e Unidade */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Quantidade Produzida
-                  </Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={quantity}
-                    onChange={(e) => setQuantity(e.target.value)}
-                    placeholder="0"
-                    className="rounded-xl h-10 text-xs font-extrabold bg-emerald-500/5 border-emerald-500/30"
-                    required
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-foreground">Unidade de Medida</Label>
-                  <Select value={unitOfMeasure} onValueChange={setUnitOfMeasure}>
-                    <SelectTrigger className="rounded-xl h-10 text-xs font-semibold bg-background/60">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-xl">
-                      {UNITS.map((u) => (
-                        <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              {/* Quantidade */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Quantidade Produzida
+                </Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  placeholder="0"
+                  className="rounded-xl h-10 text-xs font-extrabold bg-emerald-500/5 border-emerald-500/30"
+                  required
+                />
               </div>
 
               {/* Operador e Observações */}

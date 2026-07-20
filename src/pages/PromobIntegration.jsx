@@ -1359,7 +1359,7 @@ function PcpManualQuantitativeTab() {
         </p>
       </div>
 
-      <form onSubmit={handleRegister} className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+      <form onSubmit={handleRegister} className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
         <div className="space-y-1.5 sm:col-span-1">
           <Label className="text-xs font-bold text-foreground">Código do Lote Geral</Label>
           <Input
@@ -1384,44 +1384,17 @@ function PcpManualQuantitativeTab() {
           />
         </div>
 
-        <div className="space-y-1.5 sm:col-span-1">
-          <Label className="text-xs font-bold text-foreground">Unidade de Medida</Label>
-          <select
-            value={unitOfMeasure}
-            onChange={(e) => setUnitOfMeasure(e.target.value)}
-            className="w-full h-10 px-3 rounded-xl border border-input bg-background/60 text-xs font-semibold text-foreground focus:outline-none"
-          >
-            <option value="pecas">Peças (un)</option>
-            <option value="metros">Metros (m)</option>
-            <option value="m2">Metro quadrado (m²)</option>
-            <option value="chapas">Chapas</option>
-          </select>
-        </div>
-
-        <div className="space-y-1.5 sm:col-span-1">
-          <Label className="text-xs font-bold text-foreground">Turno de Produção</Label>
-          <select
-            value={shift}
-            onChange={(e) => setShift(e.target.value)}
-            className="w-full h-10 px-3 rounded-xl border border-input bg-background/60 text-xs font-semibold text-foreground focus:outline-none"
-          >
-            <option value="1º Turno">1º Turno</option>
-            <option value="2º Turno">2º Turno</option>
-            <option value="3º Turno">3º Turno</option>
-          </select>
-        </div>
-
         <div className="space-y-1.5 sm:col-span-2">
-          <Label className="text-xs font-bold text-foreground">Observação do Lançamento</Label>
+          <Label className="text-xs font-bold text-foreground">Observação (Opcional)</Label>
           <Input
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Nota ou justificativa do lote (opcional)"
+            placeholder="Nota ou observação sobre o lote"
             className="rounded-xl h-10 text-xs bg-background/60"
           />
         </div>
 
-        <div className="sm:col-span-3 pt-2">
+        <div className="sm:col-span-2 pt-2">
           <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-foreground bg-secondary/30 p-3 rounded-xl border border-border/50 select-none">
             <input
               type="checkbox"
@@ -1433,7 +1406,7 @@ function PcpManualQuantitativeTab() {
           </label>
         </div>
 
-        <div className="sm:col-span-3 pt-2">
+        <div className="sm:col-span-2 pt-2">
           <Button
             type="submit"
             disabled={submitting}
