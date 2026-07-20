@@ -1,20 +1,22 @@
 import { supabase } from '@/lib/supabaseClient';
 
 /**
- * Registra uma baixa produtiva manual quantitativa associada a um Lote Geral e Célula.
+ * Registra uma baixa produtiva manual quantitativa associada a um Lote Geral.
+ * Se cascade_all_cells for verdadeiro ou a célula for 'Embalagem', a baixa é
+ * propagada automaticamente para as 4 células: Corte, Bordo, Usinagem e Embalagem.
  */
 export async function registerManualQuantitativeEntry(payload = {}) {
   const generalLotCode = String(payload.general_lot_code || payload.lote_geral || payload.lot_code || '').trim().toUpperCase();
-  const cellName = String(payload.cell_name || payload.celula || '').trim();
+  const cellName = String(payload.cell_name || payload.celula || 'Corte').trim();
   const shift = String(payload.shift || '1º Turno').trim();
-  const operator = String(payload.operator || payload.operator_name || 'Operador Manual').trim();
+  const operator = String(payload.operator || payload.operator_name || 'Operador Manual PCP').trim();
   const quantity = Math.max(1, Number(payload.quantity || payload.quantidade) || 1);
   const unitOfMeasure = String(payload.unit_of_measure || payload.unidade || 'pecas').trim();
   const notes = String(payload.notes || payload.observacao || '').trim();
   const date = payload.date || new Date().toISOString().slice(0, 10);
+  const cascade = payload.cascade_all_cells ?? (payload.cascade || cellName.toLowerCase() === 'embalagem' || !payload.cell_name);
 
   if (!generalLotCode) throw new Error('Código do Lote Geral é obrigatório.');
-  if (!cellName) throw new Error('Célula produtiva é obrigatória.');
 
   const formattedPayload = {
     general_lot_code: generalLotCode,
@@ -25,6 +27,7 @@ export async function registerManualQuantitativeEntry(payload = {}) {
     unit_of_measure: unitOfMeasure,
     notes,
     date,
+    cascade_all_cells: cascade,
   };
 
   // Tenta via RPC atômico no PostgreSQL
@@ -36,10 +39,10 @@ export async function registerManualQuantitativeEntry(payload = {}) {
     return rpcData;
   }
 
-  // Fallback caso a migração ainda não tenha sido aplicada no Supabase Cloud
-  console.warn('RPC register_manual_quantitative_production indisponível, executando fallback via cliente:', rpcError?.message);
+  // Fallback via JS caso a RPC ainda não esteja ativa no banco
+  console.warn('RPC register_manual_quantitative_production indisponível, executando fallback com cascata:', rpcError?.message);
 
-  // 1. Busca/Cria o Lote
+  // 1. Busca/Cria o Lote Geral
   let lotId = null;
   const { data: existingLots } = await supabase
     .from('production_lots')
@@ -79,58 +82,62 @@ export async function registerManualQuantitativeEntry(payload = {}) {
     .single();
   if (pieceErr) throw pieceErr;
 
-  // 3. Insere a leitura manual
-  const { data: newReading, error: readingErr } = await supabase
-    .from('production_stage_readings')
-    .insert({
+  // 3. Define as células alvo (todas as 4 se cascata = true)
+  const targetCells = cascade ? ['Corte', 'Bordo', 'Usinagem', 'Embalagem'] : [cellName];
+
+  for (const targetCell of targetCells) {
+    const { data: newReading, error: readingErr } = await supabase
+      .from('production_stage_readings')
+      .insert({
+        piece_id: newPiece.id,
+        lot_id: lotId,
+        cell_name: targetCell,
+        step_name: targetCell,
+        quantity,
+        status: 'approved',
+        operator,
+        shift,
+        entry_type: 'manual_quantitativo',
+        traceability_type: 'quantitativa_simplificada',
+        is_manual: true,
+        unit_of_measure: unitOfMeasure,
+        general_lot_code: generalLotCode,
+        notes: notes || `Baixa manual em cascata para ${targetCell}`,
+        created_at: `${date}T${new Date().toISOString().slice(11)}`,
+      })
+      .select('*')
+      .single();
+
+    if (readingErr) throw readingErr;
+
+    await supabase.from('production_collection_events').insert({
+      reading_id: newReading.id,
       piece_id: newPiece.id,
       lot_id: lotId,
-      cell_name: cellName,
-      step_name: cellName,
-      quantity,
-      status: 'approved',
-      operator,
+      cell_name: targetCell,
+      operator_name: operator,
       shift,
+      status: 'approved',
+      quantity,
+      reader_type: 'manual',
       entry_type: 'manual_quantitativo',
       traceability_type: 'quantitativa_simplificada',
       is_manual: true,
       unit_of_measure: unitOfMeasure,
       general_lot_code: generalLotCode,
-      notes,
       created_at: `${date}T${new Date().toISOString().slice(11)}`,
-    })
-    .select('*')
-    .single();
-  if (readingErr) throw readingErr;
-
-  // 4. Insere o evento de coleta
-  await supabase.from('production_collection_events').insert({
-    reading_id: newReading.id,
-    piece_id: newPiece.id,
-    lot_id: lotId,
-    cell_name: cellName,
-    operator_name: operator,
-    shift,
-    status: 'approved',
-    quantity,
-    reader_type: 'manual',
-    entry_type: 'manual_quantitativo',
-    traceability_type: 'quantitativa_simplificada',
-    is_manual: true,
-    unit_of_measure: unitOfMeasure,
-    general_lot_code: generalLotCode,
-    created_at: `${date}T${new Date().toISOString().slice(11)}`,
-  });
+    });
+  }
 
   return {
     success: true,
-    reading_id: newReading.id,
     lot_id: lotId,
     piece_id: newPiece.id,
     general_lot_code: generalLotCode,
-    cell_name: cellName,
     quantity,
     unit_of_measure: unitOfMeasure,
+    cascade,
+    target_cells: targetCells,
     is_manual: true,
   };
 }
@@ -176,7 +183,6 @@ export async function fetchAvailableGeneralLots(limit = 100) {
     return [];
   }
 
-  // Agrupa e desduplica por código de lote geral
   const map = new Map();
   (data || []).forEach((item) => {
     const code = String(item.general_lot_code || item.lot_code || '').trim().toUpperCase();

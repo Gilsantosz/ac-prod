@@ -1278,6 +1278,7 @@ function PcpManualQuantitativeTab() {
   const [shift, setShift] = useState('1º Turno');
   const [quantity, setQuantity] = useState('');
   const [unitOfMeasure, setUnitOfMeasure] = useState('pecas');
+  const [cascadeAllCells, setCascadeAllCells] = useState(true);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -1285,29 +1286,37 @@ function PcpManualQuantitativeTab() {
     e.preventDefault();
     const cleanCode = String(generalLotCode).trim().toUpperCase();
     if (!cleanCode) {
-      toast.error('Informe o código do Lote Geral.');
+      toast.error('Informe o código do Lote Geral (ex: 14537).');
       return;
     }
     const numQty = Number(quantity);
     if (!numQty || numQty <= 0) {
-      toast.error('Informe uma quantidade válida para o lote.');
+      toast.error('Informe uma quantidade válida para o lote (ex: 2000 peças).');
       return;
     }
     setSubmitting(true);
     try {
-      await registerManualQuantitativeEntry({
+      const res = await registerManualQuantitativeEntry({
         general_lot_code: cleanCode,
         cell_name: cellName,
         shift,
         quantity: numQty,
         unit_of_measure: unitOfMeasure,
+        cascade_all_cells: cascadeAllCells,
         notes,
       });
-      toast.success(`Entrada manual quantitativa registrada no Lote ${cleanCode}!`);
+
+      if (res.cascade) {
+        toast.success(`Baixa automática em cascata registrada nas 4 células (Corte, Bordo, Usinagem, Embalagem)!`, {
+          description: `Lote ${cleanCode}: ${numQty} ${unitOfMeasure} contabilizadas para metas diárias.`,
+        });
+      } else {
+        toast.success(`Entrada manual quantitativa registrada na célula ${cellName} para o Lote ${cleanCode}!`);
+      }
       setQuantity('');
       setNotes('');
     } catch (err) {
-      toast.error(`Erro: ${err.message}`);
+      toast.error(`Erro ao salvar entrada PCP: ${err.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -1318,15 +1327,24 @@ function PcpManualQuantitativeTab() {
       <div className="flex justify-between items-center flex-wrap gap-2">
         <div>
           <h3 className="font-extrabold text-foreground text-base flex items-center gap-2">
-            <Edit3 className="w-5 h-5 text-amber-500" /> Entrada Manual Quantitativa do Lote PCP
+            <Edit3 className="w-5 h-5 text-amber-500" /> Entrada Manual Quantitativa do PCP (Sem Arquivo)
           </h3>
           <p className="text-xs text-muted-foreground mt-1">
-            Cadastre um volume geral por Lote PCP diretamente para meta e controle do sistema.
+            Digite diretamente o Lote Geral e a Quantidade Total para atualização imediata das metas de produção.
           </p>
         </div>
         <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 text-xs font-bold gap-1">
-          ✋ Rastreabilidade Simplificada
+          ✋ Rastreabilidade Simplificada por Lote
         </Badge>
+      </div>
+
+      <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/5 text-amber-900 dark:text-amber-200 text-xs leading-relaxed space-y-1">
+        <p className="font-bold flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
+          💡 Regra de Baixa Automática em Cascata:
+        </p>
+        <p>
+          Ao digitar o <strong>Lote Geral (ex: 14537)</strong> e a <strong>Quantidade (ex: 2000 peças)</strong> com a opção de cascata marcada, o sistema lançará automaticamente a produção nas 4 células: <strong>Corte, Bordo, Usinagem e Embalagem</strong>.
+        </p>
       </div>
 
       <form onSubmit={handleRegister} className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
@@ -1335,21 +1353,21 @@ function PcpManualQuantitativeTab() {
           <Input
             value={generalLotCode}
             onChange={(e) => setGeneralLotCode(e.target.value.toUpperCase())}
-            placeholder="Ex: LOTE-PCP-2026-A"
-            className="rounded-xl h-10 uppercase text-xs font-bold bg-background/60"
+            placeholder="Ex: 14537"
+            className="rounded-xl h-10 uppercase text-xs font-extrabold bg-background/60"
             required
           />
         </div>
 
         <div className="space-y-1.5 sm:col-span-1">
-          <Label className="text-xs font-bold text-foreground">Quantidade Total PCP</Label>
+          <Label className="text-xs font-bold text-foreground">Quantidade Geral PCP</Label>
           <Input
             type="number"
             min="1"
             value={quantity}
             onChange={(e) => setQuantity(e.target.value)}
-            placeholder="Ex: 500"
-            className="rounded-xl h-10 text-xs font-bold bg-background/60"
+            placeholder="Ex: 2000"
+            className="rounded-xl h-10 text-xs font-extrabold bg-emerald-500/5 border-emerald-500/30"
             required
           />
         </div>
@@ -1369,16 +1387,15 @@ function PcpManualQuantitativeTab() {
         </div>
 
         <div className="space-y-1.5 sm:col-span-1">
-          <Label className="text-xs font-bold text-foreground">Célula Inicial</Label>
+          <Label className="text-xs font-bold text-foreground">Turno de Produção</Label>
           <select
-            value={cellName}
-            onChange={(e) => setCellName(e.target.value)}
+            value={shift}
+            onChange={(e) => setShift(e.target.value)}
             className="w-full h-10 px-3 rounded-xl border border-input bg-background/60 text-xs font-semibold text-foreground focus:outline-none"
           >
-            <option value="Corte">Corte</option>
-            <option value="Bordo">Bordo (Coladeira)</option>
-            <option value="Usinagem">Usinagem (Furadeira)</option>
-            <option value="Embalagem">Embalagem</option>
+            <option value="1º Turno">1º Turno</option>
+            <option value="2º Turno">2º Turno</option>
+            <option value="3º Turno">3º Turno</option>
           </select>
         </div>
 
@@ -1387,16 +1404,28 @@ function PcpManualQuantitativeTab() {
           <Input
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Nota ou justificativa do lote quantitativo"
+            placeholder="Nota ou justificativa do lote (opcional)"
             className="rounded-xl h-10 text-xs bg-background/60"
           />
+        </div>
+
+        <div className="sm:col-span-3 pt-2">
+          <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-foreground bg-secondary/30 p-3 rounded-xl border border-border/50 select-none">
+            <input
+              type="checkbox"
+              checked={cascadeAllCells}
+              onChange={(e) => setCascadeAllCells(e.target.checked)}
+              className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+            />
+            <span>⚡ Propagar baixa automática nas 4 células (Corte, Bordo, Usinagem e Embalagem) para atualização imediata das metas diárias</span>
+          </label>
         </div>
 
         <div className="sm:col-span-3 pt-2">
           <Button
             type="submit"
             disabled={submitting}
-            className="w-full sm:w-auto px-6 h-10 bg-[#1A2238] hover:bg-[#111728] text-white font-bold rounded-xl text-xs gap-2 shadow-sm"
+            className="w-full sm:w-auto px-6 h-11 bg-[#1A2238] hover:bg-[#111728] text-white font-extrabold rounded-xl text-xs gap-2 shadow-md"
           >
             <Check className="w-4 h-4" /> Registrar Lote Geral PCP Quantitativo
           </Button>

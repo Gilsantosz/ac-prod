@@ -38,6 +38,7 @@ export default function ManualProductionEntryPage() {
   const [quantity, setQuantity] = useState('');
   const [unitOfMeasure, setUnitOfMeasure] = useState('pecas');
   const [notes, setNotes] = useState('');
+  const [cascadeAllCells, setCascadeAllCells] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -98,6 +99,8 @@ export default function ManualProductionEntryPage() {
 
     setSubmitting(true);
     try {
+      const isEmbalagem = String(selectedCell).toLowerCase() === 'embalagem';
+      const shouldCascade = cascadeAllCells || isEmbalagem;
       const result = await registerManualQuantitativeEntry({
         general_lot_code: cleanLot,
         cell_name: selectedCell,
@@ -105,14 +108,21 @@ export default function ManualProductionEntryPage() {
         operator: operatorName,
         quantity: numQty,
         unit_of_measure: unitOfMeasure,
+        cascade_all_cells: shouldCascade,
         notes,
         date: new Date().toISOString().slice(0, 10),
       });
 
       if (result.success) {
-        toast.success(`Baixa manual de ${numQty} ${unitOfMeasure} registrada no Lote ${cleanLot}!`, {
-          description: `Célula: ${selectedCell} | Turno: ${shift}`,
-        });
+        if (result.cascade) {
+          toast.success(`Baixa automática em cascata registrada nas 4 células (Corte, Bordo, Usinagem, Embalagem)!`, {
+            description: `Lote ${cleanLot}: ${numQty} ${unitOfMeasure} contabilizados para metas diárias.`,
+          });
+        } else {
+          toast.success(`Baixa manual de ${numQty} ${unitOfMeasure} registrada no Lote ${cleanLot}!`, {
+            description: `Célula: ${selectedCell} | Turno: ${shift}`,
+          });
+        }
 
         // Limpa campos mantendo lote e célula para lançamentos contínuos
         setQuantity('');
@@ -278,6 +288,19 @@ export default function ManualProductionEntryPage() {
                     className="rounded-xl h-10 text-xs font-medium bg-background/60"
                   />
                 </div>
+              </div>
+
+              {/* Opção de Baixa Automática em Cascata */}
+              <div className="pt-2">
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-foreground bg-secondary/30 p-3 rounded-xl border border-border/50 select-none">
+                  <input
+                    type="checkbox"
+                    checked={cascadeAllCells || String(selectedCell).toLowerCase() === 'embalagem'}
+                    onChange={(e) => setCascadeAllCells(e.target.checked)}
+                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span>⚡ Propagar baixa automática nas 4 células (Corte, Bordo, Usinagem e Embalagem) para metas diárias</span>
+                </label>
               </div>
 
               {/* Botão de Envio */}
