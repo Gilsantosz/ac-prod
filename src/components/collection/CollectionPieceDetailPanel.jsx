@@ -66,6 +66,15 @@ export default function CollectionPieceDetailPanel({
           <div className="flex items-center gap-2 flex-wrap">
             <h4 className="font-extrabold text-foreground text-base font-mono">{piece.piece_uid || piece.traceability_code}</h4>
             {getStatusBadge()}
+            {piece.is_manual || piece.entry_type === 'manual_quantitativo' ? (
+              <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 text-xs font-bold">
+                ✋ Baixa Manual Quantitativa
+              </Badge>
+            ) : (
+              <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-xs font-bold">
+                🔍 Coleta Física (Scanner)
+              </Badge>
+            )}
           </div>
           <p className="text-xs text-muted-foreground mt-1">
             Peça: <span className="font-bold text-foreground">{piece.piece_name || 'Sem nome'}</span>

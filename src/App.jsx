@@ -43,6 +43,7 @@ import LotIntegrity from '@/pages/LotIntegrity';
 import LotTrackingDashboard from '@/pages/LotTrackingDashboard';
 import IntegrityLogs from '@/pages/IntegrityLogs';
 import JoineryPage from '@/pages/JoineryPage';
+import ManualProductionEntryPage from '@/pages/ManualProductionEntryPage';
 import { useProductionRealtimeSync } from '@/hooks/useProductionRealtimeSync';
 import { isSupabaseConfigured } from '@/lib/supabaseClient';
 
@@ -155,6 +156,7 @@ const AuthenticatedApp = () => {
           <Route path="/pcp/configuracoes" element={<Navigate to="/pcp?tab=settings" replace />} />
 
           <Route path="/coleta" element={<CollectionPage />} />
+          <Route path="/baixa-manual" element={<ManualProductionEntryPage />} />
           <Route path="/embalagem" element={<PackagingPage />} />
           <Route path="/expedicao" element={<ShippingPage />} />
           <Route path="/alertas-mes" element={<MesAlertsPage />} />

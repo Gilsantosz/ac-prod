@@ -8,7 +8,7 @@
 import {
   LayoutDashboard, PlusCircle, ClipboardList, Gauge, Boxes,
   Layers, Plug, AlertOctagon, Trophy, LineChart, BrainCircuit,
-  Zap, Users, Shield, HardDrive, Truck, Box, BellRing, FolderKanban, GitFork, Cpu, ShieldCheck, Wrench, HardHat,
+  Zap, Users, Shield, HardDrive, Truck, Box, BellRing, FolderKanban, GitFork, Cpu, ShieldCheck, Wrench, HardHat, Edit3,
   ChartNoAxesCombined
 } from 'lucide-react';
 
@@ -130,6 +130,16 @@ export const appRoutes = [
     showInDashboardHub: true,
     tabTarget: 'orders',
     aliases: ['/ordens-producao']
+  },
+  {
+    path: '/baixa-manual',
+    label: 'Baixa Manual',
+    description: 'Lançamento de produção manual quantitativa por Lote Geral e Célula',
+    icon: Edit3,
+    group: 'pcp',
+    permission: 'register_manual_production',
+    showInSidebar: true,
+    showInDashboardHub: true
   },
   {
     path: '/rotas-produtivas',

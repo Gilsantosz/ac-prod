@@ -10,9 +10,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabaseClient';
+import { registerManualQuantitativeEntry } from '@/lib/manualProductionService';
 import {
   Upload, Plug, History, FileText, Database, Shield, Settings, Download, Search,
-  RefreshCw, Trash2, Check, Lock, Cloud
+  RefreshCw, Trash2, Check, Lock, Cloud, Edit3
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -560,6 +561,20 @@ export default function PromobIntegration() {
           <div>
             <p className="font-bold text-foreground">Configurações</p>
             <p className="text-[10px] text-muted-foreground">Integração</p>
+          </div>
+        </button>
+
+        <button
+          onClick={() => handleTabChange('manual_entry')}
+          className={cn(
+            "p-3 border rounded-2xl text-left bg-card hover:bg-secondary/15 transition-all text-xs flex flex-col justify-between min-h-[85px] border-border/60",
+            activeTab === 'manual_entry' && "border-amber-500/50 bg-amber-500/5"
+          )}
+        >
+          <Edit3 className="w-4.5 h-4.5 text-amber-500" />
+          <div>
+            <p className="font-bold text-foreground">Entrada Manual</p>
+            <p className="text-[10px] text-muted-foreground">Quantitativa PCP</p>
           </div>
         </button>
 
@@ -1180,6 +1195,11 @@ export default function PromobIntegration() {
             <ApiConfigTab />
           </div>
         </TabsContent>
+
+        {/* ── 6. Entrada Manual Quantitativa PCP ─────────────────── */}
+        <TabsContent value="manual_entry" className="space-y-6 outline-none">
+          <PcpManualQuantitativeTab />
+        </TabsContent>
       </Tabs>
 
 
@@ -1249,5 +1269,139 @@ export default function PromobIntegration() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function PcpManualQuantitativeTab() {
+  const [generalLotCode, setGeneralLotCode] = useState('');
+  const [cellName, setCellName] = useState('Corte');
+  const [shift, setShift] = useState('1º Turno');
+  const [quantity, setQuantity] = useState('');
+  const [unitOfMeasure, setUnitOfMeasure] = useState('pecas');
+  const [notes, setNotes] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    const cleanCode = String(generalLotCode).trim().toUpperCase();
+    if (!cleanCode) {
+      toast.error('Informe o código do Lote Geral.');
+      return;
+    }
+    const numQty = Number(quantity);
+    if (!numQty || numQty <= 0) {
+      toast.error('Informe uma quantidade válida para o lote.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await registerManualQuantitativeEntry({
+        general_lot_code: cleanCode,
+        cell_name: cellName,
+        shift,
+        quantity: numQty,
+        unit_of_measure: unitOfMeasure,
+        notes,
+      });
+      toast.success(`Entrada manual quantitativa registrada no Lote ${cleanCode}!`);
+      setQuantity('');
+      setNotes('');
+    } catch (err) {
+      toast.error(`Erro: ${err.message}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Card className="p-6 border-border/60 shadow-sm rounded-2xl space-y-4 bg-card">
+      <div className="flex justify-between items-center flex-wrap gap-2">
+        <div>
+          <h3 className="font-extrabold text-foreground text-base flex items-center gap-2">
+            <Edit3 className="w-5 h-5 text-amber-500" /> Entrada Manual Quantitativa do Lote PCP
+          </h3>
+          <p className="text-xs text-muted-foreground mt-1">
+            Cadastre um volume geral por Lote PCP diretamente para meta e controle do sistema.
+          </p>
+        </div>
+        <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 text-xs font-bold gap-1">
+          ✋ Rastreabilidade Simplificada
+        </Badge>
+      </div>
+
+      <form onSubmit={handleRegister} className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+        <div className="space-y-1.5 sm:col-span-1">
+          <Label className="text-xs font-bold text-foreground">Código do Lote Geral</Label>
+          <Input
+            value={generalLotCode}
+            onChange={(e) => setGeneralLotCode(e.target.value.toUpperCase())}
+            placeholder="Ex: LOTE-PCP-2026-A"
+            className="rounded-xl h-10 uppercase text-xs font-bold bg-background/60"
+            required
+          />
+        </div>
+
+        <div className="space-y-1.5 sm:col-span-1">
+          <Label className="text-xs font-bold text-foreground">Quantidade Total PCP</Label>
+          <Input
+            type="number"
+            min="1"
+            value={quantity}
+            onChange={(e) => setQuantity(e.target.value)}
+            placeholder="Ex: 500"
+            className="rounded-xl h-10 text-xs font-bold bg-background/60"
+            required
+          />
+        </div>
+
+        <div className="space-y-1.5 sm:col-span-1">
+          <Label className="text-xs font-bold text-foreground">Unidade de Medida</Label>
+          <select
+            value={unitOfMeasure}
+            onChange={(e) => setUnitOfMeasure(e.target.value)}
+            className="w-full h-10 px-3 rounded-xl border border-input bg-background/60 text-xs font-semibold text-foreground focus:outline-none"
+          >
+            <option value="pecas">Peças (un)</option>
+            <option value="metros">Metros (m)</option>
+            <option value="m2">Metro quadrado (m²)</option>
+            <option value="chapas">Chapas</option>
+          </select>
+        </div>
+
+        <div className="space-y-1.5 sm:col-span-1">
+          <Label className="text-xs font-bold text-foreground">Célula Inicial</Label>
+          <select
+            value={cellName}
+            onChange={(e) => setCellName(e.target.value)}
+            className="w-full h-10 px-3 rounded-xl border border-input bg-background/60 text-xs font-semibold text-foreground focus:outline-none"
+          >
+            <option value="Corte">Corte</option>
+            <option value="Bordo">Bordo (Coladeira)</option>
+            <option value="Usinagem">Usinagem (Furadeira)</option>
+            <option value="Embalagem">Embalagem</option>
+          </select>
+        </div>
+
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label className="text-xs font-bold text-foreground">Observação do Lançamento</Label>
+          <Input
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Nota ou justificativa do lote quantitativo"
+            className="rounded-xl h-10 text-xs bg-background/60"
+          />
+        </div>
+
+        <div className="sm:col-span-3 pt-2">
+          <Button
+            type="submit"
+            disabled={submitting}
+            className="w-full sm:w-auto px-6 h-10 bg-[#1A2238] hover:bg-[#111728] text-white font-bold rounded-xl text-xs gap-2 shadow-sm"
+          >
+            <Check className="w-4 h-4" /> Registrar Lote Geral PCP Quantitativo
+          </Button>
+        </div>
+      </form>
+    </Card>
   );
 }
