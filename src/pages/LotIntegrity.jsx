@@ -172,22 +172,35 @@ export default function LotIntegrity() {
 
     const totalPieces = Number(selectedClientLot?.total_pieces || lotPieces.length || integrityData?.total_pieces || 0);
 
-    // Contar peças efetivamente concluídas/aprovadas (ou prontas para separação)
-    let approvedPieces = Number(integrityData?.approved_pieces || 0);
-    if (approvedPieces === 0 && selectedClientLot) {
-      approvedPieces = Number(selectedClientLot.ready_for_separation_pieces || 0);
-    }
-    if (approvedPieces === 0 && lotPieces.length > 0) {
+    const stages = selectedClientLot?.stages?.length
+      ? selectedClientLot.stages
+      : [
+          { stage_code: 'cut', stage_label: 'Corte', completed_pieces: 0, required_pieces: totalPieces, progress_percent: 0, remaining_pieces: totalPieces },
+          { stage_code: 'edge', stage_label: 'Borda', completed_pieces: 0, required_pieces: totalPieces, progress_percent: 0, remaining_pieces: totalPieces },
+          { stage_code: 'cnc', stage_label: 'Usinagem', completed_pieces: 0, required_pieces: totalPieces, progress_percent: 0, remaining_pieces: totalPieces },
+          { stage_code: 'joinery', stage_label: 'Marcenaria', completed_pieces: 0, required_pieces: totalPieces, progress_percent: 0, remaining_pieces: totalPieces },
+        ];
+
+    // Estágios que exigem peças no roteiro produtivo deste lote
+    const activeStages = stages.filter(s => Number(s.required_pieces || 0) > 0);
+
+    // Contar peças 100% concluídas em TODAS as etapas exigidas
+    let approvedPieces = 0;
+    if (lotPieces.length > 0) {
       approvedPieces = lotPieces.filter(p => 
         p.status === 'completed' || p.status === 'approved' || p.status === 'shipped' ||
         ['separation', 'packaging', 'shipping'].includes(p.current_stage)
       ).length;
+    } else if (activeStages.length > 0) {
+      // O número de peças totalmente prontas em todas as etapas é no máximo o menor número de concluídas entre as etapas exigidas
+      const minCompleted = Math.min(...activeStages.map(s => Number(s.completed_pieces || 0)));
+      approvedPieces = Math.max(0, minCompleted);
     }
 
     // Contar bloqueadas, retrabalho e reposição
-    let blockedPieces = Number(integrityData?.blocked_pieces || 0);
-    let reworkPieces = Number(integrityData?.rework_pieces || 0);
-    let replacementPieces = Number(integrityData?.replacement_pieces || 0);
+    let blockedPieces = 0;
+    let reworkPieces = 0;
+    let replacementPieces = 0;
 
     if (lotPieces.length > 0) {
       blockedPieces = lotPieces.filter(p => p.is_blocked || p.status === 'blocked').length;
@@ -199,46 +212,38 @@ export default function LotIntegrity() {
       replacementPieces = Number(selectedClientLot.replacement_pieces || 0);
     }
 
-    // Pendentes
+    // Pendentes de conclusão geral (ainda faltam passar em alguma etapa)
     const pendingPieces = Math.max(0, totalPieces - approvedPieces - blockedPieces - reworkPieces - replacementPieces);
 
-    // Porcentagem de Integridade/Progresso
-    let integrityPercent = Number(integrityData?.integrity_percent || 0);
-    if ((integrityPercent === 0 || approvedPieces > 0) && totalPieces > 0) {
-      if (selectedClientLot?.progress_percent != null && Number(selectedClientLot.progress_percent) > 0) {
-        integrityPercent = Math.round(Number(selectedClientLot.progress_percent));
-      } else {
-        integrityPercent = Math.round((approvedPieces / totalPieces) * 100);
+    // Porcentagem de Integridade / Progresso Físico Geral (leituras efetuadas / leituras exigidas)
+    let integrityPercent = 0;
+    if (activeStages.length > 0) {
+      const sumRequired = activeStages.reduce((acc, s) => acc + Number(s.required_pieces || 0), 0);
+      const sumCompleted = activeStages.reduce((acc, s) => acc + Number(s.completed_pieces || 0), 0);
+      if (sumRequired > 0) {
+        integrityPercent = Math.round((sumCompleted / sumRequired) * 100);
       }
+    } else if (selectedClientLot?.progress_percent != null && Number(selectedClientLot.progress_percent) > 0) {
+      integrityPercent = Math.round(Number(selectedClientLot.progress_percent));
     }
 
-    // Gargalo Crítico
-    let bottleneck = integrityData?.bottleneck;
-    if (!bottleneck || (bottleneck.includes('Separação') && approvedPieces < totalPieces)) {
-      if (selectedClientLot?.stages?.length) {
-        const activeStages = selectedClientLot.stages.filter(s => s.required_pieces > 0 && (s.remaining_pieces > 0 || (s.completed_pieces || 0) < s.required_pieces));
-        if (activeStages.length > 0) {
-          activeStages.sort((a, b) => (b.remaining_pieces || 0) - (a.remaining_pieces || 0));
-          const topBottleneck = activeStages[0];
-          const remaining = topBottleneck.remaining_pieces ?? (topBottleneck.required_pieces - (topBottleneck.completed_pieces || 0));
-          bottleneck = `${topBottleneck.stage_label} (${remaining} peças pendentes)`;
-        } else if (selectedClientLot.bottleneck_stage) {
-          bottleneck = selectedClientLot.bottleneck_stage;
-        }
+    // Gargalo Crítico: Etapa exigida com o maior saldo de peças pendentes
+    let bottleneck = 'Nenhum';
+    if (activeStages.length > 0 && approvedPieces < totalPieces) {
+      const sortedStages = activeStages.map(s => {
+        const req = Number(s.required_pieces || 0);
+        const comp = Number(s.completed_pieces || 0);
+        const rem = s.remaining_pieces ?? Math.max(0, req - comp);
+        return { ...s, rem };
+      }).sort((a, b) => b.rem - a.rem);
+
+      if (sortedStages.length > 0 && sortedStages[0].rem > 0) {
+        const top = sortedStages[0];
+        bottleneck = `${top.stage_label} (${top.rem} peças pendentes)`;
       }
     }
-    if (!bottleneck) bottleneck = 'Nenhum';
 
     const canClose = totalPieces > 0 && approvedPieces === totalPieces && blockedPieces === 0 && reworkPieces === 0 && replacementPieces === 0;
-
-    const stages = selectedClientLot?.stages?.length
-      ? selectedClientLot.stages
-      : [
-          { stage_code: 'cut', stage_label: 'Corte', completed_pieces: 0, required_pieces: totalPieces, progress_percent: 0, remaining_pieces: totalPieces },
-          { stage_code: 'edge', stage_label: 'Borda', completed_pieces: 0, required_pieces: totalPieces, progress_percent: 0, remaining_pieces: totalPieces },
-          { stage_code: 'cnc', stage_label: 'Usinagem', completed_pieces: 0, required_pieces: totalPieces, progress_percent: 0, remaining_pieces: totalPieces },
-          { stage_code: 'joinery', stage_label: 'Marcenaria', completed_pieces: 0, required_pieces: totalPieces, progress_percent: 0, remaining_pieces: totalPieces },
-        ];
 
     return {
       total_pieces: totalPieces,
@@ -721,7 +726,8 @@ export default function LotIntegrity() {
                               {effectiveIntegrity.stages.map((stg) => {
                                 const completed = Number(stg.completed_pieces || 0);
                                 const required = Number(stg.required_pieces || 0);
-                                const isComplete = completed >= required && required > 0;
+                                const hasOrder = required > 0;
+                                const isComplete = hasOrder && completed >= required;
                                 const toneByStage = {
                                   cut: 'bg-emerald-500',
                                   edge: 'bg-sky-500',
@@ -729,26 +735,46 @@ export default function LotIntegrity() {
                                   joinery: 'bg-amber-500',
                                 };
                                 const remaining = Math.max(0, required - completed);
+                                const percent = hasOrder ? Math.min(100, Math.round((completed / required) * 100)) : 0;
 
                                 return (
-                                  <div key={stg.stage_code} className={`rounded-xl border p-3.5 space-y-2 bg-background/80 ${isComplete ? 'border-emerald-500/30 bg-emerald-500/[0.02]' : 'border-border/60'}`}>
+                                  <div 
+                                    key={stg.stage_code} 
+                                    className={`rounded-xl border p-3.5 space-y-2 transition-all ${
+                                      !hasOrder 
+                                        ? 'border-border/30 bg-secondary/10 opacity-70' 
+                                        : isComplete 
+                                        ? 'border-emerald-500/30 bg-emerald-500/[0.02]' 
+                                        : 'border-border/60 bg-background/80'
+                                    }`}
+                                  >
                                     <div className="flex items-center justify-between">
                                       <span className="text-xs font-bold text-foreground">{stg.stage_label}</span>
-                                      <span className={`text-xs font-black ${isComplete ? 'text-emerald-600' : 'text-foreground'}`}>
-                                        {completed} / {required}
+                                      <span className={`text-xs font-black ${!hasOrder ? 'text-muted-foreground' : isComplete ? 'text-emerald-600' : 'text-foreground'}`}>
+                                        {hasOrder ? `${completed} / ${required}` : '0 / 0'}
                                       </span>
                                     </div>
 
                                     <div className="h-2 rounded-full bg-secondary overflow-hidden">
-                                      <div 
-                                        className={`h-full rounded-full transition-all duration-500 ${toneByStage[stg.stage_code] || 'bg-primary'}`}
-                                        style={{ width: `${Math.min(100, Math.max(0, Number(stg.progress_percent || 0)))}%` }} 
-                                      />
+                                      {hasOrder ? (
+                                        <div 
+                                          className={`h-full rounded-full transition-all duration-500 ${toneByStage[stg.stage_code] || 'bg-primary'}`}
+                                          style={{ width: `${percent}%` }} 
+                                        />
+                                      ) : (
+                                        <div className="h-full bg-muted-foreground/15 rounded-full w-full" />
+                                      )}
                                     </div>
 
                                     <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1">
-                                      <span>{Number(stg.progress_percent || 0).toFixed(0)}% concluído</span>
-                                      <span className="font-semibold">{remaining > 0 ? `${remaining} pendentes` : 'Concluída ✓'}</span>
+                                      {hasOrder ? (
+                                        <>
+                                          <span>{percent}% concluído</span>
+                                          <span className="font-semibold">{remaining > 0 ? `${remaining} pendentes` : 'Concluída ✓'}</span>
+                                        </>
+                                      ) : (
+                                        <span className="font-semibold text-muted-foreground italic">Sem pedido</span>
+                                      )}
                                     </div>
                                   </div>
                                 );
