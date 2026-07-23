@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -65,6 +65,7 @@ function getAlertTypeLabel(type) {
     case 'high_rejections': return 'Rejeição Anormal';
     case 'high_duplicates': return 'Leitura Duplicada';
     case 'special_piece': return 'Peça Especial';
+    case 'pending_special_piece': return 'Peça Especial';
     default: return type;
   }
 }
@@ -102,6 +103,29 @@ export default function OperationalAlertsPanel() {
   const [resolvingAlert, setResolvingAlert] = useState(null);
   const [resolutionNote, setResolutionNote] = useState('');
   const [resolvingIds, setResolvingIds] = useState({});
+
+  // Executa o diagnóstico automático ao abrir a página para garantir que os alertas sejam calculados
+  useEffect(() => {
+    let isMounted = true;
+    setRunningDiag(true);
+    runOperationalAlertDiagnostics()
+      .then(() => {
+        if (!isMounted) return;
+        refetch();
+        refetchHistory();
+        qc.invalidateQueries({ queryKey: ['all-alerts-list'] });
+        qc.invalidateQueries({ queryKey: ['unresolvedAlerts'] });
+        qc.invalidateQueries({ queryKey: ['mes-hub-kpis'] });
+      })
+      .catch((err) => {
+        console.error('[OperationalAlertsPanel] Erro no diagnóstico automático:', err);
+      })
+      .finally(() => {
+        if (isMounted) setRunningDiag(false);
+      });
+
+    return () => { isMounted = false; };
+  }, []);
 
   // Buscar todos os alertas (para permitir filtragem dinâmica por situação)
   const { data: alerts = [], isLoading, isError, error, refetch } = useQuery({

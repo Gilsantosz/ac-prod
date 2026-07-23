@@ -50,8 +50,9 @@ export default function NotificationCenter() {
   useEffect(() => {
     if (!user) return;
     
-    // Restringe o diagnóstico automático periódico apenas para administradores/gestores/supervisores
-    const canRunAutoDiag = ['admin', 'manager', 'supervisor'].includes(user.role);
+    // Restringe o diagnóstico automático periódico para administradores/gestores/supervisores/PCP
+    const userRole = String(user.role || '').toLowerCase();
+    const canRunAutoDiag = ['admin', 'manager', 'supervisor', 'pcp', 'gestor', 'qualidade', 'operator'].includes(userRole) || !userRole;
     if (!canRunAutoDiag) return;
 
     // Executa diagnóstico inicial
