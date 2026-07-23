@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { toast } from 'sonner';
 import { 
   ShieldCheck, AlertTriangle, RefreshCw, CheckCircle2, ShieldAlert, FileText, UserCheck,
-  XOctagon, Loader2, Info, Search, ChartNoAxesCombined, Layers3
+  XOctagon, Loader2, Info, Search, ChartNoAxesCombined, Layers3, Factory, PackageCheck
 } from 'lucide-react';
 
 export default function LotIntegrity() {
@@ -231,6 +231,15 @@ export default function LotIntegrity() {
 
     const canClose = totalPieces > 0 && approvedPieces === totalPieces && blockedPieces === 0 && reworkPieces === 0 && replacementPieces === 0;
 
+    const stages = selectedClientLot?.stages?.length
+      ? selectedClientLot.stages
+      : [
+          { stage_code: 'cut', stage_label: 'Corte', completed_pieces: 0, required_pieces: totalPieces, progress_percent: 0, remaining_pieces: totalPieces },
+          { stage_code: 'edge', stage_label: 'Borda', completed_pieces: 0, required_pieces: totalPieces, progress_percent: 0, remaining_pieces: totalPieces },
+          { stage_code: 'cnc', stage_label: 'Usinagem', completed_pieces: 0, required_pieces: totalPieces, progress_percent: 0, remaining_pieces: totalPieces },
+          { stage_code: 'joinery', stage_label: 'Marcenaria', completed_pieces: 0, required_pieces: totalPieces, progress_percent: 0, remaining_pieces: totalPieces },
+        ];
+
     return {
       total_pieces: totalPieces,
       approved_pieces: approvedPieces,
@@ -241,8 +250,21 @@ export default function LotIntegrity() {
       integrity_percent: Math.min(100, Math.max(0, integrityPercent)),
       bottleneck,
       can_close: canClose,
+      stages,
     };
   }, [selectedLotId, selectedClientLot, lotPieces, integrityData]);
+
+  // Rolagem suave até o lote do cliente clicado
+  useEffect(() => {
+    if (selectedLotId) {
+      setTimeout(() => {
+        const el = document.getElementById(`client-lot-detail-${selectedLotId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 100);
+    }
+  }, [selectedLotId]);
 
   // Query - Listar Peças do Lote Selecionado com Problemas (Bloqueadas, Rework, Reposição)
   const { data: problematicPieces = [], isLoading: loadingPieces } = useQuery({
@@ -544,195 +566,327 @@ export default function LotIntegrity() {
               clientLots={filteredClientLots}
               selectedLotId={selectedLotId}
               onSelect={(lot) => {
-                setSelectedLotId(lot.lot_id);
-                setActiveTab('integrity');
+                if (selectedLotId === lot.lot_id) {
+                  setSelectedLotId('');
+                } else {
+                  setSelectedLotId(lot.lot_id);
+                  setActiveTab('integrity');
+                }
               }}
-            />
-          )}
-        </section>
-      )}
+              renderDetailPanel={() => (
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+                  <TabsList className="bg-secondary/40 p-1 rounded-xl h-11 border border-border/20">
+                    <TabsTrigger value="integrity" className="rounded-lg text-xs font-bold px-4 py-2">Integridade do Lote</TabsTrigger>
+                    <TabsTrigger value="out-of-flow" className="rounded-lg text-xs font-bold px-4 py-2">Peças Fora de Fluxo</TabsTrigger>
+                    <TabsTrigger value="logs" className="rounded-lg text-xs font-bold px-4 py-2">Auditoria de Logs</TabsTrigger>
+                  </TabsList>
 
-      {!selectedLotId ? (
-        <Card className="p-12 text-center text-muted-foreground border-dashed border-border/80 flex flex-col items-center justify-center space-y-3">
-          {selectedBatchId ? <Layers3 className="w-10 h-10 text-muted-foreground/30" /> : <Info className="w-10 h-10 text-muted-foreground/30" />}
-          <div>
-            <p className="font-bold text-foreground">{selectedBatchId ? 'Selecione um lote de cliente' : 'Selecione o lote geral'}</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {selectedBatchId
-                ? 'Clique em um dos lotes de cliente acima para abrir a auditoria detalhada, anomalias e histórico.'
-                : 'A hierarquia produtiva será aberta depois que um lote geral for selecionado.'}
-            </p>
-          </div>
-        </Card>
-      ) : (
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="bg-secondary/40 p-1 rounded-xl h-11 border border-border/20">
-            <TabsTrigger value="integrity" className="rounded-lg text-xs font-bold px-4 py-2">Integridade do Lote</TabsTrigger>
-            <TabsTrigger value="out-of-flow" className="rounded-lg text-xs font-bold px-4 py-2">Peças Fora de Fluxo</TabsTrigger>
-            <TabsTrigger value="logs" className="rounded-lg text-xs font-bold px-4 py-2">Auditoria de Logs</TabsTrigger>
-          </TabsList>
-
-          {/* ABA 1: INTEGRIDADE DO LOTE */}
-          <TabsContent value="integrity" className="space-y-6 focus-visible:outline-none">
-            {loadingIntegrity && !effectiveIntegrity ? (
-              <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
-            ) : (
-              effectiveIntegrity && (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  
-                  {/* Gauge de Integridade */}
-                  <Card className="lg:col-span-1 p-6 flex flex-col items-center justify-center text-center space-y-6 bg-card border-border/60">
-                    <h4 className="font-bold text-sm text-muted-foreground uppercase tracking-wider">Integridade do Lote</h4>
-                    
-                    <div className="relative w-40 h-40 flex items-center justify-center">
-                      {/* Círculo de fundo */}
-                      <svg className="w-full h-full transform -rotate-90">
-                        <circle cx="80" cy="80" r="70" className="stroke-secondary" strokeWidth="8" fill="transparent" />
-                        <circle 
-                          cx="80" 
-                          cy="80" 
-                          r="70" 
-                          className={effectiveIntegrity.integrity_percent === 100 ? "stroke-emerald-500" : "stroke-amber-500"} 
-                          strokeWidth="8" 
-                          fill="transparent" 
-                          strokeDasharray={440} 
-                          strokeDashoffset={440 - (440 * (effectiveIntegrity.integrity_percent || 0)) / 100}
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                      <div className="absolute text-center">
-                        <p className="text-3xl font-extrabold text-foreground">{effectiveIntegrity.integrity_percent}%</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5 uppercase tracking-wide">De Integridade</p>
-                      </div>
-                    </div>
-
-                    <div className="w-full text-center space-y-2">
-                      {effectiveIntegrity.can_close ? (
-                        <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 rounded-xl flex items-center justify-center gap-2">
-                          <CheckCircle2 className="w-5 h-5 shrink-0" />
-                          <span className="text-xs font-bold uppercase tracking-wider">Lote liberado para fechamento</span>
-                        </div>
-                      ) : (
-                        <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-600 rounded-xl flex items-center justify-center gap-2">
-                          <AlertTriangle className="w-5 h-5 shrink-0" />
-                          <span className="text-xs font-bold uppercase tracking-wider">Lote não pode ser fechado</span>
-                        </div>
-                      )}
-                      <p className="text-[11px] text-muted-foreground">O fechamento exige 100% de peças aprovadas e nenhuma reposição/retrabalho aberto.</p>
-                    </div>
-
-                    {effectiveIntegrity.can_close ? (
-                      <Button 
-                        onClick={() => {
-                          if (confirm('Deseja realmente encerrar este lote de produção?')) {
-                            closeLotMutation.mutate(selectedLotId);
-                          }
-                        }}
-                        disabled={closeLotMutation.isPending}
-                        className="w-full bg-emerald-500 hover:bg-emerald-600 font-bold rounded-xl"
-                      >
-                        {closeLotMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
-                        Encerrar Lote Produtivo
-                      </Button>
+                  {/* ABA 1: INTEGRIDADE DO LOTE */}
+                  <TabsContent value="integrity" className="space-y-6 focus-visible:outline-none">
+                    {loadingIntegrity && !effectiveIntegrity ? (
+                      <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
                     ) : (
-                      <Button disabled variant="outline" className="w-full rounded-xl opacity-60">
-                        Aguardando Resoluções
-                      </Button>
+                      effectiveIntegrity && (
+                        <div className="space-y-6">
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            
+                            {/* Gauge de Integridade */}
+                            <Card className="lg:col-span-1 p-6 flex flex-col items-center justify-center text-center space-y-6 bg-card border-border/60">
+                              <h4 className="font-bold text-sm text-muted-foreground uppercase tracking-wider">Integridade do Lote</h4>
+                              
+                              <div className="relative w-40 h-40 flex items-center justify-center">
+                                {/* Círculo de fundo */}
+                                <svg className="w-full h-full transform -rotate-90">
+                                  <circle cx="80" cy="80" r="70" className="stroke-secondary" strokeWidth="8" fill="transparent" />
+                                  <circle 
+                                    cx="80" 
+                                    cy="80" 
+                                    r="70" 
+                                    className={effectiveIntegrity.integrity_percent === 100 ? "stroke-emerald-500" : "stroke-amber-500"} 
+                                    strokeWidth="8" 
+                                    fill="transparent" 
+                                    strokeDasharray={440} 
+                                    strokeDashoffset={440 - (440 * (effectiveIntegrity.integrity_percent || 0)) / 100}
+                                    strokeLinecap="round"
+                                  />
+                                </svg>
+                                <div className="absolute text-center">
+                                  <p className="text-3xl font-extrabold text-foreground">{effectiveIntegrity.integrity_percent}%</p>
+                                  <p className="text-[10px] text-muted-foreground mt-0.5 uppercase tracking-wide">De Integridade</p>
+                                </div>
+                              </div>
+
+                              <div className="w-full text-center space-y-2">
+                                {effectiveIntegrity.can_close ? (
+                                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 rounded-xl flex items-center justify-center gap-2">
+                                    <CheckCircle2 className="w-5 h-5 shrink-0" />
+                                    <span className="text-xs font-bold uppercase tracking-wider">Lote liberado para fechamento</span>
+                                  </div>
+                                ) : (
+                                  <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-600 rounded-xl flex items-center justify-center gap-2">
+                                    <AlertTriangle className="w-5 h-5 shrink-0" />
+                                    <span className="text-xs font-bold uppercase tracking-wider">Lote não pode ser fechado</span>
+                                  </div>
+                                )}
+                                <p className="text-[11px] text-muted-foreground">O fechamento exige 100% de peças aprovadas e nenhuma reposição/retrabalho aberto.</p>
+                              </div>
+
+                              {effectiveIntegrity.can_close ? (
+                                <Button 
+                                  onClick={() => {
+                                    if (confirm('Deseja realmente encerrar este lote de produção?')) {
+                                      closeLotMutation.mutate(selectedLotId);
+                                    }
+                                  }}
+                                  disabled={closeLotMutation.isPending}
+                                  className="w-full bg-emerald-500 hover:bg-emerald-600 font-bold rounded-xl"
+                                >
+                                  {closeLotMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
+                                  Encerrar Lote Produtivo
+                                </Button>
+                              ) : (
+                                <Button disabled variant="outline" className="w-full rounded-xl opacity-60">
+                                  Aguardando Resoluções
+                                </Button>
+                              )}
+                            </Card>
+
+                            {/* Estatísticas e Gargalo */}
+                            <div className="lg:col-span-2 space-y-6">
+                              {/* Contadores */}
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                                <div className="bg-card border border-border/60 rounded-2xl p-4">
+                                  <span className="text-[10px] text-muted-foreground font-bold uppercase block">Peças Totais</span>
+                                  <p className="text-3xl font-extrabold text-foreground mt-1">{effectiveIntegrity.total_pieces}</p>
+                                </div>
+                                <div className="bg-card border border-border/60 rounded-2xl p-4">
+                                  <span className="text-[10px] text-emerald-600 font-bold uppercase block">Aprovadas</span>
+                                  <p className="text-3xl font-extrabold text-emerald-600 mt-1">{effectiveIntegrity.approved_pieces}</p>
+                                </div>
+                                <div className="bg-card border border-border/60 rounded-2xl p-4">
+                                  <span className="text-[10px] text-amber-600 font-bold uppercase block">Pendentes de Etapa</span>
+                                  <p className="text-3xl font-extrabold text-amber-600 mt-1">{effectiveIntegrity.pending_pieces}</p>
+                                </div>
+                                <div className="bg-card border border-border/60 rounded-2xl p-4">
+                                  <span className="text-[10px] text-rose-600 font-bold uppercase block">Bloqueadas</span>
+                                  <p className="text-3xl font-extrabold text-rose-600 mt-1">{effectiveIntegrity.blocked_pieces}</p>
+                                </div>
+                                <div className="bg-card border border-border/60 rounded-2xl p-4">
+                                  <span className="text-[10px] text-purple-600 font-bold uppercase block">Em Retrabalho</span>
+                                  <p className="text-3xl font-extrabold text-purple-600 mt-1">{effectiveIntegrity.rework_pieces}</p>
+                                </div>
+                                <div className="bg-card border border-border/60 rounded-2xl p-4">
+                                  <span className="text-[10px] text-sky-600 font-bold uppercase block">Em Reposição</span>
+                                  <p className="text-3xl font-extrabold text-sky-600 mt-1">{effectiveIntegrity.replacement_pieces}</p>
+                                </div>
+                              </div>
+
+                              {/* Gargalo */}
+                              <Card className="p-4 border-border/60 bg-secondary/15 flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 bg-amber-500/10 text-amber-600 rounded-xl flex items-center justify-center">
+                                    <AlertTriangle className="w-5 h-5" />
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-muted-foreground font-semibold">Gargalo Crítico do Lote</p>
+                                    <p className="font-extrabold text-foreground text-sm mt-0.5">{effectiveIntegrity.bottleneck || 'Nenhum'}</p>
+                                  </div>
+                                </div>
+                                <Badge variant="outline" className="border-amber-500/20 text-amber-600 bg-amber-500/5">
+                                  Alerta de Fluxo
+                                </Badge>
+                              </Card>
+                            </div>
+                            
+                          </div>
+
+                          {/* DETALHAMENTO DE CADA ESTAÇÃO E TOTAL GERAL PARA FECHAMENTO */}
+                          <Card className="p-5 border-border/60 bg-card space-y-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div>
+                                <h5 className="font-extrabold text-sm text-foreground flex items-center gap-2">
+                                  <Factory className="w-4 h-4 text-primary" />
+                                  Detalhamento por Estação Produtiva
+                                </h5>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  Contagem adequada bipada em cada célula (Corte, Borda, Usinagem, Marcenaria)
+                                </p>
+                              </div>
+                              <Badge variant="outline" className="w-fit text-[10px] font-bold border-primary/20 text-primary bg-primary/5">
+                                Estações Exigidas: {effectiveIntegrity.stages.filter(s => (s.required_pieces || 0) > 0).length}
+                              </Badge>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                              {effectiveIntegrity.stages.map((stg) => {
+                                const completed = Number(stg.completed_pieces || 0);
+                                const required = Number(stg.required_pieces || 0);
+                                const isComplete = completed >= required && required > 0;
+                                const toneByStage = {
+                                  cut: 'bg-emerald-500',
+                                  edge: 'bg-sky-500',
+                                  cnc: 'bg-violet-500',
+                                  joinery: 'bg-amber-500',
+                                };
+                                const remaining = Math.max(0, required - completed);
+
+                                return (
+                                  <div key={stg.stage_code} className={`rounded-xl border p-3.5 space-y-2 bg-background/80 ${isComplete ? 'border-emerald-500/30 bg-emerald-500/[0.02]' : 'border-border/60'}`}>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs font-bold text-foreground">{stg.stage_label}</span>
+                                      <span className={`text-xs font-black ${isComplete ? 'text-emerald-600' : 'text-foreground'}`}>
+                                        {completed} / {required}
+                                      </span>
+                                    </div>
+
+                                    <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                                      <div 
+                                        className={`h-full rounded-full transition-all duration-500 ${toneByStage[stg.stage_code] || 'bg-primary'}`}
+                                        style={{ width: `${Math.min(100, Math.max(0, Number(stg.progress_percent || 0)))}%` }} 
+                                      />
+                                    </div>
+
+                                    <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1">
+                                      <span>{Number(stg.progress_percent || 0).toFixed(0)}% concluído</span>
+                                      <span className="font-semibold">{remaining > 0 ? `${remaining} pendentes` : 'Concluída ✓'}</span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            <div className="rounded-xl border border-border/60 bg-secondary/25 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs">
+                              <div className="space-y-1">
+                                <p className="font-bold text-foreground flex items-center gap-1.5">
+                                  <PackageCheck className="w-4 h-4 text-emerald-600" />
+                                  Total Geral para Fechamento do Lote
+                                </p>
+                                <p className="text-muted-foreground">
+                                  {effectiveIntegrity.approved_pieces} de {effectiveIntegrity.total_pieces} peças prontas/concluídas ({effectiveIntegrity.integrity_percent}%).
+                                  {effectiveIntegrity.pending_pieces > 0 ? ` Faltam ${effectiveIntegrity.pending_pieces} peças para concluir o lote 100%.` : ' Lote 100% concluído!'}
+                                </p>
+                              </div>
+                              <Badge 
+                                variant="outline" 
+                                className={`text-xs font-bold shrink-0 px-3 py-1 ${effectiveIntegrity.can_close ? 'border-emerald-500/30 text-emerald-600 bg-emerald-500/10' : 'border-amber-500/30 text-amber-600 bg-amber-500/10'}`}
+                              >
+                                {effectiveIntegrity.can_close ? 'Lote Concluído ✓' : `Faltam ${effectiveIntegrity.pending_pieces} peças`}
+                              </Badge>
+                            </div>
+                          </Card>
+
+                          {/* Tabela de Peças Problemáticas */}
+                          <Card className="p-5 border-border/60 space-y-4">
+                            <h5 className="font-bold text-sm text-foreground flex items-center gap-2">
+                              <ShieldAlert className="w-4 h-4 text-rose-500" />
+                              Peças Pendentes ou com Anomalias ({problematicPieces.length})
+                            </h5>
+
+                            {loadingPieces ? (
+                              <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+                            ) : problematicPieces.length === 0 ? (
+                              <p className="text-xs text-muted-foreground italic py-4 text-center">Nenhuma peça deste lote está bloqueada, em retrabalho ou reposição.</p>
+                            ) : (
+                              <div className="border border-border/40 rounded-xl overflow-hidden">
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead className="text-xs">Peça</TableHead>
+                                      <TableHead className="text-xs">Estação Atual</TableHead>
+                                      <TableHead className="text-xs">Status da Peça</TableHead>
+                                      <TableHead className="text-xs">Retrabalho/Reposição</TableHead>
+                                      <TableHead className="text-xs text-right">Ação</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {problematicPieces.map((p) => (
+                                      <TableRow key={p.id}>
+                                        <TableCell className="font-mono text-xs font-bold">{p.traceability_code}</TableCell>
+                                        <TableCell className="text-xs font-semibold capitalize">{p.current_stage}</TableCell>
+                                        <TableCell className="text-xs">
+                                          <Badge variant={p.is_blocked ? "destructive" : "secondary"} className="text-[10px] py-0">
+                                            {p.status}
+                                          </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-xs font-medium">
+                                          {p.rework_status !== 'none' && <Badge variant="outline" className="text-[10px] text-purple-600 bg-purple-500/5 border-purple-500/20">Retrabalho: {p.rework_status}</Badge>}
+                                          {p.replacement_status !== 'none' && <Badge variant="outline" className="text-[10px] text-amber-600 bg-amber-500/5 border-amber-500/20">Reposição: {p.replacement_status}</Badge>}
+                                          {p.rework_status === 'none' && p.replacement_status === 'none' && <span className="text-muted-foreground">-</span>}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                          <Button 
+                                            size="sm" 
+                                            variant="outline" 
+                                            className="h-7 text-[10px] gap-1 border-border/60 hover:bg-secondary/40"
+                                            onClick={() => handleOpenReleaseModal(p, p.current_stage)}
+                                          >
+                                            <UserCheck className="w-3.5 h-3.5" /> Liberação Especial
+                                          </Button>
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            )}
+                          </Card>
+                        </div>
+                      )
                     )}
-                  </Card>
+                  </TabsContent>
 
-                  {/* Estatísticas e Gargalo */}
-                  <div className="lg:col-span-2 space-y-6">
-                    {/* Contadores */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                      <div className="bg-card border border-border/60 rounded-2xl p-4">
-                        <span className="text-[10px] text-muted-foreground font-bold uppercase block">Peças Totais</span>
-                        <p className="text-3xl font-extrabold text-foreground mt-1">{effectiveIntegrity.total_pieces}</p>
+                  {/* ABA 2: PEÇAS FORA DE FLUXO */}
+                  <TabsContent value="out-of-flow" className="space-y-6 focus-visible:outline-none">
+                    <Card className="p-6 border-border/60 space-y-4">
+                      <div className="flex justify-between items-center">
+                        <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
+                          <XOctagon className="w-5 h-5 text-rose-500" />
+                          Histórico de Tentativas Irregulares de Bipe
+                        </h4>
+                        <Button onClick={() => refetchOutOfFlow()} variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                          <RefreshCw className="w-4 h-4" />
+                        </Button>
                       </div>
-                      <div className="bg-card border border-border/60 rounded-2xl p-4">
-                        <span className="text-[10px] text-emerald-600 font-bold uppercase block">Aprovadas</span>
-                        <p className="text-3xl font-extrabold text-emerald-600 mt-1">{effectiveIntegrity.approved_pieces}</p>
-                      </div>
-                      <div className="bg-card border border-border/60 rounded-2xl p-4">
-                        <span className="text-[10px] text-amber-600 font-bold uppercase block">Pendentes de Etapa</span>
-                        <p className="text-3xl font-extrabold text-amber-600 mt-1">{effectiveIntegrity.pending_pieces}</p>
-                      </div>
-                      <div className="bg-card border border-border/60 rounded-2xl p-4">
-                        <span className="text-[10px] text-rose-600 font-bold uppercase block">Bloqueadas</span>
-                        <p className="text-3xl font-extrabold text-rose-600 mt-1">{effectiveIntegrity.blocked_pieces}</p>
-                      </div>
-                      <div className="bg-card border border-border/60 rounded-2xl p-4">
-                        <span className="text-[10px] text-purple-600 font-bold uppercase block">Em Retrabalho</span>
-                        <p className="text-3xl font-extrabold text-purple-600 mt-1">{effectiveIntegrity.rework_pieces}</p>
-                      </div>
-                      <div className="bg-card border border-border/60 rounded-2xl p-4">
-                        <span className="text-[10px] text-sky-600 font-bold uppercase block">Em Reposição</span>
-                        <p className="text-3xl font-extrabold text-sky-600 mt-1">{effectiveIntegrity.replacement_pieces}</p>
-                      </div>
-                    </div>
 
-                    {/* Gargalo */}
-                    <Card className="p-4 border-border/60 bg-secondary/15 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-amber-500/10 text-amber-600 rounded-xl flex items-center justify-center">
-                          <AlertTriangle className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground font-semibold">Gargalo Crítico do Lote</p>
-                          <p className="font-extrabold text-foreground text-sm mt-0.5">{effectiveIntegrity.bottleneck || 'Nenhum'}</p>
-                        </div>
-                      </div>
-                      <Badge variant="outline" className="border-amber-500/20 text-amber-600 bg-amber-500/5">
-                        Alerta de Fluxo
-                      </Badge>
-                    </Card>
-
-                    {/* Tabela de Peças Problemáticas */}
-                    <Card className="p-5 border-border/60 space-y-4">
-                      <h5 className="font-bold text-sm text-foreground flex items-center gap-2">
-                        <ShieldAlert className="w-4 h-4 text-rose-500" />
-                        Peças Pendentes ou com Anomalias ({problematicPieces.length})
-                      </h5>
-
-                      {loadingPieces ? (
-                        <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-                      ) : problematicPieces.length === 0 ? (
-                        <p className="text-xs text-muted-foreground italic py-4 text-center">Nenhuma peça deste lote está bloqueada, em retrabalho ou reposição.</p>
+                      {loadingOutOfFlow ? (
+                        <div className="flex justify-center py-10"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+                      ) : outOfFlowReadings.length === 0 ? (
+                        <p className="text-xs text-muted-foreground italic py-8 text-center">Nenhum evento de quebra de fluxo registrado.</p>
                       ) : (
                         <div className="border border-border/40 rounded-xl overflow-hidden">
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead className="text-xs">Peça</TableHead>
-                                <TableHead className="text-xs">Estação Atual</TableHead>
-                                <TableHead className="text-xs">Status da Peça</TableHead>
-                                <TableHead className="text-xs">Retrabalho/Reposição</TableHead>
-                                <TableHead className="text-xs text-right">Ação</TableHead>
+                                <TableHead className="text-xs">Código da Peça</TableHead>
+                                <TableHead className="text-xs">Posto</TableHead>
+                                <TableHead className="text-xs">De (Estação)</TableHead>
+                                <TableHead className="text-xs">Para (Tentado)</TableHead>
+                                <TableHead className="text-xs">Operador</TableHead>
+                                <TableHead className="text-xs">Data/Hora</TableHead>
+                                <TableHead className="text-xs">Motivo do Bloqueio</TableHead>
+                                <TableHead className="text-xs text-right">Ação Corretiva</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {problematicPieces.map((p) => (
-                                <TableRow key={p.id}>
-                                  <TableCell className="font-mono text-xs font-bold">{p.traceability_code}</TableCell>
-                                  <TableCell className="text-xs font-semibold capitalize">{p.current_stage}</TableCell>
-                                  <TableCell className="text-xs">
-                                    <Badge variant={p.is_blocked ? "destructive" : "secondary"} className="text-[10px] py-0">
-                                      {p.status}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell className="text-xs font-medium">
-                                    {p.rework_status !== 'none' && <Badge variant="outline" className="text-[10px] text-purple-600 bg-purple-500/5 border-purple-500/20">Retrabalho: {p.rework_status}</Badge>}
-                                    {p.replacement_status !== 'none' && <Badge variant="outline" className="text-[10px] text-amber-600 bg-amber-500/5 border-amber-500/20">Reposição: {p.replacement_status}</Badge>}
-                                    {p.rework_status === 'none' && p.replacement_status === 'none' && <span className="text-muted-foreground">-</span>}
+                              {outOfFlowReadings.map((evt) => (
+                                <TableRow key={evt.id}>
+                                  <TableCell className="font-mono text-xs font-bold">{evt.traceability_code}</TableCell>
+                                  <TableCell className="text-xs font-semibold">{evt.cell_name}</TableCell>
+                                  <TableCell className="text-xs capitalize">{evt.from_stage}</TableCell>
+                                  <TableCell className="text-xs capitalize text-rose-500 font-bold">{evt.to_stage}</TableCell>
+                                  <TableCell className="text-xs">{evt.operators?.name || 'Operador'}</TableCell>
+                                  <TableCell className="text-xs">{new Date(evt.created_at).toLocaleString('pt-BR')}</TableCell>
+                                  <TableCell className="text-xs text-rose-600 font-medium max-w-xs truncate" title={evt.notes}>
+                                    {evt.notes}
                                   </TableCell>
                                   <TableCell className="text-right">
                                     <Button 
                                       size="sm" 
                                       variant="outline" 
                                       className="h-7 text-[10px] gap-1 border-border/60 hover:bg-secondary/40"
-                                      onClick={() => handleOpenReleaseModal(p, p.current_stage)}
+                                      onClick={() => handleOpenReleaseModal({ id: evt.piece_id, traceability_code: evt.traceability_code }, evt.to_stage)}
                                     >
-                                      <UserCheck className="w-3.5 h-3.5" /> Liberação Especial
+                                      <UserCheck className="w-3.5 h-3.5" /> Forçar Liberação
                                     </Button>
                                   </TableCell>
                                 </TableRow>
@@ -742,134 +896,70 @@ export default function LotIntegrity() {
                         </div>
                       )}
                     </Card>
-                  </div>
-                  
-                </div>
-              )
-            )}
-          </TabsContent>
+                  </TabsContent>
 
-          {/* ABA 2: PEÇAS FORA DE FLUXO */}
-          <TabsContent value="out-of-flow" className="space-y-6 focus-visible:outline-none">
-            <Card className="p-6 border-border/60 space-y-4">
-              <div className="flex justify-between items-center">
-                <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
-                  <XOctagon className="w-5 h-5 text-rose-500" />
-                  Histórico de Tentativas Irregulares de Bipe
-                </h4>
-                <Button onClick={() => refetchOutOfFlow()} variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-                  <RefreshCw className="w-4 h-4" />
-                </Button>
-              </div>
+                  {/* ABA 3: LOGS DE AUDITORIA */}
+                  <TabsContent value="logs" className="space-y-6 focus-visible:outline-none">
+                    <Card className="p-6 border-border/60 space-y-4">
+                      <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
+                        <FileText className="w-5 h-5 text-primary" />
+                        Logs Completos do Motor de Rastreabilidade e Integridade
+                      </h4>
 
-              {loadingOutOfFlow ? (
-                <div className="flex justify-center py-10"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
-              ) : outOfFlowReadings.length === 0 ? (
-                <p className="text-xs text-muted-foreground italic py-8 text-center">Nenhum evento de quebra de fluxo registrado.</p>
-              ) : (
-                <div className="border border-border/40 rounded-xl overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="text-xs">Código da Peça</TableHead>
-                        <TableHead className="text-xs">Posto</TableHead>
-                        <TableHead className="text-xs">De (Estação)</TableHead>
-                        <TableHead className="text-xs">Para (Tentado)</TableHead>
-                        <TableHead className="text-xs">Operador</TableHead>
-                        <TableHead className="text-xs">Data/Hora</TableHead>
-                        <TableHead className="text-xs">Motivo do Bloqueio</TableHead>
-                        <TableHead className="text-xs text-right">Ação Corretiva</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {outOfFlowReadings.map((evt) => (
-                        <TableRow key={evt.id}>
-                          <TableCell className="font-mono text-xs font-bold">{evt.traceability_code}</TableCell>
-                          <TableCell className="text-xs font-semibold">{evt.cell_name}</TableCell>
-                          <TableCell className="text-xs capitalize">{evt.from_stage}</TableCell>
-                          <TableCell className="text-xs capitalize text-rose-500 font-bold">{evt.to_stage}</TableCell>
-                          <TableCell className="text-xs">{evt.operators?.name || 'Operador'}</TableCell>
-                          <TableCell className="text-xs">{new Date(evt.created_at).toLocaleString('pt-BR')}</TableCell>
-                          <TableCell className="text-xs text-rose-600 font-medium max-w-xs truncate" title={evt.notes}>
-                            {evt.notes}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button 
-                              size="sm" 
-                              variant="outline" 
-                              className="h-7 text-[10px] gap-1 border-border/60 hover:bg-secondary/40"
-                              onClick={() => handleOpenReleaseModal({ id: evt.piece_id, traceability_code: evt.traceability_code }, evt.to_stage)}
-                            >
-                              <UserCheck className="w-3.5 h-3.5" /> Forçar Liberação
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                      {loadingLogs ? (
+                        <div className="flex justify-center py-10"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+                      ) : integrityLogs.length === 0 ? (
+                        <p className="text-xs text-muted-foreground italic py-8 text-center">Nenhum evento de auditoria recente para este lote.</p>
+                      ) : (
+                        <div className="border border-border/40 rounded-xl overflow-hidden">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="text-xs">Data/Hora</TableHead>
+                                <TableHead className="text-xs">Peça</TableHead>
+                                <TableHead className="text-xs">Estação / Célula</TableHead>
+                                <TableHead className="text-xs">Operador</TableHead>
+                                <TableHead className="text-xs">Ação</TableHead>
+                                <TableHead className="text-xs">Resultado da Validação</TableHead>
+                                <TableHead className="text-xs">Log de Detalhes</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {integrityLogs.map((log) => {
+                                const isError = log.result_status === 'blocked' || log.status === 'ignored';
+                                const isWarning = log.result_status === 'duplicated';
+                                return (
+                                  <TableRow key={log.id}>
+                                    <TableCell className="text-xs">{new Date(log.processed_at || log.created_at).toLocaleString('pt-BR')}</TableCell>
+                                    <TableCell className="font-mono text-xs font-bold">{log.piece_code || log.raw_value}</TableCell>
+                                    <TableCell className="text-xs font-semibold">{log.cell_name}</TableCell>
+                                    <TableCell className="text-xs">{log.operator_name || 'Operador'}</TableCell>
+                                    <TableCell className="text-xs capitalize">{log.reader_type}</TableCell>
+                                    <TableCell className="text-xs">
+                                      <Badge 
+                                        variant={isError ? "destructive" : isWarning ? "outline" : "secondary"} 
+                                        className={`text-[10px] py-0 ${isWarning ? 'border-amber-500/20 text-amber-600 bg-amber-500/5' : ''}`}
+                                      >
+                                        {log.result_status || log.status}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-xs text-muted-foreground max-w-sm truncate" title={log.error_message || 'OK'}>
+                                      {log.error_message || 'Sucesso'}
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                    </Card>
+                  </TabsContent>
+                </Tabs>
               )}
-            </Card>
-          </TabsContent>
-
-          {/* ABA 3: LOGS DE AUDITORIA */}
-          <TabsContent value="logs" className="space-y-6 focus-visible:outline-none">
-            <Card className="p-6 border-border/60 space-y-4">
-              <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
-                <FileText className="w-5 h-5 text-primary" />
-                Logs Completos do Motor de Rastreabilidade e Integridade
-              </h4>
-
-              {loadingLogs ? (
-                <div className="flex justify-center py-10"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
-              ) : integrityLogs.length === 0 ? (
-                <p className="text-xs text-muted-foreground italic py-8 text-center">Nenhum evento de auditoria recente para este lote.</p>
-              ) : (
-                <div className="border border-border/40 rounded-xl overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="text-xs">Data/Hora</TableHead>
-                        <TableHead className="text-xs">Peça</TableHead>
-                        <TableHead className="text-xs">Estação / Célula</TableHead>
-                        <TableHead className="text-xs">Operador</TableHead>
-                        <TableHead className="text-xs">Ação</TableHead>
-                        <TableHead className="text-xs">Resultado da Validação</TableHead>
-                        <TableHead className="text-xs">Log de Detalhes</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {integrityLogs.map((log) => {
-                        const isError = log.result_status === 'blocked' || log.status === 'ignored';
-                        const isWarning = log.result_status === 'duplicated';
-                        return (
-                          <TableRow key={log.id}>
-                            <TableCell className="text-xs">{new Date(log.processed_at || log.created_at).toLocaleString('pt-BR')}</TableCell>
-                            <TableCell className="font-mono text-xs font-bold">{log.piece_code || log.raw_value}</TableCell>
-                            <TableCell className="text-xs font-semibold">{log.cell_name}</TableCell>
-                            <TableCell className="text-xs">{log.operator_name || 'Operador'}</TableCell>
-                            <TableCell className="text-xs capitalize">{log.reader_type}</TableCell>
-                            <TableCell className="text-xs">
-                              <Badge 
-                                variant={isError ? "destructive" : isWarning ? "outline" : "secondary"} 
-                                className={`text-[10px] py-0 ${isWarning ? 'border-amber-500/20 text-amber-600 bg-amber-500/5' : ''}`}
-                              >
-                                {log.result_status || log.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground max-w-sm truncate" title={log.error_message || 'OK'}>
-                              {log.error_message || 'Sucesso'}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </Card>
-          </TabsContent>
-        </Tabs>
+            />
+          )}
+        </section>
       )}
 
       {/* DIALOG DE AUTORIZAÇÃO DE LIBERAÇÃO ESPECIAL */}

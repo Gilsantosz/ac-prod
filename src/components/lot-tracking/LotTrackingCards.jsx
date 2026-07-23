@@ -98,7 +98,7 @@ export function GeneralLotSummaryCard({ lot, selected = false, onSelect }) {
   );
 }
 
-export function ClientLotHierarchy({ clientLots = [], selectedLotId, onSelect }) {
+export function ClientLotHierarchy({ clientLots = [], selectedLotId, onSelect, renderDetailPanel }) {
   const grouped = groupClientLotsByCustomer(clientLots);
 
   if (!clientLots.length) {
@@ -131,54 +131,61 @@ export function ClientLotHierarchy({ clientLots = [], selectedLotId, onSelect })
               const balance = calculateLotBalance(lot);
 
               return (
-                <button
-                  key={lot.lot_id}
-                  type="button"
-                  onClick={() => onSelect?.(lot)}
-                  className={`w-full text-left p-4 transition-colors ${selected ? 'bg-primary/[0.055]' : 'hover:bg-secondary/30'}`}
-                >
-                  <div className="flex flex-col xl:flex-row xl:items-center gap-4">
-                    <div className="xl:w-40 shrink-0">
-                      <span className="text-[10px] font-bold uppercase text-muted-foreground">Lote do cliente</span>
-                      <p className="text-xl font-black text-foreground">{lot.lot_code}</p>
-                      <Badge variant="outline" className={`mt-1 text-[9px] ${status.className}`}>{status.label}</Badge>
-                    </div>
+                <div key={lot.lot_id} id={`client-lot-card-${lot.lot_id}`} className="transition-all">
+                  <button
+                    type="button"
+                    onClick={() => onSelect?.(lot)}
+                    className={`w-full text-left p-4 transition-colors ${selected ? 'bg-primary/[0.055]' : 'hover:bg-secondary/30'}`}
+                  >
+                    <div className="flex flex-col xl:flex-row xl:items-center gap-4">
+                      <div className="xl:w-40 shrink-0">
+                        <span className="text-[10px] font-bold uppercase text-muted-foreground">Lote do cliente</span>
+                        <p className="text-xl font-black text-foreground">{lot.lot_code}</p>
+                        <Badge variant="outline" className={`mt-1 text-[9px] ${status.className}`}>{status.label}</Badge>
+                      </div>
 
-                    <div className="flex-1 min-w-0">
-                      <StageProgressGrid stages={lot.stages} compact />
-                    </div>
+                      <div className="flex-1 min-w-0">
+                        <StageProgressGrid stages={lot.stages} compact />
+                      </div>
 
-                    <div className="grid grid-cols-2 gap-3 xl:w-72 text-xs shrink-0">
-                      <div className="rounded-xl bg-secondary/35 p-3">
-                        <span className="flex items-center gap-1 text-muted-foreground"><Factory className="w-3.5 h-3.5" /> Andamento</span>
-                        <strong className="block mt-1">{Number(lot.progress_percent || 0).toFixed(1)}%</strong>
-                      </div>
-                      <div className="rounded-xl bg-secondary/35 p-3">
-                        <span className="flex items-center gap-1 text-muted-foreground"><PackageCheck className="w-3.5 h-3.5" /> Peças</span>
-                        <strong className="block mt-1">{lot.ready_for_separation_pieces || 0}/{lot.total_pieces || 0}</strong>
-                      </div>
-                      <div className="col-span-2 flex flex-col gap-1.5 rounded-xl bg-secondary/35 p-3">
-                        <div className="flex items-center justify-between w-full">
-                          <span className="text-muted-foreground">Previsão: {formatForecastDate(lot.predicted_ready_at)}</span>
-                          {problems > 0 ? (
-                            <span className="flex items-center gap-1 font-bold text-rose-600"><AlertTriangle className="w-3.5 h-3.5" /> {problems}</span>
-                          ) : (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          )}
+                      <div className="grid grid-cols-2 gap-3 xl:w-72 text-xs shrink-0">
+                        <div className="rounded-xl bg-secondary/35 p-3">
+                          <span className="flex items-center gap-1 text-muted-foreground"><Factory className="w-3.5 h-3.5" /> Andamento</span>
+                          <strong className="block mt-1">{Number(lot.progress_percent || 0).toFixed(1)}%</strong>
                         </div>
-                        <div className="flex items-center justify-between w-full pt-1.5 border-t border-border/20">
-                          <span className="flex items-center gap-1 text-muted-foreground">
-                            <Scale className="w-3.5 h-3.5 text-primary" /> Equilíbrio
-                          </span>
-                          <span className={`font-bold ${balance >= 75 ? 'text-emerald-600' : balance >= 50 ? 'text-amber-600' : 'text-rose-600'}`}>
-                            {balance}%
-                          </span>
+                        <div className="rounded-xl bg-secondary/35 p-3">
+                          <span className="flex items-center gap-1 text-muted-foreground"><PackageCheck className="w-3.5 h-3.5" /> Peças</span>
+                          <strong className="block mt-1">{lot.ready_for_separation_pieces || 0}/{lot.total_pieces || 0}</strong>
+                        </div>
+                        <div className="col-span-2 flex flex-col gap-1.5 rounded-xl bg-secondary/35 p-3">
+                          <div className="flex items-center justify-between w-full">
+                            <span className="text-muted-foreground">Previsão: {formatForecastDate(lot.predicted_ready_at)}</span>
+                            {problems > 0 ? (
+                              <span className="flex items-center gap-1 font-bold text-rose-600"><AlertTriangle className="w-3.5 h-3.5" /> {problems}</span>
+                            ) : (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between w-full pt-1.5 border-t border-border/20">
+                            <span className="flex items-center gap-1 text-muted-foreground">
+                              <Scale className="w-3.5 h-3.5 text-primary" /> Equilíbrio
+                            </span>
+                            <span className={`font-bold ${balance >= 75 ? 'text-emerald-600' : balance >= 50 ? 'text-amber-600' : 'text-rose-600'}`}>
+                              {balance}%
+                            </span>
+                          </div>
                         </div>
                       </div>
+                      <ChevronRight className={`hidden xl:block w-5 h-5 transition-transform duration-200 ${selected ? 'rotate-90 text-primary' : 'text-muted-foreground'}`} />
                     </div>
-                    <ChevronRight className={`hidden xl:block w-5 h-5 ${selected ? 'text-primary' : 'text-muted-foreground'}`} />
-                  </div>
-                </button>
+                  </button>
+
+                  {selected && renderDetailPanel && (
+                    <div id={`client-lot-detail-${lot.lot_id}`} className="p-4 sm:p-6 bg-secondary/15 border-t border-primary/20 shadow-inner rounded-b-2xl space-y-6">
+                      {renderDetailPanel(lot)}
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
