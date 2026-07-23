@@ -131,7 +131,12 @@ export default function LotIntegrity() {
       .some((value) => String(value || '').toLocaleLowerCase('pt-BR').includes(term)));
   }, [generalLots, generalLotSearch]);
 
-  // Query - Calcular Integridade do Lote Selecionado
+  // Lote de cliente selecionado extraído do tracking geral
+  const selectedClientLot = useMemo(() => {
+    return originalClientLots.find((lot) => lot.lot_id === selectedLotId) || null;
+  }, [originalClientLots, selectedLotId]);
+
+  // Query - Calcular Integridade do Lote Selecionado via RPC
   const { data: integrityData = null, isLoading: loadingIntegrity, refetch: refetchIntegrity } = useQuery({
     queryKey: ['lotIntegrityData', selectedLotId],
     queryFn: async () => {
@@ -144,6 +149,100 @@ export default function LotIntegrity() {
     },
     enabled: !!selectedLotId
   });
+
+  // Query - Peças físicas do lote para resiliência de contagem
+  const { data: lotPieces = [] } = useQuery({
+    queryKey: ['lotPiecesFull', selectedLotId],
+    queryFn: async () => {
+      if (!selectedLotId) return [];
+      const { data, error } = await supabase
+        .from('production_pieces')
+        .select('id, piece_uid, status, current_stage, is_blocked, rework_status, replacement_status')
+        .eq('lot_id', selectedLotId)
+        .neq('status', 'cancelled');
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!selectedLotId
+  });
+
+  // Cálculo Efetivo da Integridade combinando RPC, tracking geral por célula e contagem por peça
+  const effectiveIntegrity = useMemo(() => {
+    if (!selectedLotId) return null;
+
+    const totalPieces = Number(selectedClientLot?.total_pieces || lotPieces.length || integrityData?.total_pieces || 0);
+
+    // Contar peças efetivamente concluídas/aprovadas (ou prontas para separação)
+    let approvedPieces = Number(integrityData?.approved_pieces || 0);
+    if (approvedPieces === 0 && selectedClientLot) {
+      approvedPieces = Number(selectedClientLot.ready_for_separation_pieces || 0);
+    }
+    if (approvedPieces === 0 && lotPieces.length > 0) {
+      approvedPieces = lotPieces.filter(p => 
+        p.status === 'completed' || p.status === 'approved' || p.status === 'shipped' ||
+        ['separation', 'packaging', 'shipping'].includes(p.current_stage)
+      ).length;
+    }
+
+    // Contar bloqueadas, retrabalho e reposição
+    let blockedPieces = Number(integrityData?.blocked_pieces || 0);
+    let reworkPieces = Number(integrityData?.rework_pieces || 0);
+    let replacementPieces = Number(integrityData?.replacement_pieces || 0);
+
+    if (lotPieces.length > 0) {
+      blockedPieces = lotPieces.filter(p => p.is_blocked || p.status === 'blocked').length;
+      reworkPieces = lotPieces.filter(p => p.rework_status && p.rework_status !== 'none').length;
+      replacementPieces = lotPieces.filter(p => p.replacement_status && p.replacement_status !== 'none').length;
+    } else if (selectedClientLot) {
+      blockedPieces = Number(selectedClientLot.blocked_pieces || 0);
+      reworkPieces = Number(selectedClientLot.rework_pieces || 0);
+      replacementPieces = Number(selectedClientLot.replacement_pieces || 0);
+    }
+
+    // Pendentes
+    const pendingPieces = Math.max(0, totalPieces - approvedPieces - blockedPieces - reworkPieces - replacementPieces);
+
+    // Porcentagem de Integridade/Progresso
+    let integrityPercent = Number(integrityData?.integrity_percent || 0);
+    if ((integrityPercent === 0 || approvedPieces > 0) && totalPieces > 0) {
+      if (selectedClientLot?.progress_percent != null && Number(selectedClientLot.progress_percent) > 0) {
+        integrityPercent = Math.round(Number(selectedClientLot.progress_percent));
+      } else {
+        integrityPercent = Math.round((approvedPieces / totalPieces) * 100);
+      }
+    }
+
+    // Gargalo Crítico
+    let bottleneck = integrityData?.bottleneck;
+    if (!bottleneck || (bottleneck.includes('Separação') && approvedPieces < totalPieces)) {
+      if (selectedClientLot?.stages?.length) {
+        const activeStages = selectedClientLot.stages.filter(s => s.required_pieces > 0 && (s.remaining_pieces > 0 || (s.completed_pieces || 0) < s.required_pieces));
+        if (activeStages.length > 0) {
+          activeStages.sort((a, b) => (b.remaining_pieces || 0) - (a.remaining_pieces || 0));
+          const topBottleneck = activeStages[0];
+          const remaining = topBottleneck.remaining_pieces ?? (topBottleneck.required_pieces - (topBottleneck.completed_pieces || 0));
+          bottleneck = `${topBottleneck.stage_label} (${remaining} peças pendentes)`;
+        } else if (selectedClientLot.bottleneck_stage) {
+          bottleneck = selectedClientLot.bottleneck_stage;
+        }
+      }
+    }
+    if (!bottleneck) bottleneck = 'Nenhum';
+
+    const canClose = totalPieces > 0 && approvedPieces === totalPieces && blockedPieces === 0 && reworkPieces === 0 && replacementPieces === 0;
+
+    return {
+      total_pieces: totalPieces,
+      approved_pieces: approvedPieces,
+      pending_pieces: pendingPieces,
+      blocked_pieces: blockedPieces,
+      rework_pieces: reworkPieces,
+      replacement_pieces: replacementPieces,
+      integrity_percent: Math.min(100, Math.max(0, integrityPercent)),
+      bottleneck,
+      can_close: canClose,
+    };
+  }, [selectedLotId, selectedClientLot, lotPieces, integrityData]);
 
   // Query - Listar Peças do Lote Selecionado com Problemas (Bloqueadas, Rework, Reposição)
   const { data: problematicPieces = [], isLoading: loadingPieces } = useQuery({
@@ -475,10 +574,10 @@ export default function LotIntegrity() {
 
           {/* ABA 1: INTEGRIDADE DO LOTE */}
           <TabsContent value="integrity" className="space-y-6 focus-visible:outline-none">
-            {loadingIntegrity ? (
+            {loadingIntegrity && !effectiveIntegrity ? (
               <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
             ) : (
-              integrityData && (
+              effectiveIntegrity && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   
                   {/* Gauge de Integridade */}
@@ -493,22 +592,22 @@ export default function LotIntegrity() {
                           cx="80" 
                           cy="80" 
                           r="70" 
-                          className={integrityData.integrity_percent === 100 ? "stroke-emerald-500" : "stroke-amber-500"} 
+                          className={effectiveIntegrity.integrity_percent === 100 ? "stroke-emerald-500" : "stroke-amber-500"} 
                           strokeWidth="8" 
                           fill="transparent" 
                           strokeDasharray={440} 
-                          strokeDashoffset={440 - (440 * (integrityData.integrity_percent || 0)) / 100}
+                          strokeDashoffset={440 - (440 * (effectiveIntegrity.integrity_percent || 0)) / 100}
                           strokeLinecap="round"
                         />
                       </svg>
                       <div className="absolute text-center">
-                        <p className="text-3xl font-extrabold text-foreground">{integrityData.integrity_percent}%</p>
+                        <p className="text-3xl font-extrabold text-foreground">{effectiveIntegrity.integrity_percent}%</p>
                         <p className="text-[10px] text-muted-foreground mt-0.5 uppercase tracking-wide">De Integridade</p>
                       </div>
                     </div>
 
                     <div className="w-full text-center space-y-2">
-                      {integrityData.can_close ? (
+                      {effectiveIntegrity.can_close ? (
                         <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 rounded-xl flex items-center justify-center gap-2">
                           <CheckCircle2 className="w-5 h-5 shrink-0" />
                           <span className="text-xs font-bold uppercase tracking-wider">Lote liberado para fechamento</span>
@@ -522,7 +621,7 @@ export default function LotIntegrity() {
                       <p className="text-[11px] text-muted-foreground">O fechamento exige 100% de peças aprovadas e nenhuma reposição/retrabalho aberto.</p>
                     </div>
 
-                    {integrityData.can_close ? (
+                    {effectiveIntegrity.can_close ? (
                       <Button 
                         onClick={() => {
                           if (confirm('Deseja realmente encerrar este lote de produção?')) {
@@ -548,27 +647,27 @@ export default function LotIntegrity() {
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                       <div className="bg-card border border-border/60 rounded-2xl p-4">
                         <span className="text-[10px] text-muted-foreground font-bold uppercase block">Peças Totais</span>
-                        <p className="text-3xl font-extrabold text-foreground mt-1">{integrityData.total_pieces}</p>
+                        <p className="text-3xl font-extrabold text-foreground mt-1">{effectiveIntegrity.total_pieces}</p>
                       </div>
                       <div className="bg-card border border-border/60 rounded-2xl p-4">
                         <span className="text-[10px] text-emerald-600 font-bold uppercase block">Aprovadas</span>
-                        <p className="text-3xl font-extrabold text-emerald-600 mt-1">{integrityData.approved_pieces}</p>
+                        <p className="text-3xl font-extrabold text-emerald-600 mt-1">{effectiveIntegrity.approved_pieces}</p>
                       </div>
                       <div className="bg-card border border-border/60 rounded-2xl p-4">
                         <span className="text-[10px] text-amber-600 font-bold uppercase block">Pendentes de Etapa</span>
-                        <p className="text-3xl font-extrabold text-amber-600 mt-1">{integrityData.pending_pieces}</p>
+                        <p className="text-3xl font-extrabold text-amber-600 mt-1">{effectiveIntegrity.pending_pieces}</p>
                       </div>
                       <div className="bg-card border border-border/60 rounded-2xl p-4">
                         <span className="text-[10px] text-rose-600 font-bold uppercase block">Bloqueadas</span>
-                        <p className="text-3xl font-extrabold text-rose-600 mt-1">{integrityData.blocked_pieces}</p>
+                        <p className="text-3xl font-extrabold text-rose-600 mt-1">{effectiveIntegrity.blocked_pieces}</p>
                       </div>
                       <div className="bg-card border border-border/60 rounded-2xl p-4">
                         <span className="text-[10px] text-purple-600 font-bold uppercase block">Em Retrabalho</span>
-                        <p className="text-3xl font-extrabold text-purple-600 mt-1">{integrityData.rework_pieces}</p>
+                        <p className="text-3xl font-extrabold text-purple-600 mt-1">{effectiveIntegrity.rework_pieces}</p>
                       </div>
                       <div className="bg-card border border-border/60 rounded-2xl p-4">
                         <span className="text-[10px] text-sky-600 font-bold uppercase block">Em Reposição</span>
-                        <p className="text-3xl font-extrabold text-sky-600 mt-1">{integrityData.replacement_pieces}</p>
+                        <p className="text-3xl font-extrabold text-sky-600 mt-1">{effectiveIntegrity.replacement_pieces}</p>
                       </div>
                     </div>
 
@@ -580,7 +679,7 @@ export default function LotIntegrity() {
                         </div>
                         <div>
                           <p className="text-xs text-muted-foreground font-semibold">Gargalo Crítico do Lote</p>
-                          <p className="font-extrabold text-foreground text-sm mt-0.5">{integrityData.bottleneck || 'Nenhum'}</p>
+                          <p className="font-extrabold text-foreground text-sm mt-0.5">{effectiveIntegrity.bottleneck || 'Nenhum'}</p>
                         </div>
                       </div>
                       <Badge variant="outline" className="border-amber-500/20 text-amber-600 bg-amber-500/5">
