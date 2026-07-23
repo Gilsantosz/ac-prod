@@ -1,9 +1,9 @@
-import { useMemo, useEffect } from 'react';
+import { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabaseClient';
-import { ACTIVE_ALERTS_QUERY_KEY, runOperationalAlertDiagnostics, resolveAlertManually } from '@/lib/operationalAlertService';
+import { ACTIVE_ALERTS_QUERY_KEY, resolveAlertManually } from '@/lib/operationalAlertService';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -12,7 +12,6 @@ import { Bell, Check, AlertTriangle, BellRing, RefreshCw } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-// Helper robusto para validar acesso a célula do usuário (operações e gestores)
 function userHasCellAccess(user, cellName) {
   if (!user) return false;
   if (user.role === 'admin') return true;
@@ -34,9 +33,8 @@ function userHasCellAccess(user, cellName) {
     userCells = [user.cell];
   }
 
-  // Normalização e limpeza
   const cleanUserCells = userCells.filter(Boolean).map((c) => c.trim().toLowerCase());
-  if (cleanUserCells.length === 0) return true; // sem célula associada vê todas
+  if (cleanUserCells.length === 0) return true;
 
   const cleanCellName = cellName ? cellName.trim().toLowerCase() : '';
   return cleanUserCells.includes(cleanCellName);
@@ -46,65 +44,32 @@ export default function NotificationCenter() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  // Executa diagnóstico silencioso em background ao carregar e a cada 60 segundos
-  useEffect(() => {
-    if (!user) return;
-    
-    // Restringe o diagnóstico automático periódico para administradores/gestores/supervisores/PCP
-    const userRole = String(user.role || '').toLowerCase();
-    const canRunAutoDiag = ['admin', 'manager', 'supervisor', 'pcp', 'gestor', 'qualidade', 'operator'].includes(userRole) || !userRole;
-    if (!canRunAutoDiag) return;
-
-    // Executa diagnóstico inicial
-    runOperationalAlertDiagnostics()
-      .then(() => {
-        queryClient.invalidateQueries({ queryKey: ['unresolvedAlerts'] });
-        queryClient.invalidateQueries({ queryKey: ACTIVE_ALERTS_QUERY_KEY });
-        queryClient.invalidateQueries({ queryKey: ['mes-hub-kpis'] });
-      })
-      .catch((err) => {
-        console.error('[NotificationCenter] Falha no diagnóstico de alertas inicial:', err);
-      });
-
-    // Agenda execuções a cada 60 segundos
-    const interval = setInterval(() => {
-      runOperationalAlertDiagnostics()
-        .then(() => {
-          queryClient.invalidateQueries({ queryKey: ['unresolvedAlerts'] });
-          queryClient.invalidateQueries({ queryKey: ACTIVE_ALERTS_QUERY_KEY });
-          queryClient.invalidateQueries({ queryKey: ['mes-hub-kpis'] });
-        })
-        .catch((err) => {
-          console.error('[NotificationCenter] Falha no diagnóstico de alertas periódico:', err);
-        });
-    }, 60000);
-
-    return () => clearInterval(interval);
-  }, [user, queryClient]);
-
-  // Busca apenas alertas não resolvidos (ordenados do mais recente ao mais antigo)
+  // O diagnóstico operacional não é mais executado por cada navegador.
+  // A central apenas lê uma janela limitada de alertas ativos.
   const { data: alerts = [] } = useQuery({
     queryKey: ['unresolvedAlerts'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('alert_logs')
-        .select('*')
-        .eq('resolved', false)
-        .order('triggered_at', { ascending: false });
-      
+        .select('id, cell, message, severity, triggered_at, created_date, resolved')
+        .or('resolved.is.false,resolved.is.null')
+        .order('triggered_at', { ascending: false })
+        .limit(100);
+
       if (error) throw error;
       return data || [];
     },
     enabled: !!user,
+    staleTime: 30000,
+    refetchInterval: 60000,
+    refetchIntervalInBackground: false,
   });
 
-  // Filtra as notificações baseando-se no acesso do usuário às células
   const visibleAlerts = useMemo(() => {
     if (!user) return [];
     return alerts.filter((a) => userHasCellAccess(user, a.cell));
   }, [alerts, user]);
 
-  // Mutação para resolver a notificação no banco
   const resolveAlert = useMutation({
     mutationFn: async (alertId) => {
       const data = await resolveAlertManually(alertId, 'Resolvido via Central de Notificações');
@@ -147,7 +112,6 @@ export default function NotificationCenter() {
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 sm:w-96 p-0 rounded-2xl border-border/80 shadow-lg overflow-hidden">
-        {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/60 bg-muted/20">
           <div>
             <h4 className="font-semibold text-sm">Notificações e Alertas</h4>
@@ -160,7 +124,6 @@ export default function NotificationCenter() {
           )}
         </div>
 
-        {/* Content List */}
         <ScrollArea className="max-h-[350px] divide-y divide-border/40">
           {count === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 px-4 text-center gap-2.5">
