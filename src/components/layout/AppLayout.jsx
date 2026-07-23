@@ -70,6 +70,9 @@ function AppShell() {
       if (requiredPermission === 'ai_operations') {
         return !!(user.permissions.ai_operations || user.permissions.view_reports || user.permissions.manage_automations);
       }
+      if (requiredPermission === 'register_manual_production') {
+        return !!(user.permissions.register_manual_production || user.permissions.register_production || user.permissions.view_pcp || user.permissions.manage_pcp);
+      }
       return !!user.permissions[requiredPermission];
     }
     return true;

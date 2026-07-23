@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Loader2, UserPlus, LayoutDashboard, PlusCircle, AlertOctagon, Boxes, HardHat, LineChart,
-  Zap, Users, ShieldAlert, BrainCircuit, Plug, GitFork, Box, Truck, BellRing, Layers
+  Zap, Users, ShieldAlert, BrainCircuit, Plug, GitFork, Box, Truck, BellRing, Layers, Edit3
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCells } from '@/hooks/useCells';
@@ -16,6 +16,7 @@ import { getDefaultPermissions } from '@/config/appRoutes';
 const PERMISSION_METADATA = [
   { key: 'view_dashboards', label: 'Visualizar Painéis', desc: 'Painéis, OEE, Tendências e Gamificação.', icon: LayoutDashboard },
   { key: 'register_production', label: 'Lançar Produção', desc: 'Registrar apontamentos horários.', icon: PlusCircle },
+  { key: 'register_manual_production', label: 'Baixa Manual', desc: 'Registrar baixas produtivas manuais por Lote Geral.', icon: Edit3 },
   { key: 'manage_occurrences', label: 'Ocorrências e Paradas', desc: 'Registrar e tratar paradas da produção.', icon: AlertOctagon },
   { key: 'manage_cells', label: 'Células e Metas', desc: 'Cadastrar células de trabalho e metas diárias.', icon: Boxes },
   { key: 'manage_operators', label: 'Operadores e Equipes', desc: 'Gerenciar cadastro de operadores.', icon: HardHat },

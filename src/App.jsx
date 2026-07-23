@@ -173,8 +173,10 @@ const AuthenticatedApp = () => {
           <Route path="/downloads-backups" element={<DownloadsBackups />} />
           <Route path="/backups" element={<Navigate to="/downloads-backups" replace />} />
           <Route path="/ordens-producao" element={<Navigate to="/pcp?tab=orders" replace />} />
-          {/* Aliases de compatibilidade */}
           <Route path="/coleta-codigo-rfid" element={<Navigate to="/coleta" replace />} />
+          <Route path="/entrada-manual" element={<Navigate to="/baixa-manual" replace />} />
+          <Route path="/lancamento-manual" element={<Navigate to="/baixa-manual" replace />} />
+          <Route path="/pcp/manual" element={<Navigate to="/baixa-manual" replace />} />
         </Route>
       </Route>
 

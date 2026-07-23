@@ -67,6 +67,7 @@ const TABLE_MAP = {
   ReportDeliveryHistory: 'report_delivery_history',
   BackupPolicy: 'backup_policies',
   BackupFile: 'backup_files',
+  ManualProductionRecord: 'manual_production_records',
 };
 
 

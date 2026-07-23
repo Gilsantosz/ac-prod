@@ -10,7 +10,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabaseClient';
-import { registerManualQuantitativeEntry } from '@/lib/manualProductionService';
 import {
   Upload, Plug, History, FileText, Database, Shield, Settings, Download, Search,
   RefreshCw, Trash2, Check, Lock, Cloud, Edit3
@@ -37,7 +36,7 @@ export default function PromobIntegration() {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
   const activeTab = ['import', 'history', 'orders', 'logs', 'backup', 'settings'].includes(requestedTab) ? requestedTab : 'import';
-  const [importMode, setImportMode] = useState('manual');
+  const [importMode, setImportMode] = useState('promob');
   const [preselectedPcpFile, setPreselectedPcpFile] = useState(null);
   
   // Estados para o Histórico de Importações
@@ -479,7 +478,7 @@ export default function PromobIntegration() {
       />
 
       {/* Cards de Atalhos Rápidos */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <button
           onClick={() => handleTabChange('import')}
           className={cn(
@@ -563,22 +562,6 @@ export default function PromobIntegration() {
             <p className="text-[10px] text-muted-foreground">Integração</p>
           </div>
         </button>
-
-        <button
-          onClick={() => handleTabChange('manual_entry')}
-          className={cn(
-            "p-3 border rounded-2xl text-left bg-card hover:bg-secondary/15 transition-all text-xs flex flex-col justify-between min-h-[85px] border-border/60",
-            activeTab === 'manual_entry' && "border-amber-500/50 bg-amber-500/5"
-          )}
-        >
-          <Edit3 className="w-4.5 h-4.5 text-amber-500" />
-          <div>
-            <p className="font-bold text-foreground">Entrada Manual</p>
-            <p className="text-[10px] text-muted-foreground">Quantitativa PCP</p>
-          </div>
-        </button>
-
-
       </div>
 
 
@@ -587,15 +570,6 @@ export default function PromobIntegration() {
         {/* ── 1. Entrada / Importação do PCP ─────────────────────────── */}
         <TabsContent value="import" className="space-y-6 outline-none">
           <div className="flex border-b border-border/40 pb-2 gap-4 flex-wrap">
-            <button
-              onClick={() => setImportMode('manual')}
-              className={cn(
-                "pb-2 text-xs font-extrabold transition-all relative flex items-center gap-1.5",
-                importMode === 'manual' ? "text-[#2d9c4a] border-b-2 border-[#2d9c4a]" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Edit3 className="w-3.5 h-3.5 text-amber-500" /> Entrada Manual Digitada (Sem Arquivo)
-            </button>
             <button
               onClick={() => setImportMode('promob')}
               className={cn(
@@ -616,9 +590,7 @@ export default function PromobIntegration() {
             </button>
           </div>
 
-          {importMode === 'manual' ? (
-            <PcpManualQuantitativeTab />
-          ) : importMode === 'promob' ? (
+          {importMode === 'promob' ? (
             <XmlImportTab onSwitchToPcp={(file) => {
               setImportMode('pcp');
               setPreselectedPcpFile(file);
@@ -1207,11 +1179,6 @@ export default function PromobIntegration() {
             <ApiConfigTab />
           </div>
         </TabsContent>
-
-        {/* ── 6. Entrada Manual Quantitativa PCP ─────────────────── */}
-        <TabsContent value="manual_entry" className="space-y-6 outline-none">
-          <PcpManualQuantitativeTab />
-        </TabsContent>
       </Tabs>
 
 
@@ -1281,141 +1248,5 @@ export default function PromobIntegration() {
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-function PcpManualQuantitativeTab() {
-  const [generalLotCode, setGeneralLotCode] = useState('');
-  const [cellName, setCellName] = useState('Corte');
-  const [shift, setShift] = useState('1º Turno');
-  const [quantity, setQuantity] = useState('');
-  const [unitOfMeasure, setUnitOfMeasure] = useState('pecas');
-  const [cascadeAllCells, setCascadeAllCells] = useState(true);
-  const [notes, setNotes] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
-  const handleRegister = async (e) => {
-    e.preventDefault();
-    const cleanCode = String(generalLotCode).trim().toUpperCase();
-    if (!cleanCode) {
-      toast.error('Informe o código do Lote Geral (ex: 14537).');
-      return;
-    }
-    const numQty = Number(quantity);
-    if (!numQty || numQty <= 0) {
-      toast.error('Informe uma quantidade válida para o lote (ex: 2000 peças).');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const res = await registerManualQuantitativeEntry({
-        general_lot_code: cleanCode,
-        cell_name: cellName,
-        shift,
-        quantity: numQty,
-        unit_of_measure: unitOfMeasure,
-        cascade_all_cells: cascadeAllCells,
-        notes,
-      });
-
-      if (res.cascade) {
-        toast.success(`Baixa automática em cascata registrada nas 4 células (Corte, Bordo, Usinagem, Embalagem)!`, {
-          description: `Lote ${cleanCode}: ${numQty} ${unitOfMeasure} contabilizadas para metas diárias.`,
-        });
-      } else {
-        toast.success(`Entrada manual quantitativa registrada na célula ${cellName} para o Lote ${cleanCode}!`);
-      }
-      setQuantity('');
-      setNotes('');
-    } catch (err) {
-      toast.error(`Erro ao salvar entrada PCP: ${err.message}`);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <Card className="p-6 border-border/60 shadow-sm rounded-2xl space-y-4 bg-card">
-      <div className="flex justify-between items-center flex-wrap gap-2">
-        <div>
-          <h3 className="font-extrabold text-foreground text-base flex items-center gap-2">
-            <Edit3 className="w-5 h-5 text-amber-500" /> Entrada Manual Quantitativa do PCP (Sem Arquivo)
-          </h3>
-          <p className="text-xs text-muted-foreground mt-1">
-            Digite diretamente o Lote Geral e a Quantidade Total para atualização imediata das metas de produção.
-          </p>
-        </div>
-        <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 text-xs font-bold gap-1">
-          ✋ Rastreabilidade Simplificada por Lote
-        </Badge>
-      </div>
-
-      <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/5 text-amber-900 dark:text-amber-200 text-xs leading-relaxed space-y-1">
-        <p className="font-bold flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
-          💡 Regra de Baixa Automática em Cascata:
-        </p>
-        <p>
-          Ao digitar o <strong>Lote Geral (ex: 14537)</strong> e a <strong>Quantidade (ex: 2000 peças)</strong> com a opção de cascata marcada, o sistema lançará automaticamente a produção nas 4 células: <strong>Corte, Bordo, Usinagem e Embalagem</strong>.
-        </p>
-      </div>
-
-      <form onSubmit={handleRegister} className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-        <div className="space-y-1.5 sm:col-span-1">
-          <Label className="text-xs font-bold text-foreground">Código do Lote Geral</Label>
-          <Input
-            value={generalLotCode}
-            onChange={(e) => setGeneralLotCode(e.target.value.toUpperCase())}
-            placeholder="Ex: 14537"
-            className="rounded-xl h-10 uppercase text-xs font-extrabold bg-background/60"
-            required
-          />
-        </div>
-
-        <div className="space-y-1.5 sm:col-span-1">
-          <Label className="text-xs font-bold text-foreground">Quantidade Geral PCP</Label>
-          <Input
-            type="number"
-            min="1"
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            placeholder="Ex: 2000"
-            className="rounded-xl h-10 text-xs font-extrabold bg-emerald-500/5 border-emerald-500/30"
-            required
-          />
-        </div>
-
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label className="text-xs font-bold text-foreground">Observação (Opcional)</Label>
-          <Input
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Nota ou observação sobre o lote"
-            className="rounded-xl h-10 text-xs bg-background/60"
-          />
-        </div>
-
-        <div className="sm:col-span-2 pt-2">
-          <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-foreground bg-secondary/30 p-3 rounded-xl border border-border/50 select-none">
-            <input
-              type="checkbox"
-              checked={cascadeAllCells}
-              onChange={(e) => setCascadeAllCells(e.target.checked)}
-              className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
-            />
-            <span>⚡ Propagar baixa automática nas 4 células (Corte, Bordo, Usinagem e Embalagem) para atualização imediata das metas diárias</span>
-          </label>
-        </div>
-
-        <div className="sm:col-span-2 pt-2">
-          <Button
-            type="submit"
-            disabled={submitting}
-            className="w-full sm:w-auto px-6 h-11 bg-[#1A2238] hover:bg-[#111728] text-white font-extrabold rounded-xl text-xs gap-2 shadow-md"
-          >
-            <Check className="w-4 h-4" /> Registrar Lote Geral PCP Quantitativo
-          </Button>
-        </div>
-      </form>
-    </Card>
   );
 }
