@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/AuthContext';
 import { toast } from 'sonner';
@@ -8,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { Bell, Check, AlertTriangle, BellRing, RefreshCw } from 'lucide-react';
+import { Bell, Check, AlertTriangle, BellRing, RefreshCw, ExternalLink } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -42,6 +43,7 @@ function userHasCellAccess(user, cellName) {
 
 export default function NotificationCenter() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   // O diagnóstico operacional não é mais executado por cada navegador.
@@ -114,14 +116,18 @@ export default function NotificationCenter() {
       <PopoverContent align="end" className="w-80 sm:w-96 p-0 rounded-2xl border-border/80 shadow-lg overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/60 bg-muted/20">
           <div>
-            <h4 className="font-semibold text-sm">Notificações e Alertas</h4>
+            <h4 className="font-semibold text-sm">Notificações e Alertas MES</h4>
             <p className="text-[10px] text-muted-foreground">Alertas críticos das células de produção</p>
           </div>
-          {count > 0 && (
-            <Badge className="bg-rose-500 text-white hover:bg-rose-500 text-[10px] font-bold px-2 py-0.5">
-              {count} pendente{count !== 1 ? 's' : ''}
-            </Badge>
-          )}
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="h-7 text-xs font-bold text-primary hover:text-primary/80 px-2 flex items-center gap-1"
+            onClick={() => navigate('/alertas-mes')}
+          >
+            <span>Ver página</span>
+            <ExternalLink className="w-3 h-3" />
+          </Button>
         </div>
 
         <ScrollArea className="max-h-[350px] divide-y divide-border/40">
@@ -143,7 +149,16 @@ export default function NotificationCenter() {
                   ? formatDistanceToNow(new Date(date), { addSuffix: true, locale: ptBR })
                   : '';
                 return (
-                  <div key={a.id} className="p-4 hover:bg-secondary/40 transition-colors flex gap-3 relative group">
+                  <div 
+                    key={a.id} 
+                    className="p-4 hover:bg-secondary/40 transition-colors flex gap-3 relative group cursor-pointer"
+                    onClick={(e) => {
+                      // Se não clicou no botão "Resolvido", navega para a página de alertas
+                      if (!e.defaultPrevented) {
+                        navigate('/alertas-mes');
+                      }
+                    }}
+                  >
                     <div className="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center shrink-0 mt-0.5">
                       <AlertTriangle className="w-4.5 h-4.5 text-rose-500" />
                     </div>
@@ -160,7 +175,7 @@ export default function NotificationCenter() {
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-foreground leading-normal font-medium">
+                      <p className="text-xs text-foreground leading-normal font-medium hover:text-primary transition-colors">
                         {a.message}
                       </p>
                       <div className="pt-1.5 flex justify-end">
@@ -168,7 +183,11 @@ export default function NotificationCenter() {
                           variant="outline"
                           size="sm"
                           className="h-7 px-2.5 text-xs gap-1 border-border/80 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 hover:border-emerald-200 dark:hover:border-emerald-800 hover:text-emerald-600 rounded-lg shadow-sm"
-                          onClick={() => resolveAlert.mutate(a.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            resolveAlert.mutate(a.id);
+                          }}
                           disabled={resolveAlert.isPending}
                         >
                           {resolveAlert.isPending && resolveAlert.variables === a.id ? (
@@ -186,6 +205,19 @@ export default function NotificationCenter() {
             </div>
           )}
         </ScrollArea>
+
+        <div className="p-3 border-t border-border/60 bg-muted/15 text-center">
+          <Button 
+            variant="default"
+            size="sm"
+            className="w-full h-8 text-xs font-bold gap-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
+            onClick={() => navigate('/alertas-mes')}
+          >
+            <BellRing className="w-3.5 h-3.5" />
+            <span>Ver Página de Alertas MES</span>
+            <ExternalLink className="w-3 h-3 ml-auto" />
+          </Button>
+        </div>
       </PopoverContent>
     </Popover>
   );

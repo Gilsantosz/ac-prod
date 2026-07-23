@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { fetchGeneralLotTracking, calculateLotBalance } from '@/lib/lotTrackingService';
 import { ClientLotHierarchy, GeneralLotSummaryCard } from '@/components/lot-tracking/LotTrackingCards';
@@ -16,10 +16,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { toast } from 'sonner';
 import { 
   ShieldCheck, AlertTriangle, RefreshCw, CheckCircle2, ShieldAlert, FileText, UserCheck,
-  XOctagon, Loader2, Info, Search, ChartNoAxesCombined, Layers3, Factory, PackageCheck
+  XOctagon, Loader2, Info, Search, ChartNoAxesCombined, Layers3, Factory, PackageCheck, ExternalLink
 } from 'lucide-react';
 
 export default function LotIntegrity() {
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const [selectedBatchId, setSelectedBatchId] = useState('');
   const [selectedLotId, setSelectedLotId] = useState('');
@@ -687,9 +688,13 @@ export default function LotIntegrity() {
                               </div>
 
                               {/* Gargalo */}
-                              <Card className="p-4 border-border/60 bg-secondary/15 flex items-center justify-between">
+                              <Card 
+                                className="p-4 border-border/60 bg-secondary/15 flex items-center justify-between cursor-pointer hover:border-amber-500/40 hover:bg-secondary/25 transition-all group"
+                                onClick={() => navigate('/alertas-mes')}
+                                title="Ver todos os alertas na Central MES"
+                              >
                                 <div className="flex items-center gap-3">
-                                  <div className="w-10 h-10 bg-amber-500/10 text-amber-600 rounded-xl flex items-center justify-center">
+                                  <div className="w-10 h-10 bg-amber-500/10 text-amber-600 rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform">
                                     <AlertTriangle className="w-5 h-5" />
                                   </div>
                                   <div>
@@ -697,8 +702,12 @@ export default function LotIntegrity() {
                                     <p className="font-extrabold text-foreground text-sm mt-0.5">{effectiveIntegrity.bottleneck || 'Nenhum'}</p>
                                   </div>
                                 </div>
-                                <Badge variant="outline" className="border-amber-500/20 text-amber-600 bg-amber-500/5">
-                                  Alerta de Fluxo
+                                <Badge 
+                                  variant="outline" 
+                                  className="border-amber-500/30 text-amber-600 bg-amber-500/10 group-hover:bg-amber-500/20 transition-colors flex items-center gap-1 cursor-pointer"
+                                >
+                                  <span>Alerta de Fluxo</span>
+                                  <ExternalLink className="w-3 h-3 ml-0.5" />
                                 </Badge>
                               </Card>
                             </div>
