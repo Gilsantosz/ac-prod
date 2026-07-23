@@ -483,7 +483,15 @@ export default function TraceabilityCollection({ embedded = false }) {
   };
 
   const handleOpenTraceabilityDrawer = (piece) => {
-    setTraceabilityCodeForDrawer(piece.piece_uid || piece.traceability_code);
+    if (!piece) return;
+    const code = typeof piece === 'string'
+      ? piece
+      : (piece.piece_uid || piece.traceability_code || piece.piece_code || piece.tag_value || piece.raw_value || piece.id || piece.piece_id);
+    if (!code) {
+      toast.error('Código ou ID da peça não localizado para rastreabilidade.');
+      return;
+    }
+    setTraceabilityCodeForDrawer(code);
     setTraceabilityOpen(true);
   };
 

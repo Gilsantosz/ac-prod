@@ -209,7 +209,11 @@ export default function CollectionPieceDetailPanel({
           )}
           
           <Button
-            onClick={() => onOpenTraceability(piece)}
+            onClick={() => {
+              if (onOpenTraceability) {
+                onOpenTraceability(piece);
+              }
+            }}
             variant="outline"
             className="flex-1 font-bold text-xs gap-1.5 h-9 rounded-xl border-border/60 hover:bg-secondary/40 text-foreground"
           >

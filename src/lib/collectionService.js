@@ -236,36 +236,73 @@ export async function getRecentReadsByCell({ cellName, workstationId, limit = 10
 export async function getPieceTraceability(pieceIdOrCode) {
   if (!pieceIdOrCode) throw new Error('Código ou ID da peça inválido.');
 
-  let query = supabase
-    .from('production_pieces')
-    .select(`
-      *,
-      production_lots (
-        id,
-        lot_code,
-        production_orders:production_orders!production_order_id (
-          id,
-          order_code,
-          customer_name
-        )
-      )
-    `);
+  const target = typeof pieceIdOrCode === 'object'
+    ? (pieceIdOrCode.piece_uid || pieceIdOrCode.traceability_code || pieceIdOrCode.piece_code || pieceIdOrCode.tag_value || pieceIdOrCode.raw_value || pieceIdOrCode.id || pieceIdOrCode.piece_id)
+    : String(pieceIdOrCode);
 
-  if (pieceIdOrCode.length === 36) {
-    query = query.eq('id', pieceIdOrCode);
-  } else {
-    query = query.eq('piece_uid', pieceIdOrCode);
+  if (!target) throw new Error('Código ou ID da peça é obrigatório.');
+
+  const isUuid = target.length === 36 && target.includes('-');
+  let piece = null;
+
+  if (isUuid) {
+    const { data } = await supabase
+      .from('production_pieces')
+      .select(`
+        *,
+        production_lots (
+          id,
+          lot_code,
+          production_orders:production_orders!production_order_id (
+            id,
+            order_code,
+            customer_name
+          )
+        )
+      `)
+      .eq('id', target)
+      .maybeSingle();
+    piece = data;
   }
 
-  const { data: piece, error: pieceError } = await query.maybeSingle();
-  if (pieceError) throw pieceError;
+  if (!piece) {
+    const { data } = await supabase
+      .from('production_pieces')
+      .select(`
+        *,
+        production_lots (
+          id,
+          lot_code,
+          production_orders:production_orders!production_order_id (
+            id,
+            order_code,
+            customer_name
+          )
+        )
+      `)
+      .or(`piece_uid.eq.${target},id.eq.${target}`)
+      .maybeSingle();
+    piece = data;
+  }
 
-  const resolvedPiece = piece || { piece_uid: pieceIdOrCode, piece_name: 'Peça Avulsa' };
+  const resolvedPiece = piece || {
+    id: isUuid ? target : null,
+    piece_uid: target,
+    piece_name: 'Peça Avulsa'
+  };
+
+  const uidToSearch = resolvedPiece.piece_uid || target;
+  const idToSearch = resolvedPiece.id || (isUuid ? target : null);
+
+  let filterConditions = [`tag_value.eq.${uidToSearch}`, `piece_code.eq.${uidToSearch}`];
+  if (idToSearch) {
+    filterConditions.push(`piece_id.eq.${idToSearch}`);
+  }
 
   const { data: readings, error: readingsError } = await supabase
     .from('production_stage_readings')
     .select('*')
-    .eq('tag_value', resolvedPiece.piece_uid)
+    .or(filterConditions.join(','))
     .order('created_at', { ascending: true });
 
   if (readingsError) throw readingsError;
