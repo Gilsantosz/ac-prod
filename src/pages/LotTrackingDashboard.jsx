@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   CalendarClock,
@@ -54,6 +54,7 @@ function ForecastTooltip({ active, payload, label }) {
 }
 
 export default function LotTrackingDashboard() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedBatchId, setSelectedBatchId] = useState('');
 
   const { data: tracking, isLoading, refetch, isFetching } = useQuery({
@@ -65,8 +66,15 @@ export default function LotTrackingDashboard() {
   const generalLots = tracking?.general_lots || [];
 
   useEffect(() => {
-    if (!selectedBatchId && generalLots.length) setSelectedBatchId(generalLots[0].batch_id);
-  }, [generalLots, selectedBatchId]);
+    if (selectedBatchId || !generalLots.length) return;
+    const requestedGeneralLot = String(searchParams.get('generalLot') || '').trim().toUpperCase();
+    const requested = requestedGeneralLot
+      ? generalLots.find((lot) =>
+          String(lot.general_lot_code || '').trim().toUpperCase() === requestedGeneralLot
+        )
+      : null;
+    setSelectedBatchId((requested || generalLots[0]).batch_id);
+  }, [generalLots, searchParams, selectedBatchId]);
 
   const { data: selectedTracking, isLoading: loadingDetails } = useQuery({
     queryKey: ['lot-tracking-dashboard', 'batch', selectedBatchId],
@@ -78,6 +86,20 @@ export default function LotTrackingDashboard() {
   const selectedLot = selectedTracking?.general_lots?.[0]
     || generalLots.find((lot) => lot.batch_id === selectedBatchId)
     || null;
+
+  useEffect(() => {
+    if (!selectedLot) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('generalLot', selectedLot.general_lot_code);
+    const requestedClientLot = String(searchParams.get('clientLot') || '').trim().toUpperCase();
+    const hasRequestedClient = selectedLot.client_lots?.some((lot) =>
+      String(lot.lot_code || '').trim().toUpperCase() === requestedClientLot
+    );
+    if (!hasRequestedClient) next.delete('clientLot');
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, selectedLot, setSearchParams]);
 
   const totals = useMemo(() => generalLots.reduce((result, lot) => ({
     pieces: result.pieces + Number(lot.total_pieces || 0),
@@ -124,6 +146,7 @@ export default function LotTrackingDashboard() {
     media: Number(model.minutes_per_piece || 0),
     segura: Number(model.p80_minutes_per_piece || 0),
   }));
+  const requestedClientLot = String(searchParams.get('clientLot') || '').trim().toUpperCase();
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-[1700px] mx-auto space-y-6">
@@ -135,7 +158,7 @@ export default function LotTrackingDashboard() {
         />
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" className="rounded-xl gap-2 border-border/60">
-            <Link to="/integridade-lote"><ShieldCheck className="w-4 h-4" /> Abrir integridade</Link>
+            <Link to={`/integridade-lote${selectedLot?.general_lot_code ? `?generalLot=${encodeURIComponent(selectedLot.general_lot_code)}${searchParams.get('clientLot') ? `&clientLot=${encodeURIComponent(searchParams.get('clientLot'))}` : ''}` : ''}`}><ShieldCheck className="w-4 h-4" /> Abrir integridade</Link>
           </Button>
           <Button onClick={() => refetch()} variant="outline" className="rounded-xl gap-2 border-border/60">
             <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} /> Atualizar
@@ -328,7 +351,12 @@ export default function LotTrackingDashboard() {
                         {(selectedLot.client_lots || []).map((lot) => {
                           const status = getForecastStatusMeta(lot.forecast_status);
                           return (
-                            <tr key={lot.lot_id} className="hover:bg-secondary/20">
+                            <tr
+                              key={lot.lot_id}
+                              className={String(lot.lot_code || '').trim().toUpperCase() === requestedClientLot
+                                ? 'bg-primary/[0.07] ring-1 ring-inset ring-primary/30'
+                                : 'hover:bg-secondary/20'}
+                            >
                               <td className="px-4 py-3 font-black text-foreground">{lot.lot_code}</td>
                               <td className="px-4 py-3 max-w-xs truncate" title={lot.customer_name}>{lot.customer_name}</td>
                               <td className="px-4 py-3 text-right font-bold">{lot.ready_for_separation_pieces}/{lot.total_pieces}</td>
@@ -357,4 +385,3 @@ export default function LotTrackingDashboard() {
     </div>
   );
 }
-

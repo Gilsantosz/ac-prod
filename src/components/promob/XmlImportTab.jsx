@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import * as XLSX from 'xlsx';
+import { assertSafeImportFile, assertWorksheetBounds } from '@/lib/spreadsheetSecurity';
 
 // Helper para converter string base64 em Uint8Array
 function base64ToUint8Array(base64) {
@@ -483,6 +484,12 @@ export default function XmlImportTab({ onSwitchToPcp }) {
   const handleFileChange = useCallback(async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
+    try {
+      assertSafeImportFile(f, ['xml', 'xlsx', 'csv', 'tsv']);
+    } catch (error) {
+      toast.error(error.message);
+      return;
+    }
     const name = f.name.toLowerCase();
     
     // Bloquear arquivos perigosos
@@ -510,6 +517,7 @@ export default function XmlImportTab({ onSwitchToPcp }) {
         const workbook = XLSX.read(arrayBuffer, { type: 'array' });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
+        assertWorksheetBounds(worksheet, XLSX.utils);
         const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
         const firstCell = sheetData[0]?.[0] ? String(sheetData[0][0]) : '';
         if (firstCell.startsWith('PCP;') || firstCell.includes(';')) {

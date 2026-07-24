@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
+import { resolveAiLotContext } from './aiLotContextService';
 
 const DAY_MS = 86400000;
 
@@ -20,12 +21,24 @@ function isoDate(value) {
 export function normalizeAiFilters(filters = {}) {
   const today = new Date();
   const defaultStart = new Date(today.getTime() - (6 * DAY_MS));
+  const toList = (plural, singular) => {
+    if (Array.isArray(plural)) return plural.map(String).map((item) => item.trim()).filter(Boolean);
+    if (plural) return [String(plural).trim()].filter(Boolean);
+    return singular ? [String(singular).trim()].filter(Boolean) : [];
+  };
+  const lots = toList(filters.lots, filters.lotCode || filters.clientLotCode);
+  const hasLotScope = lots.length > 0 || Boolean(filters.generalLotCode);
+  const allHistory = filters.allHistory === true || (hasLotScope && !filters.startDate && !filters.endDate);
   return {
-    startDate: isoDate(filters.startDate) || isoDate(defaultStart),
-    endDate: isoDate(filters.endDate) || isoDate(today),
-    cells: Array.isArray(filters.cells) ? filters.cells.filter(Boolean) : [],
-    lots: Array.isArray(filters.lots) ? filters.lots.filter(Boolean) : [],
-    shifts: Array.isArray(filters.shifts) ? filters.shifts.filter(Boolean) : [],
+    startDate: allHistory ? '' : (isoDate(filters.startDate) || isoDate(defaultStart)),
+    endDate: allHistory ? '' : (isoDate(filters.endDate) || isoDate(today)),
+    cells: toList(filters.cells, filters.cell),
+    lots,
+    shifts: toList(filters.shifts, filters.shift === 'all' ? '' : filters.shift),
+    lotCode: String(filters.lotCode || '').trim(),
+    generalLotCode: String(filters.generalLotCode || '').trim(),
+    clientLotCode: String(filters.clientLotCode || '').trim(),
+    allHistory,
     operator: String(filters.operator || '').trim(),
     order: String(filters.order || '').trim(),
     loadNumber: String(filters.loadNumber || '').trim(),
@@ -106,36 +119,64 @@ export async function fetchAiContext(rawFilters = {}, user) {
   if (!canUseAiOperations(user)) throw new Error('Seu perfil não possui permissão para usar a IA Operacional.');
 
   const filters = normalizeAiFilters(rawFilters);
+  const lotContext = await resolveAiLotContext({
+    generalLotCode: filters.generalLotCode,
+    clientLotCode: filters.clientLotCode,
+    lotCode: filters.lotCode || filters.lots[0],
+  });
+  if (lotContext.generalLotCode) filters.generalLotCode = lotContext.generalLotCode;
+  if (lotContext.clientLotCode) filters.clientLotCode = lotContext.clientLotCode;
+  if (lotContext.clientLotCodes.length) {
+    filters.lots = lotContext.clientLotCode
+      ? [lotContext.clientLotCode]
+      : lotContext.clientLotCodes;
+  }
+
   filters.cells = allowedCellsFor(user, filters.cells);
-  if (rawFilters.cells?.length && !filters.cells.length) {
+  if ((rawFilters.cells?.length || rawFilters.cell) && !filters.cells.length) {
     throw new Error('As células solicitadas estão fora do seu escopo de acesso.');
   }
 
   let entriesQuery = supabase
     .from('production_entries')
     .select('*')
-    .gte('date', filters.startDate)
-    .lte('date', filters.endDate)
     .order('date', { ascending: false })
     .limit(10000);
   let occurrencesQuery = supabase
     .from('occurrences')
     .select('*')
-    .gte('date', filters.startDate)
-    .lte('date', filters.endDate)
     .order('date', { ascending: false })
     .limit(5000);
+  let lotsQuery = supabase
+    .from('production_lots')
+    .select('*, production_orders:production_orders!production_order_id(*)')
+    .order('created_at', { ascending: false })
+    .limit(2000);
+  let goalsQuery = supabase.from('production_daily_goals').select('*').limit(5000);
+
+  if (filters.startDate && filters.endDate) {
+    entriesQuery = entriesQuery.gte('date', filters.startDate).lte('date', filters.endDate);
+    occurrencesQuery = occurrencesQuery.gte('date', filters.startDate).lte('date', filters.endDate);
+    goalsQuery = goalsQuery.gte('date', filters.startDate).lte('date', filters.endDate);
+  }
   if (filters.cells.length) {
     entriesQuery = entriesQuery.in('cell', filters.cells);
     occurrencesQuery = occurrencesQuery.in('cell', filters.cells);
+  }
+  if (filters.lots.length) {
+    entriesQuery = entriesQuery.in('lot_code', filters.lots);
+    occurrencesQuery = occurrencesQuery.in('lot_code', filters.lots);
+    lotsQuery = lotsQuery.in('lot_code', filters.lots);
+  } else if (lotContext.batchId) {
+    lotsQuery = lotsQuery.eq('pcp_import_batch_id', lotContext.batchId);
   }
 
   const [entriesResult, occurrencesResult, lotsResult, cellsResult, goalsResult] = await Promise.all([
     runQuery('Produção', entriesQuery),
     runQuery('Ocorrências', occurrencesQuery, true),
-    runQuery('Lotes', supabase.from('production_lots').select('*, production_orders:production_orders!production_order_id(*)').order('created_at', { ascending: false }).limit(2000), true),
+    runQuery('Lotes', lotsQuery, true),
     runQuery('Células', supabase.from('cells').select('id, name, active').eq('active', true).order('name'), true),
-    runQuery('Metas', supabase.from('production_daily_goals').select('*').gte('date', filters.startDate).lte('date', filters.endDate).limit(5000), true),
+    runQuery('Metas', goalsQuery, true),
   ]);
 
   let entries = filterEntries(entriesResult.rows, filters);
@@ -162,10 +203,16 @@ export async function fetchAiContext(rawFilters = {}, user) {
     entries,
     occurrences,
     lots,
+    lotContext,
     cells: cellsResult.rows,
     goals,
     warnings,
-    sources: ['production_entries', ...(occurrencesResult.warning ? [] : ['occurrences']), ...(lotsResult.warning ? [] : ['production_lots', 'production_orders'])],
+    sources: [
+      'production_entries',
+      ...(occurrencesResult.warning ? [] : ['occurrences']),
+      ...(lotsResult.warning ? [] : ['production_lots', 'production_orders']),
+      ...(lotContext.batchId ? ['promob_import_batches', 'get_general_lot_tracking'] : []),
+    ],
     generatedAt: new Date().toISOString(),
   };
 }

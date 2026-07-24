@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { base44 } from '@/lib/localDb';
 import { useQuery } from '@tanstack/react-query';
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Trophy, TrendingUp, Star, Users, Target, Calendar } from 'lucide-react';
 import { Card } from '@/components/ui/card';

@@ -315,13 +315,28 @@ async function sendReportEmailViaScheduledFallback({ reportJobId, profileIds, su
   }
 }
 
-export async function sendReportEmail({ reportJobId, recipientIds = [], recipientProfileIds = [], templateCode, subject, message }) {
+export async function sendReportEmail({
+  reportJobId,
+  recipientIds = [],
+  recipientProfileIds = [],
+  templateCode,
+  subject,
+  message,
+  idempotencyKey,
+}) {
   const refs = splitRecipientRefs(recipientIds);
   const profileIds = [...new Set([...refs.profileIds, ...toArray(recipientProfileIds)])];
 
   if (!profileIds.length) throw new Error('Selecione pelo menos um gestor cadastrado em Usuários.');
 
-  const body = { reportJobId, recipientProfileIds: profileIds, templateCode, subject, message };
+  const body = {
+    reportJobId,
+    recipientProfileIds: profileIds,
+    templateCode,
+    subject,
+    message,
+    idempotencyKey,
+  };
   const { data, error } = await supabase.functions.invoke('send-report-email', { body });
   if (error) {
     const errorMessage = await getFunctionErrorMessage(error, 'O serviço de e-mail não respondeu.');

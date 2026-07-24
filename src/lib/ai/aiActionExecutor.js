@@ -4,7 +4,9 @@ import { sendReportEmailSmart, listEmailLogs } from './aiEmailService';
 import { listAiLogs } from './aiAuditService';
 import { createScheduleFromCommand, listSchedulesFromPrompt, cancelScheduleFromPrompt } from './aiScheduleCommandService';
 import { resolveRecipientsFromPrompt } from './aiRecipientResolver';
-import { parseProductionQuestion, searchProductionContext } from './aiProductionSearchService';
+import { buildProductionFilters, parseProductionQuestion, searchProductionContext } from './aiProductionSearchService';
+import { resolveAiLotContext } from './aiLotContextService';
+import { recordAiActionRun } from './aiCapabilityService';
 import { NAVIGATION_TOPICS } from '@/lib/assistant/assistantEngine';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -16,6 +18,7 @@ function reportLabel(type) {
     shift_closure: 'Fechamento de Turno',
     cell_performance: 'Desempenho por Célula',
     lot_traceability: 'Relatório de Rastreabilidade',
+    lot_forecast: 'Andamento e Previsão de Lote',
     occurrences: 'Relatório de Ocorrências',
     executive: 'Resumo Executivo',
   };
@@ -27,6 +30,19 @@ function periodLabel(filters) {
   return filters.startDate === filters.endDate
     ? filters.startDate.split('-').reverse().join('/')
     : `${filters.startDate.split('-').reverse().join('/')} a ${filters.endDate.split('-').reverse().join('/')}`;
+}
+
+function hasReportData(report) {
+  return Boolean(
+    report?.context?.entries?.length
+    || report?.context?.lots?.length
+    || report?.context?.lotContext?.generalLot
+  );
+}
+
+function progressLabel(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `${numeric.toFixed(1).replace('.', ',')}%` : '0,0%';
 }
 
 export async function executeAiAction(actionPlan, { user, conversationContext = {} } = {}) {
@@ -106,7 +122,7 @@ export async function executeAiAction(actionPlan, { user, conversationContext = 
       options: { requestedByAi: true },
     });
 
-    if (!report.context?.entries?.length) {
+    if (!hasReportData(report)) {
       return {
         content: `Relatório ${reportLabel(reportType)} gerado para o período ${periodLabel(filters)}, porém não foram encontrados lançamentos de produção. O arquivo não possui dados.`,
       };
@@ -135,7 +151,7 @@ export async function executeAiAction(actionPlan, { user, conversationContext = 
       });
     }
 
-    if (!report.context?.entries?.length) {
+    if (!hasReportData(report)) {
       return {
         content: `Não há dados para gerar o relatório ${reportLabel(reportType || report.reportType)} no período ${periodLabel(currentFilters)}. O e-mail não foi enviado.`,
       };
@@ -144,14 +160,28 @@ export async function executeAiAction(actionPlan, { user, conversationContext = 
     const recipientIds = resolvedRecs.resolved.map(r => r.id).filter(Boolean);
     const directRecipients = resolvedRecs.resolved.filter(r => !r.id).map(r => ({ name: r.name, email: r.email }));
 
-    const result = await sendReportEmailSmart({
+    const idempotencyKey = [
+      'ai',
+      report.jobId || report.id,
+      ...recipientIds.slice().sort(),
+    ].join(':');
+    await sendReportEmailSmart({
       reportJobId: report.jobId,
       recipientIds,
       directRecipients,
       templateCode: templateCode || 'manager-summary',
       subject: subject || `[Leo Flow] ${report.title}`,
       message: message || `Segue o relatório ${reportLabel(reportType || report.reportType)} solicitado para o período ${periodLabel(currentFilters)}.`,
+      idempotencyKey,
       user,
+    });
+    await recordAiActionRun({
+      user,
+      action,
+      capabilityCode: 'email_reports',
+      entityType: 'report_job',
+      entityId: report.jobId,
+      metadata: { reportType: reportType || report.reportType, recipientCount: recipientIds.length },
     });
 
     const recsNames = resolvedRecs.resolved.map(r => `${r.name} (${r.email})`).join(', ');
@@ -224,6 +254,46 @@ export async function executeAiAction(actionPlan, { user, conversationContext = 
   }
 
   if (action === 'search_production') {
+    const lotContext = await resolveAiLotContext({
+      generalLotCode: filters?.generalLotCode,
+      clientLotCode: filters?.clientLotCode,
+      lotCode: filters?.lotCode,
+    });
+    if (lotContext.matchedAs) {
+      const general = lotContext.generalLot;
+      const client = lotContext.clientLot
+        || general?.client_lots?.find((item) => item.lot_code === lotContext.clientLotCode);
+      const progress = client?.progress_percent ?? general?.progress_percent ?? 0;
+      const forecast = client?.forecast_at || general?.forecast_at || null;
+      const forecastText = forecast
+        ? new Date(forecast).toLocaleString('pt-BR')
+        : 'ainda sem previsão confiável';
+      const clientDescription = lotContext.clientLotCode
+        ? `\n- Lote do cliente: **${lotContext.clientLotCode}**${client?.customer_name ? ` — ${client.customer_name}` : ''}`
+        : `\n- Lotes de clientes vinculados: **${lotContext.clientLotCodes.length}**`;
+
+      await recordAiActionRun({
+        user,
+        action,
+        capabilityCode: 'lot_tracking',
+        entityType: lotContext.matchedAs === 'general' ? 'promob_import_batch' : 'production_lot',
+        entityId: lotContext.batchId || client?.lot_id || client?.id,
+        metadata: {
+          generalLotCode: lotContext.generalLotCode,
+          clientLotCode: lotContext.clientLotCode,
+        },
+      });
+
+      return {
+        content: `Rastreabilidade localizada:\n\n- Lote geral PCP: **${lotContext.generalLotCode || '—'}**${clientDescription}\n- Andamento: **${progressLabel(progress)}**\n- Previsão até separação: **${forecastText}**`,
+        contextPatch: { lastLotContext: lotContext },
+        actions: [
+          { label: 'Abrir Integridade do Lote', path: lotContext.links.integrity },
+          { label: 'Abrir Acompanhamento e Previsão', path: lotContext.links.tracking },
+        ],
+      };
+    }
+
     const searchIntent = parseProductionQuestion(actionPlan.rawPrompt || '');
     const searchFilters = buildProductionFilters(searchIntent);
     const result = await searchProductionContext(searchFilters);

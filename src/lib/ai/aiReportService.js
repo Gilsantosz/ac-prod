@@ -9,6 +9,7 @@ export const REPORT_TYPES = [
   { value: 'production_summary', label: 'Resumo de Produção' },
   { value: 'cell_performance', label: 'Desempenho por Célula' },
   { value: 'lot_traceability', label: 'Rastreabilidade de Lotes' },
+  { value: 'lot_forecast', label: 'Andamento e Previsão de Lotes' },
   { value: 'occurrences', label: 'Ocorrências e Paradas' },
   { value: 'executive', label: 'Resumo Executivo' },
 ];
@@ -48,12 +49,13 @@ export async function generateOperationalReport({ user, reportType, format, titl
   const analysis = analyzeProductionContext(context);
   if (reportType === 'oee') analysis.oee = calculateOeeSummary(context.entries);
   const resolvedTitle = title?.trim() || REPORT_TYPES.find((item) => item.value === reportType)?.label || 'Relatório Industrial';
+  const persistedFormat = format === 'email_html' ? 'html' : format;
   const report = {
     id: crypto.randomUUID(),
     traceId,
     title: resolvedTitle,
     reportType,
-    format,
+    format: persistedFormat,
     filters: context.filters,
     options,
     context,
@@ -66,10 +68,25 @@ export async function generateOperationalReport({ user, reportType, format, titl
     requested_by: user?.id,
     title: report.title,
     report_type: reportType,
-    format,
+    format: persistedFormat,
     filters: context.filters,
     options,
-    snapshot: { analysis, counts: { entries: context.entries.length, occurrences: context.occurrences.length, lots: context.lots.length } },
+    snapshot: {
+      analysis,
+      counts: {
+        entries: context.entries.length,
+        occurrences: context.occurrences.length,
+        lots: context.lots.length,
+      },
+      lotContext: context.lotContext ? {
+        matchedAs: context.lotContext.matchedAs,
+        batchId: context.lotContext.batchId,
+        generalLotCode: context.lotContext.generalLotCode,
+        clientLotCode: context.lotContext.clientLotCode,
+        clientLotCodes: context.lotContext.clientLotCodes,
+        generalLot: context.lotContext.generalLot,
+      } : null,
+    },
     status: 'completed',
     trace_id: traceId,
     completed_at: new Date().toISOString(),
@@ -91,7 +108,7 @@ export async function generateOperationalReport({ user, reportType, format, titl
       traceId,
       durationMs: Math.round(performance.now() - started),
     }),
-    recordAiEvent({ user, traceId, event: 'report.generated', entity: 'report_job', entityId: job?.id, message: report.title, metadata: { reportType, format, filters: context.filters } }),
+    recordAiEvent({ user, traceId, event: 'report.generated', entity: 'report_job', entityId: job?.id, message: report.title, metadata: { reportType, format: persistedFormat, filters: context.filters } }),
   ]);
 
   return report;

@@ -214,20 +214,6 @@ function mapDailyGoalCondition(key, value) {
   return [key, value];
 }
 
-// ─── Ordena lista localmente ──────────────────────────────────────────────────
-const sortData = (list, orderBy) => {
-  if (!orderBy) return list;
-  const desc = orderBy.startsWith('-');
-  const field = desc ? orderBy.substring(1) : orderBy;
-  return [...list].sort((a, b) => {
-    let vA = a[field], vB = b[field];
-    if (vA == null) return desc ? 1 : -1;
-    if (vB == null) return desc ? -1 : 1;
-    if (typeof vA === 'string') return desc ? vB.localeCompare(vA) : vA.localeCompare(vB);
-    return desc ? vB - vA : vA - vB;
-  });
-};
-
 // ─── Fábrica de cliente de entidade ──────────────────────────────────────────
 const createEntityClient = (entityName) => {
   const table = TABLE_MAP[entityName] || entityName.toLowerCase();
@@ -528,8 +514,16 @@ const createEntityClient = (entityName) => {
           console.error('Erro ao buscar e-mail do gestor antes de deletar:', e);
         }
       }
-      const { error } = await supabase.from(table).delete().eq('id', id);
+      const { data: deleted, error } = await supabase
+        .from(table)
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
       if (error) throw error;
+      if (!deleted?.id) {
+        throw new Error('O registro não foi excluído. Verifique sua permissão e tente novamente.');
+      }
       return { success: true, id };
     },
 
@@ -545,14 +539,19 @@ const createEntityClient = (entityName) => {
         }
       }
 
+      if (orderBy) {
+        const desc = orderBy.startsWith('-');
+        const field = desc ? orderBy.substring(1) : orderBy;
+        const dbField = field === 'created_date' ? 'created_at' : field;
+        q = q.order(dbField, { ascending: !desc });
+      }
+
       if (limit) q = q.limit(limit);
 
       const { data, error } = await q;
       if (error) throw error;
 
-      let rows = (data || []).map((r) => normalizeFromDb(entityName, r));
-      if (orderBy) rows = sortData(rows, orderBy);
-      return rows;
+      return (data || []).map((r) => normalizeFromDb(entityName, r));
     },
   };
 };

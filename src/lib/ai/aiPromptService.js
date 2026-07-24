@@ -3,6 +3,7 @@ import { analyzeProductionContext, formatInsightAnswer } from './aiInsightServic
 import { normalizeText } from '@/lib/assistant/assistantEngine';
 import { recordAiRequest } from './aiAuditService';
 import { routeAction } from './aiActionRouter';
+import { listAiCapabilities } from './aiCapabilityService';
 
 function filtersFromQuestion(question) {
   const normalized = normalizeText(question);
@@ -32,8 +33,13 @@ export function isOperationalAiQuestion(question) {
 
 export async function askOperationalCopilot(question, { user, conversationContext }) {
   const started = performance.now();
-  
-  const actionResult = await routeAction(question, { user, conversationContext });
+  const capabilities = await listAiCapabilities(user);
+  const enrichedConversationContext = {
+    ...(conversationContext || {}),
+    capabilities,
+  };
+
+  const actionResult = await routeAction(question, { user, conversationContext: enrichedConversationContext });
   if (actionResult) {
     await recordAiRequest({
       user,
@@ -61,5 +67,9 @@ export async function askOperationalCopilot(question, { user, conversationContex
     sourceTables: context.sources,
     durationMs: Math.round(performance.now() - started),
   });
-  return { content, actions: [{ label: 'Ver análise completa', path: '/ia-operacional' }] };
+  return {
+    content,
+    actions: [{ label: 'Ver análise completa', path: '/ia-operacional' }],
+    context: { capabilities },
+  };
 }

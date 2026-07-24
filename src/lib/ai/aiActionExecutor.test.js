@@ -4,6 +4,7 @@ import { canExecuteAiAction } from './aiPermissionService';
 import { resolveRecipientsFromPrompt } from './aiRecipientResolver';
 import { generateOperationalReport } from './aiReportService';
 import { sendReportEmailSmart } from './aiEmailService';
+import { resolveAiLotContext } from './aiLotContextService';
 
 vi.mock('./aiPermissionService', () => ({
   canExecuteAiAction: vi.fn(),
@@ -22,9 +23,18 @@ vi.mock('./aiEmailService', () => ({
   listEmailLogs: vi.fn(),
 }));
 
+vi.mock('./aiLotContextService', () => ({
+  resolveAiLotContext: vi.fn(),
+}));
+
+vi.mock('./aiCapabilityService', () => ({
+  recordAiActionRun: vi.fn(),
+}));
+
 describe('aiActionExecutor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resolveAiLotContext.mockResolvedValue({ matchedAs: null });
   });
 
   it('blocks execution when user lacks permissions', async () => {
@@ -75,5 +85,31 @@ describe('aiActionExecutor', () => {
     expect(generateOperationalReport).toHaveBeenCalled();
     expect(sendReportEmailSmart).toHaveBeenCalled();
     expect(res.content).toContain('enviado com sucesso');
+  });
+
+  it('abre lote geral e lote do cliente já selecionados', async () => {
+    canExecuteAiAction.mockReturnValue(true);
+    resolveAiLotContext.mockResolvedValue({
+      matchedAs: 'client',
+      batchId: 'batch-1',
+      generalLotCode: '15587',
+      clientLotCode: '143345',
+      clientLotCodes: ['143345'],
+      clientLot: { id: 'lot-1', lot_code: '143345', customer_name: 'Cliente Teste', progress_percent: 42 },
+      generalLot: null,
+      links: {
+        integrity: '/integridade-lote?generalLot=15587&clientLot=143345',
+        tracking: '/acompanhamento-lotes?generalLot=15587&clientLot=143345',
+      },
+    });
+
+    const result = await executeAiAction({
+      action: 'search_production',
+      rawPrompt: 'rastreie o lote do cliente 143345',
+      filters: { clientLotCode: '143345', lotCode: '143345' },
+    }, { user: { id: 'u1', role: 'admin' } });
+
+    expect(result.content).toContain('Lote geral PCP: **15587**');
+    expect(result.actions[0].path).toBe('/integridade-lote?generalLot=15587&clientLot=143345');
   });
 });
