@@ -143,7 +143,7 @@ Deno.serve(async (req) => {
         if (schedule.recipient_profile_ids && schedule.recipient_profile_ids.length > 0) {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, name, email, role, report_delivery_enabled')
+            .select('id, name, email, report_email, role, report_delivery_enabled')
             .in('id', schedule.recipient_profile_ids)
             .eq('active', true);
 
@@ -151,8 +151,9 @@ Deno.serve(async (req) => {
             profiles
               .filter(p => ['admin', 'manager', 'supervisor'].includes(p.role) || p.report_delivery_enabled === true)
               .forEach(p => {
-              if (p.email) {
-                recipientsList.push({ email: p.email.trim().toLowerCase(), name: p.name || p.email, profile_id: p.id });
+              const deliveryEmail = p.report_email || p.email;
+              if (deliveryEmail) {
+                recipientsList.push({ email: deliveryEmail.trim().toLowerCase(), name: p.name || deliveryEmail, profile_id: p.id });
               }
               });
           }
@@ -170,12 +171,13 @@ Deno.serve(async (req) => {
               if (m.profile_id) {
                 const { data: p } = await supabase
                   .from('profiles')
-                  .select('id, name, email, role, report_delivery_enabled')
+                  .select('id, name, email, report_email, role, report_delivery_enabled')
                   .eq('id', m.profile_id)
                   .eq('active', true)
                   .single();
-                if (p && p.email && (['admin', 'manager', 'supervisor'].includes(p.role) || p.report_delivery_enabled === true)) {
-                  recipientsList.push({ email: p.email.trim().toLowerCase(), name: p.name || p.email, profile_id: p.id });
+                const deliveryEmail = p?.report_email || p?.email;
+                if (p && deliveryEmail && (['admin', 'manager', 'supervisor'].includes(p.role) || p.report_delivery_enabled === true)) {
+                  recipientsList.push({ email: deliveryEmail.trim().toLowerCase(), name: p.name || deliveryEmail, profile_id: p.id });
                 }
               }
             }
@@ -271,6 +273,7 @@ Deno.serve(async (req) => {
 
           if (delError) {
             console.error(`Erro ao criar registro de delivery para ${rec.email}:`, delError);
+            totalFailed++;
             continue;
           }
 
@@ -287,6 +290,11 @@ Deno.serve(async (req) => {
             .from('report_deliveries')
             .update({
               status: sent.success ? 'sent' : 'failed',
+              delivery_state: sent.success ? 'provider_accepted' : 'failed',
+              provider: sent.provider || null,
+              provider_message_id: sent.providerMessageId || null,
+              provider_response: sent.providerResponse || null,
+              provider_accepted: sent.accepted || [],
               error_message: sent.error || null,
               sent_at: sent.success ? new Date().toISOString() : null,
               attempt_count: 1
@@ -327,7 +335,20 @@ Deno.serve(async (req) => {
             .eq('id', schedule.id);
         }
 
-        results.push({ scheduleId: schedule.id, name: schedule.name, status: runStatus });
+        const { data: runDeliveries } = await supabase
+          .from('report_deliveries')
+          .select('recipient_email_snapshot,delivery_state,provider,provider_message_id')
+          .eq('run_id', runId);
+        results.push({
+          scheduleId: schedule.id,
+          name: schedule.name,
+          status: runStatus,
+          success: totalSuccess > 0,
+          accepted: totalSuccess,
+          failed: totalFailed,
+          deliveries: runDeliveries || [],
+          providerMessageId: runDeliveries?.[0]?.provider_message_id || null,
+        });
 
       } catch (err: any) {
         console.error(`Erro crítico no agendamento ${schedule.id}:`, err);

@@ -112,6 +112,7 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
   const [editPermissions, setEditPermissions] = useState(() => user.permissions || getDefaultPermissions(user.role || 'operator'));
   const [editReportDelivery, setEditReportDelivery] = useState(Boolean(user.report_delivery_enabled));
   const [editDailyReport, setEditDailyReport] = useState(Boolean(user.receives_daily_report));
+  const [editReportEmail, setEditReportEmail] = useState(user.report_email || user.email || '');
 
 
   const isSelf = user.id === currentUserId;
@@ -134,6 +135,7 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
       permissions: editPermissions,
       report_delivery_enabled: editReportDelivery,
       receives_daily_report: editReportDelivery && editDailyReport,
+      report_email: editReportDelivery ? editReportEmail.trim().toLowerCase() : null,
     });
 
     setIsEditing(false);
@@ -147,6 +149,7 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
     setEditPermissions(user.permissions || getDefaultPermissions(user.role || 'operator'));
     setEditReportDelivery(Boolean(user.report_delivery_enabled));
     setEditDailyReport(Boolean(user.receives_daily_report));
+    setEditReportEmail(user.report_email || user.email || '');
 
     setIsEditing(false);
   };
@@ -222,6 +225,20 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
                 <span className="block text-xs text-muted-foreground">Pode ser selecionado como destinatário.</span>
               </span>
             </label>
+            {editReportDelivery && (
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor={`report-email-${user.id}`}>E-mail que recebe os relatórios</Label>
+                <Input
+                  id={`report-email-${user.id}`}
+                  type="email"
+                  value={editReportEmail}
+                  onChange={(event) => setEditReportEmail(event.target.value)}
+                  placeholder={user.email}
+                  required
+                />
+                <p className="text-xs text-muted-foreground">Pode ser diferente do e-mail usado para entrar no sistema. A IA respeitará exatamente este endereço.</p>
+              </div>
+            )}
             <label className="flex cursor-pointer items-start gap-3">
               <input
                 type="checkbox"
@@ -307,6 +324,9 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
                 )}
               </div>
               <p className="text-sm text-muted-foreground truncate">{user.email}</p>
+              {user.report_delivery_enabled && user.report_email && user.report_email !== user.email && (
+                <p className="text-xs text-blue-600 dark:text-blue-400 truncate">Relatórios: {user.report_email}</p>
+              )}
               
               {/* Permissões Ativas em Badges */}
               <div className="flex gap-1.5 flex-wrap pt-1.5">

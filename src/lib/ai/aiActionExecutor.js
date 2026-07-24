@@ -85,6 +85,16 @@ export async function executeAiAction(actionPlan, { user, conversationContext = 
       };
     }
 
+    // Nunca substitua um e-mail explícito não cadastrado por uma pessoa com
+    // nome parecido. O usuário precisa corrigir/confirmar o endereço oficial.
+    const unresolvedEmails = resolvedRecs.notFound.filter((value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim()));
+    if (unresolvedEmails.length > 0) {
+      return {
+        content: `O e-mail informado (${unresolvedEmails.join(', ')}) não está cadastrado como destinatário ativo em Usuários → Contas. Por segurança, não substituí por outro endereço parecido. Corrija o cadastro ou informe exatamente um e-mail já registrado.`,
+        actions: [{ label: 'Abrir Usuários', path: '/usuarios' }],
+      };
+    }
+
     // Se nenhum destinatário for encontrado e for uma ação de envio
     if (resolvedRecs.resolved.length === 0 && action === 'send_report_email') {
       return {
@@ -165,7 +175,7 @@ export async function executeAiAction(actionPlan, { user, conversationContext = 
       report.jobId || report.id,
       ...recipientIds.slice().sort(),
     ].join(':');
-    await sendReportEmailSmart({
+    const delivery = await sendReportEmailSmart({
       reportJobId: report.jobId,
       recipientIds,
       directRecipients,
@@ -187,7 +197,7 @@ export async function executeAiAction(actionPlan, { user, conversationContext = 
     const recsNames = resolvedRecs.resolved.map(r => `${r.name} (${r.email})`).join(', ');
 
     return {
-      content: `Relatório "${report.title}" enviado com sucesso para: ${recsNames}. Envio auditado nos logs do sistema.`,
+      content: `Relatório "${report.title}" aceito pelo provedor de e-mail para: ${recsNames}. ID de rastreio: ${delivery?.providerMessageId || delivery?.processed?.[0]?.providerMessageId || 'registrado nos logs'}. A entrega final ainda depende do servidor do destinatário; nenhuma troca automática de endereço foi realizada.`,
       contextPatch: { lastReport: report, lastFilters: currentFilters },
     };
   }

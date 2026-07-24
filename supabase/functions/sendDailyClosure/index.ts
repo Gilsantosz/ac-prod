@@ -12,6 +12,14 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 });
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const ALLOWED_SHIFTS = new Set(['1º Turno', '2º Turno', '3º Turno']);
+
+function normalizedTextList(value: unknown, allowed?: Set<string>) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value
+    .map((item) => String(item || '').trim())
+    .filter((item) => item && (!allowed || allowed.has(item))))];
+}
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -49,16 +57,18 @@ Deno.serve(async (request) => {
     const body = await request.json().catch(() => ({}));
     const reportDate = String(body?.date || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }));
     if (!DATE_PATTERN.test(reportDate)) return json({ success: false, error: 'Data do fechamento inválida.' }, 422);
+    const shiftFilter = normalizedTextList(body?.shift, ALLOWED_SHIFTS);
+    const cellFilter = normalizedTextList(body?.cell).slice(0, 50);
 
     const { data: recipients, error: recipientError } = await admin
       .from('profiles')
-      .select('id, email')
+      .select('id, email, report_email')
       .eq('active', true)
       .eq('report_delivery_enabled', true)
       .in('role', ['admin', 'manager', 'supervisor']);
     if (recipientError) throw recipientError;
 
-    const validRecipients = (recipients || []).filter((profile) => profile.email);
+    const validRecipients = (recipients || []).filter((profile) => profile.report_email || profile.email);
     if (!validRecipients.length) {
       return json({ success: true, sent: 0, failed: 0, recipients: [], warning: 'Nenhum gestor está marcado para receber relatórios em Usuários > Contas.' });
     }
@@ -70,7 +80,7 @@ Deno.serve(async (request) => {
         name: `Fechamento produtivo ${reportDate}`,
         enabled: false,
         report_type: 'shift_closure',
-        report_types: ['shift_closure'],
+        report_types: ['shift_closure', 'oee'],
         format: 'email_html',
         frequency: 'daily',
         time_local: now.toISOString().slice(11, 19),
@@ -78,6 +88,8 @@ Deno.serve(async (request) => {
         period_mode: 'current_day',
         report_date: reportDate,
         source_page: 'daily_summary_manual',
+        shift_filter: shiftFilter,
+        cell_filter: cellFilter,
         recipient_profile_ids: validRecipients.map((profile) => profile.id),
         extra_emails: [],
         created_by: caller.id,
@@ -99,7 +111,7 @@ Deno.serve(async (request) => {
 
     const { data: deliveries, error: deliveryError } = await admin
       .from('report_deliveries')
-      .select('recipient_email_snapshot,status,error_message')
+      .select('recipient_email_snapshot,status,error_message,provider,provider_message_id,delivery_state')
       .eq('schedule_id', schedule.id);
     if (deliveryError) throw deliveryError;
 
@@ -107,9 +119,19 @@ Deno.serve(async (request) => {
     const failed = (deliveries || []).filter((delivery) => delivery.status === 'failed').length;
     return json({
       success: sent > 0,
+      accepted: sent,
       sent,
       failed,
       recipients: (deliveries || []).map((delivery) => delivery.recipient_email_snapshot),
+      deliveries: (deliveries || []).map((delivery) => ({
+        email: delivery.recipient_email_snapshot,
+        state: delivery.delivery_state || (delivery.status === 'sent' ? 'provider_accepted' : delivery.status),
+        provider: delivery.provider,
+        providerMessageId: delivery.provider_message_id,
+      })),
+      warning: sent > 0
+        ? 'O provedor aceitou o envio. A entrega final depende do servidor do destinatário e pode gerar devolução posterior.'
+        : undefined,
       error: sent === 0 ? (deliveries?.[0]?.error_message || 'Nenhum e-mail foi enviado.') : undefined,
     }, sent > 0 ? 200 : 502);
   } catch (error) {

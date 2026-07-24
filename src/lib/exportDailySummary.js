@@ -22,11 +22,23 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary }) {
   const totalTarget = totalsByUnit.reduce((sum, row) => sum + (Number(row.target) || 0), 0);
   const totalRealized = totalsByUnit.reduce((sum, row) => sum + (Number(row.realized) || 0), 0);
   const totalAttainment = totalTarget > 0 ? Math.round((totalRealized / totalTarget) * 100) : 0;
+  const plannedGroups = (summary.matrixByCell || []).reduce((count, row) => {
+    const activeShifts = Object.values(row.shifts || {}).filter((bucket) => (
+      Number(bucket.entries) > 0 || Number(bucket.target) > 0 || Number(bucket.capacity) > 0
+    )).length;
+    return count + activeShifts;
+  }, 0);
+  const plannedMinutes = plannedGroups * 8 * 60;
+  const availability = plannedMinutes > 0 ? Math.max((plannedMinutes - Number(t.downtime || 0)) / plannedMinutes, 0) : 0;
+  const performance = totalTarget > 0 ? Math.min(totalRealized / totalTarget, 1.5) : 0;
+  const quality = Number(t.produced) > 0 ? Math.max(Number(t.good) / Number(t.produced), 0) : 0;
+  const oee = Math.round(availability * performance * quality * 1000) / 10;
   let y = await drawBrandedPdfHeader(doc, {
     title: 'Resumo Diario de Producao',
     subtitle: `Data: ${date} | Turnos: ${shiftStr} | Celulas: ${cellStr}`,
     summary: [
       { label: 'Atingimento', value: `${totalAttainment}%` },
+      { label: 'OEE', value: `${oee}%` },
       ...totalsByUnit.slice(0, 3).map((row) => ({ label: `Realizado (${row.unitLabel})`, value: fmt(row.realized) })),
       { label: 'Refugo', value: `${fmt(t.scrap)} (${t.scrapRate}%)` },
       { label: 'Paradas (min)', value: fmt(t.downtime) },
@@ -36,6 +48,7 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary }) {
   // KPIs
   const kpis = [
     ['Atingimento', `${totalAttainment}%`],
+    ['OEE', `${oee}%`],
     ...totalsByUnit.map((row) => [`Realizado (${row.unitLabel})`, fmt(row.realized)]),
     ['Refugo', `${fmt(t.scrap)} (${t.scrapRate}%)`],
     ['Paradas (min)', fmt(t.downtime)],
@@ -57,6 +70,31 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary }) {
     doc.setFont(undefined, 'normal');
   });
   y += 28;
+
+  const drawProgress = (label, value, color = [22, 163, 74]) => {
+    if (y > 260) { doc.addPage(); y = 18; }
+    const width = pageW - 56;
+    doc.setFontSize(8);
+    doc.setTextColor(51);
+    doc.text(label, 14, y + 4);
+    doc.setFillColor(226, 232, 240);
+    doc.roundedRect(42, y, width, 5, 2, 2, 'F');
+    doc.setFillColor(...color);
+    const filledWidth = width * Math.min(Math.max(Number(value) || 0, 0), 100) / 100;
+    if (filledWidth > 0) doc.roundedRect(42, y, filledWidth, 5, 2, 2, 'F');
+    doc.text(`${Math.round((Number(value) || 0) * 10) / 10}%`, pageW - 13, y + 4, { align: 'right' });
+    y += 9;
+  };
+
+  doc.setFontSize(12);
+  doc.setFont(undefined, 'bold');
+  doc.text('Indicadores e graficos', 14, y);
+  doc.setFont(undefined, 'normal');
+  y += 7;
+  drawProgress('Atingimento geral', totalAttainment);
+  drawProgress('OEE', oee, oee >= 85 ? [22, 163, 74] : oee >= 60 ? [245, 158, 11] : [220, 38, 38]);
+  totalsByUnit.forEach((row) => drawProgress(`Atingimento - ${row.unitLabel}`, attain(row)));
+  y += 5;
 
   const drawTable = (title, rows, keyField, keyLabel) => {
     if (y > 250) { doc.addPage(); y = 18; }

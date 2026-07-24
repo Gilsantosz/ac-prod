@@ -79,7 +79,7 @@ async function resolveRecipients(admin: any, body: any) {
   if (refs.profileIds.length) {
     const { data, error } = await admin
       .from('profiles')
-      .select('id,name,email,role,active,report_delivery_enabled')
+      .select('id,name,email,report_email,role,active,report_delivery_enabled')
       .in('id', refs.profileIds)
       .eq('active', true);
     if (error) throw error;
@@ -89,8 +89,8 @@ async function resolveRecipients(admin: any, body: any) {
       source: 'profile',
       profile_id: profile.id,
       recipient_id: null,
-      name: profile.name || profile.email,
-      email: profile.email,
+      name: profile.name || profile.report_email || profile.email,
+      email: profile.report_email || profile.email,
       role: profile.role,
       }));
   }
