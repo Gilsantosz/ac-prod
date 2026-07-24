@@ -61,6 +61,45 @@ function normalizeScheduleShifts(filters = {}) {
   return raw.filter((shift) => ['1º Turno', '2º Turno', '3º Turno'].includes(shift));
 }
 
+const RICH_REPORT_FILTER_FIELDS = [
+  'startDate',
+  'endDate',
+  'lotCode',
+  'generalLotCode',
+  'clientLotCode',
+  'operator',
+  'order',
+  'loadNumber',
+  'product',
+  'client',
+  'customerLegalName',
+  'route',
+  'finalizationDate',
+  'palletNumber',
+  'stage',
+  'status',
+  'approvalStatus',
+];
+
+function normalizeRichReportFilters(filters = {}) {
+  const normalized = {
+    cells: normalizeScheduleCells(filters),
+    shifts: normalizeScheduleShifts(filters),
+    lots: toArray(filters.lots).map(String).map((value) => value.trim()).filter(Boolean),
+    allHistory: filters.allHistory === true,
+    onlyWithScrap: filters.onlyWithScrap === true,
+    onlyWithDowntime: filters.onlyWithDowntime === true,
+    onlyWithOccurrence: filters.onlyWithOccurrence === true,
+  };
+
+  RICH_REPORT_FILTER_FIELDS.forEach((field) => {
+    const value = String(filters[field] || '').trim();
+    if (value) normalized[field] = value;
+  });
+
+  return normalized;
+}
+
 function localIso(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -287,13 +326,14 @@ async function sendReportEmailViaScheduledFallback({ reportJobId, profileIds, su
   const job = await fetchReportJob(reportJobId);
   if (!profileIds.length) throw new Error('Selecione pelo menos um gestor cadastrado.');
 
+  const richFilters = normalizeRichReportFilters(job.filters || {});
   const reportType = mapScheduledReportType(job.report_type);
   const reportTypes = ['daily_production', 'shift_closure'].includes(reportType)
     ? [reportType, 'oee']
     : [reportType];
-  const explicitDate = job.filters?.startDate
-    && job.filters?.startDate === job.filters?.endDate
-    ? job.filters.startDate
+  const explicitDate = richFilters.startDate
+    && richFilters.startDate === richFilters.endDate
+    ? richFilters.startDate
     : null;
   const now = new Date();
   const schedule = await insertOneOffSchedule({
@@ -302,15 +342,18 @@ async function sendReportEmailViaScheduledFallback({ reportJobId, profileIds, su
     report_type: reportType,
     report_types: reportTypes,
     format: 'email_html',
-    cell_filter: normalizeScheduleCells(job.filters || {}),
-    shift_filter: normalizeScheduleShifts(job.filters || {}),
+    cell_filter: richFilters.cells,
+    shift_filter: richFilters.shifts,
     stage_filter: [],
+    report_start_date: richFilters.startDate || null,
+    report_end_date: richFilters.endDate || null,
+    filter_snapshot: richFilters,
     recipient_profile_ids: profileIds,
     extra_emails: [],
     frequency: frequencyForScheduledFallback(job.filters, now),
     time_local: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:00`,
     timezone: 'America/Sao_Paulo',
-    period_mode: explicitDate ? 'current_day' : 'previous_day',
+    period_mode: richFilters.startDate ? 'current_day' : 'previous_day',
     report_date: explicitDate,
     source_page: 'ai_manual_rich_report',
     next_run_at: now.toISOString(),
