@@ -22,7 +22,7 @@ export async function generateReportPdf(reportType: string, data: any, schedule:
   page.drawRectangle({ x: 40, y: 772, width: 515, height: 48, color: rgb(0, 0.32, 0.18) });
   page.drawImage(logo, { x: 48, y: 778, width: 36, height: 36 });
   page.drawText('Leo Madeiras', { x: 96, y: 800, size: 16, font: bold, color: rgb(1, 0.93, 0) });
-  page.drawText('AC.Prod - Relatorios Industriais', { x: 96, y: 784, size: 10, font, color: rgb(1, 1, 1) });
+  page.drawText('Leo Flow - Relatorios Industriais', { x: 96, y: 784, size: 10, font, color: rgb(1, 1, 1) });
 
   y = 742;
   page.drawText(REPORT_TYPE_LABELS[reportType] || reportType, { x: 40, y, size: 16, font: bold, color: rgb(0.06, 0.09, 0.16) });

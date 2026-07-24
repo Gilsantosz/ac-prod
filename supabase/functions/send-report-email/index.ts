@@ -118,7 +118,7 @@ function providerErrorMessage(result: any, status: number) {
 }
 
 function filenameFor(job: any) {
-  return `${String(job.title || 'relatorio-acprod').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.csv`;
+  return `${String(job.title || 'relatorio-leo-flow').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.csv`;
 }
 
 function resolveEmailProvider() {
@@ -132,7 +132,7 @@ function resolveEmailProvider() {
       provider: 'smtp',
       smtpUser,
       smtpPass,
-      from: reportFrom || `"AC.Prod MES" <${smtpUser}>`,
+      from: reportFrom || `"Leo Flow" <${smtpUser}>`,
     };
   }
 
@@ -140,7 +140,7 @@ function resolveEmailProvider() {
     return {
       provider: 'resend',
       resendKey,
-      from: reportFrom || 'AC.Prod MES <alertas@acprod.com.br>',
+      from: reportFrom || 'Leo Flow <alertas@acprod.com.br>',
     };
   }
 
@@ -264,7 +264,7 @@ Deno.serve(async (req) => {
     const summary = aggregate(freshContext.entries, freshContext.occurrences, freshContext.lots);
     summary.lotContext = freshContext.lotContext || job.snapshot?.lotContext || null;
     const html = renderEmailTemplate(body.templateCode || 'manager-summary', job.title, summary, body.message || 'Segue o relatório industrial solicitado.');
-    const subject = String(body.subject || `[AC.Prod] ${job.title}`).slice(0, 180);
+    const subject = String(body.subject || `[Leo Flow] ${job.title}`).slice(0, 180);
     const attachment = {
       filename: filenameFor(job),
       content: csvAttachment(freshContext.entries),

@@ -67,8 +67,8 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary, cells 
   const quality = Number(t.produced) > 0 ? Math.max(Number(t.good) / Number(t.produced), 0) : 0;
   const oee = Math.round(availability * performance * quality * 1000) / 10;
   let y = await drawBrandedPdfHeader(doc, {
-    title: 'Resumo Diario de Producao',
-    subtitle: `Data: ${date} | Turnos: ${shiftStr} | Celulas: ${cellStr}`,
+    title: 'Resumo Diário de Produção',
+    subtitle: `Data: ${date.split('-').reverse().join('/')} | Turnos: ${shiftStr} | Células: ${cellStr}`,
     summary: [
       { label: 'Atingimento', value: `${totalAttainment}%` },
       { label: 'OEE', value: `${oee}%` },
@@ -85,24 +85,28 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary, cells 
     ...totalsByUnit.map((row) => [`Realizado (${row.unitLabel})`, fmt(row.realized)]),
     ['Refugo', `${fmt(t.scrap)} (${t.scrapRate}%)`],
     ['Paradas (min)', fmt(t.downtime)],
-  ].slice(0, 6);
+  ];
   y += 10;
-  const colW = (pageW - 28) / kpis.length;
+  const columns = 3;
+  const colW = (pageW - 28) / columns;
   kpis.forEach((k, i) => {
-    const x = 14 + i * colW;
+    const column = i % columns;
+    const row = Math.floor(i / columns);
+    const x = 14 + column * colW;
+    const cardY = y + row * 21;
     doc.setDrawColor(226);
     doc.setFillColor(241, 245, 249);
-    doc.rect(x, y, colW - 3, 18, 'FD');
+    doc.roundedRect(x, cardY, colW - 3, 18, 2, 2, 'FD');
     doc.setFontSize(7.5);
     doc.setTextColor(100);
-    doc.text(k[0], x + 3, y + 6);
+    doc.text(k[0], x + 3, cardY + 6);
     doc.setFontSize(10);
     doc.setTextColor(0);
     doc.setFont(undefined, 'bold');
-    doc.text(String(k[1]), x + 3, y + 13);
+    doc.text(String(k[1]), x + 3, cardY + 13);
     doc.setFont(undefined, 'normal');
   });
-  y += 28;
+  y += Math.ceil(kpis.length / columns) * 21 + 8;
 
   const drawProgress = (label, value, color = [22, 163, 74]) => {
     if (y > 260) { doc.addPage(); y = 18; }
@@ -121,7 +125,7 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary, cells 
 
   doc.setFontSize(12);
   doc.setFont(undefined, 'bold');
-  doc.text('Indicadores e graficos', 14, y);
+  doc.text('Indicadores e gráficos', 14, y);
   doc.setFont(undefined, 'normal');
   y += 7;
   drawProgress('Atingimento geral', totalAttainment);
@@ -179,8 +183,8 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary, cells 
     y += 8;
   };
 
-  drawTable('Producao por Celula', summary.byCell, 'cell', 'Celula');
-  drawTable('Producao por Turno', summary.byShift, 'shift', 'Turno');
+  drawTable('Produção por Célula', summary.byCell, 'cell', 'Célula');
+  drawTable('Produção por Turno', summary.byShift, 'shift', 'Turno');
 
   drawBrandedPdfFooter(doc);
   doc.save(`resumo-diario-${date}.pdf`);

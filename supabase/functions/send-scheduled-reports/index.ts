@@ -280,7 +280,7 @@ Deno.serve(async (req) => {
           // Enviar e-mail individual
           const sent = await sendEmail({
             recipients: [rec.email],
-            subject: `[AC.Prod] ${schedule.name}`,
+            subject: `[Leo Flow] ${schedule.name}`,
             html: htmlContent,
             attachments
           });

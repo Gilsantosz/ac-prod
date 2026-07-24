@@ -14,7 +14,7 @@ function csvCell(value: any) {
 export function brandedAttachmentHeader(reportType: string, schedule: any) {
   return [
     ['Logomarca', 'Leo Madeiras'],
-    ['Sistema', 'AC.Prod - Relatorios Industriais'],
+    ['Sistema', 'Leo Flow - Relatórios Industriais'],
     ['Relatorio', REPORT_TYPE_LABELS[reportType] || reportType],
     ['Agendamento', schedule?.name || ''],
     ['Gerado em', new Date().toLocaleString('pt-BR')],

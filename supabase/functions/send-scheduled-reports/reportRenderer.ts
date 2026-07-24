@@ -373,16 +373,16 @@ export function renderReportFragmentHtml(type: string, data: any, cellsData?: an
 }
 export function wrapEmailTemplate(schedule: any, bodyContent: string) {
   return `
-    <div style="font-family:sans-serif;color:#1e293b;max-width:680px;margin:0 auto;border:1px solid #dbe3ea;border-radius:14px;overflow:hidden;box-shadow:0 8px 28px rgba(15,23,42,0.08);">
+    <div style="font-family:Arial,Helvetica,sans-serif;color:#1e293b;max-width:820px;margin:0 auto;border:1px solid #dbe3ea;border-radius:18px;overflow:hidden;box-shadow:0 8px 28px rgba(15,23,42,0.08);background:#ffffff;">
       <div style="background:#00522d;color:#ffffff;padding:18px 22px;display:flex;align-items:center;gap:14px;">
         <img src="${LEO_LOGO_URL}" alt="Leo Madeiras" width="54" height="54" style="border-radius:12px;border:2px solid #ffffff;display:block;" />
         <div>
           <h2 style="margin:0;font-size:20px;letter-spacing:0.2px;color:#ffed00;">Leo Madeiras</h2>
-          <p style="margin:4px 0 0 0;font-size:13px;color:#ffffff;">AC.Prod - Relatórios Industriais</p>
+          <p style="margin:4px 0 0 0;font-size:13px;color:#ffffff;">Leo Flow - Relatórios Industriais</p>
         </div>
       </div>
       <div style="padding:24px;background:#ffffff;">
-        <h2 style="margin-top:0;font-size:18px;color:#0f172a;">${esc(schedule.name)}</h2>
+        <h2 style="margin-top:0;font-size:24px;line-height:1.25;color:#0f172a;overflow-wrap:anywhere;">${esc(schedule.name)}</h2>
         <p style="font-size:12px;color:#64748b;margin-bottom:20px;">Período: ${esc(schedule.report_date || schedule.period_mode || 'configurado')} • Gerado em: ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</p>
         <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:20px;"/>
         
@@ -390,7 +390,7 @@ export function wrapEmailTemplate(schedule: any, bodyContent: string) {
 
       </div>
       <div style="background:#f8fafc;padding:15px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;">
-        E-mail automático gerado pelo sistema AC.Prod MES. Favor não responder diretamente a este remetente.
+        E-mail automático gerado pelo sistema Leo Flow. Favor não responder diretamente a este remetente.
       </div>
     </div>
   `;

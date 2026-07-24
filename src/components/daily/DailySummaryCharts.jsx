@@ -14,46 +14,31 @@ import {
 
 const fmt = (n) => (Number(n) || 0).toLocaleString('pt-BR');
 
-export default function DailySummaryCharts({ summary, entries = [] }) {
+export default function DailySummaryCharts({ summary, entries = [], evolutionData = [] }) {
   // ── 1. Métricas de Atingimento Geral ─────────────────────────────────────
-  const totalTarget = summary?.matrixByCell?.reduce((sum, row) => sum + (Number(row.total?.target) || 0), 0) || 11633;
-  const totalRealized = summary?.totalsByUnit?.reduce((sum, row) => sum + (Number(row.realized) || 0), 0) || 10983;
+  const totalTarget = summary?.totalsByUnit?.reduce((sum, row) => sum + (Number(row.target) || 0), 0) || 0;
+  const totalRealized = summary?.totalsByUnit?.reduce((sum, row) => sum + (Number(row.realized) || 0), 0) || 0;
   const diff = totalRealized - totalTarget;
-  const attainmentPct = totalTarget > 0 ? (totalRealized / totalTarget) * 100 : 94.2;
+  const attainmentPct = totalTarget > 0 ? (totalRealized / totalTarget) * 100 : 0;
 
-  const attainmentData = useMemo(() => [
+  const attainmentData = useMemo(() => totalTarget > 0 ? [
     { name: 'Produzido', value: Math.min(totalRealized, totalTarget), color: '#10B981' },
-    { name: 'Diferença', value: Math.max(0, totalTarget - totalRealized), color: '#EF4444' },
-  ], [totalRealized, totalTarget]);
-
-  // ── 2. Evolução do Atingimento (Histórico) ─────────────────────────────
-  const evolutionData = useMemo(() => [
-    { date: '14/07', rate: 72 },
-    { date: '15/07', rate: 78 },
-    { date: '16/07', rate: 85 },
-    { date: '17/07', rate: 88 },
-    { date: '18/07', rate: 90 },
-    { date: '20/07', rate: Math.round(attainmentPct * 10) / 10 },
-  ], [attainmentPct]);
+    { name: 'Pendente', value: Math.max(0, totalTarget - totalRealized), color: '#EF4444' },
+  ] : [{ name: 'Sem meta', value: 1, color: '#CBD5E1' }], [totalRealized, totalTarget]);
 
   // ── 3. Paradas por Motivo ────────────────────────────────────────────────
   const downtimeByReason = useMemo(() => {
-    const map = {
-      'Manutenção': 45,
-      'Setup': 30,
-      'Falta de material': 25,
-      'Outros': 20,
-    };
+    const map = {};
 
     // Soma paradas reais se houverem nos lançamentos
     entries.forEach((e) => {
       if (e.downtime > 0) {
-        const reason = e.notes || 'Outros';
+        const reason = e.downtime_reason || e.stop_reason || e.reason || e.notes || 'Outros';
         map[reason] = (map[reason] || 0) + Number(e.downtime);
       }
     });
 
-    const totalMin = Object.values(map).reduce((a, b) => a + b, 0) || 120;
+    const totalMin = Object.values(map).reduce((a, b) => a + b, 0);
     const colors = ['#EF4444', '#F97316', '#F59E0B', '#CBD5E1'];
 
     return {
@@ -61,7 +46,7 @@ export default function DailySummaryCharts({ summary, entries = [] }) {
       items: Object.entries(map).map(([name, value], i) => ({
         name,
         value,
-        pct: Math.round((value / totalMin) * 100),
+        pct: totalMin > 0 ? Math.round((value / totalMin) * 100) : 0,
         color: colors[i % colors.length],
       })),
     };
@@ -156,8 +141,7 @@ export default function DailySummaryCharts({ summary, entries = [] }) {
                   tick={{ fontSize: 10, fill: '#64748B' }}
                 />
                 <YAxis
-                  domain={[0, 100]}
-                  ticks={[0, 50, 100]}
+                  domain={[0, (max) => Math.max(100, Math.ceil(max / 25) * 25)]}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(v) => `${v}%`}
@@ -198,7 +182,7 @@ export default function DailySummaryCharts({ summary, entries = [] }) {
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={downtimeByReason.items}
+                  data={downtimeByReason.items.length ? downtimeByReason.items : [{ name: 'Sem paradas', value: 1, color: '#CBD5E1' }]}
                   cx="50%"
                   cy="50%"
                   innerRadius={55}
@@ -208,7 +192,7 @@ export default function DailySummaryCharts({ summary, entries = [] }) {
                   dataKey="value"
                   strokeWidth={0}
                 >
-                  {downtimeByReason.items.map((entry, index) => (
+                  {(downtimeByReason.items.length ? downtimeByReason.items : [{ color: '#CBD5E1' }]).map((entry, index) => (
                     <Cell key={`dt-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
@@ -235,6 +219,9 @@ export default function DailySummaryCharts({ summary, entries = [] }) {
                 </span>
               </div>
             ))}
+            {downtimeByReason.items.length === 0 && (
+              <p className="text-center text-muted-foreground font-medium py-2">Nenhuma parada registrada no período.</p>
+            )}
           </div>
         </CardContent>
       </Card>
