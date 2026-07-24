@@ -18,74 +18,98 @@ export async function registerManualQuantitativeEntry(payload = {}) {
 
   if (!generalLotCode) throw new Error('Código do Lote Geral é obrigatório.');
 
-  // 1. Tenta via RPC atômico se disponível
-  try {
-    const { data: rpcData, error: rpcError } = await supabase.rpc('register_manual_quantitative_production', {
-      p_payload: {
-        general_lot_code: generalLotCode,
-        cell_name: cellName,
-        shift,
-        operator,
-        quantity,
-        unit_of_measure: unitOfMeasure,
-        notes,
-        date,
-        cascade_all_cells: cascade,
-      },
-    });
-
-    if (!rpcError && rpcData?.success) {
-      console.log('Baixa manual registrada via RPC:', rpcData);
-    }
-  } catch (err) {
-    console.warn('Executando gravação direta em manual_production_records:', err?.message);
-  }
-
-  // 2. Garante registro na tabela dedicada `manual_production_records`
-  const targetCells = cascade ? ['Corte', 'Bordo', 'Usinagem', 'Embalagem'] : [cellName];
-  const currentHourStr = `${String(new Date().getHours()).padStart(2, '0')}:00`;
-
-  try {
-    await supabase.from('manual_production_records').insert({
-      type: 'baixa',
+  // 1. A RPC é a fonte atômica. Ao obter sucesso, não repetir gravações no
+  // fallback legado (isso duplicava baixa, KPI e histórico).
+  const { data: rpcData, error: rpcError } = await supabase.rpc('register_manual_quantitative_production', {
+    p_payload: {
       general_lot_code: generalLotCode,
       cell_name: cellName,
       shift,
       operator,
       quantity,
       unit_of_measure: unitOfMeasure,
+      notes,
+      date,
       cascade_all_cells: cascade,
-      notes: notes || `Baixa manual para ${cellName}`,
-      created_at: new Date().toISOString(),
-    });
-  } catch (err) {
-    console.warn('Aviso: erro ao gravar em manual_production_records:', err?.message);
+    },
+  });
+
+  if (!rpcError && rpcData?.success) {
+    return {
+      ...rpcData,
+      success: true,
+      general_lot_code: rpcData.general_lot_code || generalLotCode,
+      quantity,
+      unit_of_measure: unitOfMeasure,
+      cascade,
+      target_cells: rpcData.target_cells || (cascade ? ['Corte', 'Bordo', 'Usinagem', 'Embalagem'] : [cellName]),
+      is_manual: true,
+    };
+  }
+
+  if (!rpcError) {
+    throw new Error(rpcData?.error || 'A baixa manual foi recusada pelo banco de dados.');
+  }
+
+  const missingRpc = rpcError?.code === 'PGRST202'
+    || rpcError?.code === '42883'
+    || /function .*register_manual_quantitative_production.*does not exist/i.test(rpcError?.message || '');
+  if (rpcError && !missingRpc) {
+    throw new Error(`Não foi possível registrar a baixa manual: ${rpcError.message}`);
+  }
+
+  // Compatibilidade temporária para instalações antigas que ainda não possuem
+  // a RPC. Exige sessão autenticada e preserva autoria em todas as escritas.
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  const currentUser = authData?.user;
+  if (authError || !currentUser) {
+    throw new Error('Faça login para registrar uma baixa manual.');
+  }
+
+  // 2. Registra na tabela dedicada `manual_production_records`.
+  const targetCells = cascade ? ['Corte', 'Bordo', 'Usinagem', 'Embalagem'] : [cellName];
+  const currentHourStr = `${String(new Date().getHours()).padStart(2, '0')}:00`;
+
+  const { error: manualRecordError } = await supabase.from('manual_production_records').insert({
+    type: 'baixa',
+    general_lot_code: generalLotCode,
+    cell_name: cellName,
+    shift,
+    operator,
+    quantity,
+    unit_of_measure: unitOfMeasure,
+    cascade_all_cells: cascade,
+    notes: notes || `Baixa manual para ${cellName}`,
+    created_at: new Date().toISOString(),
+  });
+  if (manualRecordError) {
+    throw new Error(`Falha ao gravar o histórico da baixa manual: ${manualRecordError.message}`);
   }
 
   // 3. Atualiza os KPIs/Indicadores diários em `production_entries` para cada célula alvo
   for (const targetCell of targetCells) {
-    try {
-      await supabase.from('production_entries').insert({
-        date,
-        shift,
-        cell: targetCell,
-        hour: currentHourStr,
-        produced: quantity,
-        target: 0,
-        scrap: 0,
-        downtime: 0,
-        operator,
-        notes: notes || `Baixa manual em ${targetCell}`,
-        order_number: generalLotCode,
-        lot_code: generalLotCode,
-        entry_mode: 'manual',
-        source: 'manual_production_records',
-        is_manual: true,
-        unit_of_measure: unitOfMeasure,
-        created_at: new Date().toISOString(),
-      });
-    } catch (err) {
-      console.warn(`Aviso: falha na inserção de KPI para ${targetCell}:`, err?.message);
+    const { error: productionEntryError } = await supabase.from('production_entries').insert({
+      date,
+      shift,
+      cell: targetCell,
+      hour: currentHourStr,
+      produced: quantity,
+      target: 0,
+      scrap: 0,
+      downtime: 0,
+      operator,
+      notes: notes || `Baixa manual em ${targetCell}`,
+      order_number: generalLotCode,
+      lot_code: generalLotCode,
+      entry_mode: 'manual',
+      source: 'manual_production_records',
+      is_manual: true,
+      unit_of_measure: unitOfMeasure,
+      created_by: currentUser.id,
+      created_at: new Date().toISOString(),
+    });
+    if (productionEntryError) {
+      throw new Error(`Falha ao atualizar o KPI de ${targetCell}: ${productionEntryError.message}`);
     }
 
     // Opcional: tenta inserir na leitura de estágio sem travar se falhar
@@ -151,84 +175,92 @@ export async function registerGeneralLot({ general_lot_code, customer_name, tota
 
   const parts = Math.max(1, Number(total_parts) || 1);
 
-  // 1. Registro na tabela dedicada manual_production_records
-  try {
-    await supabase.from('manual_production_records').insert({
-      type: 'entry',
-      general_lot_code: cleanCode,
-      customer_name: customer_name || 'Cliente PCP (Manual)',
-      cell_name: 'PCP',
-      shift: '1º Turno',
-      operator: 'Operador PCP',
-      quantity: parts,
-      unit_of_measure: 'pecas',
-      cascade_all_cells: false,
-      notes: notes || 'Cadastro de Lote Geral Manual PCP',
-      created_at: new Date().toISOString(),
-    });
-  } catch (err) {
-    console.warn('Aviso ao registrar entrada em manual_production_records:', err?.message);
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user) {
+    throw new Error('Faça login para cadastrar um Lote Geral.');
   }
 
-  // 2. Ordem de produção
+  // 1. Ordem de produção
   let orderId = null;
-  try {
-    const { data: existingOrders } = await supabase
-      .from('production_orders')
-      .select('id')
-      .ilike('order_code', cleanCode)
-      .limit(1);
-
-    if (existingOrders && existingOrders.length > 0) {
-      orderId = existingOrders[0].id;
-    } else {
-      const { data: newOrder } = await supabase
-        .from('production_orders')
-        .insert({
-          order_code: cleanCode,
-          customer_name: customer_name || 'Lote Geral PCP (Manual)',
-          promob_project_name: `Lote Manual PCP ${cleanCode}`,
-          source: 'manual',
-          status: 'released',
-          notes: notes || 'Cadastrado manualmente',
-          created_at: new Date().toISOString(),
-        })
-        .select('id')
-        .maybeSingle();
-      orderId = newOrder?.id || null;
-    }
-  } catch (err) {
-    console.warn('Aviso em production_orders:', err?.message);
+  const { data: existingOrders, error: existingOrderError } = await supabase
+    .from('production_orders')
+    .select('id')
+    .ilike('order_code', cleanCode)
+    .limit(1);
+  if (existingOrderError) {
+    throw new Error(`Falha ao consultar a ordem do Lote Geral: ${existingOrderError.message}`);
   }
 
-  // 3. Lote na tabela production_lots
-  let lotId = null;
-  try {
-    const { data: existingLots } = await supabase
-      .from('production_lots')
+  if (existingOrders && existingOrders.length > 0) {
+    orderId = existingOrders[0].id;
+  } else {
+    const { data: newOrder, error: newOrderError } = await supabase
+      .from('production_orders')
+      .insert({
+        order_code: cleanCode,
+        customer_name: customer_name || 'Lote Geral PCP (Manual)',
+        promob_project_name: `Lote Manual PCP ${cleanCode}`,
+        source: 'manual',
+        status: 'released',
+        notes: notes || 'Cadastrado manualmente',
+        created_at: new Date().toISOString(),
+      })
       .select('id')
-      .ilike('lot_code', cleanCode)
-      .limit(1);
-
-    if (existingLots && existingLots.length > 0) {
-      lotId = existingLots[0].id;
-    } else {
-      const { data: newLot } = await supabase
-        .from('production_lots')
-        .insert({
-          order_id: orderId,
-          lot_code: cleanCode,
-          general_lot_code: cleanCode,
-          total_items: parts,
-          status: 'in_progress',
-          created_at: new Date().toISOString(),
-        })
-        .select('id')
-        .maybeSingle();
-      lotId = newLot?.id || null;
+      .maybeSingle();
+    if (newOrderError || !newOrder?.id) {
+      throw new Error(`Falha ao criar a ordem do Lote Geral: ${newOrderError?.message || 'registro não retornado'}`);
     }
-  } catch (err) {
-    console.warn('Aviso em production_lots:', err?.message);
+    orderId = newOrder.id;
+  }
+
+  // 2. Lote na tabela production_lots
+  let lotId = null;
+  const { data: existingLots, error: existingLotError } = await supabase
+    .from('production_lots')
+    .select('id')
+    .ilike('lot_code', cleanCode)
+    .limit(1);
+  if (existingLotError) {
+    throw new Error(`Falha ao consultar o Lote Geral: ${existingLotError.message}`);
+  }
+
+  if (existingLots && existingLots.length > 0) {
+    lotId = existingLots[0].id;
+  } else {
+    const { data: newLot, error: newLotError } = await supabase
+      .from('production_lots')
+      .insert({
+        order_id: orderId,
+        lot_code: cleanCode,
+        general_lot_code: cleanCode,
+        total_items: parts,
+        status: 'in_progress',
+        created_at: new Date().toISOString(),
+      })
+      .select('id')
+      .maybeSingle();
+    if (newLotError || !newLot?.id) {
+      throw new Error(`Falha ao criar o Lote Geral: ${newLotError?.message || 'registro não retornado'}`);
+    }
+    lotId = newLot.id;
+  }
+
+  // 3. Histórico somente após as entidades produtivas existirem.
+  const { error: manualRecordError } = await supabase.from('manual_production_records').insert({
+    type: 'entry',
+    general_lot_code: cleanCode,
+    customer_name: customer_name || 'Cliente PCP (Manual)',
+    cell_name: 'PCP',
+    shift: '1º Turno',
+    operator: 'Operador PCP',
+    quantity: parts,
+    unit_of_measure: 'pecas',
+    cascade_all_cells: false,
+    notes: notes || 'Cadastro de Lote Geral Manual PCP',
+    created_at: new Date().toISOString(),
+  });
+  if (manualRecordError) {
+    throw new Error(`Lote criado, mas o histórico não foi registrado: ${manualRecordError.message}`);
   }
 
   return { success: true, lot_id: lotId, order_id: orderId, general_lot_code: cleanCode };
