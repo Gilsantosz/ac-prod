@@ -5,7 +5,46 @@ import { drawBrandedPdfFooter, drawBrandedPdfHeader } from '@/lib/reportBranding
 const fmt = (n) => (Number(n) || 0).toLocaleString('pt-BR');
 const attain = (t) => (Number(t.target) > 0 ? Math.round((Number(t.realized ?? t.produced) / Number(t.target)) * 100) : 0);
 
-export async function exportDailySummaryPdf({ date, shift, cell, summary }) {
+const SHIFT_HOUR_KEYS = {
+  '1º Turno': ['hoursShift1', 'shift1'],
+  '2º Turno': ['hoursShift2', 'shift2'],
+  '3º Turno': ['hoursShift3', 'shift3'],
+};
+
+function configuredShiftHours(cell, shift) {
+  const [frontendKey, databaseKey] = SHIFT_HOUR_KEYS[shift] || [];
+  const configured = frontendKey
+    ? cell?.[frontendKey] ?? cell?.shift_hours?.[databaseKey]
+    : null;
+  const hours = Number(configured);
+  return Number.isFinite(hours) && hours >= 0 ? hours : 8;
+}
+
+export function calculatePlannedMinutes(summary, cells = []) {
+  const cellsByName = new Map(cells.map((item) => [String(item.name || '').trim(), item]));
+  const activeCellShifts = new Set();
+
+  (summary?.matrixByCell || []).forEach((row) => {
+    Object.entries(row.shifts || {}).forEach(([shift, bucket]) => {
+      if (
+        Number(bucket?.entries) > 0
+        || Number(bucket?.target) > 0
+        || Number(bucket?.capacity) > 0
+      ) {
+        activeCellShifts.add(`${row.cell}||${shift}`);
+      }
+    });
+  });
+
+  return [...activeCellShifts].reduce((minutes, key) => {
+    const separator = key.lastIndexOf('||');
+    const cellName = key.slice(0, separator);
+    const shift = key.slice(separator + 2);
+    return minutes + (configuredShiftHours(cellsByName.get(cellName), shift) * 60);
+  }, 0);
+}
+
+export async function exportDailySummaryPdf({ date, shift, cell, summary, cells = [] }) {
   const doc = new jsPDF();
   const pageW = doc.internal.pageSize.getWidth();
 
@@ -22,13 +61,7 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary }) {
   const totalTarget = totalsByUnit.reduce((sum, row) => sum + (Number(row.target) || 0), 0);
   const totalRealized = totalsByUnit.reduce((sum, row) => sum + (Number(row.realized) || 0), 0);
   const totalAttainment = totalTarget > 0 ? Math.round((totalRealized / totalTarget) * 100) : 0;
-  const plannedGroups = (summary.matrixByCell || []).reduce((count, row) => {
-    const activeShifts = Object.values(row.shifts || {}).filter((bucket) => (
-      Number(bucket.entries) > 0 || Number(bucket.target) > 0 || Number(bucket.capacity) > 0
-    )).length;
-    return count + activeShifts;
-  }, 0);
-  const plannedMinutes = plannedGroups * 8 * 60;
+  const plannedMinutes = calculatePlannedMinutes(summary, cells);
   const availability = plannedMinutes > 0 ? Math.max((plannedMinutes - Number(t.downtime || 0)) / plannedMinutes, 0) : 0;
   const performance = totalTarget > 0 ? Math.min(totalRealized / totalTarget, 1.5) : 0;
   const quality = Number(t.produced) > 0 ? Math.max(Number(t.good) / Number(t.produced), 0) : 0;
