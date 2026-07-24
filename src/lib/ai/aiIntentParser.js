@@ -15,6 +15,11 @@ const REPORT_SYNONYMS = {
   celula: 'cell_performance',
   rastreabilidade: 'lot_traceability',
   lote: 'lot_traceability',
+  'andamento do lote': 'lot_forecast',
+  'andamento de lote': 'lot_forecast',
+  'previsao do lote': 'lot_forecast',
+  'previsao de entrega do lote': 'lot_forecast',
+  'prazo do lote': 'lot_forecast',
   rota: 'lot_traceability',
   ocorrencias: 'occurrences',
   paradas: 'occurrences',
@@ -145,8 +150,13 @@ export function parseIntent(prompt, options = {}) {
     shift = ['1','2','3'].includes(s) ? `${s}º Turno` : s;
   }
 
-  const lotMatch = text.match(/\blote\s+([A-Z0-9-]+)/i);
-  const lotCode = lotMatch ? lotMatch[1].trim() : null;
+  const generalLotMatch = text.match(/\blote\s+geral(?:\s+(?:do\s+pcp|da\s+carga))?\s*[:#-]?\s*([A-Z0-9-]+)/i)
+    || text.match(/\bcarga\s*[:#-]?\s*([A-Z0-9-]+)/i);
+  const clientLotMatch = text.match(/\blote\s+(?:do\s+)?cliente\s*[:#-]?\s*([A-Z0-9-]+)/i);
+  const lotMatch = text.match(/\blote(?!\s+(?:geral|do\s+cliente|cliente)\b)\s*[:#-]?\s*([A-Z0-9-]+)/i);
+  const generalLotCode = generalLotMatch ? generalLotMatch[1].trim() : null;
+  const clientLotCode = clientLotMatch ? clientLotMatch[1].trim() : null;
+  const lotCode = lotMatch ? lotMatch[1].trim() : (clientLotCode || generalLotCode);
 
   const orderMatch = text.match(/\bpedido\s+(\d+)/i);
   const orderNumber = orderMatch ? orderMatch[1].trim() : null;
@@ -166,6 +176,8 @@ export function parseIntent(prompt, options = {}) {
     cell,
     shift,
     lotCode,
+    generalLotCode,
+    clientLotCode,
     orderNumber,
     loadNumber,
     customerName,
@@ -246,12 +258,6 @@ export function parseIntent(prompt, options = {}) {
   } else if (/\blogs?\s+da?\s+ia\b|\blogs?\s+de\s+sistema\b/.test(normalized)) {
     action = 'show_ai_logs';
     confidence = 0.9;
-  } else if (/\b(abra|ir\s+para|navegue\s+para|navegar)\s+a\s+tela\b/.test(normalized)) {
-    action = 'navigate';
-    confidence = 0.9;
-  } else if (/\b(procure|buscar|cade|onde\s+esta)\s+(o\s+)?(?:lote|pedido|carga|cliente|peça)\b/.test(normalized) || lotCode || orderNumber || loadNumber) {
-    action = 'search_production';
-    confidence = 0.8;
   } else if (schedule) {
     action = 'schedule_report_email';
     confidence = 0.85;
@@ -260,6 +266,12 @@ export function parseIntent(prompt, options = {}) {
     confidence = 0.85;
   } else if (/\b(gere|gerar|crie|criar)\b/.test(normalized) && reportType) {
     action = 'generate_report';
+    confidence = 0.8;
+  } else if (/\b(abra|ir\s+para|navegue\s+para|navegar)\s+(?:a\s+)?(?:tela|pagina|página)\b/.test(normalized)) {
+    action = 'navigate';
+    confidence = 0.9;
+  } else if (/\b(procure|buscar|busque|rastreie|rastrear|acompanhe|acompanhar|cade|onde\s+esta)\s+(o\s+)?(?:lote|pedido|carga|cliente|peça)\b/.test(normalized) || lotCode || orderNumber || loadNumber) {
+    action = 'search_production';
     confidence = 0.8;
   } else if (/\b(relatorio|pdf|excel|csv|enviar por email|agendar)\b/.test(normalized)) {
     action = 'generate_report';
@@ -281,7 +293,9 @@ export function parseIntent(prompt, options = {}) {
     filters,
     schedule,
     format,
-    templateCode: reportType === 'cell_performance' ? 'cell-performance' : 'manager-summary',
+    templateCode: ['lot_traceability', 'lot_forecast'].includes(reportType)
+      ? 'lot-status'
+      : (reportType === 'cell_performance' ? 'cell-performance' : 'manager-summary'),
     subject: null,
     message: null,
     confidence,

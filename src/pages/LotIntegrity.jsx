@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { fetchGeneralLotTracking, calculateLotBalance } from '@/lib/lotTrackingService';
 import { ClientLotHierarchy, GeneralLotSummaryCard } from '@/components/lot-tracking/LotTrackingCards';
@@ -16,11 +16,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { toast } from 'sonner';
 import { 
   ShieldCheck, AlertTriangle, RefreshCw, CheckCircle2, ShieldAlert, FileText, UserCheck,
-  XOctagon, Loader2, Info, Search, ChartNoAxesCombined, Layers3, Factory, PackageCheck, ExternalLink
+  XOctagon, Loader2, Search, ChartNoAxesCombined, Factory, PackageCheck, ExternalLink
 } from 'lucide-react';
 
 export default function LotIntegrity() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
   const [selectedBatchId, setSelectedBatchId] = useState('');
   const [selectedLotId, setSelectedLotId] = useState('');
@@ -60,10 +61,20 @@ export default function LotIntegrity() {
   const generalLots = generalTracking?.general_lots || [];
 
   useEffect(() => {
+    const requestedGeneralLot = String(searchParams.get('generalLot') || '').trim().toUpperCase();
+    if (!selectedBatchId && requestedGeneralLot) {
+      const requested = generalLots.find((lot) =>
+        String(lot.general_lot_code || '').trim().toUpperCase() === requestedGeneralLot
+      );
+      if (requested) {
+        setSelectedBatchId(requested.batch_id);
+        return;
+      }
+    }
     if (!selectedBatchId && generalLots.length === 1) {
       setSelectedBatchId(generalLots[0].batch_id);
     }
-  }, [generalLots, selectedBatchId]);
+  }, [generalLots, searchParams, selectedBatchId]);
 
   const { data: selectedTracking, isLoading: loadingSelectedBatch } = useQuery({
     queryKey: ['general-lot-tracking', 'batch', selectedBatchId],
@@ -79,6 +90,15 @@ export default function LotIntegrity() {
   const originalClientLots = useMemo(() => {
     return selectedGeneralLot?.client_lots || [];
   }, [selectedGeneralLot]);
+
+  useEffect(() => {
+    const requestedClientLot = String(searchParams.get('clientLot') || '').trim().toUpperCase();
+    if (!requestedClientLot || !originalClientLots.length) return;
+    const requested = originalClientLots.find((lot) =>
+      String(lot.lot_code || '').trim().toUpperCase() === requestedClientLot
+    );
+    if (requested && selectedLotId !== requested.lot_id) setSelectedLotId(requested.lot_id);
+  }, [originalClientLots, searchParams, selectedLotId]);
 
   const filteredClientLots = useMemo(() => {
     let lots = originalClientLots;
@@ -136,6 +156,17 @@ export default function LotIntegrity() {
   const selectedClientLot = useMemo(() => {
     return originalClientLots.find((lot) => lot.lot_id === selectedLotId) || null;
   }, [originalClientLots, selectedLotId]);
+
+  useEffect(() => {
+    if (!selectedGeneralLot) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('generalLot', selectedGeneralLot.general_lot_code);
+    if (selectedClientLot?.lot_code) next.set('clientLot', selectedClientLot.lot_code);
+    else next.delete('clientLot');
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, selectedClientLot, selectedGeneralLot, setSearchParams]);
 
   // Query - Calcular Integridade do Lote Selecionado via RPC
   const { data: integrityData = null, isLoading: loadingIntegrity, refetch: refetchIntegrity } = useQuery({

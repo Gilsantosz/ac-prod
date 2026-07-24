@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/lib/supabaseClient';
 import {
   Upload, Plug, History, FileText, Database, Shield, Settings, Download, Search,
-  RefreshCw, Trash2, Check, Lock, Cloud, Edit3
+  RefreshCw, Trash2, Check, Lock, Cloud
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {

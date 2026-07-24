@@ -89,4 +89,29 @@ describe('aiIntentParser', () => {
     const res = parseIntent('Cancele o agendamento do resumo da diretoria');
     expect(res.action).toBe('cancel_schedule');
   });
+
+  it('distingue lote geral de lote do cliente', () => {
+    const general = parseIntent('Rastreie o lote geral 15587');
+    const client = parseIntent('Acompanhe o lote do cliente 143345');
+
+    expect(general).toMatchObject({
+      action: 'search_production',
+      filters: { generalLotCode: '15587', clientLotCode: null },
+    });
+    expect(client).toMatchObject({
+      action: 'search_production',
+      filters: { clientLotCode: '143345', generalLotCode: null },
+    });
+  });
+
+  it('prioriza envio de previsão de lote sobre busca simples', () => {
+    const result = parseIntent('Envie a previsão do lote geral 15587 para Carlos');
+    expect(result).toMatchObject({
+      action: 'send_report_email',
+      reportType: 'lot_forecast',
+      recipients: ['Carlos'],
+      templateCode: 'lot-status',
+      filters: { generalLotCode: '15587' },
+    });
+  });
 });

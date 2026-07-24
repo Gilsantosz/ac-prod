@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { aggregate, corsHeaders, fetchOperationalData, json, requireAiUser } from '../_shared/aiOperations.ts';
+import { aggregate, corsHeadersForRequest, fetchOperationalData, json, requireAiUser } from '../_shared/aiOperations.ts';
 import { renderEmailTemplate } from '../_shared/emailTemplates.ts';
 
 const ERROR_STATUS: Record<string, number> = {
@@ -219,14 +219,36 @@ async function recordSystemLog(admin: any, payload: Record<string, unknown>) {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  const responseHeaders = corsHeadersForRequest(req);
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', {
+      status: responseHeaders['Access-Control-Allow-Origin'] === 'null' ? 403 : 200,
+      headers: responseHeaders,
+    });
+  }
   let admin: any;
   let user: any;
   try {
     const auth = await requireAiUser(req);
     ({ admin, user } = auth);
-    const body = await req.json();
+    const contentLength = Number(req.headers.get('content-length') || 0);
+    if (contentLength > 131_072) return json({ success: false, error: 'Requisição acima do limite de 128 KB.' }, 413, responseHeaders);
+    const rawBody = await req.text();
+    if (new TextEncoder().encode(rawBody).byteLength > 131_072) {
+      return json({ success: false, error: 'Requisição acima do limite de 128 KB.' }, 413, responseHeaders);
+    }
+    const body = rawBody ? JSON.parse(rawBody) : {};
     if (!body.reportJobId) throw new Error('REPORT_REQUIRED');
+
+    const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count: recentSends } = await admin
+      .from('report_email_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('sent_by', user.id)
+      .gte('created_at', since);
+    if (Number(recentSends || 0) >= 30) {
+      return json({ success: false, error: 'Limite de 30 envios por hora atingido. Aguarde antes de tentar novamente.' }, 429, responseHeaders);
+    }
 
     const [{ data: job, error: jobError }, recipients] = await Promise.all([
       admin.from('report_jobs').select('*').eq('id', body.reportJobId).single(),
@@ -240,6 +262,7 @@ Deno.serve(async (req) => {
 
     const freshContext = await fetchOperationalData(admin, auth.profile, job.filters || {});
     const summary = aggregate(freshContext.entries, freshContext.occurrences, freshContext.lots);
+    summary.lotContext = freshContext.lotContext || job.snapshot?.lotContext || null;
     const html = renderEmailTemplate(body.templateCode || 'manager-summary', job.title, summary, body.message || 'Segue o relatório industrial solicitado.');
     const subject = String(body.subject || `[AC.Prod] ${job.title}`).slice(0, 180);
     const attachment = {
@@ -250,7 +273,24 @@ Deno.serve(async (req) => {
     const results = [];
 
     // Criar a run no banco
-    const runKey = `manual:${job.id}:${new Date().getTime()}`;
+    const requestedIdempotencyKey = String(body.idempotencyKey || '').trim().slice(0, 240);
+    const runKey = requestedIdempotencyKey || `manual:${job.id}:${crypto.randomUUID()}`;
+    if (requestedIdempotencyKey) {
+      const { data: existingRun } = await admin
+        .from('report_schedule_runs')
+        .select('id,status,finished_at')
+        .eq('idempotency_key', runKey)
+        .maybeSingle();
+      if (existingRun) {
+        return json({
+          success: true,
+          duplicate: true,
+          message: 'Este envio já havia sido processado e não foi duplicado.',
+          runId: existingRun.id,
+          status: existingRun.status,
+        }, 200, responseHeaders);
+      }
+    }
     const { data: run, error: runErr } = await admin
       .from('report_schedule_runs')
       .insert({
@@ -265,6 +305,10 @@ Deno.serve(async (req) => {
       .select()
       .single();
 
+    if (runErr?.code === '23505') {
+      return json({ success: true, duplicate: true, message: 'Envio idempotente já processado.' }, 200, responseHeaders);
+    }
+    if (runErr) throw runErr;
     const runId = run?.id || null;
 
     for (const recipient of recipients) {
@@ -324,10 +368,10 @@ Deno.serve(async (req) => {
       metadata: { recipients: results.length, success: sent, failed, sources: [...new Set(results.map((item) => item.source))] },
       success: sent > 0,
     });
-    if (!sent) return json({ success: false, error: results[0]?.error || publicError(new Error('EMAIL_PROVIDER_FAILED')), results }, 502);
-    return json({ success: true, message: failed ? `${sent} e-mail(s) enviado(s); ${failed} falharam.` : 'Relatório enviado e registrado.', results }, failed ? 207 : 200);
+    if (!sent) return json({ success: false, error: results[0]?.error || publicError(new Error('EMAIL_PROVIDER_FAILED')), results }, 502, responseHeaders);
+    return json({ success: true, message: failed ? `${sent} e-mail(s) enviado(s); ${failed} falharam.` : 'Relatório enviado e registrado.', results }, failed ? 207 : 200, responseHeaders);
   } catch (error) {
     if (admin && user) await recordSystemLog(admin, { user_id: user.id, level: 'error', event: 'report.email.failed', message: publicError(error), success: false });
-    return json({ success: false, error: publicError(error) }, statusFor(error));
+    return json({ success: false, error: publicError(error) }, statusFor(error), responseHeaders);
   }
 });

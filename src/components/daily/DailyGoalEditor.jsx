@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { Copy, Save, Upload, CheckCircle2, Loader2, Lock } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { assertSafeImportFile, assertWorksheetBounds } from '@/lib/spreadsheetSecurity';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -207,9 +208,11 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
 
     setSaving(true);
     try {
+      assertSafeImportFile(file, ['xlsx', 'xls', 'csv']);
       const bytes = await file.arrayBuffer();
       const workbook = XLSX.read(bytes, { type: 'array' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      assertWorksheetBounds(sheet, XLSX.utils);
       const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
       const payload = rows.map((row) => {
         const cell = clean(pick(row, ['celula', 'célula', 'area', 'área', 'cell']));

@@ -6,7 +6,7 @@
  */
 
 const DB_NAME = 'acprod_collection_queue';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = 'events';
 
 // ─── IndexedDB wrapper ────────────────────────────────────────────────────────
@@ -16,10 +16,16 @@ function openDb() {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
       const db = e.target.result;
+      let store;
       if (!db.objectStoreNames.contains(STORE)) {
-        const store = db.createObjectStore(STORE, { keyPath: 'client_event_id' });
+        store = db.createObjectStore(STORE, { keyPath: 'client_event_id' });
         store.createIndex('by_status', 'status', { unique: false });
         store.createIndex('by_created', 'created_at_client', { unique: false });
+      } else {
+        store = e.target.transaction.objectStore(STORE);
+      }
+      if (!store.indexNames.contains('by_next_attempt')) {
+        store.createIndex('by_next_attempt', 'next_attempt_at', { unique: false });
       }
     };
     req.onsuccess = (e) => resolve(e.target.result);
@@ -104,6 +110,7 @@ export async function enqueueCollectionEvent(payload) {
     retries: 0,
     created_at_client: now,
     updated_at: now,
+    next_attempt_at: now,
     raw_value: payload.rawValue ?? payload.raw_value ?? '',
     lot_id: payload.lotId ?? payload.lot_id ?? null,
     lot_code: payload.lotCode ?? payload.lot_code ?? null,
@@ -218,6 +225,7 @@ export async function recoverStaleProcessingEvents(maxAgeMs = 120000) {
       if (timestamp < cutoff) {
         event.status = 'pending';
         event.retries = 0;
+        event.next_attempt_at = new Date().toISOString();
         event.updated_at = new Date().toISOString();
         await dbPut(event);
         count++;
@@ -237,8 +245,12 @@ export async function recoverStaleProcessingEvents(maxAgeMs = 120000) {
 export async function getOldestPendingEvent() {
   const pending = await dbGetByIndex('by_status', 'pending');
   if (!pending || pending.length === 0) return null;
-  pending.sort((a, b) => a.created_at_client.localeCompare(b.created_at_client));
-  return pending[0];
+  const now = Date.now();
+  const due = pending.filter((event) =>
+    !event.next_attempt_at || new Date(event.next_attempt_at).getTime() <= now
+  );
+  due.sort((a, b) => a.created_at_client.localeCompare(b.created_at_client));
+  return due[0] || null;
 }
 
 /**
@@ -248,6 +260,7 @@ export async function markEventPending(clientEventId) {
   const event = await dbGet(clientEventId);
   if (!event) return;
   event.status = 'pending';
+  event.next_attempt_at = new Date().toISOString();
   event.updated_at = new Date().toISOString();
   await dbPut(event);
   notifyChange();
@@ -257,6 +270,7 @@ export async function markEventProcessing(clientEventId) {
   const event = await dbGet(clientEventId);
   if (!event) return;
   event.status = 'processing';
+  event.next_attempt_at = null;
   event.sync_started_at = new Date().toISOString();
   event.updated_at = new Date().toISOString();
   await dbPut(event);
@@ -267,6 +281,7 @@ export async function markEventSynced(clientEventId, result) {
   const event = await dbGet(clientEventId);
   if (!event) return;
   event.status = 'synced';
+  event.next_attempt_at = null;
   event.result = result;
   event.sync_finished_at = new Date().toISOString();
   if (event.sync_started_at) {
@@ -278,12 +293,17 @@ export async function markEventSynced(clientEventId, result) {
   notifyChange();
 }
 
-export async function markEventError(clientEventId, error) {
+export async function markEventError(clientEventId, error, maxRetries = 8) {
   const event = await dbGet(clientEventId);
   if (!event) return;
   const retries = (event.retries || 0) + 1;
-  event.status = retries >= 3 ? 'error' : 'pending';
+  event.status = retries >= maxRetries ? 'error' : 'pending';
   event.retries = retries;
+  const baseDelayMs = Math.min(300_000, 1_000 * (2 ** Math.max(retries - 1, 0)));
+  const jitterMs = Math.round(baseDelayMs * Math.random() * 0.25);
+  event.next_attempt_at = event.status === 'pending'
+    ? new Date(Date.now() + baseDelayMs + jitterMs).toISOString()
+    : null;
   event.last_error = error?.message || String(error);
   event.sync_finished_at = new Date().toISOString();
   if (event.sync_started_at) {
@@ -311,7 +331,7 @@ export async function processCollectionEvent(clientEventId, processFn, opts = {}
     await markEventSynced(clientEventId, result);
     return result;
   } catch (err) {
-    await markEventError(clientEventId, err);
+    await markEventError(clientEventId, err, opts.maxRetries || 8);
     throw err;
   }
 }
@@ -324,7 +344,10 @@ export async function processCollectionEvent(clientEventId, processFn, opts = {}
  */
 export async function flushCollectionQueue(processFn, opts = {}) {
   const { onProgress } = opts;
-  const pending = await dbGetByIndex('by_status', 'pending');
+  const now = Date.now();
+  const pending = (await dbGetByIndex('by_status', 'pending')).filter((event) =>
+    !event.next_attempt_at || new Date(event.next_attempt_at).getTime() <= now
+  );
   // Ordenar por horário de criação (FIFO)
   pending.sort((a, b) => a.created_at_client.localeCompare(b.created_at_client));
 
@@ -333,7 +356,7 @@ export async function flushCollectionQueue(processFn, opts = {}) {
 
   for (const event of pending) {
     try {
-      await processCollectionEvent(event.client_event_id, processFn);
+      await processCollectionEvent(event.client_event_id, processFn, opts);
       synced++;
     } catch (err) {
       errors++;
@@ -351,7 +374,13 @@ export async function flushCollectionQueue(processFn, opts = {}) {
 export async function retryErrors() {
   const errorEvents = await dbGetByIndex('by_status', 'error');
   for (const event of errorEvents) {
-    await dbPut({ ...event, status: 'pending', retries: 0, updated_at: new Date().toISOString() });
+    await dbPut({
+      ...event,
+      status: 'pending',
+      retries: 0,
+      next_attempt_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
   }
   notifyChange();
   return errorEvents.length;

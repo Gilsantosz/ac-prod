@@ -8,6 +8,7 @@ import {
   Upload, FileText, CheckCircle, AlertTriangle, RefreshCw, X, Download
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { assertSafeImportFile, assertWorksheetBounds } from '@/lib/spreadsheetSecurity';
 
 export default function PcpImportTab({ preselectedFile, clearPreselected }) {
   const [file, setFile] = useState(null);
@@ -76,7 +77,10 @@ export default function PcpImportTab({ preselectedFile, clearPreselected }) {
     setLoading(true);
     setPreview(null);
     try {
-      const extension = selectedFile.name.split('.').pop().toLowerCase();
+      const extension = assertSafeImportFile(
+        selectedFile,
+        ['xlsx', 'xls', 'csv', 'tsv', 'txt', 'html', 'htm', 'xml']
+      );
       const isBinary = ['xlsx', 'xls'].includes(extension);
 
       let rawRows = [];
@@ -86,6 +90,7 @@ export default function PcpImportTab({ preselectedFile, clearPreselected }) {
         const workbook = XLSX.read(arrayBuffer, { type: 'array' });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
+        assertWorksheetBounds(worksheet, XLSX.utils);
         const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
         // Reconstrói as linhas considerando a "Fragmentação por TAB no XLSX"
