@@ -327,6 +327,94 @@ export const appRoutes = [
   }
 ];
 
+const PAGE_ACCESS_OVERRIDES = {
+  '/': { viewPermission: 'view_dashboards' },
+  '/coleta': { viewPermission: 'view_collection', editPermission: 'traceability_collect' },
+  '/rastreabilidade': { viewPermission: 'view_traceability' },
+  '/integridade-lote': { viewPermission: 'view_traceability', editPermission: 'manage_lot_integrity' },
+  '/acompanhamento-lotes': { viewPermission: 'view_traceability' },
+  '/marcenaria': { viewPermission: 'view_joinery', editPermission: 'manage_joinery', legacyViewPermission: 'view_traceability' },
+  '/oee': { viewPermission: 'view_oee', legacyViewPermission: 'view_dashboards' },
+  '/pcp': { viewPermission: 'view_pcp', editPermission: 'manage_pcp' },
+  '/pcp/importar': { viewPermission: 'view_pcp', editPermission: 'manage_pcp' },
+  '/pcp/ordens': { viewPermission: 'view_pcp', editPermission: 'manage_pcp' },
+  '/baixa-manual': { viewPermission: 'view_manual_production', editPermission: 'register_manual_production' },
+  '/rotas-produtivas': { viewPermission: 'view_routes', editPermission: 'manage_routes' },
+  '/embalagem': { viewPermission: 'view_packaging', editPermission: 'manage_packaging' },
+  '/expedicao': { viewPermission: 'view_shipping', editPermission: 'manage_shipping' },
+  '/alertas-mes': { viewPermission: 'view_mes_alerts', editPermission: 'resolve_mes_alerts' },
+  '/resumo-diario': { viewPermission: 'view_daily_summary', editPermission: 'send_reports', legacyViewPermission: 'view_dashboards' },
+  '/relatorios': { viewPermission: 'view_reports', editPermission: 'send_reports' },
+  '/ocorrencias': { viewPermission: 'view_occurrences', editPermission: 'manage_occurrences' },
+  '/ia-operacional': { viewPermission: 'view_ai', editPermission: 'ai_operations' },
+  '/automacoes': { viewPermission: 'view_automations', editPermission: 'manage_automations' },
+  '/gamificacao': { viewPermission: 'view_gamification', legacyViewPermission: 'view_dashboards' },
+  '/usuarios': { viewPermission: 'view_users', editPermission: 'manage_users' },
+  '/operadores': { viewPermission: 'view_operators', editPermission: 'manage_operators' },
+  '/celulas-metas': { viewPermission: 'view_cells', editPermission: 'manage_cells' },
+  '/logs-sistema': { viewPermission: 'view_audit_logs', adminOnly: true },
+  '/downloads-backups': { viewPermission: 'view_backups', editPermission: 'manage_backups', adminOnly: true },
+  '/logs-integridade': { viewPermission: 'view_integrity_logs' },
+  '/mes': { viewPermission: 'view_dashboards' },
+};
+
+export const routeAccessCatalog = appRoutes
+  .map((route) => ({
+    ...route,
+    ...(PAGE_ACCESS_OVERRIDES[route.path] || {
+      viewPermission: route.permission,
+      editPermission: null,
+    }),
+  }));
+
+export const pageAccessCatalog = routeAccessCatalog.filter((route) => route.showInSidebar);
+
+const normalizePath = (path = '/') => {
+  const cleanPath = String(path).split('?')[0].replace(/\/$/, '') || '/';
+  const direct = appRoutes.find((route) => route.path === cleanPath);
+  if (direct) return direct.path;
+  const alias = appRoutes.find((route) => route.aliases?.some((candidate) => candidate.split('?')[0] === cleanPath));
+  if (alias) return alias.path;
+  if (cleanPath.startsWith('/pcp/')) return '/pcp';
+  if (cleanPath.startsWith('/rastreabilidade/')) return '/rastreabilidade';
+  return cleanPath;
+};
+
+export const getRouteAccess = (path) => {
+  const normalized = normalizePath(path);
+  return routeAccessCatalog.find((route) => route.path === normalized)
+    || {
+      path: normalized,
+      viewPermission: null,
+      editPermission: null,
+    };
+};
+
+const getPermissionValue = (user, permission, legacyPermission) => {
+  if (!permission) return true;
+  if (user?.role === 'admin') return true;
+  if (user?.permissions?.[permission] !== undefined) return user.permissions[permission] === true;
+  if (legacyPermission && user?.permissions?.[legacyPermission] !== undefined) {
+    return user.permissions[legacyPermission] === true;
+  }
+  const defaults = getDefaultPermissions(user?.role || 'operator');
+  if (defaults[permission] !== undefined) return defaults[permission] === true;
+  return legacyPermission ? defaults[legacyPermission] === true : false;
+};
+
+export const canUserViewRoute = (user, path) => {
+  const access = getRouteAccess(path);
+  if (access.adminOnly && user?.role !== 'admin') return false;
+  return getPermissionValue(user, access.viewPermission, access.legacyViewPermission || access.editPermission);
+};
+
+export const canUserEditRoute = (user, path) => {
+  const access = getRouteAccess(path);
+  if (!access.editPermission) return false;
+  if (access.adminOnly && user?.role !== 'admin') return false;
+  return getPermissionValue(user, access.editPermission);
+};
+
 export const permissionLabels = {
   view_dashboards: 'Visualizar Painéis (OEE, Ocorrências)',
   register_production: 'Lançar Produção',
@@ -523,4 +611,3 @@ export const getDefaultPermissions = (role) => {
     };
   }
 };
-

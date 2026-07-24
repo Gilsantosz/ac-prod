@@ -3,7 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import { Lock, ShieldAlert, ArrowLeft, LogOut } from 'lucide-react';
-import { pathPermissionMap, permissionLabels, getDefaultPermissions } from '@/config/appRoutes';
+import { canUserViewRoute, getRouteAccess, permissionLabels } from '@/config/appRoutes';
 import { navTo } from '@/lib/navigation';
 
 
@@ -43,25 +43,11 @@ export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthe
   let hasPermission = true;
   let requiredPermissionLabel = '';
 
-  if (user && user.role !== 'admin') {
-    const cleanPath = path.replace(/\/$/, '') || '/';
-    const requiredPermission = pathPermissionMap[cleanPath];
-    
-    if (requiredPermission) {
-      // Se a permissão está explicitamente definida no perfil do usuário, usamos ela.
-      if (user.permissions && user.permissions[requiredPermission] !== undefined) {
-        hasPermission = !!user.permissions[requiredPermission];
-        if (!hasPermission) {
-          requiredPermissionLabel = `Permissão requerida: ${permissionLabels[requiredPermission] || requiredPermission}`;
-        }
-      } else {
-        // Se não houver override explícito, verifica o padrão do papel
-        const defaultPerms = getDefaultPermissions(user.role);
-        hasPermission = !!defaultPerms[requiredPermission];
-        if (!hasPermission) {
-          requiredPermissionLabel = 'Acesso reservado para perfis autorizados.';
-        }
-      }
+  if (user) {
+    const access = getRouteAccess(path);
+    hasPermission = canUserViewRoute(user, path);
+    if (!hasPermission) {
+      requiredPermissionLabel = `Permissão requerida: ${permissionLabels[access.viewPermission] || access.viewPermission || 'acesso à página'}`;
     }
   }
 

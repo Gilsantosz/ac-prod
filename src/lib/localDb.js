@@ -698,7 +698,7 @@ const auth = {
 
 // ─── Users management (admin only — operações seguras via RLS) ───────────────
 const users = {
-  inviteUser: async (email, role, name = '', password = '', permissions = null, cell = '') => {
+  inviteUser: async (email, role, name = '', password = '', permissions = null, cell = '', managedCells = []) => {
     const defaultPermissions = getDefaultPermissions(role);
     const finalPermissions = permissions || defaultPermissions;
     const { data, error } = await supabase.functions.invoke('admin-users', {
@@ -710,6 +710,8 @@ const users = {
         role,
         permissions: finalPermissions,
         cell,
+        managed_cells: managedCells,
+        access_scope: { cells: managedCells, machines: [] },
       },
     });
 

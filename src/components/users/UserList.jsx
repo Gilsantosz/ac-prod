@@ -8,11 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   User as UserIcon, Edit3, Trash2, Save, X, LayoutDashboard, PlusCircle, AlertOctagon,
   Boxes, HardHat, LineChart, Zap, Users, KeyRound, Send, BrainCircuit,
-  Plug, GitFork, Box, Truck, BellRing, Layers, ShieldAlert, MailCheck
+  Plug, GitFork, Box, Truck, BellRing, Layers, ShieldAlert, MailCheck, Check
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCells } from '@/hooks/useCells';
 import { getDefaultPermissions } from '@/config/appRoutes';
+import PageAccessMatrix, { normalizePagePermissions } from '@/components/users/PageAccessMatrix';
 
 
 const PERMISSION_LABELS = {
@@ -72,7 +73,7 @@ const PERMISSION_METADATA = [
 
 
 
-export default function UserList({ users, currentUserId, onUpdate, onDelete, onResetPassword, onResendInvite }) {
+export default function UserList({ users, currentUserId, onUpdate, onDelete, onResetPassword, onResendInvite, readOnly = false }) {
   if (!users.length) {
     return (
       <div className="text-center py-16 text-muted-foreground border border-dashed border-border rounded-2xl">
@@ -94,6 +95,7 @@ export default function UserList({ users, currentUserId, onUpdate, onDelete, onR
             onDelete={onDelete}
             onResetPassword={onResetPassword}
             onResendInvite={onResendInvite}
+            readOnly={readOnly}
           />
         ))}
       </div>
@@ -101,14 +103,22 @@ export default function UserList({ users, currentUserId, onUpdate, onDelete, onR
   );
 }
 
-function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, onResendInvite }) {
+function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, onResendInvite, readOnly }) {
   const { activeCells } = useCells();
   const [isEditing, setIsEditing] = useState(false);
   
   // States para edição
   const [editName, setEditName] = useState(user.name || '');
   const [editRole, setEditRole] = useState(user.role || 'operator');
-  const [editCell, setEditCell] = useState(user.cell || 'none');
+  const [editManagedCells, setEditManagedCells] = useState(
+    user.managed_cells?.length
+      ? user.managed_cells
+      : user.access_scope?.cells?.length
+        ? user.access_scope.cells
+        : user.cell
+          ? [user.cell]
+          : [],
+  );
   const [editPermissions, setEditPermissions] = useState(() => user.permissions || getDefaultPermissions(user.role || 'operator'));
   const [editReportDelivery, setEditReportDelivery] = useState(Boolean(user.report_delivery_enabled));
   const [editDailyReport, setEditDailyReport] = useState(Boolean(user.receives_daily_report));
@@ -126,13 +136,22 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
 
   const handleSave = async () => {
     if (!editName.trim()) return;
+    if (editRole === 'operator' && editManagedCells.length === 0) {
+      alert('Selecione pelo menos uma célula autorizada para o operador.');
+      return;
+    }
     
     // 1. Atualizar Usuário
     await onUpdate(user.id, {
       name: editName.trim(),
       role: editRole,
-      cell: editCell === 'none' ? '' : editCell, // Enviando a célula vinculada no payload
-      permissions: editPermissions,
+      cell: editManagedCells[0] || '',
+      managed_cells: editManagedCells,
+      access_scope: {
+        ...(user.access_scope || {}),
+        cells: editManagedCells,
+      },
+      permissions: normalizePagePermissions(editPermissions, editRole),
       report_delivery_enabled: editReportDelivery,
       receives_daily_report: editReportDelivery && editDailyReport,
       report_email: editReportDelivery ? editReportEmail.trim().toLowerCase() : null,
@@ -145,7 +164,15 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
     // Resetar formulário
     setEditName(user.name || '');
     setEditRole(user.role || 'operator');
-    setEditCell(user.cell || 'none');
+    setEditManagedCells(
+      user.managed_cells?.length
+        ? user.managed_cells
+        : user.access_scope?.cells?.length
+          ? user.access_scope.cells
+          : user.cell
+            ? [user.cell]
+            : [],
+    );
     setEditPermissions(user.permissions || getDefaultPermissions(user.role || 'operator'));
     setEditReportDelivery(Boolean(user.report_delivery_enabled));
     setEditDailyReport(Boolean(user.receives_daily_report));
@@ -177,7 +204,7 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Nome Completo</Label>
               <Input value={editName} onChange={(e) => setEditName(e.target.value)} required />
@@ -195,17 +222,35 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Célula Vinculada</Label>
-              <Select value={editCell} onValueChange={setEditCell}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Nenhuma (Admin / Outra)</SelectItem>
-                  {activeCells.map((c) => (
-                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          </div>
+
+          <div className="space-y-3 rounded-xl border border-border/60 p-4">
+            <div>
+              <Label>Células autorizadas</Label>
+              <p className="text-xs text-muted-foreground">Selecione exatamente as células que este usuário poderá consultar e operar.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+              {activeCells.map((cell) => {
+                const active = editManagedCells.includes(cell.name);
+                return (
+                  <button
+                    type="button"
+                    key={cell.id}
+                    onClick={() => setEditManagedCells((current) => (
+                      active ? current.filter((name) => name !== cell.name) : [...current, cell.name]
+                    ))}
+                    className={cn(
+                      'flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition-colors',
+                      active ? 'border-primary bg-primary/5 font-semibold' : 'border-border/60 text-muted-foreground hover:bg-muted/40',
+                    )}
+                  >
+                    <span>{cell.name}</span>
+                    <span className={cn('flex h-4 w-4 items-center justify-center rounded border', active && 'border-primary bg-primary text-primary-foreground')}>
+                      {active && <Check className="h-3 w-3" />}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -256,30 +301,12 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
 
 
 
-          <div className="space-y-3">
-            <Label className="text-sm font-semibold text-foreground">Permissões de Acesso</Label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {PERMISSION_METADATA.map((p) => {
-                const Icon = p.icon;
-                const active = editPermissions[p.key];
-                return (
-                  <div
-                    key={p.key}
-                    onClick={() => togglePermission(p.key)}
-                    className={cn(
-                      "p-2.5 rounded-lg border cursor-pointer select-none transition-all flex items-center gap-2",
-                      active
-                        ? "border-primary/50 bg-primary/5 text-foreground font-medium"
-                        : "border-border/40 bg-card hover:bg-secondary/30 text-muted-foreground"
-                    )}
-                  >
-                    <Icon className="w-3.5 h-3.5 shrink-0" />
-                    <span className="text-xs truncate">{p.label}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <PageAccessMatrix
+            role={editRole}
+            permissions={editPermissions}
+            onChange={setEditPermissions}
+            disabled={editRole === 'admin'}
+          />
         </div>
       ) : (
         // Modo de Visualização normal
@@ -311,10 +338,12 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
                     ? 'Visualizador' 
                     : 'Operador'}
                 </Badge>
-                {user.role !== 'admin' && user.cell && (
-                  <Badge variant="outline" className="bg-emerald-500/5 border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-medium">
-                    Célula: {user.cell}
-                  </Badge>
+                {user.role !== 'admin' && (
+                  (user.managed_cells?.length ? user.managed_cells : user.cell ? [user.cell] : []).map((cell) => (
+                    <Badge key={cell} variant="outline" className="bg-emerald-500/5 border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-medium">
+                      Célula: {cell}
+                    </Badge>
+                  ))
                 )}
                 {isSelf && <Badge variant="outline" className="bg-secondary/40 border-primary/20 text-primary">Você</Badge>}
                 {user.report_delivery_enabled && (
@@ -342,7 +371,7 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 self-end sm:self-center shrink-0">
+          {!readOnly && <div className="flex items-center justify-end gap-3 self-end sm:self-center shrink-0">
             {/* Ações de Email/Senha */}
             <div className="flex gap-2">
               <Button
@@ -389,7 +418,7 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
                 <Trash2 className="w-4 h-4 text-muted-foreground hover:text-destructive transition-colors" />
               </Button>
             </div>
-          </div>
+          </div>}
         </div>
       )}
     </Card>

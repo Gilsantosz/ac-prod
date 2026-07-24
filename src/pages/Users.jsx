@@ -48,13 +48,16 @@ export default function Users() {
   });
 
   const canManageUsers = me?.role === 'admin';
+  const canViewUsers = canManageUsers || me?.permissions?.view_users || me?.permissions?.manage_users;
   const canManageOperators = canManageUsers || me?.permissions?.manage_users || me?.permissions?.manage_operators;
 
   const allowedTabs = canManageUsers
     ? ['accounts', 'scopes', 'schedules', 'groups', 'history', 'diagnostics']
     : canManageOperators
       ? ['accounts', 'scopes']
-      : [];
+      : canViewUsers
+        ? ['accounts']
+        : [];
 
   const defaultTab = 'accounts';
   const requestedTab = searchParams.get('tab');
@@ -69,7 +72,7 @@ export default function Users() {
     queryKey: ['users'],
     queryFn: () => base44.entities.User.list('-created_date', 500),
     initialData: [],
-    enabled: canManageUsers || canManageOperators,
+    enabled: canViewUsers || canManageOperators,
   });
 
   const { data: cells = [] } = useQuery({
@@ -101,8 +104,8 @@ export default function Users() {
 
   // Mutations
   const invite = useMutation({
-    mutationFn: ({ email, role, name, password, permissions, cell }) =>
-      base44.users.inviteUser(email, role, name, password, permissions, cell),
+    mutationFn: ({ email, role, name, password, permissions, cell, managedCells }) =>
+      base44.users.inviteUser(email, role, name, password, permissions, cell, managedCells),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success('Colaborador cadastrado com sucesso!');
@@ -129,10 +132,10 @@ export default function Users() {
     onError: (error) => toast.error(error?.message || 'Falha ao excluir colaborador'),
   });
 
-  const handleInvite = async (email, role, name, password, permissions, cell, reportSettings = {}) => {
+  const handleInvite = async (email, role, name, password, permissions, cell, managedCells = [], reportSettings = {}) => {
     setSaving(true);
     try {
-      const created = await invite.mutateAsync({ email, role, name, password, permissions, cell });
+      const created = await invite.mutateAsync({ email, role, name, password, permissions, cell, managedCells });
       if (created?.id && reportSettings.report_delivery_enabled) {
         await base44.users.updateUser(created.id, {
           report_delivery_enabled: true,
@@ -228,7 +231,7 @@ export default function Users() {
   useEffect(() => {
     if (selectedUserForScope) {
       const scope = selectedUserForScope.access_scope || {};
-      setSelectedCells(scope.cells || []);
+      setSelectedCells(selectedUserForScope.managed_cells || scope.cells || []);
       setSelectedMachines(scope.machines || []);
     } else {
       setSelectedCells([]);
@@ -242,7 +245,10 @@ export default function Users() {
       await updateUser.mutateAsync({
         id: selectedUserForScope.id,
         payload: {
+          cell: selectedCells[0] || '',
+          managed_cells: selectedCells,
           access_scope: {
+            ...(selectedUserForScope.access_scope || {}),
             cells: selectedCells,
             machines: selectedMachines
           }
@@ -359,7 +365,7 @@ export default function Users() {
     );
   }
 
-  if (me && !canManageUsers && !canManageOperators) {
+  if (me && !canViewUsers && !canManageOperators) {
     return (
       <div className="p-6 lg:p-8 max-w-3xl mx-auto">
         <div className="flex flex-col items-center text-center gap-3 py-20 text-muted-foreground border border-dashed border-border rounded-2xl">
@@ -389,9 +395,11 @@ export default function Users() {
           <TabsTrigger value="accounts" className="gap-2 rounded-lg">
             <UsersIcon className="w-4 h-4" /> Contas
           </TabsTrigger>
-          <TabsTrigger value="scopes" className="gap-2 rounded-lg">
-            <UserCheck className="w-4 h-4" /> Escopos Células
-          </TabsTrigger>
+          {canManageOperators && (
+            <TabsTrigger value="scopes" className="gap-2 rounded-lg">
+              <UserCheck className="w-4 h-4" /> Escopos Células
+            </TabsTrigger>
+          )}
           {canManageUsers && (
             <>
               <TabsTrigger value="schedules" className="gap-2 rounded-lg">
@@ -412,10 +420,11 @@ export default function Users() {
 
         {/* ─── 1. ABA CONTAS ──────────────────────────────────────── */}
         <TabsContent value="accounts" className="space-y-6">
-          <InviteUserForm onInvite={handleInvite} saving={saving} />
+          {canManageUsers && <InviteUserForm onInvite={handleInvite} saving={saving} />}
           <UserList
             users={users}
             currentUserId={me?.id}
+            readOnly={!canManageUsers}
             onUpdate={(id, payload) => updateUser.mutate({ id, payload })}
             onDelete={(id) => {
               if (confirm('Tem certeza que deseja remover este colaborador?')) {
@@ -452,9 +461,9 @@ export default function Users() {
                         <p className="font-medium text-foreground">{u.name || u.email.split('@')[0]}</p>
                         <p className="text-[10px] text-muted-foreground capitalize">{u.role}</p>
                       </div>
-                      {u.access_scope?.cells?.length > 0 && (
+                      {(u.managed_cells?.length > 0 || u.access_scope?.cells?.length > 0) && (
                         <Badge variant="secondary" className="text-[10px]">
-                          {u.access_scope.cells.length} cél.
+                          {(u.managed_cells || u.access_scope.cells).length} cél.
                         </Badge>
                       )}
                     </button>
