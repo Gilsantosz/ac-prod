@@ -1,7 +1,5 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/lib/localDb';
-import { supabase } from '@/lib/supabaseClient';
 import {
   Calendar, ClipboardList, ChevronDown, SlidersHorizontal,
   RefreshCw
@@ -18,6 +16,7 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { buildDailySummary } from '@/lib/dailySummary';
+import { fetchProductionEntriesRange, fetchProductionGoalsRange } from '@/lib/dailySummaryData';
 import { useCells } from '@/hooks/useCells';
 import SummaryKpis from '@/components/daily/SummaryKpis';
 import SummaryTable from '@/components/daily/SummaryTable';
@@ -28,6 +27,11 @@ import ExportDailyButton from '@/components/daily/ExportDailyButton';
 import CloseShiftButton from '@/components/daily/CloseShiftButton';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
+const daysBefore = (date, amount) => {
+  const value = new Date(`${date}T12:00:00`);
+  value.setDate(value.getDate() - amount);
+  return value.toISOString().slice(0, 10);
+};
 
 export default function DailySummary() {
   const { user } = useAuth();
@@ -36,23 +40,58 @@ export default function DailySummary() {
   const [selectedCells, setSelectedCells] = useState([]);
   const { activeCells } = useCells();
 
-  const { data: entries = [] } = useQuery({
+  const {
+    data: entries = [],
+    dataUpdatedAt: entriesUpdatedAt,
+    isFetching: isFetchingEntries,
+    isError: entriesError,
+    refetch: refetchEntries,
+  } = useQuery({
     queryKey: ['production', date],
-    queryFn: () => base44.entities.ProductionEntry.filter({ date }, '-created_date', 1000),
+    queryFn: () => fetchProductionEntriesRange(date),
     initialData: [],
+    staleTime: 15_000,
+    refetchInterval: 60_000,
   });
 
-  const { data: goals = [], refetch: refetchGoals } = useQuery({
+  const {
+    data: goals = [],
+    dataUpdatedAt: goalsUpdatedAt,
+    isFetching: isFetchingGoals,
+    isError: goalsError,
+    refetch: refetchGoals,
+  } = useQuery({
     queryKey: ['productionDailyGoals', date],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('production_daily_goals').select('*').eq('date', date);
-      if (error) {
-        if (/schema cache|does not exist|production_daily_goals/i.test(error.message || '')) return [];
-        throw error;
-      }
-      return data || [];
-    },
+    queryFn: () => fetchProductionGoalsRange(date),
     initialData: [],
+    staleTime: 15_000,
+    refetchInterval: 60_000,
+  });
+
+  const historyStart = useMemo(() => daysBefore(date, 6), [date]);
+  const {
+    data: historyEntries = [],
+    dataUpdatedAt: historyUpdatedAt,
+    isFetching: isFetchingHistory,
+    isError: historyError,
+    refetch: refetchHistory,
+  } = useQuery({
+    queryKey: ['daily-summary-history', historyStart, date],
+    queryFn: () => fetchProductionEntriesRange(historyStart, date),
+    initialData: [],
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+
+  const {
+    data: historyGoals = [],
+    refetch: refetchHistoryGoals,
+  } = useQuery({
+    queryKey: ['daily-summary-history-goals', historyStart, date],
+    queryFn: () => fetchProductionGoalsRange(historyStart, date),
+    initialData: [],
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 
   const toggleShift = (shiftName) => {
@@ -92,11 +131,51 @@ export default function DailySummary() {
 
   const summary = useMemo(() => buildDailySummary(filtered, filteredGoals), [filtered, filteredGoals]);
 
+  const evolutionData = useMemo(() => {
+    return Array.from({ length: 7 }, (_, index) => {
+      const day = daysBefore(date, 6 - index);
+      const dayEntries = historyEntries.filter((entry) =>
+        entry.date === day
+        && selectedShifts.includes(entry.shift)
+        && (selectedCells.length === 0 || selectedCells.includes(entry.cell))
+      );
+      const dayGoals = historyGoals.filter((goal) =>
+        goal.date === day
+        && selectedShifts.includes(goal.shift)
+        && (selectedCells.length === 0 || selectedCells.includes(goal.cell_name || goal.cell))
+      );
+      const daySummary = buildDailySummary(dayEntries, dayGoals);
+      const target = daySummary.totalsByUnit.reduce((sum, row) => sum + (Number(row.target) || 0), 0);
+      const realized = daySummary.totalsByUnit.reduce((sum, row) => sum + (Number(row.realized) || 0), 0);
+      const [, month, dayOfMonth] = day.split('-');
+
+      return {
+        date: `${dayOfMonth}/${month}`,
+        rate: target > 0 ? Math.round((realized / target) * 1000) / 10 : 0,
+        target,
+        realized,
+      };
+    });
+  }, [date, historyEntries, historyGoals, selectedShifts, selectedCells]);
+
   const formattedDateString = useMemo(() => {
     const parts = date.split('-');
     if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
     return date;
   }, [date]);
+
+  const lastUpdatedAt = Math.max(entriesUpdatedAt || 0, goalsUpdatedAt || 0, historyUpdatedAt || 0);
+  const lastUpdatedTime = lastUpdatedAt
+    ? new Date(lastUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : '--:--:--';
+  const isFetching = isFetchingEntries || isFetchingGoals || isFetchingHistory;
+  const hasSyncError = entriesError || goalsError || historyError;
+  const refreshAll = () => Promise.all([
+    refetchEntries(),
+    refetchGoals(),
+    refetchHistory(),
+    refetchHistoryGoals(),
+  ]);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 bg-background min-h-screen">
@@ -217,17 +296,24 @@ export default function DailySummary() {
       </div>
 
       {/* ── GRÁFICOS ANALÍTICOS INFERIORES (3 CARDS) ────────────────────────── */}
-      <DailySummaryCharts summary={summary} entries={filtered} />
+      <DailySummaryCharts summary={summary} entries={filtered} evolutionData={evolutionData} />
 
       {/* ── BARRA DE STATUS INFERIOR / RODAPÉ ───────────────────────────────── */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-4 border-t border-border/40 text-xs text-muted-foreground font-medium">
         <div className="flex items-center gap-2">
-          <span>Dados atualizados em {formattedDateString} às 08:45</span>
-          <RefreshCw className="w-3.5 h-3.5 cursor-pointer hover:text-foreground transition-colors" onClick={() => refetchGoals()} />
+          <span>Dados de {formattedDateString} atualizados às {lastUpdatedTime}</span>
+          <button
+            type="button"
+            className="rounded-full p-1 hover:bg-secondary hover:text-foreground transition-colors"
+            onClick={refreshAll}
+            aria-label="Atualizar dados do resumo diário"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+          </button>
         </div>
-        <div className="flex items-center gap-1.5 font-bold text-emerald-600 dark:text-emerald-400">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>Sincronizado</span>
+        <div className={`flex items-center gap-1.5 font-bold ${hasSyncError ? 'text-red-600' : isFetching ? 'text-blue-600' : 'text-emerald-600 dark:text-emerald-400'}`}>
+          <span className={`w-2 h-2 rounded-full ${hasSyncError ? 'bg-red-500' : isFetching ? 'bg-blue-500 animate-pulse' : 'bg-emerald-500'}`} />
+          <span>{hasSyncError ? 'Falha na sincronização' : isFetching ? 'Atualizando' : 'Sincronizado em tempo real'}</span>
         </div>
       </div>
     </div>

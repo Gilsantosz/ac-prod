@@ -21,7 +21,7 @@ function shell(title: string, eyebrow: string, body: string) {
   return `<!doctype html>
 <html lang="pt-BR">
 <body style="margin:0;background:#eef2ef;font-family:Arial,Helvetica,sans-serif;color:#17211b">
-<div style="display:none;max-height:0;overflow:hidden">Relatório operacional AC.Prod atualizado com dados reais do sistema.</div>
+<div style="display:none;max-height:0;overflow:hidden">Relatório operacional Leo Flow atualizado com dados reais do sistema.</div>
 <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
   <tr><td align="center" style="padding:24px 10px">
     <table width="720" cellpadding="0" cellspacing="0" role="presentation" style="max-width:720px;width:100%;background:#ffffff;border:1px solid #d9e2dc;border-radius:18px;overflow:hidden">
@@ -37,7 +37,7 @@ function shell(title: string, eyebrow: string, body: string) {
         ${body}
       </td></tr>
       <tr><td style="padding:17px 26px;border-top:1px solid #e4eae6;font-size:11px;line-height:1.5;color:#68756e">
-        Mensagem automática e auditada pelo AC.Prod. Os números refletem o banco no momento do envio.
+        Mensagem automática e auditada pelo Leo Flow. Os números refletem o banco no momento do envio.
       </td></tr>
     </table>
   </td></tr>

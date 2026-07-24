@@ -8,7 +8,12 @@ const TABLE_TO_QUERY_KEYS = {
   production_entries: [
     ['production'],
     ['productionEntries'],
+    ['daily-summary-history'],
     ['test-entries-list'],
+  ],
+  production_daily_goals: [
+    ['productionDailyGoals'],
+    ['daily-summary-history-goals'],
   ],
   production_realtime_counters: [
     ['realtimeCounters'],
@@ -140,11 +145,13 @@ export function useProductionRealtimeSync(options = {}) {
       }
 
       if (table === 'production_entries') {
-        queryClient.setQueriesData({ queryKey: ['production'] }, (current) => {
+        const eventDate = newRow.date || oldRow.date;
+        const previousDate = oldRow.date;
+        const updateDateCache = (cacheDate) => queryClient.setQueryData(['production', cacheDate], (current) => {
           if (!Array.isArray(current)) return current;
           const rowId = newRow.id || oldRow.id;
           if (!rowId) return current;
-          if (payload.eventType === 'DELETE') {
+          if (payload.eventType === 'DELETE' || (newRow.date && newRow.date !== cacheDate)) {
             return current.filter((row) => row.id !== rowId);
           }
           const normalized = { ...newRow, created_date: newRow.created_at };
@@ -154,6 +161,15 @@ export function useProductionRealtimeSync(options = {}) {
           next[existingIndex] = { ...next[existingIndex], ...normalized };
           return next;
         });
+
+        if (eventDate) {
+          updateDateCache(eventDate);
+          triggerInvalidate(['production', eventDate]);
+        }
+        if (previousDate && previousDate !== eventDate) {
+          updateDateCache(previousDate);
+          triggerInvalidate(['production', previousDate]);
+        }
       }
 
       queryKeys.forEach((queryKey) => {

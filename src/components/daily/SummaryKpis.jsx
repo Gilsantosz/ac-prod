@@ -9,32 +9,40 @@ export default function SummaryKpis({ total, summary }) {
   const totalRealized = rows.reduce((sum, row) => sum + (Number(row.realized) || 0), 0);
   const attainment = totalTarget > 0
     ? Math.round((totalRealized / totalTarget) * 1000) / 10
-    : (total?.target > 0 ? Math.round((total.produced / total.target) * 1000) / 10 : 94.2);
+    : 0;
 
   const cells = summary?.matrixByCell || [];
-  const totalCellCount = Math.max(cells.length, 5);
-  const above = cells.filter((row) => Number(row.total?.target) > 0 && Number(row.total?.realized) >= Number(row.total?.target)).length || 2;
-  const below = cells.filter((row) => Number(row.total?.target) > 0 && Number(row.total?.realized) < Number(row.total?.target)).length || 3;
+  const byCell = cells.reduce((acc, row) => {
+    const cell = row.cell || 'Sem célula';
+    const current = acc.get(cell) || { target: 0, realized: 0 };
+    current.target += Number(row.total?.target) || 0;
+    current.realized += Number(row.total?.realized) || 0;
+    acc.set(cell, current);
+    return acc;
+  }, new Map());
+  const comparableCells = [...byCell.values()].filter((row) => row.target > 0);
+  const totalCellCount = byCell.size;
+  const above = comparableCells.filter((row) => row.realized >= row.target).length;
+  const below = comparableCells.filter((row) => row.realized < row.target).length;
 
-  // Garante os cartões para todas as 4 unidades operacionais se houverem no resumo ou padrão da imagem
   const defaultUnits = [
-    { unit: 'covers', unitLabel: 'capas', realized: 3000, target: 3000, pct: 100 },
-    { unit: 'sheets', unitLabel: 'chapas', realized: 350, target: 700, pct: 50 },
-    { unit: 'meters', unitLabel: 'metros', realized: 5633, target: 6000, pct: 94 },
-    { unit: 'pieces', unitLabel: 'peças', realized: 5250, target: 6000, pct: 88 },
+    { unit: 'covers', unitLabel: 'capas' },
+    { unit: 'sheets', unitLabel: 'chapas' },
+    { unit: 'meters', unitLabel: 'metros' },
+    { unit: 'pieces', unitLabel: 'peças' },
   ];
 
   const unitCards = defaultUnits.map((d) => {
     const found = rows.find((r) => r.metric_unit === d.unit || r.unitLabel === d.unitLabel);
-    const realized = found ? found.realized : d.realized;
-    const target = found ? found.target : d.target;
-    const pct = target > 0 ? Math.round((realized / target) * 100) : d.pct;
+    const realized = Number(found?.realized) || 0;
+    const target = Number(found?.target) || 0;
+    const pct = target > 0 ? Math.round((realized / target) * 100) : 0;
 
     return {
       id: `unit-${d.unit}`,
       label: `Realizado em ${d.unitLabel}`,
       value: fmt(realized),
-      subtext: `${pct}% da meta`,
+      subtext: target > 0 ? `${pct}% da meta` : 'sem meta cadastrada',
       icon: Package,
       iconBg: 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-200/50',
     };
@@ -68,9 +76,8 @@ export default function SummaryKpis({ total, summary }) {
     {
       id: 'downtime',
       label: 'Paradas (min)',
-      value: fmt(total?.downtime || 120),
-      subtext: '-32 min vs ontem',
-      subtextColor: 'text-emerald-600 dark:text-emerald-400 font-semibold',
+      value: fmt(total?.downtime),
+      subtext: 'registradas no período',
       icon: Clock,
       iconBg: 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200/50',
     },

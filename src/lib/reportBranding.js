@@ -53,15 +53,17 @@ export async function drawBrandedPdfHeader(doc, { title, subtitle = '', summary 
   doc.setTextColor(...REPORT_BRAND.ink);
   doc.setFontSize(16);
   doc.setFont(undefined, 'bold');
-  doc.text(title || 'Relatorio Industrial', margin, y);
+  const titleLines = doc.splitTextToSize(title || 'Relatório Industrial', pageW - margin * 2);
+  doc.text(titleLines, margin, y);
 
-  y += 6;
+  y += Math.max(7, titleLines.length * 7);
   doc.setFontSize(9);
   doc.setFont(undefined, 'normal');
   doc.setTextColor(...REPORT_BRAND.muted);
   if (subtitle) {
-    doc.text(String(subtitle), margin, y);
-    y += 5;
+    const subtitleLines = doc.splitTextToSize(String(subtitle), pageW - margin * 2);
+    doc.text(subtitleLines, margin, y);
+    y += Math.max(5, subtitleLines.length * 5);
   }
   doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, margin, y);
   y += 9;
