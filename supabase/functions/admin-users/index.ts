@@ -58,6 +58,14 @@ Deno.serve(async (request) => {
     const name = String(body.name || '').trim();
     const role = String(body.role || 'operator').trim().toLowerCase();
     const cell = String(body.cell || '').trim();
+    const managedCells = Array.from(new Set(
+      (Array.isArray(body.managed_cells) ? body.managed_cells : [])
+        .map((value: unknown) => String(value || '').trim())
+        .filter(Boolean),
+    ));
+    const accessScope = body.access_scope && typeof body.access_scope === 'object' && !Array.isArray(body.access_scope)
+      ? body.access_scope
+      : {};
     const permissions = body.permissions && typeof body.permissions === 'object' && !Array.isArray(body.permissions)
       ? body.permissions
       : {};
@@ -66,6 +74,21 @@ Deno.serve(async (request) => {
     if (password.length < 8) return json({ success: false, error: 'A senha deve ter pelo menos 8 caracteres.' }, 422);
     if (!name) return json({ success: false, error: 'Informe o nome do colaborador.' }, 422);
     if (!ALLOWED_ROLES.has(role)) return json({ success: false, error: 'Papel de acesso inválido.' }, 422);
+    if (role === 'operator' && managedCells.length === 0) {
+      return json({ success: false, error: 'Selecione pelo menos uma célula autorizada para o operador.' }, 422);
+    }
+
+    if (managedCells.length > 0) {
+      const { data: validCells, error: cellsError } = await admin
+        .from('cells')
+        .select('name')
+        .in('name', managedCells)
+        .eq('active', true);
+      if (cellsError) throw cellsError;
+      if ((validCells || []).length !== managedCells.length) {
+        return json({ success: false, error: 'Uma ou mais células selecionadas não existem ou estão inativas.' }, 422);
+      }
+    }
 
     const { data: existingProfile } = await admin
       .from('profiles')
@@ -109,11 +132,16 @@ Deno.serve(async (request) => {
         email,
         name,
         role,
-        cell,
+        cell: managedCells[0] || cell,
+        managed_cells: managedCells,
+        access_scope: {
+          ...accessScope,
+          cells: managedCells,
+        },
         permissions,
         active: true,
       }, { onConflict: 'id' })
-      .select('id, email, name, role, cell, permissions, active, report_delivery_enabled')
+      .select('id, email, name, role, cell, managed_cells, access_scope, permissions, active, report_delivery_enabled')
       .single();
     if (profileError) throw profileError;
 
@@ -127,7 +155,13 @@ Deno.serve(async (request) => {
       page: 'Usuários',
       route: '/usuarios',
       method: 'EDGE_FUNCTION',
-      new_value: { email: profile.email, name: profile.name, role: profile.role, cell: profile.cell },
+      new_value: {
+        email: profile.email,
+        name: profile.name,
+        role: profile.role,
+        cell: profile.cell,
+        managed_cells: profile.managed_cells,
+      },
       success: true,
     });
 
@@ -140,4 +174,3 @@ Deno.serve(async (request) => {
     }, 500);
   }
 });
-

@@ -19,7 +19,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import NotificationCenter from '@/components/layout/NotificationCenter';
 import LeoAssistantChat from '@/components/assistant/LeoAssistantChat';
 
-import { appRoutes, routeGroups } from '@/config/appRoutes';
+import { appRoutes, routeGroups, canUserViewRoute, canUserEditRoute, getRouteAccess } from '@/config/appRoutes';
 
 export default function AppLayout() {
   return (
@@ -60,23 +60,11 @@ function AppShell() {
 
   const visibleNav = appRoutes.filter((item) => {
     if (!item.showInSidebar) return false;
-    if (item.permission === 'adminOnly' && user?.role !== 'admin') return false;
-    if (user?.role === 'operator' && ['/pcp', '/celulas-metas', '/usuarios', '/rotas-produtivas'].includes(item.path)) return false;
-    if (user?.role === 'admin') return true;
-    if (!user?.permissions) return false;
-    
-    const requiredPermission = item.permission;
-    if (requiredPermission && requiredPermission !== 'adminOnly') {
-      if (requiredPermission === 'ai_operations') {
-        return !!(user.permissions.ai_operations || user.permissions.view_reports || user.permissions.manage_automations);
-      }
-      if (requiredPermission === 'register_manual_production') {
-        return !!(user.permissions.register_manual_production || user.permissions.register_production || user.permissions.view_pcp || user.permissions.manage_pcp);
-      }
-      return !!user.permissions[requiredPermission];
-    }
-    return true;
+    return canUserViewRoute(user, item.path);
   });
+
+  const currentAccess = getRouteAccess(location.pathname);
+  const pageIsReadOnly = Boolean(currentAccess.editPermission) && !canUserEditRoute(user, location.pathname);
 
 
   const userInitials = user
@@ -371,6 +359,11 @@ function AppShell() {
 
         {/* ── Main Content ─────────────────────────────────────────────── */}
         <main className="flex-1 overflow-y-auto">
+          {pageIsReadOnly && (
+            <div className="sticky top-0 z-30 border-b border-amber-300/60 bg-amber-50/95 px-4 py-2 text-center text-xs font-semibold text-amber-900 backdrop-blur dark:border-amber-700/50 dark:bg-amber-950/90 dark:text-amber-100">
+              Acesso somente para visualização. Alterações nesta página não estão autorizadas para este usuário.
+            </div>
+          )}
           <Outlet />
         </main>
       </div>
