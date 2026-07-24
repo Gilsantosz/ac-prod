@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   from: vi.fn(),
   scheduleInsert: vi.fn(),
+  reportFilters: {},
 }));
 
 vi.mock('@/lib/supabaseClient', () => ({
@@ -24,7 +25,11 @@ function reportJobQuery() {
             title: 'Resumo de Produção - 07/07/2026',
             report_type: 'production_summary',
             format: 'pdf',
-            filters: { startDate: '2026-07-07', endDate: '2026-07-07' },
+            filters: {
+              startDate: '2026-07-07',
+              endDate: '2026-07-07',
+              ...mocks.reportFilters,
+            },
             requested_by: 'user-1',
           },
           error: null,
@@ -50,6 +55,7 @@ function reportSchedulesQuery() {
 describe('aiEmailService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.reportFilters = {};
     mocks.from.mockImplementation((table) => {
       if (table === 'report_jobs') return reportJobQuery();
       if (table === 'report_schedules') return reportSchedulesQuery();
@@ -88,7 +94,55 @@ describe('aiEmailService', () => {
       recipient_profile_ids: ['profile-1'],
       extra_emails: [],
       report_date: '2026-07-07',
+      report_start_date: '2026-07-07',
+      report_end_date: '2026-07-07',
+      filter_snapshot: expect.objectContaining({
+        startDate: '2026-07-07',
+        endDate: '2026-07-07',
+      }),
     }));
     expect(result.providerMessageId).toBe('smtp-1');
+  });
+
+  it('preserva intervalo e filtros completos no relatório rico', async () => {
+    mocks.reportFilters = {
+      startDate: '2026-07-01',
+      endDate: '2026-07-07',
+      cells: ['Corte'],
+      shifts: ['1º Turno'],
+      lots: ['143332'],
+      generalLotCode: '15587',
+      client: 'MARINA',
+      onlyWithScrap: true,
+    };
+    mocks.invoke.mockResolvedValue({
+      data: { success: true, processed: [{ scheduleId: 'schedule-1', success: true }] },
+      error: null,
+    });
+
+    await sendReportEmail({
+      reportJobId: 'job-1',
+      recipientProfileIds: ['profile-supervisor'],
+      subject: 'Fechamento semanal',
+    });
+
+    expect(mocks.scheduleInsert).toHaveBeenCalledWith(expect.objectContaining({
+      created_by: 'user-1',
+      report_date: null,
+      report_start_date: '2026-07-01',
+      report_end_date: '2026-07-07',
+      cell_filter: ['Corte'],
+      shift_filter: ['1º Turno'],
+      filter_snapshot: expect.objectContaining({
+        startDate: '2026-07-01',
+        endDate: '2026-07-07',
+        cells: ['Corte'],
+        shifts: ['1º Turno'],
+        lots: ['143332'],
+        generalLotCode: '15587',
+        client: 'MARINA',
+        onlyWithScrap: true,
+      }),
+    }));
   });
 });
