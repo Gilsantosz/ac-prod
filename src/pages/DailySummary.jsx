@@ -189,6 +189,7 @@ export default function DailySummary() {
             shift={selectedShifts}
             cell={selectedCells}
             summary={summary}
+            cells={activeCells}
           />
           <CloseShiftButton
             date={date}
