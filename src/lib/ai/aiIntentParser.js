@@ -219,7 +219,11 @@ export function parseIntent(prompt, options = {}) {
     || /\b(me\s+envie|envie-?\s?me|me\s+mande|mande-?\s?me)\b/.test(normalized)) {
     recipients.push('remetente');
   }
-  const toMatch = text.match(/\bpara\s+(?:o\s+|a\s+)?(?:gestor(?:a)?|gerente|administrador(?:a)?|diretoria|gerencia)?\s*([\p{L}][\p{L}\s.'-]{1,80}?)(?=\s+(?:por|via|as|todo|toda|diariamente|dias|mensalmente)\b|[,.!?]|$)/iu);
+  // Um e-mail explícito é autoritativo. Não tente interpretar o texto antes do
+  // "@" como nome, pois isso pode trocar silenciosamente o destinatário.
+  const toMatch = directEmails.length === 0
+    ? text.match(/\bpara\s+(?:o\s+|a\s+)?(?:gestor(?:a)?|gerente|administrador(?:a)?|diretoria|gerencia)?\s*([\p{L}][\p{L}\s.'-]{1,80}?)(?=\s+(?:por|via|as|todo|toda|diariamente|dias|mensalmente)\b|[,.!?]|$)/iu)
+    : null;
   if (toMatch) {
     const name = toMatch[1].trim().replace(/\s+/g, ' ');
     if (name && !recipients.includes(name) && !['email', 'html', 'pdf', 'csv', 'xlsx', 'excel'].includes(name.toLowerCase())) {

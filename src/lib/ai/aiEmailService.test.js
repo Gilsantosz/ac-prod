@@ -57,20 +57,11 @@ describe('aiEmailService', () => {
     });
   });
 
-  it('usa o canal SMTP/Gmail agendado quando a Edge Function antiga exige Resend', async () => {
+  it('usa diretamente o renderizador completo para resumo de produção e OEE', async () => {
     mocks.invoke.mockImplementation(async (name) => {
-      if (name === 'send-report-email') {
-        return {
-          data: {
-            success: false,
-            error: 'Provedor de e-mail não configurado. Defina RESEND_API_KEY e REPORT_FROM_EMAIL.',
-          },
-          error: null,
-        };
-      }
       if (name === 'send-scheduled-reports') {
         return {
-          data: { success: true, processed: [{ scheduleId: 'schedule-1', success: true }] },
+          data: { success: true, processed: [{ scheduleId: 'schedule-1', success: true, providerMessageId: 'smtp-1' }] },
           error: null,
         };
       }
@@ -85,15 +76,19 @@ describe('aiEmailService', () => {
 
     expect(result.success).toBe(true);
     expect(result.fallback).toBe('send-scheduled-reports');
-    expect(mocks.invoke).toHaveBeenNthCalledWith(2, 'send-scheduled-reports', {
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    expect(mocks.invoke).toHaveBeenCalledWith('send-scheduled-reports', {
       body: { scheduleId: 'schedule-1', test: true },
     });
     expect(mocks.scheduleInsert).toHaveBeenCalledWith(expect.objectContaining({
       enabled: false,
       report_type: 'daily_production',
+      report_types: ['daily_production', 'oee'],
       format: 'email_html',
       recipient_profile_ids: ['profile-1'],
       extra_emails: [],
+      report_date: '2026-07-07',
     }));
+    expect(result.providerMessageId).toBe('smtp-1');
   });
 });

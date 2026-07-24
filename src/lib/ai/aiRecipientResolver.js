@@ -37,6 +37,7 @@ function normalizeCells(row = {}) {
 }
 
 function fromProfile(profile) {
+  const deliveryEmail = profile.report_email || profile.email;
   return {
     ...profile,
     id: `profile:${profile.id}`,
@@ -45,7 +46,8 @@ function fromProfile(profile) {
     source: 'profile',
     source_label: profile.role === 'admin' ? 'Usuário Admin' : 'Usuário Gestor',
     name: profile.name || profile.email,
-    email: String(profile.email || '').trim().toLowerCase(),
+    email: String(deliveryEmail || '').trim().toLowerCase(),
+    login_email: String(profile.email || '').trim().toLowerCase(),
     role_label: profile.role === 'admin' ? 'Administrador' : 'Gestor',
     recipient_group: 'manager',
     cell_filter: normalizeCells(profile),
@@ -107,7 +109,7 @@ export async function findRecipientByEmail(email, _user) {
 
   const { data: profiles, error: profilesError } = await supabase
     .from('profiles')
-    .select('id,name,email,role,cell,managed_cells,active,report_delivery_enabled')
+    .select('id,name,email,report_email,role,cell,managed_cells,active,report_delivery_enabled')
     .ilike('email', cleanEmail)
     .eq('active', true);
 
@@ -117,6 +119,19 @@ export async function findRecipientByEmail(email, _user) {
     const p = profiles[0];
     if (['admin', 'manager', 'supervisor'].includes(p.role) || p.report_delivery_enabled) {
       return fromProfile(p);
+    }
+  }
+
+  const { data: reportProfiles, error: reportProfilesError } = await supabase
+    .from('profiles')
+    .select('id,name,email,report_email,role,cell,managed_cells,active,report_delivery_enabled')
+    .ilike('report_email', cleanEmail)
+    .eq('active', true);
+  if (reportProfilesError) throw new Error(`Não foi possível consultar o e-mail de relatórios: ${reportProfilesError.message}`);
+  if (reportProfiles?.length) {
+    const profile = reportProfiles[0];
+    if (['admin', 'manager', 'supervisor'].includes(profile.role) || profile.report_delivery_enabled) {
+      return fromProfile(profile);
     }
   }
 
@@ -144,7 +159,7 @@ export async function findRecipientsByName(name, _user) {
 
   const profilesResult = await supabase
       .from('profiles')
-      .select('id,name,email,role,cell,managed_cells,active,report_delivery_enabled')
+      .select('id,name,email,report_email,role,cell,managed_cells,active,report_delivery_enabled')
       .eq('active', true)
       .or(`role.in.(admin,manager,supervisor),report_delivery_enabled.eq.true`)
       .ilike('name', `%${cleanName}%`)
@@ -170,7 +185,7 @@ export async function findRecipientsByRole(role, _user) {
 
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id,name,email,role,cell,managed_cells,active,report_delivery_enabled')
+    .select('id,name,email,report_email,role,cell,managed_cells,active,report_delivery_enabled')
     .eq('active', true)
     .in('role', targetRoles);
 
@@ -183,7 +198,7 @@ export async function findRecipientsByCell(cellName, _user) {
   // 1. Encontrar profiles cujas managed_cells contêm esta célula
   const { data: allProfiles } = await supabase
     .from('profiles')
-    .select('id,name,email,role,cell,managed_cells,active,report_delivery_enabled')
+    .select('id,name,email,report_email,role,cell,managed_cells,active,report_delivery_enabled')
     .eq('active', true)
     .or(`role.in.(admin,manager,supervisor),report_delivery_enabled.eq.true`);
   
@@ -257,7 +272,7 @@ export async function resolveRecipientsFromPrompt(prompt, user, options = {}) {
           if (m.profile_id) {
             const { data: prof } = await supabase
               .from('profiles')
-              .select('id,name,email,role,cell,managed_cells,active,report_delivery_enabled')
+              .select('id,name,email,report_email,role,cell,managed_cells,active,report_delivery_enabled')
               .eq('id', m.profile_id)
               .single();
             if (prof) pushUnique(resolved, fromProfile(prof));

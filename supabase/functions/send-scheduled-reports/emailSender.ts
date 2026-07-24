@@ -30,7 +30,14 @@ export async function sendEmail(opts: {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(JSON.stringify(data));
-      return { success: true };
+      return {
+        success: true,
+        provider: 'resend',
+        providerMessageId: data?.id || null,
+        providerResponse: `HTTP ${res.status}`,
+        accepted: opts.recipients,
+        rejected: [],
+      };
     } catch (err: any) {
       console.error('Erro no envio via Resend:', err);
       if (smtpUser && smtpPass) {
@@ -72,8 +79,15 @@ async function sendViaSmtp(user: string, pass: string, opts: any) {
       }));
     }
 
-    await transporter.sendMail(mailOptions);
-    return { success: true };
+    const info = await transporter.sendMail(mailOptions);
+    return {
+      success: true,
+      provider: 'smtp',
+      providerMessageId: info.messageId || null,
+      providerResponse: info.response || null,
+      accepted: Array.isArray(info.accepted) ? info.accepted.map(String) : opts.recipients,
+      rejected: Array.isArray(info.rejected) ? info.rejected.map(String) : [],
+    };
   } catch (err: any) {
     console.error('Erro no envio via SMTP:', err);
     return { success: false, error: err.message };

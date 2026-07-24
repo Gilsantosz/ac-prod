@@ -189,11 +189,11 @@ export default function DailySummary() {
             shift={selectedShifts}
             cell={selectedCells}
             summary={summary}
-            disabled={filtered.length === 0 && filteredGoals.length === 0}
           />
           <CloseShiftButton
             date={date}
-            disabled={filtered.length === 0 && filteredGoals.length === 0}
+            shift={selectedShifts}
+            cell={selectedCells}
           />
         </div>
       </div>

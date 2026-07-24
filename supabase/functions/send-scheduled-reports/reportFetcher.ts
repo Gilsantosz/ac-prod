@@ -23,23 +23,51 @@ export async function fetchReportDataForType(supabase: any, type: string, schedu
   const targetDate = explicitDate
     || (schedule.period_mode === 'previous_day' ? yesterday : today);
 
-  if (type === 'daily_production' || type === 'shift_closure') {
-    let q = supabase.from('production_entries').select('*').eq('date', targetDate);
+  const applyProductionFilters = (query: any, cellColumn: string) => {
     if (schedule.cell_filter && schedule.cell_filter.length > 0) {
-      q = q.in('cell', schedule.cell_filter);
+      query = query.in(cellColumn, schedule.cell_filter);
     }
-    const { data } = await q;
-    return data || [];
+    if (schedule.shift_filter && schedule.shift_filter.length > 0) {
+      query = query.in('shift', schedule.shift_filter);
+    }
+    return query;
+  };
+
+  const fetchProductionBundle = async (fromDate: string, toDate: string) => {
+    let entriesQuery = supabase
+      .from('production_entries')
+      .select('*')
+      .gte('date', fromDate)
+      .lte('date', toDate);
+    entriesQuery = applyProductionFilters(entriesQuery, 'cell');
+
+    let goalsQuery = supabase
+      .from('production_daily_goals')
+      .select('*')
+      .gte('date', fromDate)
+      .lte('date', toDate);
+    goalsQuery = applyProductionFilters(goalsQuery, 'cell_name');
+
+    const [entriesResult, goalsResult] = await Promise.all([entriesQuery, goalsQuery]);
+    if (entriesResult.error) throw entriesResult.error;
+    if (goalsResult.error) throw goalsResult.error;
+    return {
+      entries: entriesResult.data || [],
+      goals: goalsResult.data || [],
+      fromDate,
+      toDate,
+    };
+  };
+
+  if (type === 'daily_production' || type === 'shift_closure') {
+    return fetchProductionBundle(targetDate, targetDate);
   }
 
   if (type === 'oee') {
-    const dateLimit = getSaoPauloDateString(-7);
-    let q = supabase.from('production_entries').select('*').gte('date', dateLimit);
-    if (schedule.cell_filter && schedule.cell_filter.length > 0) {
-      q = q.in('cell', schedule.cell_filter);
-    }
-    const { data: entries } = await q;
-    return entries || [];
+    // Fechamento manual usa exatamente a data escolhida. Relatórios OEE
+    // recorrentes sem data explícita continuam cobrindo os últimos 7 dias.
+    const fromDate = explicitDate ? targetDate : getSaoPauloDateString(-6);
+    return fetchProductionBundle(fromDate, targetDate);
   }
 
 

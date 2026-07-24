@@ -55,7 +55,25 @@ describe('aiActionExecutor', () => {
     const user = { id: 'u1', role: 'manager', email: 'user@empresa.com' };
     const res = await executeAiAction({ action: 'send_report_email', rawPrompt: 'Mande para joao@externo.com' }, { user });
     expect(res.pendingAction).toBeUndefined();
-    expect(res.content).toContain('nome ou e-mail do gestor');
+    expect(res.content).toContain('não está cadastrado');
+    expect(res.content).toContain('não substituí');
+  });
+
+  it('blocks a missing exact email even when a similar-name recipient was also resolved', async () => {
+    canExecuteAiAction.mockReturnValue(true);
+    resolveRecipientsFromPrompt.mockResolvedValue({
+      resolved: [{ id: 'profile:1', name: 'Gildemar Pereira', email: 'gilsantos.pereira@empresa.com' }],
+      ambiguous: [],
+      notFound: ['gildemar.pereira@empresa.com'],
+    });
+
+    const result = await executeAiAction({
+      action: 'send_report_email',
+      rawPrompt: 'Envie para gildemar.pereira@empresa.com',
+    }, { user: { id: 'u1', role: 'manager' } });
+
+    expect(sendReportEmailSmart).not.toHaveBeenCalled();
+    expect(result.content).toContain('gildemar.pereira@empresa.com');
   });
 
   it('runs generation and email sending when fully confirmed', async () => {
@@ -84,7 +102,7 @@ describe('aiActionExecutor', () => {
     expect(resolveRecipientsFromPrompt).toHaveBeenCalledWith('Envie o relatório OEE', user, { explicitRecipients: ['carlos@empresa.com'] });
     expect(generateOperationalReport).toHaveBeenCalled();
     expect(sendReportEmailSmart).toHaveBeenCalled();
-    expect(res.content).toContain('enviado com sucesso');
+    expect(res.content).toContain('aceito pelo provedor');
   });
 
   it('abre lote geral e lote do cliente já selecionados', async () => {

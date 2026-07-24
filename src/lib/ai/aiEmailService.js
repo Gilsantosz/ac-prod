@@ -52,6 +52,15 @@ function normalizeScheduleCells(filters = {}) {
   return [];
 }
 
+function normalizeScheduleShifts(filters = {}) {
+  const raw = Array.isArray(filters.shifts)
+    ? filters.shifts
+    : Array.isArray(filters.shift)
+      ? filters.shift
+      : (filters.shift && filters.shift !== 'all' ? [filters.shift] : []);
+  return raw.filter((shift) => ['1º Turno', '2º Turno', '3º Turno'].includes(shift));
+}
+
 function localIso(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -77,6 +86,7 @@ function isProviderConfigError(message = '') {
 }
 
 function normalizeProfileRecipient(profile) {
+  const deliveryEmail = profile.report_email || profile.email;
   const roleLabel = profile.role === 'admin' 
     ? 'Administrador' 
     : profile.role === 'manager' 
@@ -91,7 +101,8 @@ function normalizeProfileRecipient(profile) {
     source: 'profile',
     source_label: `Usuário ${roleLabel}`,
     name: profile.name || profile.email || 'Colaborador sem nome',
-    email: String(profile.email || '').trim().toLowerCase(),
+    email: String(deliveryEmail || '').trim().toLowerCase(),
+    login_email: String(profile.email || '').trim().toLowerCase(),
     role_label: roleLabel,
     recipient_group: ['admin', 'manager', 'supervisor'].includes(profile.role) ? 'manager' : 'other',
     cell_filter: normalizeCells(profile),
@@ -163,7 +174,7 @@ export function splitRecipientRefs(recipientRefs = []) {
 export async function listReportRecipients() {
   const profilesResult = await supabase
       .from('profiles')
-      .select('id,name,email,role,cell,managed_cells,active,report_delivery_enabled')
+      .select('id,name,email,report_email,role,cell,managed_cells,active,report_delivery_enabled')
       .eq('active', true)
       .or(`role.in.(admin,manager,supervisor),report_delivery_enabled.eq.true`)
       .order('name');
@@ -277,20 +288,31 @@ async function sendReportEmailViaScheduledFallback({ reportJobId, profileIds, su
   if (!profileIds.length) throw new Error('Selecione pelo menos um gestor cadastrado.');
 
   const reportType = mapScheduledReportType(job.report_type);
+  const reportTypes = ['daily_production', 'shift_closure'].includes(reportType)
+    ? [reportType, 'oee']
+    : [reportType];
+  const explicitDate = job.filters?.startDate
+    && job.filters?.startDate === job.filters?.endDate
+    ? job.filters.startDate
+    : null;
   const now = new Date();
   const schedule = await insertOneOffSchedule({
     name: String(subject || job.title || 'Envio avulso IA').slice(0, 120),
     enabled: false,
     report_type: reportType,
-    report_types: [reportType],
+    report_types: reportTypes,
     format: 'email_html',
-    cell_filter: normalizeScheduleCells(job.filters),
+    cell_filter: normalizeScheduleCells(job.filters || {}),
+    shift_filter: normalizeScheduleShifts(job.filters || {}),
     stage_filter: [],
     recipient_profile_ids: profileIds,
     extra_emails: [],
     frequency: frequencyForScheduledFallback(job.filters, now),
     time_local: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:00`,
     timezone: 'America/Sao_Paulo',
+    period_mode: explicitDate ? 'current_day' : 'previous_day',
+    report_date: explicitDate,
+    source_page: 'ai_manual_rich_report',
     next_run_at: now.toISOString(),
     created_by: job.requested_by || null,
   });
@@ -307,8 +329,9 @@ async function sendReportEmailViaScheduledFallback({ reportJobId, profileIds, su
     return {
       success: true,
       fallback: 'send-scheduled-reports',
-      message: 'Relatório enviado pelo canal de e-mails automáticos.',
+      message: 'Relatório completo aceito pelo provedor de e-mail.',
       processed,
+      providerMessageId: processed[0]?.providerMessageId || processed[0]?.deliveries?.[0]?.provider_message_id || null,
     };
   } finally {
     await deleteOneOffSchedule(schedule.id);
@@ -328,6 +351,12 @@ export async function sendReportEmail({
   const profileIds = [...new Set([...refs.profileIds, ...toArray(recipientProfileIds)])];
 
   if (!profileIds.length) throw new Error('Selecione pelo menos um gestor cadastrado em Usuários.');
+
+  const job = await fetchReportJob(reportJobId);
+  const richReportTypes = new Set(['production_summary', 'daily_production', 'shift_closure', 'oee', 'cell_performance']);
+  if (richReportTypes.has(job.report_type)) {
+    return sendReportEmailViaScheduledFallback({ reportJobId, profileIds, subject });
+  }
 
   const body = {
     reportJobId,

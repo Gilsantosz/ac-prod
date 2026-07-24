@@ -26,6 +26,11 @@ describe('aiIntentParser', () => {
     });
   });
 
+  it('does not derive a similar person name when an exact email was supplied', () => {
+    const res = parseIntent('Envie relatório de produção para gildemar.pereira@leomadeiras.com.br', { now: clock });
+    expect(res.recipients).toEqual(['gildemar.pereira@leomadeiras.com.br']);
+  });
+
   it('detects current user as recipient for self-send prompts', () => {
     const res = parseIntent('Me envie o relatório OEE de hoje no meu e-mail', { now: clock });
     expect(res).toMatchObject({

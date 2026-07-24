@@ -4,13 +4,13 @@ import { Mail, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { base44 } from '@/lib/localDb';
 
-export default function CloseShiftButton({ date, disabled }) {
+export default function CloseShiftButton({ date, shift = [], cell = [], disabled = false }) {
   const [loading, setLoading] = useState(false);
 
   const handleSend = async () => {
     setLoading(true);
     try {
-      const res = await base44.functions.invoke('sendDailyClosure', { date });
+      const res = await base44.functions.invoke('sendDailyClosure', { date, shift, cell });
       
       if (res.error) {
         console.error('Invoke error:', res.error);
@@ -24,13 +24,14 @@ export default function CloseShiftButton({ date, disabled }) {
         return;
       }
 
-      const sent = res?.data?.sent ?? 0;
-      if (sent > 0) {
+      const accepted = res?.data?.accepted ?? res?.data?.sent ?? 0;
+      if (accepted > 0) {
+        const recipients = Array.isArray(res.data.recipients) ? res.data.recipients.join(', ') : '';
         if (res.data.warning) {
-          toast.success(`Fechamento enviado para o e-mail do proprietário (${res.data.recipients.join(', ')}).`);
+          toast.success(`Fechamento aceito pelo provedor para ${recipients}.`);
           toast.warning(res.data.warning, { duration: 8000 });
         } else {
-          toast.success(`Fechamento enviado para ${sent} e-mail(s).`);
+          toast.success(`Fechamento completo aceito pelo provedor para ${accepted} e-mail(s): ${recipients}.`, { duration: 8000 });
         }
       } else {
         toast.warning('Nenhum gestor cadastrado para receber o relatório.');

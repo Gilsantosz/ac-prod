@@ -4,7 +4,7 @@ import { FileDown, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportDailySummaryPdf } from '@/lib/exportDailySummary';
 
-export default function ExportDailyButton({ date, shift, cell, summary, disabled }) {
+export default function ExportDailyButton({ date, shift, cell, summary, disabled = false }) {
   const [loading, setLoading] = useState(false);
 
   const handleExport = async () => {
@@ -12,8 +12,8 @@ export default function ExportDailyButton({ date, shift, cell, summary, disabled
     try {
       await exportDailySummaryPdf({ date, shift, cell, summary });
       toast.success('Relatório PDF gerado.');
-    } catch {
-      toast.error('Falha ao gerar o relatório.');
+    } catch (error) {
+      toast.error(error?.message || 'Falha ao gerar o relatório.');
     } finally {
       setLoading(false);
     }

@@ -23,7 +23,7 @@ export function brandedAttachmentHeader(reportType: string, schedule: any) {
 }
 export function reportTable(reportType: string, data: any) {
   if (reportType === 'daily_production' || reportType === 'shift_closure' || reportType === 'oee') {
-    const entries = data as any[];
+    const entries = (Array.isArray(data) ? data : data?.entries || []) as any[];
     return {
       columns: ['Celula', 'Turno', 'Data', 'Produzido', 'Meta', 'Refugo', 'ParadasMinutos'],
       rows: entries.map(e => [e.cell || '', e.shift || '', e.date || '', e.produced || 0, e.target || 0, e.scrap || 0, e.downtime || 0])
