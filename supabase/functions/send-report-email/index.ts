@@ -2,6 +2,13 @@ import { Buffer } from 'node:buffer';
 import { aggregate, corsHeadersForRequest, fetchOperationalData, json, requireAiUser } from '../_shared/aiOperations.ts';
 import { renderEmailTemplate } from '../_shared/emailTemplates.ts';
 
+function leoFlowSender(value: string) {
+  const configured = String(value || '').trim();
+  const bracketed = configured.match(/<([^>]+)>/)?.[1];
+  const address = bracketed || configured.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
+  return address ? `"Leo Flow" <${address}>` : configured;
+}
+
 const ERROR_STATUS: Record<string, number> = {
   AUTH_REQUIRED: 401,
   ACCESS_DENIED: 403,
@@ -132,7 +139,7 @@ function resolveEmailProvider() {
       provider: 'smtp',
       smtpUser,
       smtpPass,
-      from: reportFrom || `"Leo Flow" <${smtpUser}>`,
+      from: leoFlowSender(reportFrom || `"Leo Flow" <${smtpUser}>`),
     };
   }
 
@@ -140,7 +147,7 @@ function resolveEmailProvider() {
     return {
       provider: 'resend',
       resendKey,
-      from: reportFrom || 'Leo Flow <alertas@acprod.com.br>',
+      from: leoFlowSender(reportFrom || 'Leo Flow <alertas@acprod.com.br>'),
     };
   }
 

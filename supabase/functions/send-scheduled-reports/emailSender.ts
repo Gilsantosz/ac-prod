@@ -1,5 +1,12 @@
 import { Buffer } from "node:buffer";
 
+function leoFlowSender(value: string) {
+  const configured = String(value || '').trim();
+  const bracketed = configured.match(/<([^>]+)>/)?.[1];
+  const address = bracketed || configured.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
+  return address ? `"Leo Flow" <${address}>` : configured;
+}
+
 export async function sendEmail(opts: {
   recipients: string[];
   subject: string;
@@ -9,7 +16,7 @@ export async function sendEmail(opts: {
   const resendKey = Deno.env.get('RESEND_API_KEY');
   const smtpUser = Deno.env.get('SMTP_USER');
   const smtpPass = Deno.env.get('SMTP_PASS');
-  const reportFrom = Deno.env.get('REPORT_FROM_EMAIL') || 'Leo Flow <alertas@acprod.com.br>';
+  const reportFrom = leoFlowSender(Deno.env.get('REPORT_FROM_EMAIL') || 'Leo Flow <alertas@acprod.com.br>');
 
   if (resendKey) {
     console.log(`Usando Resend API para envio para ${opts.recipients.join(', ')}`);
