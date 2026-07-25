@@ -9,7 +9,7 @@ import {
   LayoutDashboard, PlusCircle, ClipboardList, Gauge, Boxes,
   Layers, Plug, AlertOctagon, Trophy, LineChart, BrainCircuit,
   Zap, Users, Shield, HardDrive, Truck, Box, BellRing, FolderKanban, GitFork, Cpu, ShieldCheck, Wrench, HardHat, Edit3,
-  ChartNoAxesCombined
+  ChartNoAxesCombined, RotateCcw, ShieldAlert
 } from 'lucide-react';
 
 export const routeGroups = {
@@ -187,6 +187,16 @@ export const appRoutes = [
     showInDashboardHub: true,
     tabTarget: 'alerts'
   },
+  {
+    path: '/reposicao',
+    label: 'Reposição',
+    description: 'Gestão de ordens de reposição de peças reprovadas e acompanhamento',
+    icon: RotateCcw,
+    group: 'mes',
+    permission: 'view_replacements',
+    showInSidebar: true,
+    showInDashboardHub: true
+  },
 
   // ─── GRUPO 4: GESTÃO ───────────────────────────────────────────────
   {
@@ -219,6 +229,16 @@ export const appRoutes = [
     showInSidebar: true,
     showInDashboardHub: true,
     aliases: ['/analise-paradas']
+  },
+  {
+    path: '/qualidade',
+    label: 'Qualidade',
+    description: 'Catálogo de defeitos 6M, gestão de não conformidades, 5W2H e indicadores Pareto/FPY',
+    icon: ShieldAlert,
+    group: 'management',
+    permission: 'view_quality',
+    showInSidebar: true,
+    showInDashboardHub: true
   },
   {
     path: '/ia-operacional',
@@ -356,6 +376,8 @@ const PAGE_ACCESS_OVERRIDES = {
   '/downloads-backups': { viewPermission: 'view_backups', editPermission: 'manage_backups', adminOnly: true },
   '/logs-integridade': { viewPermission: 'view_integrity_logs' },
   '/mes': { viewPermission: 'view_dashboards' },
+  '/reposicao': { viewPermission: 'view_replacements', editPermission: 'manage_replacements' },
+  '/qualidade': { viewPermission: 'view_quality', editPermission: 'manage_quality' },
 };
 
 export const routeAccessCatalog = appRoutes
@@ -432,7 +454,17 @@ export const permissionLabels = {
   manage_packaging: 'Gerenciar Embalagem (Scan-to-Pack)',
   manage_shipping: 'Gerenciar Expedição Rígida',
   view_mes_alerts: 'Visualizar Alertas MES Chão de Fábrica',
-  ai_operations: 'IA Operacional e Insights'
+  ai_operations: 'IA Operacional e Insights',
+  // Novas permissões Reposição, Qualidade e Paradas
+  view_replacements: 'Visualizar Ordens de Reposição',
+  manage_replacements: 'Gerenciar Ordens de Reposição',
+  approve_replacements: 'Aprovar e Liberar Reposições',
+  view_quality: 'Visualizar Qualidade e Não Conformidades',
+  manage_quality: 'Gerenciar Qualidade e Ações 5W2H',
+  close_quality_nonconformities: 'Encerrar Não Conformidades',
+  register_downtime: 'Registrar Paradas na Coleta',
+  manage_downtime_reasons: 'Gerenciar Motivos de Parada',
+  correct_downtime: 'Corrigir Lançamentos de Parada'
 };
 
 const buildPathPermissionMap = (routes) => {
@@ -499,6 +531,15 @@ export const getDefaultPermissions = (role) => {
       view_report_delivery_logs: true,
       manage_email_settings: true,
       view_audit_logs: true,
+      view_replacements: true,
+      manage_replacements: true,
+      approve_replacements: true,
+      view_quality: true,
+      manage_quality: true,
+      close_quality_nonconformities: true,
+      register_downtime: true,
+      manage_downtime_reasons: true,
+      correct_downtime: true,
     };
   } else if (role === 'manager') {
     return {
@@ -526,6 +567,15 @@ export const getDefaultPermissions = (role) => {
       view_report_delivery_logs: true,
       manage_email_settings: false,
       view_audit_logs: false,
+      view_replacements: true,
+      manage_replacements: true,
+      approve_replacements: true,
+      view_quality: true,
+      manage_quality: true,
+      close_quality_nonconformities: true,
+      register_downtime: true,
+      manage_downtime_reasons: true,
+      correct_downtime: true,
     };
   } else if (role === 'supervisor') {
     return {
@@ -553,6 +603,15 @@ export const getDefaultPermissions = (role) => {
       view_report_delivery_logs: false,
       manage_email_settings: false,
       view_audit_logs: false,
+      view_replacements: true,
+      manage_replacements: true,
+      approve_replacements: true,
+      view_quality: true,
+      manage_quality: true,
+      close_quality_nonconformities: false,
+      register_downtime: true,
+      manage_downtime_reasons: false,
+      correct_downtime: true,
     };
   } else if (role === 'viewer') {
     return {
@@ -580,6 +639,15 @@ export const getDefaultPermissions = (role) => {
       view_report_delivery_logs: false,
       manage_email_settings: false,
       view_audit_logs: false,
+      view_replacements: true,
+      manage_replacements: false,
+      approve_replacements: false,
+      view_quality: true,
+      manage_quality: false,
+      close_quality_nonconformities: false,
+      register_downtime: false,
+      manage_downtime_reasons: false,
+      correct_downtime: false,
     };
   } else {
     // operator / user
@@ -608,6 +676,15 @@ export const getDefaultPermissions = (role) => {
       view_report_delivery_logs: false,
       manage_email_settings: false,
       view_audit_logs: false,
+      view_replacements: true,
+      manage_replacements: true,
+      approve_replacements: false,
+      view_quality: false,
+      manage_quality: false,
+      close_quality_nonconformities: false,
+      register_downtime: true,
+      manage_downtime_reasons: false,
+      correct_downtime: false,
     };
   }
 };

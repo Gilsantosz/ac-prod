@@ -23,6 +23,11 @@ import CollectionPieceDetailPanel from '@/components/collection/CollectionPieceD
 import CollectionRejectPieceModal from '@/components/collection/CollectionRejectPieceModal';
 import CollectionPieceTraceabilityDrawer from '@/components/collection/CollectionPieceTraceabilityDrawer';
 import TraceabilityKpiCards from '@/components/traceability/TraceabilityKpiCards';
+import ActiveDowntimeBanner from '@/components/collection/ActiveDowntimeBanner';
+import DowntimeDialog from '@/components/collection/DowntimeDialog';
+import { getActiveDowntime } from '@/lib/downtimeService';
+import { AlertTriangle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import {
   getPieceTraceability,
   rejectPieceFromCollection,
@@ -81,6 +86,9 @@ export default function TraceabilityCollection({ embedded = false }) {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [pieceToReject, setPieceToReject] = useState(null);
   const [refreshReadsSignal, setRefreshReadsSignal] = useState(0);
+
+  // Estado para registro de paradas operacionais
+  const [downtimeDialogOpen, setDowntimeDialogOpen] = useState(false);
 
   const [feedback, setFeedback] = useState(() => {
     try {
@@ -205,6 +213,14 @@ export default function TraceabilityCollection({ embedded = false }) {
     queryFn: () => fetchProductionMachines(cellName),
     enabled: !!cellName,
     initialData: [],
+  });
+
+  // Carregar Parada Ativa se existir
+  const { data: activeDowntime, refetch: refetchActiveDowntime } = useQuery({
+    queryKey: ['active-downtime', cellName, machine?.id],
+    queryFn: () => getActiveDowntime({ machineId: machine?.id || null, cellId: null }),
+    enabled: !!cellName,
+    refetchInterval: 10000
   });
 
   // Filtrar máquinas autorizadas do operador para a célula selecionada
@@ -513,6 +529,8 @@ export default function TraceabilityCollection({ embedded = false }) {
         reason: formData.reason,
         notes: formData.notes,
         action: formData.action,
+        defectId: formData.defect_id,
+        disposition: formData.disposition,
         operatorId,
         operatorName: operator,
         cellName,
@@ -709,6 +727,18 @@ export default function TraceabilityCollection({ embedded = false }) {
             {operator || 'Não identificado'}
           </div>
         </div>
+
+        {/* Botão permanente Registrar Parada */}
+        <div className="space-y-1.5 flex items-end">
+          <Button
+            type="button"
+            onClick={() => setDowntimeDialogOpen(true)}
+            className="h-10 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm"
+          >
+            <AlertTriangle className="w-4 h-4" />
+            <span>Registrar Parada</span>
+          </Button>
+        </div>
       </div>
 
       {/* Painel de status da fila */}
@@ -765,6 +795,17 @@ export default function TraceabilityCollection({ embedded = false }) {
           {/* Segunda linha: Leituras hoje, Aprovadas, Reprovadas, Bloqueadas */}
           <TraceabilityKpiCards kpis={kpis} />
         </div>
+      )}
+
+      {/* Banner de Parada Ativa se existir */}
+      {activeDowntime && (
+        <ActiveDowntimeBanner
+          activeDowntime={activeDowntime}
+          onDowntimeFinished={() => {
+            refetchActiveDowntime();
+            refreshData();
+          }}
+        />
       )}
 
       {/* Scanner Área */}
@@ -834,6 +875,21 @@ export default function TraceabilityCollection({ embedded = false }) {
         suggestion={readingOccurrenceSuggestion}
         onSubmit={handleReadingOccurrenceSubmit}
         loading={readingOccurrenceLoading}
+      />
+
+      <DowntimeDialog
+        open={downtimeDialogOpen}
+        onOpenChange={setDowntimeDialogOpen}
+        cellId={displayCells.find(c => c.name === cellName)?.id || null}
+        cellName={cellName}
+        machineId={machine?.id || null}
+        operatorId={operatorId}
+        operatorName={operator}
+        shift={shift}
+        onDowntimeStarted={() => {
+          refetchActiveDowntime();
+          refreshData();
+        }}
       />
     </div>
   );

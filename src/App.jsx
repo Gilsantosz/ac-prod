@@ -44,6 +44,8 @@ import LotTrackingDashboard from '@/pages/LotTrackingDashboard';
 import IntegrityLogs from '@/pages/IntegrityLogs';
 import JoineryPage from '@/pages/JoineryPage';
 import ManualProductionEntryPage from '@/pages/ManualProductionEntryPage';
+import ReplacementPage from '@/pages/ReplacementPage';
+import QualityPage from '@/pages/QualityPage';
 import { useProductionRealtimeSync } from '@/hooks/useProductionRealtimeSync';
 import { isSupabaseConfigured } from '@/lib/supabaseClient';
 
@@ -160,6 +162,8 @@ const AuthenticatedApp = () => {
           <Route path="/embalagem" element={<PackagingPage />} />
           <Route path="/expedicao" element={<ShippingPage />} />
           <Route path="/alertas-mes" element={<MesAlertsPage />} />
+          <Route path="/reposicao" element={<ReplacementPage />} />
+          <Route path="/qualidade" element={<QualityPage />} />
 
           <Route path="/rotas-produtivas" element={<ProductionRoutes />} />
           <Route path="/marcenaria" element={<JoineryPage />} />

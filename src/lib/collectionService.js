@@ -353,6 +353,8 @@ export async function rejectPieceFromCollection({
   reason,
   notes,
   action,
+  defectId = null,
+  disposition = 'scrap',
   operatorId,
   operatorName,
   cellName,
@@ -360,6 +362,38 @@ export async function rejectPieceFromCollection({
 }) {
   if (!pieceId && !traceabilityCode) throw new Error('ID ou código da peça é obrigatório.');
 
+  const rpcPayload = {
+    piece_id: pieceId || null,
+    traceability_code: traceabilityCode,
+    reason,
+    notes,
+    disposition: disposition || (action === 'block' ? 'hold' : (action === 'rework' ? 'rework' : (action === 'replacement' ? 'replacement' : 'scrap'))),
+    defect_id: defectId || null,
+    operator_name: operatorName,
+    operator_id: operatorId || null,
+    cell_name: cellName,
+    machine_id: workstationId || null,
+    client_event_id: crypto.randomUUID()
+  };
+
+  try {
+    const { data: rpcResult, error: rpcError } = await supabase.rpc('register_quality_rejection', {
+      p_payload: rpcPayload
+    });
+    if (!rpcError && rpcResult) {
+      await auditLog(
+        AUDIT_ACTIONS.STEP_SCRAP,
+        'production_piece',
+        pieceId || rpcResult.nonconformity_id,
+        { reason, notes, action, disposition, rpcResult }
+      );
+      return { success: true, ...rpcResult };
+    }
+  } catch (err) {
+    console.warn('RPC register_quality_rejection falhou, executando fallback local:', err);
+  }
+
+  // Fallback para rastreabilidade legada se RPC falhar
   const payload = {
     rawValue: traceabilityCode,
     status: 'rejected',
@@ -394,28 +428,12 @@ export async function rejectPieceFromCollection({
     }
   }
 
-  if (action === 'rework' && pieceId) {
-    await createReworkOrder({
-      piece_id: pieceId,
-      rework_reason_code: reason.toLowerCase().replace(/\s+/g, '_'),
-      operator_id: operatorId,
-      notes: notes || 'Gerado via painel de Coleta MES'
-    });
-
-    await auditLog(
-      AUDIT_ACTIONS.STEP_REWORK,
-      'production_piece',
-      pieceId,
-      { reason, notes }
-    );
-  } else {
-    await auditLog(
-      AUDIT_ACTIONS.STEP_SCRAP,
-      'production_piece',
-      pieceId,
-      { reason, notes, action }
-    );
-  }
+  await auditLog(
+    AUDIT_ACTIONS.STEP_SCRAP,
+    'production_piece',
+    pieceId,
+    { reason, notes, action }
+  );
 
   return { success: true };
 }
