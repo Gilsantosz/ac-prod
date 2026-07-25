@@ -62,6 +62,12 @@ export default function ReplacementPage() {
   });
 
   const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['replacement-kpis'] });
+    queryClient.invalidateQueries({ queryKey: ['replacement-orders'] });
+    queryClient.invalidateQueries({ queryKey: ['collection-kpis'] });
+    queryClient.invalidateQueries({ queryKey: ['quality-kpis'] });
+    queryClient.invalidateQueries({ queryKey: ['quality-nonconformities'] });
+    queryClient.invalidateQueries({ queryKey: ['production-lots'] });
     refetchKpis();
     refetchOrders();
     toast.info('Dados de reposição atualizados.');

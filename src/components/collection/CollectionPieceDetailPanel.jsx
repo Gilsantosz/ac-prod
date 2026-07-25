@@ -106,7 +106,23 @@ export default function CollectionPieceDetailPanel({
         </div>
         <div className="space-y-0.5">
           <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Etapa Atual</span>
-          <p className="font-bold text-foreground">{piece.current_stage_name || piece.current_stage || 'Não iniciada'}</p>
+          <p className="font-bold text-foreground">
+            {(() => {
+              const raw = piece.current_stage_name || piece.current_stage;
+              if (!raw) return 'Não iniciada';
+              const map = {
+                cut: 'Corte', corte: 'Corte',
+                edge: 'Borda', borda: 'Borda',
+                cnc: 'Usinagem CNC', furacao: 'Furação',
+                joinery: 'Marcenaria', marcenaria: 'Marcenaria',
+                assembly: 'Montagem',
+                separation: 'Separação', separacao: 'Separação',
+                packaging: 'Embalagem', embalagem: 'Embalagem'
+              };
+              const key = String(raw).trim().toLowerCase();
+              return map[key] || raw;
+            })()}
+          </p>
         </div>
         <div className="space-y-0.5">
           <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Última Leitura Por</span>
