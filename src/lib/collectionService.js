@@ -566,24 +566,28 @@ export async function getPieceFlow(pieceId) {
 }
 
 /**
- * Solicita reposição automática de peça de produção (cria peça substituta).
+ * Solicita reposição de peça de produção via RPC transacional.
+ * Cria entrada em replacement_orders com status 'requested' e retorna o código da ordem.
  */
-export async function requestPieceReplacement({ pieceId, reason, notes }) {
+export async function requestPieceReplacement({ pieceId, reason, notes, priority = 'high' }) {
   if (!pieceId) throw new Error('ID da peça original é obrigatório.');
 
-  const { data, error } = await supabase.rpc('create_piece_replacement', {
-    p_original_piece_id: pieceId,
-    p_reason: reason,
-    p_notes: notes || ''
+  const { data, error } = await supabase.rpc('request_piece_replacement', {
+    p_payload: {
+      original_piece_id: pieceId,
+      reason: reason || 'Solicitação de reposição via coleta',
+      priority,
+      notes: notes || ''
+    }
   });
 
   if (error) throw error;
-  
+
   await auditLog(
-    'piece_replacement_created',
+    'piece_replacement_requested',
     'production_piece',
     pieceId,
-    { action: 'replacement_created', reason, notes }
+    { action: 'replacement_requested', reason, notes }
   );
 
   return data;

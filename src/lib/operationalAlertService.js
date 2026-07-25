@@ -524,7 +524,71 @@ export async function runOperationalAlertDiagnostics() {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // 8. SALVAR E RECONCILIAR NO BANCO DE DADOS VIA RPC
+    // 8. DIAGNÓSTICO: Ordens de Reposição Pendentes
+    // ─────────────────────────────────────────────────────────────
+    const { data: replacementOrders, error: replacementError } = await supabase
+      .from('replacement_orders')
+      .select(`
+        id,
+        replacement_code,
+        reason,
+        priority,
+        created_at,
+        original_piece_id,
+        production_pieces!replacement_orders_original_piece_id_fkey (
+          piece_uid,
+          piece_name,
+          current_stage,
+          lot_id,
+          production_lots ( lot_code, customer_name )
+        )
+      `)
+      .eq('status', 'requested')
+      .order('created_at', { ascending: true });
+
+    if (replacementError && !isOptionalSchemaError(replacementError)) {
+      console.warn('[AlertService] Erro ao buscar replacement_orders:', replacementError.message);
+    }
+
+    if (replacementOrders && replacementOrders.length > 0) {
+      replacementOrders.forEach(ro => {
+        const piece = ro.production_pieces;
+        const lot = piece?.production_lots;
+        const pieceName = piece?.piece_name || ro.original_piece_id?.substring(0, 8) || '—';
+        const pieceUid = piece?.piece_uid || '—';
+        const stage = piece?.current_stage ? getStageDisplayName(piece.current_stage) : 'Qualidade';
+        const lotCode = lot?.lot_code || 'Avulso';
+        const customerName = lot?.customer_name || 'Desconhecido';
+        const createdAt = new Date(ro.created_at).toLocaleString('pt-BR');
+        const priority = ro.priority || 'high';
+        const signature = `pending_replacement:${ro.id}`;
+        activeSignatures.add(signature);
+
+        alertsTriggered.push({
+          signature,
+          cell: 'Reposição',
+          message: `🔴 Reposição Pendente [${ro.replacement_code}]: Peça "${pieceName}" (${pieceUid}) do lote ${lotCode} (${customerName}) aguarda reposição. Motivo: ${ro.reason || 'não informado'}. Criado em: ${createdAt}.`,
+          severity: priority === 'critical' ? 'critical' : 'high',
+          metadata: {
+            type: 'pending_replacement',
+            replacement_order_id: ro.id,
+            replacement_code: ro.replacement_code,
+            original_piece_id: ro.original_piece_id,
+            piece_uid: pieceUid,
+            piece_name: pieceName,
+            stage,
+            lot_code: lotCode,
+            customer_name: customerName,
+            reason: ro.reason,
+            priority,
+            created_at: ro.created_at
+          }
+        });
+      });
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 9. SALVAR E RECONCILIAR NO BANCO DE DADOS VIA RPC
     // ─────────────────────────────────────────────────────────────
     const { data: reconcileResult, error: reconcileError } = await supabase
       .rpc('reconcile_mes_alerts', {

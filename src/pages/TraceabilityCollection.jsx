@@ -566,12 +566,20 @@ export default function TraceabilityCollection({ embedded = false }) {
         notes: `Solicitado via painel de coleta pelo operador ${operator}`
       });
       
-      toast.success(`Ordem de reposição gerada com sucesso! Nova peça: ${res.replacement_code}`);
+      toast.success(
+        `✅ Ordem de Reposição criada! Código: ${res?.replacement_code || 'REP gerada'}. Acompanhe em /reposicao.`
+      );
       setRefreshReadsSignal(prev => prev + 1);
       refreshData();
       
+      // ⚠️ A peça permanece com status 'rejected' no histórico até que a baixa seja dada em /reposicao.
+      // NÃO alterar o status aqui para 'replaced' — só a RPC complete_piece_replacement deve fazer isso.
       if (selectedPiece && selectedPiece.id === piece.id) {
-        setSelectedPiece(prev => prev ? { ...prev, status: 'replaced', replacement_status: 'replaced' } : null);
+        setSelectedPiece(prev => prev ? {
+          ...prev,
+          replacement_status: 'requested',
+          replacement_code: res?.replacement_code
+        } : null);
       }
     } catch (error) {
       toast.error(error?.message || 'Falha ao solicitar reposição da peça.');
