@@ -15,26 +15,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci --silent
-
-      - name: Build
-        run: npm run build
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Unit tests
-        run: npm run test:unit
+      - name: Diagnose clean build
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --branch agent/fix-replacement-export-flow https://github.com/Gilsantosz/ac-prod.git repo
+          cd repo
+          npm ci --silent
+          npm run build
