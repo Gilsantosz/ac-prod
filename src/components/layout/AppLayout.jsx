@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { LogOut, Sun, Moon, Menu, X,
   ChevronLeft,
 } from 'lucide-react';
@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { KioskProvider, useKiosk } from '@/lib/KioskContext';
 import { useAuth } from '@/lib/AuthContext';
 import LeoLogo from '@/components/ui/LeoLogo';
+import BackButton from '@/components/ui/BackButton';
 import { useRealtimeSync } from '@/hooks/useRealtimeSync';
 import { useTheme } from '@/hooks/useTheme';
 import {
@@ -31,6 +32,7 @@ export default function AppLayout() {
 
 function AppShell() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { kiosk } = useKiosk();
   const { user, logout } = useAuth();
@@ -55,9 +57,6 @@ function AppShell() {
 
   useRealtimeSync(!!user);
 
-
-
-
   const visibleNav = appRoutes.filter((item) => {
     if (!item.showInSidebar) return false;
     return canUserViewRoute(user, item.path);
@@ -66,6 +65,8 @@ function AppShell() {
   const currentAccess = getRouteAccess(location.pathname);
   const pageIsReadOnly = Boolean(currentAccess.editPermission) && !canUserEditRoute(user, location.pathname);
 
+  const currentRouteObj = appRoutes.find((r) => r.path === location.pathname || r.aliases?.includes(location.pathname));
+  const currentRouteLabel = currentRouteObj?.label || '';
 
   const userInitials = user
     ? (user.name ? user.name.substring(0, 2).toUpperCase() : user.email.substring(0, 2).toUpperCase())
@@ -233,7 +234,7 @@ function AppShell() {
           'md:hidden flex items-center justify-between px-4 h-16 bg-card border-b border-border/60 z-20 shrink-0 relative transition-colors',
           kiosk && 'hidden'
         )}>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setMobileOpen(true)}
               className="flex items-center justify-center w-10 h-10 rounded-xl border border-border/80 bg-card text-foreground hover:bg-secondary active:scale-95 transition-all"
@@ -241,9 +242,12 @@ function AppShell() {
             >
               <Menu className="w-5 h-5" />
             </button>
+            {location.pathname !== '/' && (
+              <BackButton className="h-9 px-2.5 text-xs font-bold shrink-0" />
+            )}
             <div className="flex items-center gap-2">
               <LeoLogo size="sm" className="shrink-0" />
-              <span className="font-bold text-base leading-tight text-foreground font-display">Leo Flow</span>
+              <span className="font-bold text-base leading-tight text-foreground font-display hidden sm:inline-block">Leo Flow</span>
             </div>
           </div>
 
@@ -358,13 +362,41 @@ function AppShell() {
         </AnimatePresence>
 
         {/* ── Main Content ─────────────────────────────────────────────── */}
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto flex flex-col">
+          {!kiosk && (
+            <div className="sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 py-2.5 bg-card/95 backdrop-blur-md border-b border-border/60 shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                {location.pathname !== '/' ? (
+                  <BackButton />
+                ) : (
+                  <span className="text-xs font-bold text-foreground font-display flex items-center gap-2">
+                    <LeoLogo size="xs" />
+                    Leo Flow — Painel Principal
+                  </span>
+                )}
+
+                {location.pathname !== '/' && (
+                  <>
+                    <div className="h-4 w-[1px] bg-border/60 shrink-0 hidden sm:block" />
+                    <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground truncate">
+                      <Link to="/" className="hover:text-foreground transition-colors font-medium">Início</Link>
+                      <span>/</span>
+                      <span className="font-bold text-foreground truncate">{currentRouteLabel || location.pathname.slice(1)}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
           {pageIsReadOnly && (
-            <div className="sticky top-0 z-30 border-b border-amber-300/60 bg-amber-50/95 px-4 py-2 text-center text-xs font-semibold text-amber-900 backdrop-blur dark:border-amber-700/50 dark:bg-amber-950/90 dark:text-amber-100">
+            <div className="sticky top-11 z-30 border-b border-amber-300/60 bg-amber-50/95 px-4 py-2 text-center text-xs font-semibold text-amber-900 backdrop-blur dark:border-amber-700/50 dark:bg-amber-950/90 dark:text-amber-100">
               Acesso somente para visualização. Alterações nesta página não estão autorizadas para este usuário.
             </div>
           )}
-          <Outlet />
+          <div className="flex-1">
+            <Outlet />
+          </div>
         </main>
       </div>
       {user && <LeoAssistantChat user={user} />}
