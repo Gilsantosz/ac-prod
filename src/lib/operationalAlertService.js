@@ -121,7 +121,7 @@ export async function runOperationalAlertDiagnostics() {
     const { data: pieces, error: piecesError } = await supabase
       .from('production_pieces')
       .select('id, piece_uid, piece_name, current_stage, status, updated_at, lot_id, production_order_id, pcp_import_batch_id, manual_joinery, manual_joinery_reason')
-      .not('status', 'in', '("completed","cancelled","shipped")');
+      .not('status', 'in', '(completed,cancelled,shipped)');
 
     if (piecesError && !isOptionalSchemaError(piecesError)) throw piecesError;
 
@@ -563,7 +563,7 @@ export async function getActiveAlerts() {
   const { data, error } = await supabase
     .from('alert_logs')
     .select('*')
-    .or('resolved.is.false,resolved.is.null')
+    .or('resolved.eq.false,resolved.is.null')
     .order('triggered_at', { ascending: false });
 
   if (error) throw error;

@@ -145,21 +145,25 @@ export default function OperationalAlertsPanel() {
   const { data: actionHistory = [], refetch: refetchHistory } = useQuery({
     queryKey: ['alert-action-history'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('alert_action_history')
-        .select(`
-          id,
-          alert_id,
-          action,
-          note,
-          created_at,
-          metadata,
-          profiles:user_id ( name, email )
-        `)
-        .order('created_at', { ascending: false })
-        .limit(10);
-      if (error) throw error;
-      return data || [];
+      try {
+        const { data, error } = await supabase
+          .from('alert_action_history')
+          .select(`
+            id,
+            alert_id,
+            action,
+            note,
+            created_at,
+            metadata,
+            profiles:user_id ( name, email )
+          `)
+          .order('created_at', { ascending: false })
+          .limit(10);
+        if (error) return [];
+        return data || [];
+      } catch {
+        return [];
+      }
     },
     refetchInterval: 15000,
   });

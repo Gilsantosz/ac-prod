@@ -190,6 +190,13 @@ function App() {
   React.useEffect(() => {
     if (!('serviceWorker' in navigator)) return undefined;
 
+    if (import.meta.env.DEV) {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        registrations.forEach((reg) => reg.unregister());
+      }).catch(() => {});
+      return undefined;
+    }
+
     let refreshing = false;
     let intervalId;
     let registration;

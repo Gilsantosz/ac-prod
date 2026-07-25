@@ -73,7 +73,11 @@ const PERMISSION_METADATA = [
 
 
 
-export default function UserList({ users, currentUserId, onUpdate, onDelete, onResetPassword, onResendInvite, readOnly = false }) {
+import ResetPasswordDialog from '@/components/users/ResetPasswordDialog';
+
+export default function UserList({ users, currentUserId, onUpdate, onDelete, onResetPassword, onDirectResetPassword, onResendInvite, readOnly = false }) {
+  const [resetUser, setResetUser] = useState(null);
+
   if (!users.length) {
     return (
       <div className="text-center py-16 text-muted-foreground border border-dashed border-border rounded-2xl">
@@ -93,17 +97,26 @@ export default function UserList({ users, currentUserId, onUpdate, onDelete, onR
             currentUserId={currentUserId}
             onUpdate={onUpdate}
             onDelete={onDelete}
+            onOpenResetDialog={() => setResetUser(u)}
             onResetPassword={onResetPassword}
             onResendInvite={onResendInvite}
             readOnly={readOnly}
           />
         ))}
       </div>
+
+      <ResetPasswordDialog
+        user={resetUser}
+        open={Boolean(resetUser)}
+        onClose={() => setResetUser(null)}
+        onDirectReset={onDirectResetPassword}
+        onSendResetEmail={onResetPassword}
+      />
     </div>
   );
 }
 
-function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, onResendInvite, readOnly }) {
+function UserCard({ user, currentUserId, onUpdate, onDelete, onOpenResetDialog, onResetPassword, onResendInvite, readOnly }) {
   const { activeCells } = useCells();
   const [isEditing, setIsEditing] = useState(false);
   
@@ -378,8 +391,8 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onResetPassword, on
                 variant="outline"
                 size="sm"
                 className="h-8 gap-1 text-xs"
-                onClick={() => onResetPassword(user.email)}
-                title="Enviar e-mail para redefinir a senha"
+                onClick={onOpenResetDialog}
+                title="Redefinir a senha deste colaborador diretamente na página"
               >
                 <KeyRound className="w-3.5 h-3.5 text-muted-foreground" />
                 Redefinir Senha

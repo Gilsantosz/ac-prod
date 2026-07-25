@@ -749,6 +749,27 @@ const users = {
     if (error) throw error;
     return { success: true };
   },
+
+  resetUserPassword: async (userId, newPassword) => {
+    const { data, error } = await supabase.functions.invoke('admin-users', {
+      body: {
+        action: 'reset_password',
+        userId,
+        password: newPassword,
+      },
+    });
+
+    if (error) {
+      let message = error.message;
+      try {
+        const details = await error.context?.json();
+        message = details?.error || details?.message || message;
+      } catch { /* resposta sem JSON */ }
+      throw new Error(message || 'Não foi possível redefinir a senha.');
+    }
+    if (!data?.success) throw new Error(data?.error || 'Não foi possível redefinir a senha.');
+    return data;
+  },
 };
 
 // ─── Exportação principal — compatível com a API legada base44 ───────────────

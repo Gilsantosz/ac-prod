@@ -47,9 +47,13 @@ export default function Users() {
     queryFn: () => base44.auth.me(),
   });
 
-  const canManageUsers = me?.role === 'admin';
-  const canViewUsers = canManageUsers || me?.permissions?.view_users || me?.permissions?.manage_users;
-  const canManageOperators = canManageUsers || me?.permissions?.manage_users || me?.permissions?.manage_operators;
+  const canManageUsers =
+    me?.role === 'admin' ||
+    me?.role === 'manager' ||
+    me?.role === 'supervisor' ||
+    Boolean(me?.permissions?.manage_users);
+  const canViewUsers = canManageUsers || Boolean(me?.permissions?.view_users);
+  const canManageOperators = canManageUsers || Boolean(me?.permissions?.manage_operators);
 
   const allowedTabs = canManageUsers
     ? ['accounts', 'scopes', 'schedules', 'groups', 'history', 'diagnostics']
@@ -156,6 +160,10 @@ export default function Users() {
     } catch (error) {
       toast.error(error?.message || 'Não foi possível enviar o e-mail de redefinição.');
     }
+  };
+
+  const handleDirectResetPassword = async (userId, newPassword) => {
+    await base44.users.resetUserPassword(userId, newPassword);
   };
 
   const handleResendInvite = async (email) => {
@@ -432,6 +440,7 @@ export default function Users() {
               }
             }}
             onResetPassword={handleResetPassword}
+            onDirectResetPassword={handleDirectResetPassword}
             onResendInvite={handleResendInvite}
           />
         </TabsContent>

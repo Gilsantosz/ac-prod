@@ -17,67 +17,9 @@ export default function DailyProductionMatrix({ rows = [], shifts = ['1º Turno'
   const [expanded, setExpanded] = useState(true);
   const shiftList = shifts.filter(Boolean);
 
-  // Fallback visual para corresponder exatamente à tabela da imagem caso os registros ainda não existam
-  const fallbackRows = [
-    {
-      cell: 'Bordo',
-      metricName: 'Metros de bordo',
-      unitLabel: 'metros',
-      shifts: {
-        '1º Turno': { capacity: 3000, realized: 0, differenceCapacity: -3000, efficiencyCapacity: 0 },
-        '2º Turno': { capacity: 2315, realized: 0, differenceCapacity: -2315, efficiencyCapacity: 0 },
-        '3º Turno': { capacity: 318,  realized: 0, differenceCapacity: -318,  efficiencyCapacity: 0 },
-      },
-      total: { capacity: 5633, target: 5633, realized: 0, differenceTarget: -5633, efficiencyTarget: 0 }
-    },
-    {
-      cell: 'Capas Fechadas',
-      metricName: 'Capas expedidas',
-      unitLabel: 'capas',
-      shifts: {
-        '1º Turno': { capacity: 10, realized: 0, differenceCapacity: -10, efficiencyCapacity: 0 },
-        '2º Turno': { capacity: 0,  realized: 0, differenceCapacity: 0,   efficiencyCapacity: 0 },
-        '3º Turno': { capacity: 0,  realized: 0, differenceCapacity: 0,   efficiencyCapacity: 0 },
-      },
-      total: { capacity: 10, target: 10, realized: 0, differenceTarget: -10, efficiencyTarget: 0 }
-    },
-    {
-      cell: 'Corte',
-      metricName: 'Chapas cortadas',
-      unitLabel: 'chapas',
-      shifts: {
-        '1º Turno': { capacity: 150, realized: 0, differenceCapacity: -150, efficiencyCapacity: 0 },
-        '2º Turno': { capacity: 150, realized: 0, differenceCapacity: -150, efficiencyCapacity: 0 },
-        '3º Turno': { capacity: 50,  realized: 0, differenceCapacity: -50,  efficiencyCapacity: 0 },
-      },
-      total: { capacity: 350, target: 350, realized: 0, differenceTarget: -350, efficiencyTarget: 0 }
-    },
-    {
-      cell: 'Embalagem',
-      metricName: 'Peças embaladas',
-      unitLabel: 'peças',
-      shifts: {
-        '1º Turno': { capacity: 1600, realized: 0, differenceCapacity: -1600, efficiencyCapacity: 0 },
-        '2º Turno': { capacity: 1400, realized: 0, differenceCapacity: -1400, efficiencyCapacity: 0 },
-        '3º Turno': { capacity: 0,    realized: 0, differenceCapacity: 0,     efficiencyCapacity: 0 },
-      },
-      total: { capacity: 3000, target: 3000, realized: 0, differenceTarget: -3000, efficiencyTarget: 0 }
-    },
-    {
-      cell: 'Usinagem',
-      metricName: 'Peças usinadas',
-      unitLabel: 'peças',
-      shifts: {
-        '1º Turno': { capacity: 1400, realized: 0, differenceCapacity: -1400, efficiencyCapacity: 0 },
-        '2º Turno': { capacity: 600,  realized: 0, differenceCapacity: -600,  efficiencyCapacity: 0 },
-        '3º Turno': { capacity: 250,  realized: 0, differenceCapacity: -250,  efficiencyCapacity: 0 },
-      },
-      total: { capacity: 2250, target: 2250, realized: 0, differenceTarget: -2250, efficiencyTarget: 0 }
-    }
-  ];
-
-  const displayRows = rows.length > 0 ? rows : fallbackRows;
+  const displayRows = rows;
   const visibleRows = expanded ? displayRows : displayRows.slice(0, 3);
+  const colSpanCount = shiftList.length * 4 + 7;
 
   return (
     <Card className="border-border/60 shadow-sm bg-card rounded-2xl overflow-hidden">
@@ -111,24 +53,32 @@ export default function DailyProductionMatrix({ rows = [], shifts = ['1º Turno'
             </TableRow>
           </TableHeader>
           <TableBody className="divide-y divide-border/40">
-            {visibleRows.map((row) => (
-              <TableRow key={`${row.cell}-${row.metric_unit}`} className="hover:bg-secondary/20 transition-colors">
-                <TableCell className="pl-5 py-3">
-                  <div className="font-bold text-foreground text-xs">{row.cell}</div>
-                  <div className="text-[10px] text-muted-foreground">{row.metricName}</div>
+            {visibleRows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={colSpanCount} className="text-center py-8 text-muted-foreground font-medium text-xs">
+                  Nenhum lançamento ou meta registrado para o período.
                 </TableCell>
-                <TableCell className="font-medium text-muted-foreground text-xs">{row.unitLabel}</TableCell>
-                {shiftList.map((shift) => {
-                  const bucket = row.shifts?.[shift] || {};
-                  return <FragmentCells key={shift} bucket={bucket} />;
-                })}
-                <TableCell className="text-right border-l border-border/40 font-bold text-xs bg-primary/5">{fmt(row.total?.capacity)}</TableCell>
-                <TableCell className="text-right text-blue-600 dark:text-blue-400 font-bold text-xs bg-primary/5">{fmt(row.total?.target)}</TableCell>
-                <TableCell className="text-right font-bold text-xs bg-primary/5">{fmt(row.total?.realized)}</TableCell>
-                <DiffCell value={row.total?.differenceTarget} />
-                <TableCell className="text-right font-medium text-xs bg-primary/5 pr-5">{pct(row.total?.efficiencyTarget)}</TableCell>
               </TableRow>
-            ))}
+            ) : (
+              visibleRows.map((row) => (
+                <TableRow key={`${row.cell}-${row.metric_unit}`} className="hover:bg-secondary/20 transition-colors">
+                  <TableCell className="pl-5 py-3">
+                    <div className="font-bold text-foreground text-xs">{row.cell}</div>
+                    <div className="text-[10px] text-muted-foreground">{row.metricName}</div>
+                  </TableCell>
+                  <TableCell className="font-medium text-muted-foreground text-xs">{row.unitLabel}</TableCell>
+                  {shiftList.map((shift) => {
+                    const bucket = row.shifts?.[shift] || {};
+                    return <FragmentCells key={shift} bucket={bucket} />;
+                  })}
+                  <TableCell className="text-right border-l border-border/40 font-bold text-xs bg-primary/5">{fmt(row.total?.capacity)}</TableCell>
+                  <TableCell className="text-right text-blue-600 dark:text-blue-400 font-bold text-xs bg-primary/5">{fmt(row.total?.target)}</TableCell>
+                  <TableCell className="text-right font-bold text-xs bg-primary/5">{fmt(row.total?.realized)}</TableCell>
+                  <DiffCell value={row.total?.differenceTarget} />
+                  <TableCell className="text-right font-medium text-xs bg-primary/5 pr-5">{pct(row.total?.efficiencyTarget)}</TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
 

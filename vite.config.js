@@ -25,14 +25,32 @@ export default defineConfig(({ mode }) => {
           server.middlewares.use((req, res, next) => {
             const url = req.url || '';
 
+            // Não intercepta nem redireciona WebSockets e requisições internas do Vite (HMR, React Refresh, etc.)
+            const isViteInternal =
+              req.headers.upgrade === 'websocket' ||
+              req.headers['sec-websocket-key'] ||
+              url.includes('/@') ||
+              url.includes('token=') ||
+              url.startsWith('/@vite') ||
+              url.startsWith('/@react-refresh') ||
+              url.startsWith('/@id') ||
+              url.startsWith('/@fs');
+
+            if (isViteInternal) {
+              return next();
+            }
+
             if (normalizedBase !== '/') {
-              // Redireciona a raiz e o base path sem barra para a URL canônica.
-              if (url === '/' || url === '' || url === '/index.html') {
+              const accept = req.headers.accept || '';
+              const isHtml = accept.includes('text/html');
+
+              // Redireciona a raiz e o base path sem barra para a URL canônica apenas em requisições de navegação HTML
+              if ((url === '/' || url === '' || url === '/index.html') && isHtml) {
                 res.writeHead(302, { Location: normalizedBase });
                 res.end();
                 return;
               }
-              if (url === baseWithoutTrailingSlash || url.startsWith(`${baseWithoutTrailingSlash}?`)) {
+              if ((url === baseWithoutTrailingSlash || url.startsWith(`${baseWithoutTrailingSlash}?`)) && isHtml) {
                 const query = url.includes('?') ? url.slice(url.indexOf('?')) : '';
                 res.writeHead(302, { Location: `${normalizedBase}${query}` });
                 res.end();
@@ -40,13 +58,9 @@ export default defineConfig(({ mode }) => {
               }
 
               // SPA fallback: apenas reescreve para o index.html se for uma requisição GET de navegação (HTML)
-              // e não for um recurso interno do Vite (como @vite/client ou @react-refresh)
-              const accept = req.headers.accept || '';
               const isGet = req.method === 'GET';
-              const isHtml = accept.includes('text/html');
-              const isViteInternal = url.includes('/@');
 
-              if (isGet && isHtml && url.startsWith(normalizedBase) && !isViteInternal) {
+              if (isGet && isHtml && url.startsWith(normalizedBase)) {
                 req.url = normalizedBase;
               }
             }
@@ -57,8 +71,21 @@ export default defineConfig(({ mode }) => {
         configurePreviewServer(server) {
           server.middlewares.use((req, res, next) => {
             const url = req.url || '';
+            const accept = req.headers.accept || '';
+            const isHtml = accept.includes('text/html');
+
+            const isViteInternal =
+              req.headers.upgrade === 'websocket' ||
+              req.headers['sec-websocket-key'] ||
+              url.includes('/@') ||
+              url.includes('token=');
+
+            if (isViteInternal) {
+              return next();
+            }
+
             if (normalizedBase !== '/') {
-              if (url === baseWithoutTrailingSlash || url.startsWith(`${baseWithoutTrailingSlash}?`)) {
+              if ((url === baseWithoutTrailingSlash || url.startsWith(`${baseWithoutTrailingSlash}?`)) && isHtml) {
                 const query = url.includes('?') ? url.slice(url.indexOf('?')) : '';
                 res.writeHead(302, { Location: `${normalizedBase}${query}` });
                 res.end();
@@ -70,6 +97,9 @@ export default defineConfig(({ mode }) => {
         }
       },
       VitePWA({
+        devOptions: {
+          enabled: false,
+        },
         registerType: 'autoUpdate',
         injectRegister: 'inline',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icons/*.png'],

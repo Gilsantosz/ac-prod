@@ -1,5 +1,6 @@
-// Gera PDF do Resumo Diário com KPIs e tabelas por unidade.
+// Gera PDF e Excel do Resumo Diário com KPIs, matriz por célula/turno e tabelas por unidade.
 import { jsPDF } from 'jspdf';
+import * as XLSX from 'xlsx';
 import { drawBrandedPdfFooter, drawBrandedPdfHeader } from '@/lib/reportBranding';
 
 const fmt = (n) => (Number(n) || 0).toLocaleString('pt-BR');
@@ -133,9 +134,99 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary, cells 
   totalsByUnit.forEach((row) => drawProgress(`Atingimento - ${row.unitLabel}`, attain(row)));
   y += 5;
 
+  // 1. Tabela Detalhada: Produção por Célula, Turno e Unidade
+  const drawCellShiftUnitTable = (title, rows) => {
+    if (y > 240) { doc.addPage(); y = 18; }
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'bold');
+    doc.text(title, 14, y);
+    y += 6;
+
+    const cols = ['Célula', 'Turno', 'Unid.', 'Meta', 'Realizado', 'Dif.', 'Ef. Meta', 'Paradas'];
+    const widths = [34, 24, 18, 24, 25, 21, 18, 18];
+    doc.setFontSize(8);
+    doc.setFillColor(15, 23, 42);
+    doc.setTextColor(255);
+    doc.rect(14, y, pageW - 28, 7, 'F');
+    let x = 14;
+    cols.forEach((c, i) => {
+      doc.text(c, x + 2, y + 5);
+      x += widths[i];
+    });
+    y += 7;
+    doc.setTextColor(0);
+    doc.setFont(undefined, 'normal');
+
+    if (!rows || !rows.length) {
+      doc.text('Sem registros de produção para os filtros selecionados.', 16, y + 5);
+      y += 10;
+      return;
+    }
+
+    rows.forEach((r) => {
+      if (y > 275) { doc.addPage(); y = 18; }
+      const targetVal = Number(r.target) || 0;
+      const realizedVal = Number(r.realized ?? r.produced) || 0;
+      const diff = r.differenceTarget ?? (realizedVal - targetVal);
+      const eff = r.efficiencyTarget ?? attain(r);
+      const isGoalMet = targetVal > 0 ? realizedVal >= targetVal : (eff >= 100);
+
+      const vals = [
+        String(r.cell || '-'),
+        String(r.shift || '-'),
+        String(r.unitLabel || '-'),
+        fmt(targetVal),
+        fmt(realizedVal),
+        fmt(diff),
+        `${eff}%`,
+        fmt(r.downtime),
+      ];
+
+      let xx = 14;
+      vals.forEach((v, i) => {
+        // Regras de Cores solicitadas:
+        // Meta (i=3): Azul [37, 99, 235]
+        // Realizado (i=4): Verde [22, 163, 74] se bateu meta, Preto [15, 23, 42] se não bateu
+        // Diferença (i=5): Vermelho [220, 38, 38]
+        // Eficiência (i=6): Verde [22, 163, 74] se bateu meta (>=100%), Preto [15, 23, 42] se não bateu
+        if (i === 3) {
+          doc.setTextColor(37, 99, 235); // AZUL nas metas
+          doc.setFont(undefined, 'bold');
+        } else if (i === 4) {
+          if (isGoalMet) {
+            doc.setTextColor(22, 163, 74); // VERDE para metas atingidas
+          } else {
+            doc.setTextColor(15, 23, 42); // PRETO para metas não batidas
+          }
+          doc.setFont(undefined, 'bold');
+        } else if (i === 5) {
+          doc.setTextColor(220, 38, 38); // VERMELHO para diferença
+          doc.setFont(undefined, 'bold');
+        } else if (i === 6) {
+          if (eff >= 100 || isGoalMet) {
+            doc.setTextColor(22, 163, 74); // VERDE para metas atingidas
+          } else {
+            doc.setTextColor(15, 23, 42); // PRETO para metas não batidas
+          }
+          doc.setFont(undefined, 'bold');
+        } else {
+          doc.setTextColor(15, 23, 42); // PRETO para texto padrão
+          doc.setFont(undefined, 'normal');
+        }
+
+        doc.text(v, xx + 2, y + 5);
+        xx += widths[i];
+      });
+      doc.setDrawColor(235);
+      doc.line(14, y + 7, pageW - 14, y + 7);
+      y += 7;
+    });
+    y += 8;
+  };
+
   const drawTable = (title, rows, keyField, keyLabel) => {
     if (y > 250) { doc.addPage(); y = 18; }
-    doc.setFontSize(12);
+    doc.setFontSize(11);
     doc.setFont(undefined, 'bold');
     doc.text(title, 14, y);
     y += 6;
@@ -160,19 +251,57 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary, cells 
       y += 10;
       return;
     }
+
     rows.forEach((r) => {
       if (y > 280) { doc.addPage(); y = 18; }
+      const targetVal = Number(r.target) || 0;
+      const realizedVal = Number(r.realized ?? r.produced) || 0;
+      const diff = r.differenceTarget ?? (realizedVal - targetVal);
+      const eff = attain(r);
+      const isGoalMet = targetVal > 0 ? realizedVal >= targetVal : (eff >= 100);
+
       const vals = [
         String(r[keyField]),
         r.unitLabel || '-',
-        fmt(r.target),
-        fmt(r.realized ?? r.produced),
-        fmt(r.differenceTarget ?? ((Number(r.realized ?? r.produced) || 0) - (Number(r.target) || 0))),
-        `${attain(r)}%`,
+        fmt(targetVal),
+        fmt(realizedVal),
+        fmt(diff),
+        `${eff}%`,
         fmt(r.downtime),
       ];
+
       let xx = 14;
       vals.forEach((v, i) => {
+        // Regras de Cores solicitadas:
+        // Meta (i=2): Azul [37, 99, 235]
+        // Realizado (i=3): Verde [22, 163, 74] se bateu meta, Preto [15, 23, 42] se não bateu
+        // Diferença (i=4): Vermelho [220, 38, 38]
+        // Eficiência (i=5): Verde [22, 163, 74] se bateu meta (>=100%), Preto [15, 23, 42] se não bateu
+        if (i === 2) {
+          doc.setTextColor(37, 99, 235); // AZUL nas metas
+          doc.setFont(undefined, 'bold');
+        } else if (i === 3) {
+          if (isGoalMet) {
+            doc.setTextColor(22, 163, 74); // VERDE para metas atingidas
+          } else {
+            doc.setTextColor(15, 23, 42); // PRETO para metas não batidas
+          }
+          doc.setFont(undefined, 'bold');
+        } else if (i === 4) {
+          doc.setTextColor(220, 38, 38); // VERMELHO para diferença
+          doc.setFont(undefined, 'bold');
+        } else if (i === 5) {
+          if (eff >= 100 || isGoalMet) {
+            doc.setTextColor(22, 163, 74); // VERDE para metas atingidas
+          } else {
+            doc.setTextColor(15, 23, 42); // PRETO para metas não batidas
+          }
+          doc.setFont(undefined, 'bold');
+        } else {
+          doc.setTextColor(15, 23, 42); // PRETO para texto padrão
+          doc.setFont(undefined, 'normal');
+        }
+
         doc.text(v, xx + 2, y + 5);
         xx += widths[i];
       });
@@ -183,9 +312,76 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary, cells 
     y += 8;
   };
 
-  drawTable('Produção por Célula', summary.byCell, 'cell', 'Célula');
-  drawTable('Produção por Turno', summary.byShift, 'shift', 'Turno');
+  // Renderizar tabelas em ordem lógica de detalhamento
+  drawCellShiftUnitTable('Produção por Célula, Turno e Unidade de Medida', summary.byCellShift || []);
+  drawTable('Totais por Unidade de Medida', summary.totalsByUnit || [], 'unitLabel', 'Unidade');
+  drawTable('Produção Consolidada por Célula', summary.byCell || [], 'cell', 'Célula');
+  drawTable('Produção Consolidada por Turno', summary.byShift || [], 'shift', 'Turno');
 
   drawBrandedPdfFooter(doc);
   doc.save(`resumo-diario-${date}.pdf`);
+}
+
+export function exportDailySummaryExcel({ date, summary }) {
+  const workbook = XLSX.utils.book_new();
+
+  // 1. Aba: Produção por Célula, Turno e Unidade
+  const byCellShiftData = (summary.byCellShift || []).map((r) => ({
+    'Célula': r.cell,
+    'Turno': r.shift,
+    'Unidade de Medida': r.unitLabel,
+    'Capacidade': Number(r.capacity) || 0,
+    'Meta Planejada': Number(r.target) || 0,
+    'Produção Realizada': Number(r.realized ?? r.produced) || 0,
+    'Diferença Meta': Number(r.differenceTarget) || 0,
+    'Eficiência Meta (%)': `${Number(r.efficiencyTarget ?? attain(r))}%`,
+    'Peças Boas': Number(r.good) || 0,
+    'Refugo': Number(r.scrap) || 0,
+    'Taxa Refugo (%)': `${Number(r.scrapRate) || 0}%`,
+    'Tempo de Parada (min)': Number(r.downtime) || 0,
+  }));
+  const ws1 = XLSX.utils.json_to_sheet(byCellShiftData);
+  XLSX.utils.book_append_sheet(workbook, ws1, 'Célula x Turno x Unidade');
+
+  // 2. Aba: Totais por Unidade
+  const totalsByUnitData = (summary.totalsByUnit || []).map((r) => ({
+    'Unidade de Medida': r.unitLabel,
+    'Capacidade Total': Number(r.capacity) || 0,
+    'Meta Total': Number(r.target) || 0,
+    'Produção Realizada': Number(r.realized ?? r.produced) || 0,
+    'Diferença Meta': Number(r.differenceTarget) || 0,
+    'Eficiência Meta (%)': `${attain(r)}%`,
+    'Refugo': Number(r.scrap) || 0,
+    'Paradas (min)': Number(r.downtime) || 0,
+  }));
+  const ws2 = XLSX.utils.json_to_sheet(totalsByUnitData);
+  XLSX.utils.book_append_sheet(workbook, ws2, 'Totais por Unidade');
+
+  // 3. Aba: Produção por Célula
+  const byCellData = (summary.byCell || []).map((r) => ({
+    'Célula': r.cell,
+    'Unidade': r.unitLabel,
+    'Meta': Number(r.target) || 0,
+    'Realizado': Number(r.realized ?? r.produced) || 0,
+    'Diferença': Number(r.differenceTarget) || 0,
+    'Atingimento (%)': `${attain(r)}%`,
+    'Paradas (min)': Number(r.downtime) || 0,
+  }));
+  const ws3 = XLSX.utils.json_to_sheet(byCellData);
+  XLSX.utils.book_append_sheet(workbook, ws3, 'Por Célula');
+
+  // 4. Aba: Produção por Turno
+  const byShiftData = (summary.byShift || []).map((r) => ({
+    'Turno': r.shift,
+    'Unidade': r.unitLabel,
+    'Meta': Number(r.target) || 0,
+    'Realizado': Number(r.realized ?? r.produced) || 0,
+    'Diferença': Number(r.differenceTarget) || 0,
+    'Atingimento (%)': `${attain(r)}%`,
+    'Paradas (min)': Number(r.downtime) || 0,
+  }));
+  const ws4 = XLSX.utils.json_to_sheet(byShiftData);
+  XLSX.utils.book_append_sheet(workbook, ws4, 'Por Turno');
+
+  XLSX.writeFile(workbook, `resumo-diario-${date}.xlsx`);
 }

@@ -40,15 +40,61 @@ Deno.serve(async (request) => {
 
     const { data: caller } = await admin
       .from('profiles')
-      .select('id, role, active')
+      .select('id, role, active, permissions')
       .eq('id', userResult.user.id)
       .maybeSingle();
 
-    if (!caller || caller.active === false || caller.role !== 'admin') {
-      return json({ success: false, error: 'Apenas administradores podem cadastrar contas.' }, 403);
+    const isAuthorized =
+      caller &&
+      caller.active !== false &&
+      (
+        caller.role === 'admin' ||
+        caller.role === 'manager' ||
+        caller.role === 'supervisor' ||
+        Boolean(caller.permissions?.manage_users) ||
+        Boolean(caller.permissions?.manage_operators)
+      );
+
+    if (!isAuthorized) {
+      return json({ success: false, error: 'Permissão insuficiente para alterar senhas ou gerenciar colaboradores.' }, 403);
     }
 
     const body = await request.json();
+
+    if (body?.action === 'reset_password' || body?.action === 'update_password') {
+      const userId = String(body.userId || body.id || '').trim();
+      const newPassword = String(body.password || body.newPassword || '');
+      if (!userId) return json({ success: false, error: 'ID do usuário não fornecido.' }, 422);
+      if (newPassword.length < 8) return json({ success: false, error: 'A senha deve ter pelo menos 8 caracteres.' }, 422);
+
+      const { data: updated, error: updateError } = await admin.auth.admin.updateUserById(userId, {
+        password: newPassword,
+      });
+      if (updateError) throw updateError;
+
+      const { data: targetProfile } = await admin
+        .from('profiles')
+        .select('email, name')
+        .eq('id', userId)
+        .maybeSingle();
+
+      await admin.from('system_audit_logs').insert({
+        user_id: caller.id,
+        user_role: caller.role,
+        action: 'reset_password',
+        entity: 'profile',
+        entity_id: userId,
+        entity_label: targetProfile?.email || userId,
+        page: 'Usuários',
+        route: '/usuarios',
+        method: 'EDGE_FUNCTION',
+        new_value: { password_reset: true },
+        success: true,
+      });
+
+      return json({ success: true, user: updated.user }, 200);
+    }
+
     if (body?.action !== 'create') {
       return json({ success: false, error: 'Ação administrativa inválida.' }, 422);
     }

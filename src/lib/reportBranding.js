@@ -36,7 +36,12 @@ export async function drawBrandedPdfHeader(doc, { title, subtitle = '', summary 
   doc.roundedRect(margin, 10, pageW - margin * 2, 28, 4, 4, 'F');
 
   if (logo) {
-    doc.addImage(logo, 'PNG', margin + 4, 14, 20, 20);
+    // Card flutuante com borda branca proeminente para destacar do fundo verde
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(255, 255, 255);
+    doc.setLineWidth(0.8);
+    doc.roundedRect(margin + 4, 13, 22, 22, 3.5, 3.5, 'FD');
+    doc.addImage(logo, 'PNG', margin + 5, 14, 20, 20);
   }
 
   doc.setTextColor(...REPORT_BRAND.yellow);
