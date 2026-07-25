@@ -53,7 +53,7 @@ jobs:
         run: |
           rm -f src/lib/replacementExport.js
           rm -rf .github/rejection-fix
-          rm -f .github/workflows/apply-rejection-fix.yml
+          rm -f .github/workflows/replacement-flow-ci.yml
 
       - name: Commit corrected implementation
         shell: bash
