@@ -37,6 +37,33 @@ describe('rejectedPieceReplacementFlow', () => {
     vi.restoreAllMocks();
   });
 
+
+  it('deve reutilizar o mesmo client_event_id em novas tentativas da mesma reprovação', async () => {
+    const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValue({
+      data: { success: true, piece_id: 'pc-123', status: 'rejected' },
+      error: null
+    });
+
+    await rejectPieceFromCollection({
+      traceabilityCode: '09907352',
+      pieceId: 'pc-123',
+      reason: 'Falha de acabamento',
+      disposition: 'replacement',
+      operatorName: 'Aelio',
+      clientEventId: 'af577ac1-0394-4ba1-9708-a71668d769b9'
+    });
+
+    expect(rpc).toHaveBeenCalledWith('register_quality_rejection', {
+      p_payload: expect.objectContaining({
+        piece_id: 'pc-123',
+        traceability_code: '09907352',
+        client_event_id: 'af577ac1-0394-4ba1-9708-a71668d769b9'
+      })
+    });
+
+    vi.restoreAllMocks();
+  });
+
   it('deve solicitar reposição e gerar ordem em requested', async () => {
     vi.spyOn(supabase, 'rpc').mockImplementation(async (fnName, params) => {
       if (fnName === 'request_piece_replacement') {

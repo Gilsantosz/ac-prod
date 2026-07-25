@@ -45,13 +45,13 @@ export async function getReplacementOrders({
     .select(`
       *,
       original_piece:original_piece_id (
-        id, piece_name, piece_code, piece_uid, current_stage, status, material, thickness, color, length, width
+        id, piece_name, piece_code, piece_uid, traceability_code, description, current_stage, status, material, thickness, color, length, width, height, lot_code, order_number, customer_name, environment_name, route_steps, completed_steps, lot_id, production_order_id,
+        lot:lot_id (
+          id, lot_code
+        )
       ),
       replacement_piece:replacement_piece_id (
-        id, piece_name, piece_code, piece_uid, current_stage, status, is_replacement
-      ),
-      defect:defect_id (
-        id, code, name, category, six_m_category
+        id, piece_name, piece_code, piece_uid, traceability_code, description, current_stage, status, is_replacement, route_steps, completed_steps, lot_code, order_number, customer_name, environment_name, production_order_id
       )
     `, { count: 'exact' });
 
@@ -85,15 +85,357 @@ export async function getReplacementOrders({
     .range(offset, offset + limit - 1);
 
   const { data, error, count } = await query;
+  let rawOrders = data || [];
+  let totalCount = count || 0;
+
   if (error) {
-    console.error('Erro ao buscar ordens de reposição:', error);
-    throw error;
+    console.error('Erro ao buscar ordens de reposição via JOIN:', error);
+    // Fallback: Tentar select simples sem relações se a junção falhar por problema de schema cache
+    let fallbackQuery = supabase
+      .from('replacement_orders')
+      .select('*', { count: 'exact' });
+
+    if (status && status !== 'all') fallbackQuery = fallbackQuery.eq('status', status);
+    if (priority && priority !== 'all') fallbackQuery = fallbackQuery.eq('priority', priority);
+    if (cellId) fallbackQuery = fallbackQuery.eq('origin_cell_id', cellId);
+    if (search && search.trim()) {
+      const term = search.trim();
+      fallbackQuery = fallbackQuery.or(`replacement_code.ilike.%${term}%,reason.ilike.%${term}%,lot_code.ilike.%${term}%,order_number.ilike.%${term}%,customer_name.ilike.%${term}%`);
+    }
+    fallbackQuery = fallbackQuery.order('created_at', { ascending: false }).range(offset, offset + limit - 1);
+
+    const { data: fbData, error: fbError, count: fbCount } = await fallbackQuery;
+    if (fbError) throw fbError;
+
+    rawOrders = fbData || [];
+    totalCount = fbCount || 0;
+
+    // População manual de peças se houver resultados
+    const pieceIds = [...new Set(rawOrders.flatMap(o => [o.original_piece_id, o.replacement_piece_id].filter(Boolean)))];
+    let piecesMap = {};
+    if (pieceIds.length > 0) {
+      const { data: pieces } = await supabase
+        .from('production_pieces')
+        .select('id, piece_name, piece_code, piece_uid, traceability_code, current_stage, status, material, thickness, color, length, width, is_replacement, lot_code, order_number, customer_name, environment_name, route_steps, completed_steps, lot_id, production_order_id')
+        .in('id', pieceIds);
+
+      const lotIds = [...new Set((pieces || []).map(p => p.lot_id).filter(Boolean))];
+      let lotsMap = {};
+      if (lotIds.length > 0) {
+        const { data: lots } = await supabase
+          .from('production_lots')
+          .select('id, lot_code, production_order_id, order_id')
+          .in('id', lotIds);
+        (lots || []).forEach(l => { lotsMap[l.id] = l; });
+      }
+
+      (pieces || []).forEach(p => {
+        const lotObj = lotsMap[p.lot_id] || null;
+        piecesMap[p.id] = {
+          ...p,
+          lot: lotObj,
+          lot_code: p.lot_code || lotObj?.lot_code || null,
+          general_lot_code: null,
+        };
+      });
+    }
+
+    rawOrders = rawOrders.map(o => ({
+      ...o,
+      original_piece: piecesMap[o.original_piece_id] || null,
+      replacement_piece: piecesMap[o.replacement_piece_id] || null
+    }));
   }
 
+  // Se alguma peça tiver lot_id e não tiver trazido a relação lot, buscar os lotes em lote
+  const missingLotIds = rawOrders
+    .filter(o => o.original_piece?.lot_id && !o.original_piece?.lot)
+    .map(o => o.original_piece.lot_id);
+
+  if (missingLotIds.length > 0) {
+    const uniqueLotIds = [...new Set(missingLotIds)];
+    const { data: lots } = await supabase
+      .from('production_lots')
+      .select('id, lot_code, production_order_id, order_id')
+      .in('id', uniqueLotIds);
+
+    if (lots && lots.length > 0) {
+      const lotsMap = {};
+      lots.forEach(l => { lotsMap[l.id] = l; });
+      rawOrders = rawOrders.map(o => {
+        if (o.original_piece?.lot_id && lotsMap[o.original_piece.lot_id]) {
+          return {
+            ...o,
+            original_piece: {
+              ...o.original_piece,
+              lot: lotsMap[o.original_piece.lot_id]
+            }
+          };
+        }
+        return o;
+      });
+    }
+  }
+
+  // Hidratar pedido e cliente pelo vínculo canônico peça → lote → ordem.
+  const contextLotIds = [...new Set(rawOrders.map((order) => order.original_piece?.lot_id || order.lot_id).filter(Boolean))];
+  const lotsById = {};
+  if (contextLotIds.length > 0) {
+    const { data: contextLots } = await supabase
+      .from('production_lots')
+      .select('id,lot_code,production_order_id,order_id')
+      .in('id', contextLotIds);
+    (contextLots || []).forEach((lotRow) => { lotsById[lotRow.id] = lotRow; });
+  }
+
+  const contextOrderIds = [...new Set(rawOrders.flatMap((order) => {
+    const linkedLot = lotsById[order.original_piece?.lot_id || order.lot_id];
+    return [order.production_order_id, order.original_piece?.production_order_id, linkedLot?.production_order_id, linkedLot?.order_id].filter(Boolean);
+  }))];
+  const ordersById = {};
+  if (contextOrderIds.length > 0) {
+    const { data: contextOrders } = await supabase
+      .from('production_orders')
+      .select('id,order_code,order_number,customer_name')
+      .in('id', contextOrderIds);
+    (contextOrders || []).forEach((orderRow) => { ordersById[orderRow.id] = orderRow; });
+  }
+
+  rawOrders = rawOrders.map((order) => {
+    const piece = order.original_piece || {};
+    const linkedLot = piece.lot || lotsById[piece.lot_id || order.lot_id] || null;
+    const linkedOrder = ordersById[order.production_order_id]
+      || ordersById[piece.production_order_id]
+      || ordersById[linkedLot?.production_order_id]
+      || ordersById[linkedLot?.order_id]
+      || null;
+    return {
+      ...order,
+      lot_id: order.lot_id || piece.lot_id || linkedLot?.id || null,
+      lot_code: order.lot_code || piece.lot_code || linkedLot?.lot_code || null,
+      production_order_id: order.production_order_id || piece.production_order_id || linkedOrder?.id || null,
+      order_number: order.order_number || piece.order_number || linkedOrder?.order_number || linkedOrder?.order_code || null,
+      customer_name: order.customer_name || piece.customer_name || linkedOrder?.customer_name || null,
+      original_piece: {
+        ...piece,
+        lot: linkedLot,
+        lot_code: piece.lot_code || linkedLot?.lot_code || null,
+        order_number: piece.order_number || linkedOrder?.order_number || linkedOrder?.order_code || null,
+        customer_name: piece.customer_name || linkedOrder?.customer_name || null,
+      },
+    };
+  });
+
+  // Buscar snapshots de qualidade correspondentes em quality_nonconformities se houver campos faltantes
+  const orderIds = rawOrders.map(o => o.id).filter(Boolean);
+  let ncMap = {};
+  if (orderIds.length > 0) {
+    try {
+      const { data: ncs } = await supabase
+        .from('quality_nonconformities')
+        .select(`
+          related_replacement_id, piece_id, lot_code, order_number, customer_name, environment_name, cell_name, stage_name, operator_name, notes,
+          piece:piece_id (
+            id, piece_name, piece_code, piece_uid, traceability_code, description, current_stage, status, material, thickness, color, length, width, height, lot_code, order_number, customer_name, environment_name, route_steps, completed_steps, lot_id
+          )
+        `)
+        .in('related_replacement_id', orderIds);
+
+      if (ncs && ncs.length > 0) {
+        ncs.forEach(nc => {
+          if (nc.related_replacement_id) ncMap[nc.related_replacement_id] = nc;
+        });
+      }
+    } catch (e) {
+      console.warn('Aviso ao relacionar quality_nonconformities:', e);
+    }
+  }
+
+  rawOrders = rawOrders.map(o => {
+    const nc = ncMap[o.id];
+    if (!nc) return o;
+    return {
+      ...o,
+      lot_code: o.lot_code || nc.lot_code,
+      order_number: o.order_number || nc.order_number,
+      customer_name: o.customer_name || nc.customer_name,
+      environment_name: o.environment_name || nc.environment_name,
+      origin_cell_name: o.origin_cell_name || nc.cell_name,
+      rejection_stage: (!o.rejection_stage || ['concluída', 'concluida', 'completed', 'created'].includes(String(o.rejection_stage).toLowerCase()))
+        ? nc.stage_name
+        : o.rejection_stage,
+      operator_name: o.operator_name || nc.operator_name,
+      original_piece: o.original_piece || nc.piece
+    };
+  });
+
+  // Consolidar e enriquecer todas as informações da ordem para impedir que qualquer campo exiba 'N/A'
+  const processedOrders = rawOrders.map(o => enrichReplacementOrderData(o));
+
   return {
-    orders: data || [],
-    count: count || 0
+    orders: processedOrders,
+    count: totalCount
   };
+}
+
+/**
+ * Enriquece uma ordem de reposição com tratativas resilientes de campos ausentes.
+ */
+export function enrichReplacementOrderData(order) {
+  if (!order) return order;
+  const orig = order.original_piece || {};
+  const repl = order.replacement_piece || {};
+  const lot = orig.lot || {};
+
+  // 1. Extrair operador e célula a partir de notes se necessário
+  let parsedOperator = null;
+  let parsedCell = null;
+  if (order.notes) {
+    const match = order.notes.match(/operador\s+([^/\,\n\.\s]+)(?:\/([^/\,\n\.\s]+))?/i);
+    if (match) {
+      if (match[1]) parsedOperator = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
+      if (match[2]) parsedCell = match[2].charAt(0).toUpperCase() + match[2].slice(1).toLowerCase();
+    }
+  }
+
+  // 2. Operador Solicitante
+  const operatorName = (order.operator_name && order.operator_name !== 'N/A')
+    ? order.operator_name
+    : (parsedOperator || orig.operator_name || 'Operador da Coleta');
+
+  // 3. Etapa e Célula de Reprovação
+  const storedStage = String(order.rejection_stage || '').trim();
+  const storedStageIsValid = storedStage && !['n/a', 'concluída', 'concluida', 'completed', 'created'].includes(storedStage.toLowerCase());
+  const rejectionStage = storedStageIsValid
+    ? storedStage
+    : (orig.current_stage && !['created', 'completed', 'concluída', 'concluida'].includes(String(orig.current_stage).toLowerCase()) ? orig.current_stage : (parsedCell || 'Corte'));
+
+  const originCell = (order.origin_cell_name && order.origin_cell_name !== 'Célula de Origem')
+    ? order.origin_cell_name
+    : (parsedCell ? `Célula de ${parsedCell}` : `Célula de ${rejectionStage}`);
+
+  // 4. Lotes (Geral e Cliente)
+  const clientLot = order.resolved_client_lot
+    || order.lot_code 
+    || orig.lot_code 
+    || lot.lot_code 
+    || null;
+
+  const generalLot = order.resolved_general_lot
+    || order.general_lot_code 
+    || null;
+
+  // 5. Ambiente
+  const environmentName = (order.environment_name && order.environment_name !== 'N/A')
+    ? order.environment_name
+    : (orig.environment || orig.environment_name || orig.module_name || 'Geral / Produção');
+
+  // 6. Peça Original (Código da Peça, Barcode Tag, UID e Nome)
+  const originalPieceCode = orig.piece_code 
+    || orig.piece_uid 
+    || orig.traceability_code 
+    || order.original_piece_id
+    || 'Rastreio não localizado';
+
+  const originalPieceUid = orig.piece_uid || orig.traceability_code || originalPieceCode;
+  const traceabilityCode = orig.traceability_code || orig.piece_code || orig.piece_uid;
+
+  const originalPieceName = orig.piece_name 
+    || orig.description 
+    || orig.module_name 
+    || 'Peça de Produção';
+
+  // 7. Rota e Sequenciamento Produtivo
+  const STEP_NAMES = {
+    cut: 'Corte',
+    edge: 'Borda',
+    drill: 'Furação',
+    cnc: 'Usinagem CNC',
+    canal: 'Canal',
+    maranello: 'Maranello',
+    portajoias: 'Porta Joias',
+    sorrento: 'Sorrento',
+    usi_especial: 'Usi Especial',
+    rasgo_freggio: 'Rasgo Freggio',
+    joinery: 'Marcenaria',
+    separation: 'Separação',
+    packaging: 'Embalagem'
+  };
+
+  let rawRoute = orig.route_steps;
+  let formattedRoute = [];
+  if (Array.isArray(rawRoute) && rawRoute.length > 0) {
+    formattedRoute = rawRoute.map(s => STEP_NAMES[s] || s);
+  } else {
+    formattedRoute = ['Corte', 'Borda', 'Separação', 'Embalagem'];
+  }
+
+  const originalPiece = {
+    ...orig,
+    piece_code: originalPieceCode,
+    piece_uid: originalPieceUid,
+    traceability_code: traceabilityCode,
+    piece_name: originalPieceName,
+    environment: environmentName,
+    current_stage: rejectionStage,
+    lot_code: clientLot,
+    general_lot_code: generalLot,
+    route_steps: formattedRoute
+  };
+
+  return {
+    ...order,
+    operator_name: operatorName,
+    origin_cell_name: originCell,
+    rejection_stage: rejectionStage,
+    environment_name: environmentName,
+    resolved_client_lot: clientLot,
+    resolved_general_lot: generalLot,
+    original_piece: originalPiece,
+    replacement_piece: repl,
+    route_steps: formattedRoute
+  };
+}
+
+/**
+ * Retorna o dataset canônico usado por CSV, Excel, PDF e relatórios agendados.
+ * A view é criada pela migration de reconciliação do fluxo de reposição.
+ */
+export async function getReplacementExportRows({
+  status = null,
+  priority = null,
+  search = null,
+  dateFrom = null,
+  dateTo = null,
+  limit = 5000
+} = {}) {
+  let query = supabase
+    .from('replacement_flow_export')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (status && status !== 'all') query = query.eq('status', status);
+  if (priority && priority !== 'all') query = query.eq('priority', priority);
+  if (dateFrom) query = query.gte('created_at', dateFrom);
+  if (dateTo) query = query.lte('created_at', dateTo);
+  if (search?.trim()) {
+    const term = search.trim();
+    query = query.or([
+      `replacement_code.ilike.%${term}%`,
+      `original_piece_uid.ilike.%${term}%`,
+      `replacement_piece_uid.ilike.%${term}%`,
+      `lot_code.ilike.%${term}%`,
+      `general_lot_code.ilike.%${term}%`,
+      `order_number.ilike.%${term}%`,
+      `customer_name.ilike.%${term}%`,
+      `defect_name.ilike.%${term}%`
+    ].join(','));
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(`Falha ao carregar dados para exportação: ${error.message}`);
+  return data || [];
 }
 
 /**

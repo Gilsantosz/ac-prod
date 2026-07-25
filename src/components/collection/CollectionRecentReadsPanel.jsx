@@ -164,6 +164,8 @@ export default function CollectionRecentReadsPanel({
       current_stage_name: read.current_stage_name,
       operator_name: read.operator_name,
       status: read.event_status,
+      reading_status: read.reading_status || read.result_status,
+      replacement_status: read.replacement_status || 'none',
       route: read.route_steps || [],
       completedSteps: read.completed_steps || []
     };
