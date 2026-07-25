@@ -1,0 +1,1 @@
+Trigger the correction bootstrap after the pull request workflow is registered.
