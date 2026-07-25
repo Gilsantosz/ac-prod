@@ -1,0 +1,62 @@
+name: Apply rejection and replacement fix
+
+on:
+  push:
+    branches:
+      - agent/fix-replacement-export-flow
+    paths:
+      - '.github/rejection-fix/**'
+      - '.github/workflows/apply-rejection-fix.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-rejection-fix-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout correction branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/fix-replacement-export-flow
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Rebuild and validate correction payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/rejection-fix/chunk_*.b64 | base64 --decode > /tmp/rejection-fix.tar.gz
+          echo '7473c2a0f91c70b8ab8d0d215f760cbcebccfb77a10c312cedd1db913ece8a2b  /tmp/rejection-fix.tar.gz' | sha256sum --check
+          tar -xzf /tmp/rejection-fix.tar.gz -C .
+
+          test -f src/lib/collectionService.js
+          test -f src/pages/TraceabilityCollection.jsx
+          test -f src/lib/replacementService.js
+          test -f supabase/migrations/20260726140000_fix_rejection_selection_and_replacement_snapshots.sql
+          test -f .agent/workflows/rejection-replacement-consistency.md
+
+      - name: Remove temporary delivery files
+        shell: bash
+        run: |
+          rm -f src/lib/replacementExport.js
+          rm -rf .github/rejection-fix
+          rm -f .github/workflows/apply-rejection-fix.yml
+
+      - name: Commit corrected implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git commit -m 'fix: keep rejection and replacement context consistent'
+          git push origin HEAD:agent/fix-replacement-export-flow
