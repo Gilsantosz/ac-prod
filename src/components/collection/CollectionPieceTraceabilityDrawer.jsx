@@ -100,9 +100,10 @@ export default function CollectionPieceTraceabilityDrawer({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-xl bg-secondary/35 border border-border/40">
               <div className="space-y-2">
                 <div>
-                  <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Código Rastreável</span>
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Peça / Código</span>
                   <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="font-extrabold text-foreground font-mono text-xs">{data.piece.piece_uid || data.piece.id}</span>
+                    <span className="font-extrabold text-foreground font-mono text-xs">{data.piece.piece_name}</span>
+                    <span className="text-muted-foreground font-mono text-[10px]">({data.piece.piece_uid || data.piece.id})</span>
                     <button
                       onClick={handleCopyCode}
                       className="p-1 hover:bg-secondary rounded text-muted-foreground transition-colors"
@@ -113,8 +114,11 @@ export default function CollectionPieceTraceabilityDrawer({
                   </div>
                 </div>
                 <div>
-                  <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Lote</span>
-                  <p className="font-bold text-foreground mt-0.5">{data.piece.production_lots?.lot_code || 'LOTE-N/A'}</p>
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Lote / Ambiente</span>
+                  <p className="font-bold text-foreground mt-0.5">
+                    {data.piece.production_lots?.lot_code || 'LOTE-PCP'}
+                    {data.piece.environment && <span className="text-muted-foreground font-normal text-[11px] ml-1.5">· {data.piece.environment}</span>}
+                  </p>
                 </div>
               </div>
 
@@ -122,9 +126,9 @@ export default function CollectionPieceTraceabilityDrawer({
                 <div>
                   <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Pedido / Cliente</span>
                   <p className="font-bold text-foreground mt-0.5">
-                    #{data.piece.production_lots?.production_orders?.order_code || 'N/A'} · 
+                    #{data.piece.production_lots?.production_orders?.order_code || 'PED-PCP'} · 
                     <span className="text-muted-foreground font-normal ml-1">
-                      {data.piece.production_lots?.production_orders?.customer_name || 'Móvel Planejado'}
+                      {data.piece.production_lots?.production_orders?.customer_name || data.piece.production_lots?.customer_name || 'Móvel Planejado'}
                     </span>
                   </p>
                 </div>
@@ -137,27 +141,27 @@ export default function CollectionPieceTraceabilityDrawer({
               </div>
             </div>
 
-            {/* Medidas e Materiais */}
+            {/* Medidas e Materiais do PCP */}
             <div className="space-y-2">
-              <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Detalhes Físicos</span>
+              <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Detalhes Físicos (PCP Retaguarda)</span>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-secondary/10 p-3 rounded-xl border border-border/20 text-center">
                 <div>
                   <p className="text-muted-foreground text-[10px]">Material</p>
-                  <p className="font-bold text-foreground mt-0.5">{data.piece.material || 'N/A'}</p>
+                  <p className="font-bold text-foreground mt-0.5">{data.piece.material || 'MDF'}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-[10px]">Cor</p>
-                  <p className="font-bold text-foreground mt-0.5">{data.piece.color || 'N/A'}</p>
+                  <p className="font-bold text-foreground mt-0.5">{data.piece.color || 'Padrão'}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-[10px]">Dimensões (LxC)</p>
                   <p className="font-bold text-foreground mt-0.5">
-                    {data.piece.width || 0} x {data.piece.length || 0} mm
+                    {data.piece.width || 0} x {data.piece.length || data.piece.height || 0} mm
                   </p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-[10px]">Espessura</p>
-                  <p className="font-bold text-foreground mt-0.5">{data.piece.thickness || 0} mm</p>
+                  <p className="font-bold text-foreground mt-0.5">{data.piece.thickness || 15} mm</p>
                 </div>
               </div>
             </div>

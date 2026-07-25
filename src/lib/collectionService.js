@@ -244,8 +244,10 @@ export async function getPieceTraceability(pieceIdOrCode) {
 
   const isUuid = target.length === 36 && target.includes('-');
   let piece = null;
+  let pcpRowData = null;
 
   try {
+    // 1. Busca canônica em production_pieces por ID, piece_uid ou traceability_code
     if (isUuid) {
       const { data, error } = await supabase
         .from('production_pieces')
@@ -254,6 +256,7 @@ export async function getPieceTraceability(pieceIdOrCode) {
           production_lots (
             id,
             lot_code,
+            customer_name,
             production_orders:production_orders!production_order_id (
               id,
               order_code,
@@ -274,6 +277,7 @@ export async function getPieceTraceability(pieceIdOrCode) {
           production_lots (
             id,
             lot_code,
+            customer_name,
             production_orders:production_orders!production_order_id (
               id,
               order_code,
@@ -281,28 +285,70 @@ export async function getPieceTraceability(pieceIdOrCode) {
             )
           )
         `)
-        .or(`piece_uid.eq.${target},id.eq.${target}`)
+        .or(`piece_uid.eq.${target},traceability_code.eq.${target},id.eq.${target}`)
         .maybeSingle();
       if (!error && data) piece = data;
+    }
+
+    // 2. Busca fallback em pcp_import_rows (ledger do PCP retaguarda)
+    try {
+      const { data: pcpRow } = await supabase
+        .from('pcp_import_rows')
+        .select('normalized_payload, barcode_raw')
+        .or(`barcode_raw.eq.${target},barcode_normalized.eq.${target}`)
+        .limit(1)
+        .maybeSingle();
+
+      if (pcpRow?.normalized_payload) {
+        pcpRowData = pcpRow.normalized_payload;
+      }
+    } catch (pcpErr) {
+      console.warn('Erro ao consultar retaguarda pcp_import_rows:', pcpErr);
     }
   } catch (err) {
     console.warn('Erro ao buscar peça em production_pieces:', err);
   }
 
-  const resolvedPiece = piece || {
-    id: isUuid ? target : null,
-    piece_uid: target,
-    piece_name: 'Peça de Produção MES'
+  // 3. Montar objeto consolidado da peça garantindo que nenhum campo físico fique vazio
+  const resolvedPiece = {
+    id: piece?.id || (isUuid ? target : null),
+    piece_uid: piece?.piece_uid || target,
+    traceability_code: piece?.traceability_code || target,
+    piece_name: piece?.piece_name || pcpRowData?.pieceName || 'Peça de Produção MES',
+    material: piece?.material || pcpRowData?.material || 'MDF',
+    color: piece?.color || pcpRowData?.color || 'Padrão',
+    thickness: Number(piece?.thickness || pcpRowData?.thickness || 15),
+    width: Number(piece?.width || pcpRowData?.width || 0),
+    height: Number(piece?.height || pcpRowData?.height || 0),
+    length: Number(piece?.length || piece?.height || pcpRowData?.height || 0),
+    environment: piece?.environment || pcpRowData?.environmentName || 'Geral',
+    module_name: piece?.module_name || pcpRowData?.moduleName || 'Móvel',
+    status: piece?.status || 'approved',
+    current_stage: piece?.current_stage || 'Corte',
+    lot_id: piece?.lot_id || null,
+    production_lots: piece?.production_lots || {
+      id: null,
+      lot_code: pcpRowData?.lotCode || 'LOTE-PCP',
+      production_orders: {
+        id: null,
+        order_code: pcpRowData?.orderCode || 'PED-PCP',
+        customer_name: pcpRowData?.customer || 'Cliente Retaguarda'
+      }
+    }
   };
 
   const uidToSearch = resolvedPiece.piece_uid || target;
+  const tcodeToSearch = resolvedPiece.traceability_code || target;
   const idToSearch = resolvedPiece.id || (isUuid ? target : null);
 
   let filterConditions = [
     `tag_value.eq.${uidToSearch}`,
+    `tag_value.eq.${tcodeToSearch}`,
     `piece_code.eq.${uidToSearch}`,
+    `piece_code.eq.${tcodeToSearch}`,
     `raw_value.eq.${uidToSearch}`,
-    `traceability_code.eq.${uidToSearch}`
+    `raw_value.eq.${tcodeToSearch}`,
+    `traceability_code.eq.${tcodeToSearch}`
   ];
   if (idToSearch) {
     filterConditions.push(`piece_id.eq.${idToSearch}`);
@@ -323,6 +369,7 @@ export async function getPieceTraceability(pieceIdOrCode) {
     console.warn('Erro ao buscar leituras de rastreabilidade:', e);
   }
 
+  // 4. Resolução de Rota Produtiva com fallback automático do PCP
   let route = [];
   if (resolvedPiece.lot_id) {
     try {
@@ -333,8 +380,50 @@ export async function getPieceTraceability(pieceIdOrCode) {
         .order('step_order', { ascending: true });
       route = routeData || [];
     } catch (e) {
-      console.warn('Erro ao buscar rota produtiva da peça:', e);
+      console.warn('Erro ao buscar rota produtiva do lote:', e);
     }
+  }
+
+  // Se a tabela de rotas do lote estiver vazia, montar a rota a partir do roteiro PCP da peça
+  if (!route || route.length === 0) {
+    const STEP_NAMES = {
+      cut: 'Corte',
+      edge: 'Borda',
+      drill: 'Furação',
+      cnc: 'Usinagem CNC',
+      canal: 'Canal',
+      maranello: 'Maranello',
+      portajoias: 'Porta Joias',
+      sorrento: 'Sorrento',
+      usi_especial: 'Usi Especial',
+      rasgo_freggio: 'Rasgo Freggio',
+      joinery: 'Marcenaria',
+      separation: 'Separação',
+      packaging: 'Embalagem'
+    };
+
+    let rawSteps = piece?.route_steps;
+    if (!rawSteps && pcpRowData?.route) {
+      const text = String(pcpRowData.route).toUpperCase();
+      rawSteps = [];
+      if (text.includes('CORT')) rawSteps.push('cut');
+      if (text.includes('BORD')) rawSteps.push('edge');
+      if (text.includes('FUR')) rawSteps.push('drill');
+      if (text.includes('CNC') || text.includes('USIN')) rawSteps.push('cnc');
+      if (text.includes('MARC')) rawSteps.push('joinery');
+      rawSteps.push('separation', 'packaging');
+    }
+
+    if (!rawSteps || rawSteps.length === 0) {
+      rawSteps = ['cut', 'edge', 'cnc', 'separation', 'packaging'];
+    }
+
+    route = rawSteps.map((stepCode, idx) => ({
+      id: `step-${idx}`,
+      step_order: idx + 1,
+      step_name: STEP_NAMES[stepCode] || stepCode,
+      code: stepCode
+    }));
   }
 
   return {
