@@ -478,7 +478,11 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   // Aberturas de modais operacionais
   const handleOpenRejectModal = (piece) => {
-    setPieceToReject(piece);
+    if (!piece) return;
+    const targetPiece = typeof piece === 'string'
+      ? { piece_uid: piece, id: piece, piece_name: 'Peça Lida' }
+      : piece;
+    setPieceToReject(targetPiece);
     setRejectModalOpen(true);
   };
 
@@ -499,9 +503,13 @@ export default function TraceabilityCollection({ embedded = false }) {
     if (!pieceToReject) return;
     setRejecting(true);
     try {
+      const code = typeof pieceToReject === 'string'
+        ? pieceToReject
+        : (pieceToReject.piece_uid || pieceToReject.traceability_code || pieceToReject.piece_code || pieceToReject.tag_value || pieceToReject.raw_value || pieceToReject.id || pieceToReject.piece_id);
+
       await rejectPieceFromCollection({
-        pieceId: pieceToReject.id,
-        traceabilityCode: pieceToReject.piece_uid || pieceToReject.traceability_code,
+        pieceId: pieceToReject.id || pieceToReject.piece_id,
+        traceabilityCode: code,
         reason: formData.reason,
         notes: formData.notes,
         action: formData.action,
@@ -516,10 +524,11 @@ export default function TraceabilityCollection({ embedded = false }) {
       setRefreshReadsSignal(prev => prev + 1);
       refreshData();
 
-      if (selectedPiece && selectedPiece.piece_uid === pieceToReject.piece_uid) {
+      if (selectedPiece && (selectedPiece.piece_uid === code || selectedPiece.id === pieceToReject.id)) {
         setSelectedPiece(prev => prev ? { ...prev, status: 'rejected' } : null);
       }
     } catch (error) {
+      console.error('Erro ao registrar reprovação:', error);
       toast.error(error?.message || 'Falha ao registrar reprovação.');
     } finally {
       setRejecting(false);

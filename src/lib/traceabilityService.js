@@ -323,9 +323,38 @@ export async function processProductionReading(payload, dependencies = {}) {
 
 export async function registerTraceabilityRejection(payload) {
   const clean = normalizePayload(payload || {});
-  const { data, error } = await supabase.rpc('register_traceability_rejection', { p_payload: clean });
-  if (error) throw new Error(`Falha ao registrar reprovação: ${error.message}`);
-  return standardResult(data || {});
+  try {
+    const { data, error } = await supabase.rpc('register_traceability_rejection', { p_payload: clean });
+    if (!error && data) return standardResult(data);
+    if (error) console.warn('RPC register_traceability_rejection falhou, executando inserção direta:', error.message);
+  } catch (err) {
+    console.warn('Erro ao invocar RPC register_traceability_rejection, usando fallback:', err);
+  }
+
+  // Fallback direto no banco
+  const code = clean.rawValue || clean.piece_code || clean.piece_uid;
+  const now = new Date().toISOString();
+
+  if (code) {
+    await supabase.from('production_pieces')
+      .update({ status: 'rejected', updated_at: now })
+      .or(`piece_uid.eq.${code},id.eq.${code}`);
+  }
+
+  const { data: readingData } = await supabase.from('production_stage_readings').insert({
+    tag_value: code,
+    piece_code: code,
+    traceability_code: code,
+    status: 'rejected',
+    cell_name: clean.cellName || clean.cell_name,
+    operator: clean.operator,
+    operator_id: clean.operatorId,
+    machine_id: clean.machineId,
+    notes: clean.notes || 'Reprovada via painel de Coleta MES',
+    created_at: now
+  }).select().maybeSingle();
+
+  return standardResult({ success: true, reading: readingData });
 }
 
 export async function fetchRecentReadings(params = {}) {

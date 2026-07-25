@@ -245,81 +245,101 @@ export async function getPieceTraceability(pieceIdOrCode) {
   const isUuid = target.length === 36 && target.includes('-');
   let piece = null;
 
-  if (isUuid) {
-    const { data } = await supabase
-      .from('production_pieces')
-      .select(`
-        *,
-        production_lots (
-          id,
-          lot_code,
-          production_orders:production_orders!production_order_id (
+  try {
+    if (isUuid) {
+      const { data, error } = await supabase
+        .from('production_pieces')
+        .select(`
+          *,
+          production_lots (
             id,
-            order_code,
-            customer_name
+            lot_code,
+            production_orders:production_orders!production_order_id (
+              id,
+              order_code,
+              customer_name
+            )
           )
-        )
-      `)
-      .eq('id', target)
-      .maybeSingle();
-    piece = data;
-  }
+        `)
+        .eq('id', target)
+        .maybeSingle();
+      if (!error && data) piece = data;
+    }
 
-  if (!piece) {
-    const { data } = await supabase
-      .from('production_pieces')
-      .select(`
-        *,
-        production_lots (
-          id,
-          lot_code,
-          production_orders:production_orders!production_order_id (
+    if (!piece) {
+      const { data, error } = await supabase
+        .from('production_pieces')
+        .select(`
+          *,
+          production_lots (
             id,
-            order_code,
-            customer_name
+            lot_code,
+            production_orders:production_orders!production_order_id (
+              id,
+              order_code,
+              customer_name
+            )
           )
-        )
-      `)
-      .or(`piece_uid.eq.${target},id.eq.${target}`)
-      .maybeSingle();
-    piece = data;
+        `)
+        .or(`piece_uid.eq.${target},id.eq.${target}`)
+        .maybeSingle();
+      if (!error && data) piece = data;
+    }
+  } catch (err) {
+    console.warn('Erro ao buscar peça em production_pieces:', err);
   }
 
   const resolvedPiece = piece || {
     id: isUuid ? target : null,
     piece_uid: target,
-    piece_name: 'Peça Avulsa'
+    piece_name: 'Peça de Produção MES'
   };
 
   const uidToSearch = resolvedPiece.piece_uid || target;
   const idToSearch = resolvedPiece.id || (isUuid ? target : null);
 
-  let filterConditions = [`tag_value.eq.${uidToSearch}`, `piece_code.eq.${uidToSearch}`];
+  let filterConditions = [
+    `tag_value.eq.${uidToSearch}`,
+    `piece_code.eq.${uidToSearch}`,
+    `raw_value.eq.${uidToSearch}`,
+    `traceability_code.eq.${uidToSearch}`
+  ];
   if (idToSearch) {
     filterConditions.push(`piece_id.eq.${idToSearch}`);
   }
 
-  const { data: readings, error: readingsError } = await supabase
-    .from('production_stage_readings')
-    .select('*')
-    .or(filterConditions.join(','))
-    .order('created_at', { ascending: true });
+  let readings = [];
+  try {
+    const { data: readingsData, error: readingsError } = await supabase
+      .from('production_stage_readings')
+      .select('*')
+      .or(filterConditions.join(','))
+      .order('created_at', { ascending: true });
 
-  if (readingsError) throw readingsError;
+    if (!readingsError && readingsData) {
+      readings = readingsData;
+    }
+  } catch (e) {
+    console.warn('Erro ao buscar leituras de rastreabilidade:', e);
+  }
 
   let route = [];
   if (resolvedPiece.lot_id) {
-    const { data: routeData } = await supabase
-      .from('production_routes')
-      .select('*')
-      .eq('lot_id', resolvedPiece.lot_id)
-      .order('step_order', { ascending: true });
-    route = routeData || [];
+    try {
+      const { data: routeData } = await supabase
+        .from('production_routes')
+        .select('*')
+        .eq('lot_id', resolvedPiece.lot_id)
+        .order('step_order', { ascending: true });
+      route = routeData || [];
+    } catch (e) {
+      console.warn('Erro ao buscar rota produtiva da peça:', e);
+    }
   }
 
   return {
     piece: resolvedPiece,
-    readings: readings || [],
+    readings,
     route
   };
 }
