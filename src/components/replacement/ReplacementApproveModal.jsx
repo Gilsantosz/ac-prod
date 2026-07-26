@@ -218,7 +218,7 @@ export default function ReplacementApproveModal({
                         />
                         <span className="min-w-0 flex-1">
                           <span className="block font-bold text-foreground">{cell.cell_name}</span>
-                          <span className="block text-[10px] text-muted-foreground">Etapa: {STEP_LABELS[cell.step_code] || cell.step_name || cell.step_code}</span>
+                          <span className="block text-[10px] text-muted-foreground">Etapa: {formatStageName(cell.step_code || cell.step_name) || cell.step_name || cell.step_code}</span>
                         </span>
                         {cell.is_rejection_stage && (
                           <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-rose-500/30 text-rose-600">Reprovada</Badge>
