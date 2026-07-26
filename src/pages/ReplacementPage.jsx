@@ -1,17 +1,18 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { invalidateAllMesQueries } from '@/config/queryKeys';
 import {
   RotateCcw, Filter, Search, CheckCircle2, RefreshCw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  getReplacementOrders,
   getReplacementKpis,
   releaseReplacement,
   completeReplacement,
   cancelReplacement
 } from '@/lib/replacementService';
+import { getCanonicalReplacementOrders } from '@/lib/replacementCanonicalService';
 import { useAuth } from '@/lib/AuthContext';
 import ReplacementOrderCard from '@/components/replacement/ReplacementOrderCard';
 import ReplacementApproveModal from '@/components/replacement/ReplacementApproveModal';
@@ -25,7 +26,7 @@ export default function ReplacementPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const [approveOrderModal, setApproveOrderModal] = useState(null);
+  const [approveOrderId, setApproveOrderId] = useState(null);
 
   // Permissões
   const userPermissions = {
@@ -44,7 +45,7 @@ export default function ReplacementPage() {
   // Carregar Ordens com Filtros
   const { data: ordersData = { orders: [], count: 0 }, isLoading, refetch: refetchOrders } = useQuery({
     queryKey: ['replacement-orders', activeTab, statusFilter, priorityFilter, search],
-    queryFn: () => getReplacementOrders({
+    queryFn: () => getCanonicalReplacementOrders({
       status: statusFilter !== 'all' ? statusFilter : null,
       priority: priorityFilter !== 'all' ? priorityFilter : null,
       search: search.trim() || null,
@@ -63,12 +64,7 @@ export default function ReplacementPage() {
   });
 
   const handleRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ['replacement-kpis'] });
-    queryClient.invalidateQueries({ queryKey: ['replacement-orders'] });
-    queryClient.invalidateQueries({ queryKey: ['collection-kpis'] });
-    queryClient.invalidateQueries({ queryKey: ['quality-kpis'] });
-    queryClient.invalidateQueries({ queryKey: ['quality-nonconformities'] });
-    queryClient.invalidateQueries({ queryKey: ['production-lots'] });
+    invalidateAllMesQueries(queryClient);
     refetchKpis();
     refetchOrders();
     toast.info('Dados de reposição atualizados.');
@@ -97,11 +93,8 @@ export default function ReplacementPage() {
   };
 
   const handleCancel = async (order) => {
-    const reason = prompt('Informe o motivo do cancelamento da ordem de reposição:');
-    if (reason === null) return;
-
     try {
-      await cancelReplacement(order.id, { reason });
+      await cancelReplacement(order.id, { reason: 'Cancelado via painel de reposição' });
       toast.success('Ordem de reposição cancelada.');
       handleRefresh();
     } catch (error) {
@@ -274,7 +267,7 @@ export default function ReplacementPage() {
             <ReplacementOrderCard
               key={order.id}
               order={order}
-              onApprove={() => setApproveOrderModal(order)}
+              onApprove={() => setApproveOrderId(order.id)}
               onRelease={handleRelease}
               onComplete={handleComplete}
               onCancel={handleCancel}
@@ -285,11 +278,11 @@ export default function ReplacementPage() {
       )}
 
       {/* Modal de Aprovação */}
-      {approveOrderModal && (
+      {approveOrderId && (
         <ReplacementApproveModal
-          open={!!approveOrderModal}
-          onOpenChange={(open) => !open && setApproveOrderModal(null)}
-          order={approveOrderModal}
+          open={!!approveOrderId}
+          onOpenChange={(open) => !open && setApproveOrderId(null)}
+          orderId={approveOrderId}
           onApproved={handleRefresh}
         />
       )}
