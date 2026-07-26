@@ -10,15 +10,19 @@ const TABLE_TO_QUERY_KEYS = {
     ['productionEntries'],
     ['daily-summary-history'],
     ['test-entries-list'],
+    ['mes-hub-kpis'],
   ],
   production_daily_goals: [
     ['productionDailyGoals'],
     ['daily-summary-history-goals'],
+    ['cellKpis'],
   ],
   production_realtime_counters: [
     ['realtimeCounters'],
     ['collection-kpis'],
     ['cell-detailed-stats'],
+    ['cellKpis'],
+    ['mes-hub-kpis'],
   ],
   production_collection_events: [
     ['collectionEvents'],
@@ -26,6 +30,8 @@ const TABLE_TO_QUERY_KEYS = {
     ['collection-kpis'],
     ['general-lot-tracking'],
     ['lot-tracking-dashboard'],
+    ['mes-hub-kpis'],
+    ['cellKpis'],
   ],
   production_stage_readings: [
     ['stageReadings'],
@@ -38,10 +44,16 @@ const TABLE_TO_QUERY_KEYS = {
     ['test-lot-details'],
     ['general-lot-tracking'],
     ['lot-tracking-dashboard'],
+    ['mes-hub-kpis'],
+    ['cellKpis'],
+    ['all-alerts-list'],
+    ['oeeStats'],
+    ['downtimeStats'],
   ],
   production_orders: [
     ['production-orders'],
     ['production-lots'],
+    ['mes-hub-kpis'],
   ],
   production_lots: [
     ['production-lots'],
@@ -51,6 +63,8 @@ const TABLE_TO_QUERY_KEYS = {
     ['test-lot-details'],
     ['general-lot-tracking'],
     ['lot-tracking-dashboard'],
+    ['mes-hub-kpis'],
+    ['cellKpis'],
   ],
   production_pieces: [
     ['production-lots'],
@@ -60,6 +74,8 @@ const TABLE_TO_QUERY_KEYS = {
     ['pcp-batches'],
     ['general-lot-tracking'],
     ['lot-tracking-dashboard'],
+    ['mes-hub-kpis'],
+    ['cellKpis'],
   ],
   production_lot_items: [
     ['production-lots'],
@@ -71,6 +87,14 @@ const TABLE_TO_QUERY_KEYS = {
     ['lot-events'],
     ['joinery-events'],
     ['production-lots'],
+  ],
+  occurrences: [
+    ['occurrences'],
+    ['all-alerts-list'],
+    ['unresolved-alerts-list'],
+    ['mes-hub-kpis'],
+    ['downtimeStats'],
+    ['oeeStats'],
   ],
   packing_volumes: [
     ['packages'],
@@ -95,16 +119,15 @@ function cleanChannelPart(value) {
 /**
  * Sincronização reativa do fluxo produtivo.
  *
- * A assinatura global foi reduzida às tabelas operacionais de alta relevância.
- * Alertas e cadastros não entram neste canal para impedir tempestades de
- * mensagens e refetch em todos os navegadores conectados.
+ * Escuta alterações de tabelas chave do MES e invalida os caches de KPIs
+ * dos dashboards em tempo real. Inclui fallback de atualização automática.
  */
 export function useProductionRealtimeSync(options = {}) {
   const {
     enabled = true,
     cellName,
     machineId,
-    debounceMs = 750,
+    debounceMs = 300,
     channelName = 'production-realtime-sync',
   } = options;
   const queryClient = useQueryClient();
@@ -198,13 +221,28 @@ export function useProductionRealtimeSync(options = {}) {
       );
     });
 
+    let fallbackInterval = null;
+
     channel.subscribe((status) => {
-      if (status === 'CHANNEL_ERROR') {
-        console.warn('[Production Realtime] Falha no canal. As telas seguem com recarga por consulta.');
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.warn('[Production Realtime] Canal websocket temporariamente indisponível. Ativando fallback de atualização periódica.');
+        if (!fallbackInterval) {
+          fallbackInterval = setInterval(() => {
+            queryClient.invalidateQueries({ queryKey: ['mes-hub-kpis'] });
+            queryClient.invalidateQueries({ queryKey: ['collection-kpis'] });
+            queryClient.invalidateQueries({ queryKey: ['cellKpis'] });
+          }, 10000);
+        }
+      } else if (status === 'SUBSCRIBED') {
+        if (fallbackInterval) {
+          clearInterval(fallbackInterval);
+          fallbackInterval = null;
+        }
       }
     });
 
     return () => {
+      if (fallbackInterval) clearInterval(fallbackInterval);
       supabase.removeChannel(channel);
       debounceTimers.forEach(clearTimeout);
     };

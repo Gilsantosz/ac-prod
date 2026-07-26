@@ -382,26 +382,29 @@ export default function TraceabilityCollection({ embedded = false }) {
     };
   }, [cellName, refreshData]);
 
-  // Busca silenciosa das timeline da peça ativa
+  // Busca silenciosa da timeline da peça ativa
   useEffect(() => {
-    if (!selectedPiece) {
+    if (!selectedPiece?.id && !selectedPiece?.piece_uid) {
       setSelectedPieceEvents([]);
       return;
     }
+    let isMounted = true;
+    const targetKey = selectedPiece.id || selectedPiece.piece_uid;
     const loadEvents = async () => {
       setLoadingPieceEvents(true);
       try {
-        const res = await getPieceTraceability(selectedPiece.piece_uid || selectedPiece.id);
+        const res = await getPieceTraceability(targetKey);
+        if (!isMounted) return;
         setSelectedPieceEvents(res.readings || []);
-        setSelectedPiece((previous) => previous ? mergeCanonicalPiece(previous, res) : null);
       } catch (e) {
         console.error(e);
       } finally {
-        setLoadingPieceEvents(false);
+        if (isMounted) setLoadingPieceEvents(false);
       }
     };
     loadEvents();
-  }, [selectedPiece?.piece_uid, selectedPiece?.id, refreshReadsSignal]);
+    return () => { isMounted = false; };
+  }, [selectedPiece?.id, selectedPiece?.piece_uid, refreshReadsSignal]);
 
   // ─── Função que processa um evento da fila ──────────────────────────────────
   const processEvent = useCallback(async (event) => {
