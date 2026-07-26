@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Clock, StopCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { finishDowntime } from '@/lib/downtimeService';
@@ -8,6 +9,7 @@ export default function ActiveDowntimeBanner({
   activeDowntime = null,
   onDowntimeFinished = null
 }) {
+  const queryClient = useQueryClient();
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [loading, setLoading] = useState(false);
 
@@ -39,6 +41,13 @@ export default function ActiveDowntimeBanner({
     try {
       setLoading(true);
       const result = await finishDowntime(activeDowntime.id);
+
+      queryClient.invalidateQueries({ queryKey: ['activeDowntime'] });
+      queryClient.invalidateQueries({ queryKey: ['occurrences'] });
+      queryClient.invalidateQueries({ queryKey: ['downtimeStats'] });
+      queryClient.invalidateQueries({ queryKey: ['oeeStats'] });
+      queryClient.invalidateQueries({ queryKey: ['cellKpis'] });
+
       toast.success(`Parada encerrada! Duração total: ${result.duration_minutes} min.`);
       onDowntimeFinished?.(result);
     } catch (error) {

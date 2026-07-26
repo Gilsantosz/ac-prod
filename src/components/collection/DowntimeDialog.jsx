@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogDescription, DialogFooter
@@ -22,6 +23,7 @@ export default function DowntimeDialog({
   shift = '1',
   onDowntimeStarted = null
 }) {
+  const queryClient = useQueryClient();
   const [mode, setMode] = useState('start_now'); // 'start_now' | 'past'
   const [reasons, setReasons] = useState([]);
   const [selectedReasonId, setSelectedReasonId] = useState('');
@@ -65,6 +67,12 @@ export default function DowntimeDialog({
         notes: notes.trim()
       });
 
+      queryClient.invalidateQueries({ queryKey: ['activeDowntime'] });
+      queryClient.invalidateQueries({ queryKey: ['occurrences'] });
+      queryClient.invalidateQueries({ queryKey: ['downtimeStats'] });
+      queryClient.invalidateQueries({ queryKey: ['oeeStats'] });
+      queryClient.invalidateQueries({ queryKey: ['cellKpis'] });
+
       toast.success('Parada iniciada com sucesso! Cronômetro ativo.');
       onDowntimeStarted?.(result);
       onOpenChange?.(false);
@@ -101,6 +109,12 @@ export default function DowntimeDialog({
         notes: notes.trim()
       });
 
+      queryClient.invalidateQueries({ queryKey: ['activeDowntime'] });
+      queryClient.invalidateQueries({ queryKey: ['occurrences'] });
+      queryClient.invalidateQueries({ queryKey: ['downtimeStats'] });
+      queryClient.invalidateQueries({ queryKey: ['oeeStats'] });
+      queryClient.invalidateQueries({ queryKey: ['cellKpis'] });
+
       toast.success(`Parada passada registrada (${result.duration_minutes} min).`);
       onDowntimeStarted?.(result);
       onOpenChange?.(false);
@@ -108,6 +122,9 @@ export default function DowntimeDialog({
       console.error('Erro ao registrar parada passada:', error);
       toast.error(error.message || 'Falha ao registrar parada passada.');
     } finally {
+      setLoading(false);
+    }
+  };
       setLoading(false);
     }
   };
