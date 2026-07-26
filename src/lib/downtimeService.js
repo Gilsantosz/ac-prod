@@ -46,12 +46,17 @@ export async function getActiveDowntime({ machineId = null, cellId = null } = {}
     query = query.eq('cell_id', cellId);
   }
 
-  const { data, error } = await query.maybeSingle();
-  if (error && error.code !== 'PGRST116') {
-    console.error('Erro ao verificar parada ativa:', error);
+  try {
+    const { data, error } = await query.maybeSingle();
+    if (error && error.code !== 'PGRST116') {
+      console.warn('Verificação de parada ativa ignorada:', error.message);
+      return null;
+    }
+    return data || null;
+  } catch (err) {
+    console.warn('Erro ao consultar parada ativa:', err);
+    return null;
   }
-
-  return data || null;
 }
 
 /**

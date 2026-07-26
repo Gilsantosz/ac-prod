@@ -45,7 +45,7 @@ export default function ReplacementPage() {
   const { data: ordersData = { orders: [], count: 0 }, isLoading, refetch: refetchOrders } = useQuery({
     queryKey: ['replacement-orders', activeTab, statusFilter, priorityFilter, search],
     queryFn: () => getReplacementOrders({
-      status: statusFilter !== 'all' ? statusFilter : (activeTab === 'active' ? null : 'completed'),
+      status: statusFilter !== 'all' ? statusFilter : null,
       priority: priorityFilter !== 'all' ? priorityFilter : null,
       search: search.trim() || null,
       limit: 50
@@ -54,6 +54,7 @@ export default function ReplacementPage() {
   });
 
   const filteredOrders = (ordersData.orders || []).filter(order => {
+    if (statusFilter !== 'all') return true;
     if (activeTab === 'active') {
       return ['requested', 'under_review', 'approved', 'released', 'in_production'].includes(order.status);
     } else {

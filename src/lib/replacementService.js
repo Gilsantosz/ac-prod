@@ -45,13 +45,13 @@ export async function getReplacementOrders({
     .select(`
       *,
       original_piece:original_piece_id (
-        id, piece_name, piece_code, piece_uid, traceability_code, description, current_stage, status, material, thickness, color, length, width, height, lot_code, order_number, customer_name, environment_name, route_steps, completed_steps, lot_id, production_order_id,
+        id, piece_name, piece_code, piece_uid, traceability_code, description, current_stage, status, material, thickness, color, length, width, height, lot_code, general_lot_code, order_number, customer_name, environment_name, route_steps, completed_steps, lot_id, production_order_id,
         lot:lot_id (
-          id, lot_code
+          id, lot_code, general_lot_code
         )
       ),
       replacement_piece:replacement_piece_id (
-        id, piece_name, piece_code, piece_uid, traceability_code, description, current_stage, status, is_replacement, route_steps, completed_steps, lot_code, order_number, customer_name, environment_name, production_order_id
+        id, piece_name, piece_code, piece_uid, traceability_code, description, current_stage, status, is_replacement, route_steps, completed_steps, lot_code, general_lot_code, order_number, customer_name, environment_name, production_order_id
       )
     `, { count: 'exact' });
 
@@ -116,7 +116,7 @@ export async function getReplacementOrders({
     if (pieceIds.length > 0) {
       const { data: pieces } = await supabase
         .from('production_pieces')
-        .select('id, piece_name, piece_code, piece_uid, traceability_code, current_stage, status, material, thickness, color, length, width, is_replacement, lot_code, order_number, customer_name, environment_name, route_steps, completed_steps, lot_id, production_order_id')
+        .select('id, piece_name, piece_code, piece_uid, traceability_code, current_stage, status, material, thickness, color, length, width, is_replacement, lot_code, general_lot_code, order_number, customer_name, environment_name, route_steps, completed_steps, lot_id, production_order_id')
         .in('id', pieceIds);
 
       const lotIds = [...new Set((pieces || []).map(p => p.lot_id).filter(Boolean))];
@@ -124,7 +124,7 @@ export async function getReplacementOrders({
       if (lotIds.length > 0) {
         const { data: lots } = await supabase
           .from('production_lots')
-          .select('id, lot_code, production_order_id, order_id')
+          .select('id, lot_code, general_lot_code, production_order_id, order_id')
           .in('id', lotIds);
         (lots || []).forEach(l => { lotsMap[l.id] = l; });
       }
@@ -135,7 +135,7 @@ export async function getReplacementOrders({
           ...p,
           lot: lotObj,
           lot_code: p.lot_code || lotObj?.lot_code || null,
-          general_lot_code: null,
+          general_lot_code: p.general_lot_code || lotObj?.general_lot_code || null,
         };
       });
     }
@@ -156,7 +156,7 @@ export async function getReplacementOrders({
     const uniqueLotIds = [...new Set(missingLotIds)];
     const { data: lots } = await supabase
       .from('production_lots')
-      .select('id, lot_code, production_order_id, order_id')
+      .select('id, lot_code, general_lot_code, production_order_id, order_id')
       .in('id', uniqueLotIds);
 
     if (lots && lots.length > 0) {
@@ -183,7 +183,7 @@ export async function getReplacementOrders({
   if (contextLotIds.length > 0) {
     const { data: contextLots } = await supabase
       .from('production_lots')
-      .select('id,lot_code,production_order_id,order_id')
+      .select('id,lot_code,general_lot_code,production_order_id,order_id')
       .in('id', contextLotIds);
     (contextLots || []).forEach((lotRow) => { lotsById[lotRow.id] = lotRow; });
   }
@@ -213,6 +213,7 @@ export async function getReplacementOrders({
       ...order,
       lot_id: order.lot_id || piece.lot_id || linkedLot?.id || null,
       lot_code: order.lot_code || piece.lot_code || linkedLot?.lot_code || null,
+      general_lot_code: order.general_lot_code || piece.general_lot_code || linkedLot?.general_lot_code || null,
       production_order_id: order.production_order_id || piece.production_order_id || linkedOrder?.id || null,
       order_number: order.order_number || piece.order_number || linkedOrder?.order_number || linkedOrder?.order_code || null,
       customer_name: order.customer_name || piece.customer_name || linkedOrder?.customer_name || null,
@@ -220,6 +221,7 @@ export async function getReplacementOrders({
         ...piece,
         lot: linkedLot,
         lot_code: piece.lot_code || linkedLot?.lot_code || null,
+        general_lot_code: piece.general_lot_code || linkedLot?.general_lot_code || null,
         order_number: piece.order_number || linkedOrder?.order_number || linkedOrder?.order_code || null,
         customer_name: piece.customer_name || linkedOrder?.customer_name || null,
       },
@@ -236,7 +238,7 @@ export async function getReplacementOrders({
         .select(`
           related_replacement_id, piece_id, lot_code, order_number, customer_name, environment_name, cell_name, stage_name, operator_name, notes,
           piece:piece_id (
-            id, piece_name, piece_code, piece_uid, traceability_code, description, current_stage, status, material, thickness, color, length, width, height, lot_code, order_number, customer_name, environment_name, route_steps, completed_steps, lot_id
+            id, piece_name, piece_code, piece_uid, traceability_code, description, current_stage, status, material, thickness, color, length, width, height, lot_code, general_lot_code, order_number, customer_name, environment_name, route_steps, completed_steps, lot_id
           )
         `)
         .in('related_replacement_id', orderIds);
@@ -277,6 +279,8 @@ export async function getReplacementOrders({
     count: totalCount
   };
 }
+
+
 
 /**
  * Enriquece uma ordem de reposição com tratativas resilientes de campos ausentes.

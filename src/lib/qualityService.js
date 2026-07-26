@@ -53,13 +53,34 @@ export async function getDefectCatalog({ activeOnly = true, category = null, six
     query = query.eq('six_m_category', sixM);
   }
 
-  const { data, error } = await query;
-  if (error) {
-    console.error('Erro ao buscar catálogo de defeitos:', error);
-    throw error;
+  try {
+    const { data, error } = await query;
+    if (error) {
+      console.warn('Aviso ao buscar catálogo de defeitos, utilizando fallback estático:', error.message);
+      return STATIC_DEFECTS;
+    }
+    return (data && data.length > 0) ? data : STATIC_DEFECTS;
+  } catch (err) {
+    console.warn('Falha na requisição do catálogo de defeitos, utilizando fallback estático:', err);
+    return STATIC_DEFECTS;
   }
-  return data || [];
 }
+
+const STATIC_DEFECTS = [
+  { id: 'def-001', code: 'DEF-001', name: 'MDF riscado', category: 'Superfície', six_m_category: 'Material', default_severity: 'low' },
+  { id: 'def-002', code: 'DEF-002', name: 'Peça lascada', category: 'Bordas e Cantos', six_m_category: 'Material', default_severity: 'medium' },
+  { id: 'def-003', code: 'DEF-003', name: 'Erro de corte', category: 'Dimensionamento', six_m_category: 'Máquina', default_severity: 'high' },
+  { id: 'def-004', code: 'DEF-004', name: 'Erro de medida', category: 'Dimensionamento', six_m_category: 'Medição', default_severity: 'high' },
+  { id: 'def-005', code: 'DEF-005', name: 'Erro de furação', category: 'Usinagem', six_m_category: 'Máquina', default_severity: 'medium' },
+  { id: 'def-006', code: 'DEF-006', name: 'Erro de CNC', category: 'Usinagem', six_m_category: 'Método', default_severity: 'high' },
+  { id: 'def-007', code: 'DEF-007', name: 'Borda errada', category: 'Fita de Borda', six_m_category: 'Material', default_severity: 'medium' },
+  { id: 'def-008', code: 'DEF-008', name: 'Borda descolada', category: 'Fita de Borda', six_m_category: 'Máquina', default_severity: 'medium' },
+  { id: 'def-009', code: 'DEF-009', name: 'Peça quebrada', category: 'Estrutura', six_m_category: 'Mão de obra', default_severity: 'critical' },
+  { id: 'def-010', code: 'DEF-010', name: 'Peça perdida', category: 'Logística Interna', six_m_category: 'Mão de obra', default_severity: 'high' },
+  { id: 'def-011', code: 'DEF-011', name: 'Falha de acabamento', category: 'Acabamento', six_m_category: 'Mão de obra', default_severity: 'medium' },
+  { id: 'def-012', code: 'DEF-012', name: 'Umidade / Empenamento', category: 'Armazenamento', six_m_category: 'Meio ambiente', default_severity: 'high' },
+  { id: 'def-099', code: 'DEF-099', name: 'Outro', category: 'Geral', six_m_category: 'Método', default_severity: 'medium' }
+];
 
 /**
  * Catálogo de Defeitos: Salva/Atualiza um defeito.

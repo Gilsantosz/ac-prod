@@ -32,11 +32,11 @@ export default function ReplacementOrderCard({
   const generalLot = order.resolved_general_lot || order.general_lot_code || order.original_piece?.general_lot_code || order.original_piece?.lot?.general_lot_code || null;
   const orderNumber = order.order_number || order.original_piece?.order_number || '';
   const customerName = order.customer_name || order.original_piece?.customer_name || '';
-  const environmentName = order.environment_name || order.original_piece?.environment || order.original_piece?.environment_name || 'Geral / Produção';
   const storedStage = String(order.rejection_stage || '').trim();
   const rejectionStage = storedStage && !['n/a', 'concluída', 'concluida', 'completed', 'created'].includes(storedStage.toLowerCase())
     ? storedStage
     : (order.original_piece?.current_stage && !['created', 'completed', 'concluída', 'concluida'].includes(String(order.original_piece.current_stage).toLowerCase()) ? order.original_piece.current_stage : 'Corte');
+
   const originCell = (order.origin_cell_name && order.origin_cell_name !== 'Célula de Origem') ? order.origin_cell_name : `Célula de ${rejectionStage}`;
   const operatorName = order.operator_name || order.original_piece?.operator_name || 'Operador da Coleta';
 
@@ -44,7 +44,7 @@ export default function ReplacementOrderCard({
     || order.original_piece?.traceability_code 
     || order.original_piece?.piece_code 
     || order.original_piece_id
-    || 'Rastreio não localizado';
+    || (order.replacement_code ? `PÇA-${order.replacement_code.replace('REP-', '')}` : `PÇA-${order.id.substring(0, 8)}`);
 
   const originalPieceName = order.original_piece?.piece_name 
     || order.original_piece?.description 

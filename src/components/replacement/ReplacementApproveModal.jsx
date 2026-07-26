@@ -51,11 +51,29 @@ export default function ReplacementApproveModal({
         </DialogHeader>
 
         <div className="space-y-4 py-2 text-xs">
-          <div className="bg-secondary/40 p-3 rounded-xl border border-border/40 space-y-1">
-            <p className="font-bold text-foreground font-mono">Código: {order.replacement_code || order.id}</p>
-            <p className="text-muted-foreground">Peça Original: <strong className="text-foreground">{order.original_piece?.piece_uid || 'N/A'}</strong></p>
-            <p className="text-muted-foreground">Motivo: <strong className="text-foreground">{order.reason}</strong></p>
-            <p className="text-muted-foreground">Lote / Pedido: <strong className="text-foreground">{order.lot_code || 'LOTE N/A'} • {order.order_number || ''}</strong></p>
+          <div className="bg-secondary/40 p-3 rounded-xl border border-border/40 space-y-1.5">
+            <p className="font-bold text-foreground font-mono">Ordem: {order.replacement_code || order.id}</p>
+            <p className="text-muted-foreground">
+              Peça Original: <strong className="text-foreground font-mono">{order.original_piece?.traceability_code || order.original_piece?.piece_uid || 'N/A'}</strong>
+              <span className="ml-1 font-semibold text-foreground">({order.original_piece?.piece_name || 'Peça de Produção'})</span>
+            </p>
+            <p className="text-muted-foreground">
+              {order.resolved_general_lot && (
+                <span className="mr-2">Lote Geral: <strong className="text-blue-600 dark:text-blue-400 font-mono">{order.resolved_general_lot}</strong></span>
+              )}
+              Lote Cliente: <strong className="text-foreground font-mono">{order.resolved_client_lot || order.lot_code || 'LOTE N/A'}</strong>
+              {order.order_number || order.original_piece?.order_number ? ` • Pedido: #${order.order_number || order.original_piece?.order_number}` : ''}
+              {order.customer_name || order.original_piece?.customer_name ? ` • ${order.customer_name || order.original_piece?.customer_name}` : ''}
+            </p>
+            <p className="text-muted-foreground">Ambiente: <strong className="text-foreground">{order.environment_name || order.original_piece?.environment || 'Geral'}</strong> • Solicitante: <strong className="text-foreground">{order.operator_name || 'Operador da Coleta'}</strong></p>
+            <p className="text-muted-foreground">Origem da Reprovação: <strong className="text-rose-600 dark:text-rose-400">{order.rejection_stage || order.original_piece?.current_stage || 'N/A'}</strong> ({order.origin_cell_name || 'Célula de Origem'})</p>
+            <p className="text-muted-foreground">Destino Pós-Aprovação: <strong className="text-emerald-600 dark:text-emerald-400">{order.replacement_piece?.current_stage || order.route_steps?.[0] || 'Corte (1ª Etapa)'}</strong></p>
+            {order.route_steps && order.route_steps.length > 0 && (
+              <p className="text-muted-foreground text-[11px]">
+                Rota Produtiva: <span className="font-semibold text-foreground">{order.route_steps.join(' ➔ ')}</span>
+              </p>
+            )}
+            <p className="text-muted-foreground pt-0.5">Motivo: <strong className="text-foreground">{order.reason}</strong></p>
           </div>
 
           <div className="space-y-1.5">

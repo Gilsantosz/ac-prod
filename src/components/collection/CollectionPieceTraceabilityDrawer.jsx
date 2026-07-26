@@ -190,6 +190,7 @@ export default function CollectionPieceTraceabilityDrawer({
                   {data.readings.map((reading, idx) => {
                     const isReadRejected = reading.status === 'rejected';
                     const isReadBlocked = reading.status === 'blocked' || reading.status === 'duplicated';
+                    const isReadReversed = reading.status === 'reversed';
 
                     return (
                       <div key={reading.id || idx} className="relative">
@@ -197,12 +198,14 @@ export default function CollectionPieceTraceabilityDrawer({
                         <span className={cn(
                           "absolute -left-[21px] top-1 w-3 h-3 rounded-full border bg-card flex items-center justify-center",
                           isReadRejected ? "border-rose-500 text-rose-500" :
-                          isReadBlocked ? "border-amber-500 text-amber-500" : "border-emerald-500 text-emerald-500"
+                          isReadBlocked ? "border-amber-500 text-amber-500" :
+                          isReadReversed ? "border-slate-400 text-slate-400" : "border-emerald-500 text-emerald-500"
                         )}>
                           <span className={cn(
                             "w-1.5 h-1.5 rounded-full",
                             isReadRejected ? "bg-rose-500" :
-                            isReadBlocked ? "bg-amber-500" : "bg-emerald-500"
+                            isReadBlocked ? "bg-amber-500" :
+                            isReadReversed ? "bg-slate-400" : "bg-emerald-500"
                           )} />
                         </span>
 
@@ -221,9 +224,10 @@ export default function CollectionPieceTraceabilityDrawer({
                               <strong className={cn(
                                 "ml-1",
                                 isReadRejected ? "text-rose-600" :
-                                isReadBlocked ? "text-amber-600" : "text-emerald-600"
+                                isReadBlocked ? "text-amber-600" :
+                                isReadReversed ? "text-slate-500 line-through" : "text-emerald-600"
                               )}>
-                                {reading.status?.toUpperCase()}
+                                {isReadReversed ? 'ESTORNADA' : reading.status?.toUpperCase()}
                               </strong>
                             </span>
                             <span className="flex items-center gap-1">
