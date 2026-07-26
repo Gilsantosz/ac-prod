@@ -1,20 +1,30 @@
 import { supabase } from '@/lib/supabaseClient';
 import { auditLog } from '@/lib/auditLog';
 
-export async function getReplacementApprovalCells(orderId) {
+export async function getReplacementApprovalContext(orderId) {
   if (!orderId) throw new Error('ID da ordem de reposição é obrigatório.');
 
   const { data, error } = await supabase.rpc('get_replacement_approval_cells', {
     p_order_id: orderId,
   });
 
-  if (error) throw error;
+  if (error) throw new Error(`Falha ao carregar a reposição selecionada: ${error.message}`);
+  if (!data?.order || !data?.original_piece) {
+    throw new Error('O banco não retornou o vínculo exato da peça reprovada.');
+  }
+  if (String(data.order.original_piece_id) !== String(data.original_piece.id)) {
+    throw new Error('A ordem aberta não corresponde à peça reprovada retornada pelo banco.');
+  }
 
   return {
-    cells: Array.isArray(data?.cells) ? data.cells : [],
-    routeSteps: Array.isArray(data?.route_steps) ? data.route_steps : [],
-    barcode: data?.barcode || null,
-    replacementCode: data?.replacement_code || null,
+    order: data.order,
+    originalPiece: data.original_piece,
+    replacementPiece: data.replacement_piece || null,
+    cells: Array.isArray(data.cells) ? data.cells : [],
+    routeSteps: Array.isArray(data.route_steps) ? data.route_steps : [],
+    barcode: data.barcode || data.original_piece.traceability_code || data.original_piece.piece_uid || null,
+    replacementCode: data.replacement_code || data.order.replacement_code || null,
+    integrity: data.integrity || null,
   };
 }
 

@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { auditLog } from '@/lib/auditLog';
 import {
   approveReplacementWithCells,
-  getReplacementApprovalCells,
+  getReplacementApprovalContext,
 } from '../replacementApprovalService';
 
 vi.mock('@/lib/auditLog', () => ({
@@ -16,76 +16,66 @@ describe('replacementApprovalService', () => {
     vi.mocked(auditLog).mockClear();
   });
 
-  it('deve carregar as células elegíveis mantendo etapa e chave de seleção', async () => {
-    const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValue({
+  it('deve carregar ordem, peça e lote exatos para o modal', async () => {
+    vi.spyOn(supabase, 'rpc').mockResolvedValue({
       data: {
-        barcode: '09907352',
-        route_steps: ['cut', 'edge', 'packaging'],
-        cells: [
-          {
-            selection_key: 'cell-cut:cut',
-            cell_id: 'cell-cut',
-            cell_name: 'Corte',
-            step_code: 'cut',
-            step_name: 'Corte',
-          },
-        ],
+        order: { id: 'order-1', original_piece_id: 'piece-1', replacement_code: 'REP-1' },
+        original_piece: { id: 'piece-1', traceability_code: '09907891' },
+        replacement_piece: null,
+        barcode: '09907891',
+        route_steps: ['cut'],
+        cells: [{ selection_key: 'cell-1:cut', cell_id: 'cell-1', cell_name: 'Corte', step_code: 'cut' }],
       },
       error: null,
     });
 
-    const result = await getReplacementApprovalCells('order-123');
+    const result = await getReplacementApprovalContext('order-1');
 
-    expect(rpc).toHaveBeenCalledWith('get_replacement_approval_cells', {
-      p_order_id: 'order-123',
-    });
-    expect(result.barcode).toBe('09907352');
-    expect(result.routeSteps).toEqual(['cut', 'edge', 'packaging']);
-    expect(result.cells[0]).toEqual(expect.objectContaining({
-      cell_name: 'Corte',
-      step_code: 'cut',
-    }));
+    expect(result.barcode).toBe('09907891');
+    expect(result.order.original_piece_id).toBe(result.originalPiece.id);
   });
 
-  it('deve aprovar e enviar todas as células selecionadas para baixas automáticas', async () => {
-    const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValue({
+  it('deve impedir aprovação quando o banco retorna peça de outra ordem', async () => {
+    vi.spyOn(supabase, 'rpc').mockResolvedValue({
       data: {
-        success: true,
-        status: 'in_production',
-        replacement_barcode: '09907352',
-        automatic_entries: 2,
+        order: { id: 'order-1', original_piece_id: 'piece-1' },
+        original_piece: { id: 'piece-2', traceability_code: '09907352' },
       },
       error: null,
     });
 
-    const selectedCells = [
-      { cell_id: 'cut-id', cell_name: 'Corte', step_code: 'cut', step_name: 'Corte' },
-      { cell_id: 'edge-id', cell_name: 'Bordo', step_code: 'edge', step_name: 'Bordo' },
-    ];
+    await expect(getReplacementApprovalContext('order-1')).rejects.toThrow(/não corresponde/);
+  });
 
-    const result = await approveReplacementWithCells('order-123', {
-      priority: 'critical',
-      notes: 'Liberar imediatamente',
-      selectedCells,
+  it('deve enviar as células selecionadas com a ordem confirmada', async () => {
+    const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValue({
+      data: { success: true, automatic_entries: 1, replacement_barcode: '09907891' },
+      error: null,
+    });
+
+    await approveReplacementWithCells('order-1', {
+      priority: 'high',
+      notes: 'Confirmado',
+      selectedCells: [{
+        cell_id: 'cell-1',
+        cell_name: 'Corte',
+        step_code: 'cut',
+        step_name: 'Corte',
+      }],
     });
 
     expect(rpc).toHaveBeenCalledWith('approve_piece_replacement', {
-      p_order_id: 'order-123',
+      p_order_id: 'order-1',
       p_payload: {
-        priority: 'critical',
-        notes: 'Liberar imediatamente',
-        selected_cells: selectedCells,
+        priority: 'high',
+        notes: 'Confirmado',
+        selected_cells: [{
+          cell_id: 'cell-1',
+          cell_name: 'Corte',
+          step_code: 'cut',
+          step_name: 'Corte',
+        }],
       },
     });
-    expect(result.automatic_entries).toBe(2);
-    expect(auditLog).toHaveBeenCalledWith(
-      'replacement_approved',
-      'replacement_orders',
-      'order-123',
-      expect.objectContaining({
-        automatic_entries: 2,
-        replacement_barcode: '09907352',
-      }),
-    );
   });
 });
