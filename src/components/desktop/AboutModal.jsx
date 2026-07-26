@@ -6,6 +6,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Copy, Check, FolderOpen, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
+import leoLogoUrl from '@/assets/leo-madeiras-logo.jpg';
 
 export default function AboutModal({ open = false, onOpenChange = null }) {
   const [info, setInfo] = useState({
@@ -68,11 +69,11 @@ Data: ${new Date().toLocaleString('pt-BR')}
       <DialogContent className="sm:max-w-[460px] rounded-2xl p-6 bg-card border border-border/80 shadow-2xl">
         <DialogHeader className="text-center sm:text-left">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-12 h-12 rounded-xl bg-[#043820] p-1.5 border border-amber-400/40 shadow-md flex items-center justify-center shrink-0">
+            <div className="w-12 h-12 rounded-xl bg-[#043820] p-0.5 border border-amber-400/40 shadow-md flex items-center justify-center shrink-0 overflow-hidden">
               <img
-                src="/brand/leo-madeiras-logo.jpg"
+                src={leoLogoUrl}
                 alt="Leo Flow Logo"
-                className="w-full h-full object-contain rounded-lg"
+                className="w-full h-full object-cover rounded-lg"
               />
             </div>
             <div>

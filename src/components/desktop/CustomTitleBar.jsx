@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Minus, Square, Copy, X, Monitor, Info } from 'lucide-react';
 import AboutModal from './AboutModal';
+import leoLogoUrl from '@/assets/leo-madeiras-logo.jpg';
 
 export default function CustomTitleBar() {
   const [isMaximized, setIsMaximized] = useState(false);
@@ -50,12 +51,9 @@ export default function CustomTitleBar() {
         {/* Lado Esquerdo: Logo & Nome oficial */}
         <div className="flex items-center gap-2.5" style={{ WebkitAppRegion: 'no-drag' }}>
           <img
-            src="/brand/leo-madeiras-logo.jpg"
+            src={leoLogoUrl}
             alt="Leo Flow Logo"
-            className="w-5 h-5 rounded-md object-contain border border-amber-400/40 shadow-sm"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none';
-            }}
+            className="w-5.5 h-5.5 rounded-md object-cover border border-amber-400/40 shadow-sm overflow-hidden"
           />
           <span className="font-extrabold text-white text-[12px] tracking-tight">
             Leo Flow
