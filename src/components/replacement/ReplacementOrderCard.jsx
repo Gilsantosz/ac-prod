@@ -32,6 +32,7 @@ export default function ReplacementOrderCard({
   const generalLot = order.resolved_general_lot || order.general_lot_code || order.original_piece?.general_lot_code || order.original_piece?.lot?.general_lot_code || null;
   const orderNumber = order.order_number || order.original_piece?.order_number || '';
   const customerName = order.customer_name || order.original_piece?.customer_name || '';
+  const environmentName = order.environment_name || order.original_piece?.environment || order.original_piece?.environment_name || 'Geral / Produção';
   const storedStage = String(order.rejection_stage || '').trim();
   const rejectionStage = storedStage && !['n/a', 'concluída', 'concluida', 'completed', 'created'].includes(storedStage.toLowerCase())
     ? storedStage
