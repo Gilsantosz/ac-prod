@@ -125,9 +125,6 @@ export default function DowntimeDialog({
       setLoading(false);
     }
   };
-      setLoading(false);
-    }
-  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
