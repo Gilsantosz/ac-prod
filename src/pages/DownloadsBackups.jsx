@@ -63,33 +63,31 @@ export default function DownloadsBackups() {
     }
     setResetting(true);
     try {
-      // 1. Obter os caminhos de todos os arquivos de backup para remoção física
-      const { data: filesToDelete, error: fetchFilesError } = await supabase
-        .from('backup_files')
-        .select('storage_path');
+      // 1. Opcional: tentar remover arquivos físicos de backup do Storage sem travar
+      try {
+        const { data: filesToDelete } = await supabase
+          .from('backup_files')
+          .select('storage_path');
 
-      if (!fetchFilesError && filesToDelete && filesToDelete.length > 0) {
-        const paths = filesToDelete.map(f => f.storage_path).filter(Boolean);
-        if (paths.length > 0) {
-          // Remover em lotes de 100
-          const chunkSize = 100;
-          for (let i = 0; i < paths.length; i += chunkSize) {
-            const chunk = paths.slice(i, i + chunkSize);
-            const { error: storageError } = await supabase.storage
-              .from('productive-backups')
-              .remove(chunk);
-            if (storageError) {
-              console.warn('Erro ao remover arquivos físicos do bucket:', storageError.message);
+        if (filesToDelete && filesToDelete.length > 0) {
+          const paths = filesToDelete.map(f => f.storage_path).filter(Boolean);
+          if (paths.length > 0) {
+            const chunkSize = 50;
+            for (let i = 0; i < paths.length; i += chunkSize) {
+              const chunk = paths.slice(i, i + chunkSize);
+              await supabase.storage.from('productive-backups').remove(chunk);
             }
           }
         }
+      } catch (errStorage) {
+        console.warn('Erro secundário ao limpar bucket de storage:', errStorage);
       }
 
-      // 2. Chamar a RPC para deletar o histórico e metadados no banco
+      // 2. Chamar a RPC com TRUNCATE em lote para reinicialização ultra-rápida do banco
       const { data, error } = await supabase.rpc('reset_production_data');
       if (error) throw error;
       if (data?.success) {
-        toast.success(data.message || 'Sistema de peças zerado com sucesso.');
+        toast.success(data.message || 'Dados de Lotes e produção do PCP zerados com sucesso.');
         setResetDialogOpen(false);
         setConfirmText('');
         refetch();
@@ -621,10 +619,10 @@ export default function DownloadsBackups() {
           </h3>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="max-w-2xl">
-              <p className="text-sm font-semibold text-foreground">Zerar registro de peças e produção</p>
+              <p className="text-sm font-semibold text-foreground">Zerar registro de peças e lotes do PCP retaguarda</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Apaga permanentemente todas as OPs (Ordens de Produção), lotes, itens de lote, tags vinculadas, histórico de leituras/coletas, ocorrências registradas e arquivos de backup do Storage. 
-                Os perfis de usuários, logins dos operadores, histórico de acessos e cadastro de células serão **preservados intactos**. Esta ação não pode ser desfeita.
+                Apaga apenas os dados referentes aos Lotes enviados e importados para o PCP retaguarda (OPs, Lotes, Itens de Lote, Peças, Tags, Histórico de Leituras/Coletas, Ocorrências, Alertas e Backups relacionados). 
+                Os cadastros de <strong>usuários, operadores, células, máquinas e catálogos mestres</strong> serão **preservados intactos**. Esta ação não pode ser desfeita.
               </p>
             </div>
             <Button
@@ -646,7 +644,7 @@ export default function DownloadsBackups() {
               <AlertOctagon className="w-5 h-5" /> Confirmar reinicialização de dados?
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Esta ação removerá de forma imutável e irreversível todos os dados de peças, OPs, leituras, eventos de fila e recontagens do banco de dados. Os cadastros de usuários, operadores e células não serão afetados.
+              Esta ação removerá de forma imutável e irreversível apenas os dados referentes aos Lotes e OPs importados do PCP retaguarda (peças, leituras, ocorrências e recontagens). Os cadastros de usuários, operadores, células e máquinas não serão afetados.
             </DialogDescription>
           </DialogHeader>
 
