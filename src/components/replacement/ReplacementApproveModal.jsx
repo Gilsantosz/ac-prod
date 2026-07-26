@@ -14,25 +14,10 @@ import {
 } from '@/lib/replacementApprovalService';
 import { toast } from 'sonner';
 
-const STEP_LABELS = {
-  cut: 'Corte',
-  edge: 'Bordo',
-  cnc: 'Usinagem',
-  drill: 'Furação',
-  canal: 'Canal',
-  maranello: 'Maranello',
-  portajoias: 'Porta Joias',
-  sorrento: 'Sorrento',
-  usi_especial: 'Usi Especial',
-  rasgo_freggio: 'Rasgo Freggio',
-  joinery: 'Marcenaria',
-  separation: 'Separação',
-  packaging: 'Embalagem',
-  shipping: 'Expedição',
-};
+import { formatStageName } from '@/lib/replacementService';
 
 function formatRoute(routeSteps = []) {
-  return routeSteps.map((step) => STEP_LABELS[step] || step);
+  return routeSteps.map((step) => formatStageName(step));
 }
 
 export default function ReplacementApproveModal({
@@ -166,7 +151,7 @@ export default function ReplacementApproveModal({
                 {' • '}Ambiente: <strong className="text-foreground">{order.environment_name || '—'}</strong>
               </p>
               <p className="text-muted-foreground">
-                Origem da reprovação: <strong className="text-rose-600 dark:text-rose-400">{order.origin_cell_name || order.rejection_stage || '—'}</strong>
+                Origem da reprovação: <strong className="text-rose-600 dark:text-rose-400">{order.origin_cell_name || formatStageName(order.rejection_stage) || '—'}</strong>
               </p>
               <p className="text-muted-foreground flex items-start gap-1">
                 <Route className="w-3.5 h-3.5 mt-0.5 shrink-0" />

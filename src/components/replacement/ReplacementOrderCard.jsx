@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { REPLACEMENT_STATUS_LABELS, REPLACEMENT_PRIORITY_LABELS } from '@/lib/replacementService';
+import { REPLACEMENT_STATUS_LABELS, REPLACEMENT_PRIORITY_LABELS, formatStageName } from '@/lib/replacementService';
 
 export default function ReplacementOrderCard({
   order,
@@ -34,9 +34,10 @@ export default function ReplacementOrderCard({
   const customerName = order.customer_name || order.original_piece?.customer_name || '';
   const environmentName = order.environment_name || order.original_piece?.environment || order.original_piece?.environment_name || 'Geral / Produção';
   const storedStage = String(order.rejection_stage || '').trim();
-  const rejectionStage = storedStage && !['n/a', 'concluída', 'concluida', 'completed', 'created'].includes(storedStage.toLowerCase())
+  const rawRejectionStage = storedStage && !['n/a', 'concluída', 'concluida', 'completed', 'created'].includes(storedStage.toLowerCase())
     ? storedStage
     : (order.original_piece?.current_stage && !['created', 'completed', 'concluída', 'concluida'].includes(String(order.original_piece.current_stage).toLowerCase()) ? order.original_piece.current_stage : 'Corte');
+  const rejectionStage = formatStageName(rawRejectionStage);
 
   const originCell = (order.origin_cell_name && order.origin_cell_name !== 'Célula de Origem') ? order.origin_cell_name : `Célula de ${rejectionStage}`;
   const operatorName = order.operator_name || order.original_piece?.operator_name || 'Operador da Coleta';
@@ -54,9 +55,11 @@ export default function ReplacementOrderCard({
 
   // Destino pós-aprovação (Para onde a peça vai após aprovação)
   const firstRouteStep = order.original_piece?.route_steps?.[0] || 'Corte (1ª Etapa)';
-  const destinationStage = order.replacement_piece?.current_stage
-    ? order.replacement_piece.current_stage
-    : firstRouteStep;
+  const destinationStage = formatStageName(
+    order.replacement_piece?.current_stage
+      ? order.replacement_piece.current_stage
+      : firstRouteStep
+  );
 
   return (
     <div className="bg-card border border-border/80 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all space-y-3">
@@ -203,7 +206,8 @@ export default function ReplacementOrderCard({
           </p>
           <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
             {order.route_steps.map((step, idx) => {
-              const isRejectionStage = step.toLowerCase().includes(rejectionStage.toLowerCase());
+              const formattedStep = formatStageName(step);
+              const isRejectionStage = formattedStep.toLowerCase().includes(rejectionStage.toLowerCase()) || String(step).toLowerCase().includes(rejectionStage.toLowerCase());
               const isDestination = idx === 0;
               return (
                 <Fragment key={idx}>
@@ -218,7 +222,7 @@ export default function ReplacementOrderCard({
                         : 'bg-secondary text-muted-foreground border-border/40'
                     }`}
                   >
-                    {step}
+                    {formattedStep}
                     {isRejectionStage && <span className="ml-1 text-[9px] font-normal">(Reprovada)</span>}
                     {isDestination && !isRejectionStage && <span className="ml-1 text-[9px] font-normal">(Novo Início)</span>}
                   </Badge>

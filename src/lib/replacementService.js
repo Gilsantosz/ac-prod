@@ -25,6 +25,58 @@ export const REPLACEMENT_PRIORITY_LABELS = {
   critical: { label: 'Crítica', color: 'text-rose-600 dark:text-rose-400 font-extrabold animate-pulse' }
 };
 
+export const STAGE_NAME_MAP = {
+  cut: 'Corte',
+  corte: 'Corte',
+  edge: 'Borda',
+  borda: 'Borda',
+  bordo: 'Borda',
+  drill: 'Furação',
+  furacao: 'Furação',
+  furação: 'Furação',
+  cnc: 'Usinagem CNC',
+  'usinagem cnc': 'Usinagem CNC',
+  canal: 'Canal',
+  maranello: 'Maranello',
+  portajoias: 'Porta Joias',
+  porta_joias: 'Porta Joias',
+  'porta joias': 'Porta Joias',
+  sorrento: 'Sorrento',
+  usi_especial: 'Usi Especial',
+  'usi especial': 'Usi Especial',
+  rasgo_freggio: 'Rasgo Freggio',
+  'rasgo freggio': 'Rasgo Freggio',
+  joinery: 'Marcenaria',
+  marcenaria: 'Marcenaria',
+  separation: 'Separação',
+  separacao: 'Separação',
+  separação: 'Separação',
+  packaging: 'Embalagem',
+  embalagem: 'Embalagem',
+  shipping: 'Expedição',
+  expedicao: 'Expedição',
+  expedição: 'Expedição',
+  created: 'Criada',
+  criada: 'Criada',
+  completed: 'Concluída',
+  concluida: 'Concluída',
+  concluída: 'Concluída'
+};
+
+export function formatStageName(stage) {
+  if (!stage) return 'Corte';
+  const str = String(stage).trim();
+  const lower = str.toLowerCase();
+  if (STAGE_NAME_MAP[lower]) return STAGE_NAME_MAP[lower];
+
+  for (const [key, label] of Object.entries(STAGE_NAME_MAP)) {
+    if (key.length >= 3 && (lower === key || lower.startsWith(key + ' ') || lower.startsWith(key + '('))) {
+      return str.replace(new RegExp(`^${key}`, 'i'), label);
+    }
+  }
+  return str;
+}
+
 /**
  * Busca a lista de ordens de reposição com filtros e paginação.
  */
@@ -310,13 +362,14 @@ export function enrichReplacementOrderData(order) {
   // 3. Etapa e Célula de Reprovação
   const storedStage = String(order.rejection_stage || '').trim();
   const storedStageIsValid = storedStage && !['n/a', 'concluída', 'concluida', 'completed', 'created'].includes(storedStage.toLowerCase());
-  const rejectionStage = storedStageIsValid
+  const rawRejectionStage = storedStageIsValid
     ? storedStage
     : (orig.current_stage && !['created', 'completed', 'concluída', 'concluida'].includes(String(orig.current_stage).toLowerCase()) ? orig.current_stage : (parsedCell || 'Corte'));
+  const rejectionStage = formatStageName(rawRejectionStage);
 
   const originCell = (order.origin_cell_name && order.origin_cell_name !== 'Célula de Origem')
     ? order.origin_cell_name
-    : (parsedCell ? `Célula de ${parsedCell}` : `Célula de ${rejectionStage}`);
+    : (parsedCell ? `Célula de ${formatStageName(parsedCell)}` : `Célula de ${rejectionStage}`);
 
   // 4. Lotes (Geral e Cliente)
   const clientLot = order.resolved_client_lot
@@ -350,26 +403,10 @@ export function enrichReplacementOrderData(order) {
     || 'Peça de Produção';
 
   // 7. Rota e Sequenciamento Produtivo
-  const STEP_NAMES = {
-    cut: 'Corte',
-    edge: 'Borda',
-    drill: 'Furação',
-    cnc: 'Usinagem CNC',
-    canal: 'Canal',
-    maranello: 'Maranello',
-    portajoias: 'Porta Joias',
-    sorrento: 'Sorrento',
-    usi_especial: 'Usi Especial',
-    rasgo_freggio: 'Rasgo Freggio',
-    joinery: 'Marcenaria',
-    separation: 'Separação',
-    packaging: 'Embalagem'
-  };
-
   let rawRoute = orig.route_steps;
   let formattedRoute = [];
   if (Array.isArray(rawRoute) && rawRoute.length > 0) {
-    formattedRoute = rawRoute.map(s => STEP_NAMES[s] || s);
+    formattedRoute = rawRoute.map(s => formatStageName(s));
   } else {
     formattedRoute = ['Corte', 'Borda', 'Separação', 'Embalagem'];
   }
