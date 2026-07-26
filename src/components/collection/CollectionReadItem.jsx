@@ -18,7 +18,11 @@ export default function CollectionReadItem({
   const isApproved = read.event_status === 'approved';
   const isNotFound = ['not_found', 'invalid'].includes(read.event_status);
   const isError = ['error', 'processing'].includes(read.event_status);
-  const traceabilityCode = read.traceability_code || read.raw_value || 'Sem identificação';
+  const entryType = read.entry_type || read.result_payload?.entry_type || read.result_payload?.source;
+  const isReplacementEntry = ['baixa_reposicao', 'replacement_approval'].includes(entryType);
+  const traceabilityCode = isReplacementEntry
+    ? (read.raw_value || read.result_payload?.barcode || read.traceability_code || 'Sem identificação')
+    : (read.traceability_code || read.raw_value || 'Sem identificação');
 
   const formatHour = (isoString) => {
     try {
@@ -69,7 +73,11 @@ export default function CollectionReadItem({
           </span>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
-          {read.is_manual || read.entry_type === 'manual_quantitativo' ? (
+          {isReplacementEntry ? (
+            <Badge className="bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[9px] font-bold gap-1">
+              ↻ Baixa por reposição
+            </Badge>
+          ) : read.is_manual || entryType === 'manual_quantitativo' ? (
             <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 text-[9px] font-bold gap-1">
               ✋ Manual
             </Badge>
