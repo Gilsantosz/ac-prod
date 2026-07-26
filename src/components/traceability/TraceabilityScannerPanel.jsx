@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Info, RadioTower } from 'lucide-react';
+import { Info, Lock } from 'lucide-react';
 import ProductionTagInput from './ProductionTagInput';
 import ScannerModeSelector from './ScannerModeSelector';
 import MobileCameraScanner from './MobileCameraScanner';
-import RfidReadinessPanel from './RfidReadinessPanel';
 
 export default function TraceabilityScannerPanel({
   mode,
@@ -16,14 +15,16 @@ export default function TraceabilityScannerPanel({
   operator,
   machine,
   readerContext,
+  onOpenDowntime,
+  activeDowntime,
 }) {
   const [value, setValue] = useState('');
   const inputRef = useRef(null);
   const submittingRef = useRef(false);
-  const contextReady = Boolean(cellName && shift && operator);
+  const contextReady = Boolean(cellName && shift && operator) && !activeDowntime;
 
   const refocus = useCallback(() => {
-    if (mode !== 'scanner') return;
+    if (mode !== 'scanner' || activeDowntime) return;
     setTimeout(() => {
       const activeElement = document.activeElement;
       const userIsUsingAnotherControl = activeElement
@@ -32,7 +33,7 @@ export default function TraceabilityScannerPanel({
         && ['INPUT', 'SELECT', 'TEXTAREA'].includes(activeElement.tagName);
       if (!userIsUsingAnotherControl) inputRef.current?.focus();
     }, 40);
-  }, [mode]);
+  }, [mode, activeDowntime]);
 
   useEffect(() => {
     refocus();
@@ -40,7 +41,7 @@ export default function TraceabilityScannerPanel({
 
   const submitInput = useCallback(async ({ confirmed = mode !== 'manual' } = {}) => {
     const rawValue = value;
-    if (!String(rawValue || '').trim() || !contextReady || loading || submittingRef.current) return;
+    if (!String(rawValue || '').trim() || !contextReady || loading || submittingRef.current || activeDowntime) return;
     submittingRef.current = true;
     try {
       await onRead({
@@ -61,25 +62,27 @@ export default function TraceabilityScannerPanel({
       submittingRef.current = false;
       if (mode === 'scanner') setTimeout(() => inputRef.current?.focus(), 40);
     }
-  }, [cellName, contextReady, loading, mode, onRead, operator, shift, value, machine]);
+  }, [cellName, contextReady, loading, mode, onRead, operator, shift, value, machine, activeDowntime]);
 
   useEffect(() => {
-    if (mode !== 'scanner' || !contextReady || loading || value.trim().length < 3) return undefined;
+    if (mode !== 'scanner' || !contextReady || loading || value.trim().length < 3 || activeDowntime) return undefined;
     const autoSubmitTimer = setTimeout(() => submitInput(), 160);
     return () => clearTimeout(autoSubmitTimer);
-  }, [contextReady, loading, mode, submitInput, value]);
+  }, [contextReady, loading, mode, submitInput, value, activeDowntime]);
 
-  const submitCamera = useCallback((cameraReading) => onRead({
-    ...cameraReading,
-    cellName,
-    stationName: '',
-    operator,
-    shift,
-    machineId: machine?.id || null,
-    machineName: machine?.name || null,
-  }), [onRead, cellName, operator, shift, machine]);
+  const submitCamera = useCallback((cameraReading) => {
+    if (activeDowntime) return;
+    onRead({
+      ...cameraReading,
+      cellName,
+      stationName: '',
+      operator,
+      shift,
+      machineId: machine?.id || null,
+      machineName: machine?.name || null,
+    });
+  }, [onRead, cellName, operator, shift, machine, activeDowntime]);
 
-  // Efeito para reproduzir alerta sonoro correspondente ao bip
   useEffect(() => {
     if (!feedback) return;
     
@@ -90,7 +93,6 @@ export default function TraceabilityScannerPanel({
         const ctx = new AudioCtx();
         
         if (alertLevel === 'green') {
-          // Bip curto de aprovação
           const osc = ctx.createOscillator();
           const gain = ctx.createGain();
           osc.connect(gain);
@@ -101,49 +103,13 @@ export default function TraceabilityScannerPanel({
           gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
           osc.start();
           osc.stop(ctx.currentTime + 0.12);
-        } else if (alertLevel === 'red') {
-          // Buzz grave de erro
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.type = 'sawtooth';
-          osc.frequency.setValueAtTime(110, ctx.currentTime);
-          gain.gain.setValueAtTime(0.15, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-          osc.start();
-          osc.stop(ctx.currentTime + 0.5);
-        } else if (alertLevel === 'yellow') {
-          // Bip duplo de atenção
-          const osc1 = ctx.createOscillator();
-          const osc2 = ctx.createOscillator();
-          const gain1 = ctx.createGain();
-          const gain2 = ctx.createGain();
-          
-          osc1.connect(gain1); gain1.connect(ctx.destination);
-          osc2.connect(gain2); gain2.connect(ctx.destination);
-          
-          osc1.type = 'sine';
-          osc1.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
-          gain1.gain.setValueAtTime(0.1, ctx.currentTime);
-          gain1.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.08);
-          osc1.start();
-          osc1.stop(ctx.currentTime + 0.08);
-          
-          osc2.type = 'sine';
-          osc2.frequency.setValueAtTime(523.25, ctx.currentTime + 0.12);
-          gain2.gain.setValueAtTime(0.1, ctx.currentTime + 0.12);
-          gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
-          osc2.start(ctx.currentTime + 0.12);
-          osc2.stop(ctx.currentTime + 0.2);
-        } else if (alertLevel === 'blue') {
-          // Chime suave
+        } else {
           const osc = ctx.createOscillator();
           const gain = ctx.createGain();
           osc.connect(gain);
           gain.connect(ctx.destination);
           osc.type = 'triangle';
-          osc.frequency.setValueAtTime(659.25, ctx.currentTime); // E5
+          osc.frequency.setValueAtTime(659.25, ctx.currentTime);
           gain.gain.setValueAtTime(0.08, ctx.currentTime);
           gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
           osc.start();
@@ -160,42 +126,47 @@ export default function TraceabilityScannerPanel({
 
   return (
     <div className="bg-card border border-border rounded-md p-4 sm:p-5 space-y-5">
-      <ScannerModeSelector value={mode} onChange={onModeChange} />
+      <ScannerModeSelector value={mode} onChange={onModeChange} onOpenDowntime={onOpenDowntime} />
 
-      {!contextReady && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200" role="status">
-          Selecione a célula e confirme o turno para liberar a coleta.
-        </div>
-      )}
-
-      {mode === 'camera' ? (
-        contextReady
-          ? <MobileCameraScanner active onDetected={submitCamera} onManual={() => onModeChange('manual')} feedback={feedback} />
-          : null
-      ) : mode === 'rfid' ? (
-        <div className="space-y-4">
-          <div className="min-h-36 rounded-md border border-dashed border-sky-300 bg-sky-50/60 dark:bg-sky-950/20 flex flex-col items-center justify-center text-center p-6">
-            <RadioTower className="w-9 h-9 text-sky-600 mb-3" />
-            <p className="font-semibold">Preparado para integração futura</p>
-            <p className="text-sm text-muted-foreground mt-1 max-w-lg">A baixa RFID usará a mesma validação de lote, etapa, célula e duplicidade.</p>
+      {activeDowntime ? (
+        <div className="rounded-2xl border-2 border-amber-600/60 bg-amber-500/10 p-5 text-amber-900 dark:text-amber-200 space-y-2 shadow-md animate-in fade-in duration-200">
+          <div className="flex items-center gap-2.5 font-black text-sm uppercase tracking-wider text-amber-700 dark:text-amber-300">
+            <Lock className="w-5 h-5 text-amber-600 animate-pulse shrink-0" />
+            <span>SISTEMA DE COLETA BLOQUEADO POR PARADA EM ANDAMENTO</span>
           </div>
-          <RfidReadinessPanel active />
+          <p className="text-xs leading-relaxed font-medium">
+            Parada ativa: <strong className="font-bold text-foreground">{activeDowntime.reason || 'Parada Operacional'}</strong>. A baixa e leitura de peças ficam travadas até que o cronômetro da parada seja encerrado no painel acima.
+          </p>
         </div>
       ) : (
-        <ProductionTagInput
-          ref={inputRef}
-          mode={mode}
-          value={value}
-          onChange={setValue}
-          onSubmit={submitInput}
-          onBlur={refocus}
-          loading={loading}
-          ready={contextReady}
-          afterInput={readerContext}
-        />
-      )}
+        <>
+          {!contextReady && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200" role="status">
+              Selecione a célula e confirme o turno para liberar a coleta.
+            </div>
+          )}
 
-      {(mode === 'camera' || mode === 'rfid') && readerContext}
+          {mode === 'camera' ? (
+            contextReady
+              ? <MobileCameraScanner active onDetected={submitCamera} onManual={() => onModeChange('manual')} feedback={feedback} />
+              : null
+          ) : (
+            <ProductionTagInput
+              ref={inputRef}
+              mode={mode}
+              value={value}
+              onChange={setValue}
+              onSubmit={submitInput}
+              onBlur={refocus}
+              loading={loading}
+              ready={contextReady}
+              afterInput={readerContext}
+            />
+          )}
+
+          {mode === 'camera' && readerContext}
+        </>
+      )}
 
       {feedback && (
         <div

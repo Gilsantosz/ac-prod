@@ -6,26 +6,41 @@
 import { supabase } from '@/lib/supabaseClient';
 import { auditLog } from '@/lib/auditLog';
 
+export const DEFAULT_DOWNTIME_REASONS = [
+  { id: 'reason-1', code: 'MAQ-MANUT', name: 'Máquinas em manutenção', category: 'Manutenção', active: true },
+  { id: 'reason-2', code: 'MAQ-SEM-DEF', name: 'Máquina parada sem defeito prévio', category: 'Operacional', active: true },
+  { id: 'reason-3', code: 'SET-AJUSTE', name: 'Ajuste de setup', category: 'Setup', active: true },
+  { id: 'reason-4', code: 'PERS-BANHEIRO', name: 'Ida ao banheiro', category: 'Pessoal', active: true },
+  { id: 'reason-5', code: 'UTIL-ENERGIA', name: 'Queda de energia', category: 'Utilidades', active: true },
+  { id: 'reason-6', code: 'REFEIT-JANTA', name: 'Parada para janta', category: 'Intervalo', active: true },
+  { id: 'reason-7', code: 'MAT-FALTA', name: 'Falta de matéria-prima / material', category: 'Abastecimento', active: true },
+  { id: 'reason-8', code: 'MANUT-FERRAMENTA', name: 'Troca de ferramenta / lâmina', category: 'Manutenção', active: true }
+];
+
 /**
  * Busca o catálogo de motivos de parada.
  */
 export async function getDowntimeReasons({ activeOnly = true } = {}) {
-  let query = supabase
-    .from('downtime_reason_catalog')
-    .select('*')
-    .order('display_order', { ascending: true })
-    .order('name', { ascending: true });
+  try {
+    let query = supabase
+      .from('downtime_reason_catalog')
+      .select('*')
+      .order('display_order', { ascending: true })
+      .order('name', { ascending: true });
 
-  if (activeOnly) {
-    query = query.eq('active', true);
-  }
+    if (activeOnly) {
+      query = query.eq('active', true);
+    }
 
-  const { data, error } = await query;
-  if (error) {
-    console.error('Erro ao buscar motivos de parada:', error);
-    throw error;
+    const { data, error } = await query;
+    if (error || !data || data.length === 0) {
+      return DEFAULT_DOWNTIME_REASONS;
+    }
+    return data;
+  } catch (err) {
+    console.warn('Usando catálogo padrão de motivos de parada:', err);
+    return DEFAULT_DOWNTIME_REASONS;
   }
-  return data || [];
 }
 
 /**

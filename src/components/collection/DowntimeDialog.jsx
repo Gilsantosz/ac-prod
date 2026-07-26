@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { AlertTriangle, Clock, Play, CheckCircle2 } from 'lucide-react';
-import { getDowntimeReasons, startDowntime, registerPastDowntime } from '@/lib/downtimeService';
+import { getDowntimeReasons, startDowntime, registerPastDowntime, DEFAULT_DOWNTIME_REASONS } from '@/lib/downtimeService';
 import { toast } from 'sonner';
 
 export default function DowntimeDialog({
@@ -35,10 +35,15 @@ export default function DowntimeDialog({
     if (open) {
       getDowntimeReasons({ activeOnly: true })
         .then((data) => {
-          setReasons(data);
-          if (data.length > 0) setSelectedReasonId(data[0].id);
+          const list = data && data.length > 0 ? data : DEFAULT_DOWNTIME_REASONS;
+          setReasons(list);
+          if (list.length > 0) setSelectedReasonId(list[0].id);
         })
-        .catch((err) => console.error('Erro ao carregar motivos de parada:', err));
+        .catch((err) => {
+          console.error('Erro ao carregar motivos de parada:', err);
+          setReasons(DEFAULT_DOWNTIME_REASONS);
+          if (DEFAULT_DOWNTIME_REASONS.length > 0) setSelectedReasonId(DEFAULT_DOWNTIME_REASONS[0].id);
+        });
     }
   }, [open]);
 

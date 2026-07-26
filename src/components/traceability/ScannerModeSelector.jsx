@@ -1,14 +1,13 @@
-import { Barcode, Keyboard, RadioTower, ScanLine } from 'lucide-react';
+import { Barcode, Keyboard, ScanLine, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const MODES = [
   { value: 'scanner', label: 'Scanner físico', icon: Barcode },
   { value: 'camera', label: 'Câmera do celular', icon: ScanLine },
   { value: 'manual', label: 'Manual', icon: Keyboard },
-  { value: 'rfid', label: 'RFID futuro', icon: RadioTower },
 ];
 
-export default function ScannerModeSelector({ value, onChange }) {
+export default function ScannerModeSelector({ value, onChange, onOpenDowntime }) {
   return (
     <div className="grid grid-cols-2 xl:grid-cols-4 gap-2" role="radiogroup" aria-label="Modo de leitura">
       {MODES.map(({ value: mode, label, icon: Icon }) => (
@@ -29,6 +28,16 @@ export default function ScannerModeSelector({ value, onChange }) {
           <span>{label}</span>
         </button>
       ))}
+
+      {/* Botão de Registrar Parada substituindo o antigo RFID */}
+      <button
+        type="button"
+        onClick={() => onOpenDowntime?.()}
+        className="h-14 px-3 rounded-md border border-amber-600/80 bg-amber-600 hover:bg-amber-700 text-white flex items-center justify-center gap-2 text-sm font-extrabold shadow-sm transition-colors cursor-pointer"
+      >
+        <AlertTriangle className="w-5 h-5 shrink-0" />
+        <span>Registrar Parada</span>
+      </button>
     </div>
   );
 }

@@ -431,6 +431,12 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   // ─── Handler principal de leitura — enfileira e processa ────────────────────
   const handleRead = useCallback(async (payload) => {
+    if (activeDowntime) {
+      const result = { success: false, status: 'blocked', message: 'Coleta bloqueada! Há uma parada ativa na célula/máquina.' };
+      updateFeedback(result);
+      toast.error('Sistema de coleta bloqueado devido à parada em andamento.');
+      return result;
+    }
     if (!cellName) {
       const result = { success: false, status: 'invalid_context', message: 'Selecione a célula antes de processar a leitura.' };
       updateFeedback(result);
@@ -508,7 +514,7 @@ export default function TraceabilityCollection({ embedded = false }) {
       updateFeedback(result);
       return result;
     }
-  }, [cellName, shift, operator, operatorId, machine, enqueue, processNow, updateFeedback]);
+  }, [cellName, shift, operator, operatorId, machine, enqueue, processNow, updateFeedback, activeDowntime]);
 
   // Aberturas de modais operacionais
   const handleOpenRejectModal = (piece) => {
@@ -668,6 +674,8 @@ export default function TraceabilityCollection({ embedded = false }) {
       shift={shift}
       operator={operator}
       machine={machine}
+      onOpenDowntime={() => setDowntimeDialogOpen(true)}
+      activeDowntime={activeDowntime}
       readerContext={currentGeneralLot?.general_lot_code ? (
         <div
           data-testid="collection-lot-banner"
@@ -699,7 +707,7 @@ export default function TraceabilityCollection({ embedded = false }) {
         </div>
       ) : null}
     />
-  ), [mode, handleRead, feedback, cellName, shift, operator, machine, currentGeneralLot, currentClientLotCode]);
+  ), [mode, handleRead, feedback, cellName, shift, operator, machine, currentGeneralLot, currentClientLotCode, activeDowntime]);
 
   const isCellLocked = !!(opSession && opSession.cells?.length <= 1);
 
@@ -761,18 +769,6 @@ export default function TraceabilityCollection({ embedded = false }) {
           <div className="h-10 rounded-xl border border-input bg-secondary/50 px-3 flex items-center text-sm font-medium truncate">
             {operator || 'Não identificado'}
           </div>
-        </div>
-
-        {/* Botão permanente Registrar Parada */}
-        <div className="space-y-1.5 flex items-end">
-          <Button
-            type="button"
-            onClick={() => setDowntimeDialogOpen(true)}
-            className="h-10 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm"
-          >
-            <AlertTriangle className="w-4 h-4" />
-            <span>Registrar Parada</span>
-          </Button>
         </div>
       </div>
 
