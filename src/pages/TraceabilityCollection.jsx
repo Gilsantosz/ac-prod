@@ -28,6 +28,7 @@ import DowntimeDialog from '@/components/collection/DowntimeDialog';
 import { getActiveDowntime } from '@/lib/downtimeService';
 import { AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { invalidateAllMesQueries } from '@/config/queryKeys';
 import {
   getPieceTraceability,
   rejectPieceFromCollection,
@@ -63,6 +64,33 @@ function getShiftRange(shift, reference = new Date()) {
   }
 
   return { dateFrom: start.toISOString(), dateTo: end.toISOString() };
+}
+
+
+function mergeCanonicalPiece(previous, traceability) {
+  const canonical = traceability?.piece || {};
+  const lot = canonical.production_lots || {};
+  const order = lot.production_orders || {};
+  const readings = traceability?.readings || [];
+
+  return {
+    ...(previous || {}),
+    ...canonical,
+    id: canonical.id || previous?.id,
+    piece_uid: canonical.piece_uid || canonical.traceability_code || previous?.piece_uid,
+    traceability_code: canonical.traceability_code || canonical.piece_uid || previous?.traceability_code,
+    piece_name: canonical.piece_name || previous?.piece_name,
+    status: canonical.status || previous?.status,
+    replacement_status: canonical.replacement_status || previous?.replacement_status,
+    lot_id: canonical.lot_id || lot.id || previous?.lot_id,
+    lot_code: canonical.lot_code || lot.lot_code || previous?.lot_code,
+    order_number: canonical.order_number || order.order_number || order.order_code || previous?.order_number,
+    client_name: canonical.customer_name || order.customer_name || lot.customer_name || previous?.client_name,
+    current_stage: canonical.current_stage || previous?.current_stage,
+    current_stage_name: canonical.current_stage || previous?.current_stage_name,
+    route: traceability?.route || previous?.route || [],
+    completedSteps: readings.filter((reading) => reading.status === 'approved').map((reading) => reading.step_name),
+  };
 }
 
 function isClosedLotContext(feedback) {
@@ -331,11 +359,8 @@ export default function TraceabilityCollection({ embedded = false }) {
   const currentClientLotCode = feedback?.lot?.lot_code || selectedPiece?.lot_code || null;
 
   const refreshData = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['collection-kpis'] });
+    invalidateAllMesQueries(queryClient);
     queryClient.invalidateQueries({ queryKey: ['stageReadings', cellName, machine?.id] });
-    queryClient.invalidateQueries({ queryKey: ['production'] });
-    queryClient.invalidateQueries({ queryKey: ['production-lots'] });
-    queryClient.invalidateQueries({ queryKey: ['occurrences'] });
     setRefreshReadsSignal(prev => prev + 1);
   }, [queryClient, cellName, machine]);
 
@@ -368,14 +393,7 @@ export default function TraceabilityCollection({ embedded = false }) {
       try {
         const res = await getPieceTraceability(selectedPiece.piece_uid || selectedPiece.id);
         setSelectedPieceEvents(res.readings || []);
-        setSelectedPiece(prev => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            route: res.route || [],
-            completedSteps: res.readings.filter(r => r.status === 'approved').map(r => r.step_name)
-          };
-        });
+        setSelectedPiece((previous) => previous ? mergeCanonicalPiece(previous, res) : null);
       } catch (e) {
         console.error(e);
       } finally {
@@ -498,7 +516,10 @@ export default function TraceabilityCollection({ embedded = false }) {
     const targetPiece = typeof piece === 'string'
       ? { piece_uid: piece, id: piece, piece_name: 'Peça Lida' }
       : piece;
-    setPieceToReject(targetPiece);
+    setPieceToReject({
+      ...targetPiece,
+      rejection_client_event_id: targetPiece.rejection_client_event_id || crypto.randomUUID(),
+    });
     setRejectModalOpen(true);
   };
 
@@ -523,34 +544,40 @@ export default function TraceabilityCollection({ embedded = false }) {
         ? pieceToReject
         : (pieceToReject.piece_uid || pieceToReject.traceability_code || pieceToReject.piece_code || pieceToReject.tag_value || pieceToReject.raw_value || pieceToReject.id || pieceToReject.piece_id);
 
-      await rejectPieceFromCollection({
+      const result = await rejectPieceFromCollection({
         pieceId: pieceToReject.id || pieceToReject.piece_id,
         traceabilityCode: code,
         reason: formData.reason,
         notes: formData.notes,
         action: formData.action,
         defectId: formData.defect_id,
+        defectCode: formData.defect_code,
+        defectName: formData.defect_name,
+        sixMCategory: formData.six_m_category,
+        severity: formData.severity,
         disposition: formData.disposition,
+        requiresReplacement: formData.requires_replacement,
         operatorId,
         operatorName: operator,
         cellName,
-        workstationId: machine?.id || null
+        workstationId: machine?.id || null,
+        clientEventId: pieceToReject.rejection_client_event_id,
       });
 
-      toast.success('Reprovação registrada com sucesso.');
-      setRejectModalOpen(false);
-      setRefreshReadsSignal(prev => prev + 1);
-      refreshData();
+      const canonical = await getPieceTraceability(result?.piece_id || pieceToReject.id || code);
+      setSelectedPieceEvents(canonical.readings || []);
+      setSelectedPiece((previous) => mergeCanonicalPiece(previous || pieceToReject, canonical));
 
-      if (selectedPiece && (selectedPiece.piece_uid === code || selectedPiece.id === pieceToReject.id)) {
-        setSelectedPiece(prev => prev ? { ...prev, status: 'rejected' } : null);
-      }
+      toast.success(result?.idempotent ? 'A reprovação já estava registrada.' : 'Reprovação registrada com sucesso.');
+      setRejectModalOpen(false);
+      setPieceToReject(null);
+      setRefreshReadsSignal((value) => value + 1);
+      refreshData();
     } catch (error) {
       console.error('Erro ao registrar reprovação:', error);
       toast.error(error?.message || 'Falha ao registrar reprovação.');
     } finally {
       setRejecting(false);
-      setPieceToReject(null);
     }
   };
 
@@ -863,7 +890,10 @@ export default function TraceabilityCollection({ embedded = false }) {
       {/* Modais e Dialogs */}
       <CollectionRejectPieceModal
         open={rejectModalOpen}
-        onOpenChange={setRejectModalOpen}
+        onOpenChange={(open) => {
+          setRejectModalOpen(open);
+          if (!open && !rejecting) setPieceToReject(null);
+        }}
         piece={pieceToReject}
         onSubmit={handleRejectPieceSubmit}
         loading={rejecting}

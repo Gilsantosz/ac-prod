@@ -1,7 +1,59 @@
 import { supabase } from '@/lib/supabaseClient';
 import { auditLog, AUDIT_ACTIONS } from '@/lib/auditLog';
-import { createReworkOrder } from '@/lib/reworkService';
-import { registerTraceabilityRejection } from '@/lib/traceabilityService';
+
+
+function normalizeCurrentPieceStatus(piece) {
+  if (!piece) return null;
+  const status = String(piece.status || '').trim().toLowerCase();
+  const replacementStatus = String(piece.replacement_status || '').trim().toLowerCase();
+
+  if (status === 'blocked') return 'blocked';
+  if (['rejected', 'replacement_requested'].includes(status) || replacementStatus === 'requested') return 'rejected';
+  if (['rework', 'rework_pending', 'rework_in_progress'].includes(status)) return 'rework';
+  if (status === 'replaced' || replacementStatus === 'replaced') return 'replaced';
+  if (['completed', 'approved', 'active', 'in_progress'].includes(status)) return 'approved';
+  return status || null;
+}
+
+async function enrichCollectionRowsWithCurrentPieceStatus(rows, requestedStatus = null) {
+  const pieceIds = [...new Set((rows || []).map((row) => row.piece_id).filter(Boolean))];
+  if (!pieceIds.length) return rows || [];
+
+  const { data: pieces, error } = await supabase
+    .from('production_pieces')
+    .select('id,status,replacement_status,lot_id,lot_code,order_number,customer_name,current_stage,piece_uid,traceability_code,piece_name,route_steps,completed_steps')
+    .in('id', pieceIds);
+
+  if (error) {
+    console.warn('Não foi possível sincronizar o estado atual das peças no histórico:', error);
+    return rows || [];
+  }
+
+  const pieceMap = new Map((pieces || []).map((piece) => [piece.id, piece]));
+  const enriched = (rows || []).map((row) => {
+    const piece = pieceMap.get(row.piece_id);
+    if (!piece) return row;
+    const currentStatus = normalizeCurrentPieceStatus(piece) || row.event_status;
+    return {
+      ...row,
+      reading_status: row.event_status,
+      event_status: currentStatus,
+      piece_status: piece.status,
+      replacement_status: piece.replacement_status,
+      traceability_code: piece.traceability_code || piece.piece_uid || row.traceability_code,
+      piece_name: piece.piece_name || row.piece_name,
+      current_stage_name: piece.current_stage || row.current_stage_name,
+      route_steps: piece.route_steps || row.route_steps || [],
+      completed_steps: piece.completed_steps || row.completed_steps || [],
+      lot_id: piece.lot_id || row.lot_id,
+      lot_code: piece.lot_code || row.lot_code,
+      order_number: piece.order_number || row.order_number,
+      client_name: piece.customer_name || row.client_name,
+    };
+  });
+
+  return requestedStatus ? enriched.filter((row) => row.event_status === requestedStatus) : enriched;
+}
 
 async function resolveCellId(cellId, cellName) {
   const trimmedName = cellName?.trim();
@@ -72,7 +124,7 @@ export async function getCollectionHistory({
     throw error;
   }
   console.log('rpc get_collection_history response length:', data?.length);
-  return data || [];
+  return enrichCollectionRowsWithCurrentPieceStatus(data || [], status);
 }
 
 /**
@@ -122,14 +174,21 @@ export function subscribeToCollectionHistory({ cellName, cellId, callback, onSta
   };
   if (trimmedName) changeConfig.filter = `cell_name=eq.${trimmedName}`;
 
+  const readingsConfig = {
+    event: '*',
+    schema: 'public',
+    table: 'production_stage_readings',
+  };
+  if (trimmedName) readingsConfig.filter = `cell_name=eq.${trimmedName}`;
+
   const channel = supabase
     .channel(channelName)
+    .on('postgres_changes', changeConfig, callback)
+    .on('postgres_changes', readingsConfig, callback)
     .on(
       'postgres_changes',
-      changeConfig,
-      (payload) => {
-        callback(payload);
-      }
+      { event: 'UPDATE', schema: 'public', table: 'production_pieces' },
+      callback,
     )
     .subscribe((status) => onStatus?.(status));
 
@@ -260,6 +319,7 @@ export async function getPieceTraceability(pieceIdOrCode) {
             production_orders:production_orders!production_order_id (
               id,
               order_code,
+              order_number,
               customer_name
             )
           )
@@ -281,11 +341,36 @@ export async function getPieceTraceability(pieceIdOrCode) {
             production_orders:production_orders!production_order_id (
               id,
               order_code,
+              order_number,
               customer_name
             )
           )
         `)
-        .or(`piece_uid.eq.${target},traceability_code.eq.${target},id.eq.${target}`)
+        .or(`piece_uid.eq.${target},traceability_code.eq.${target},piece_code.eq.${target},id.eq.${target}`)
+        .maybeSingle();
+      if (!error && data) piece = data;
+    }
+
+    if (!piece && !isUuid) {
+      const { data, error } = await supabase
+        .from('production_pieces')
+        .select(`
+          *,
+          production_lots (
+            id,
+            lot_code,
+            customer_name,
+            production_orders:production_orders!production_order_id (
+              id,
+              order_code,
+              order_number,
+              customer_name
+            )
+          )
+        `)
+        .or(`piece_uid.ilike.%${target}%,traceability_code.ilike.%${target}%,piece_code.ilike.%${target}%`)
+        .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
       if (!error && data) piece = data;
     }
@@ -309,46 +394,26 @@ export async function getPieceTraceability(pieceIdOrCode) {
     console.warn('Erro ao buscar peça em production_pieces:', err);
   }
 
-  // 3. Montar objeto consolidado da peça garantindo que nenhum campo físico fique vazio
-  const resolvedPiece = {
-    id: piece?.id || (isUuid ? target : null),
-    piece_uid: piece?.piece_uid || target,
-    traceability_code: piece?.traceability_code || target,
-    piece_name: piece?.piece_name || pcpRowData?.pieceName || 'Peça de Produção MES',
-    material: piece?.material || pcpRowData?.material || 'MDF',
-    color: piece?.color || pcpRowData?.color || 'Padrão',
-    thickness: Number(piece?.thickness || pcpRowData?.thickness || 15),
-    width: Number(piece?.width || pcpRowData?.width || 0),
-    height: Number(piece?.height || pcpRowData?.height || 0),
-    length: Number(piece?.length || piece?.height || pcpRowData?.height || 0),
-    environment: piece?.environment || pcpRowData?.environmentName || 'Geral',
-    module_name: piece?.module_name || pcpRowData?.moduleName || 'Móvel',
-    status: piece?.status || 'approved',
-    current_stage: piece?.current_stage || 'Corte',
-    lot_id: piece?.lot_id || null,
-    production_lots: piece?.production_lots || {
-      id: null,
-      lot_code: pcpRowData?.lotCode || 'LOTE-PCP',
-      production_orders: {
-        id: null,
-        order_code: pcpRowData?.orderCode || 'PED-PCP',
-        customer_name: pcpRowData?.customer || 'Cliente Retaguarda'
-      }
-    }
-  };
-
-  const uidToSearch = resolvedPiece.piece_uid || target;
-  const tcodeToSearch = resolvedPiece.traceability_code || target;
-  const idToSearch = resolvedPiece.id || (isUuid ? target : null);
+  const uidToSearch = piece?.piece_uid || target;
+  const tcodeToSearch = piece?.traceability_code || piece?.piece_code || target;
+  const pcodeToSearch = piece?.piece_code || target;
+  const idToSearch = piece?.id || (isUuid ? target : null);
 
   let filterConditions = [
     `tag_value.eq.${uidToSearch}`,
     `tag_value.eq.${tcodeToSearch}`,
+    `tag_value.eq.${pcodeToSearch}`,
+    `tag_value.ilike.%${target}%`,
     `piece_code.eq.${uidToSearch}`,
     `piece_code.eq.${tcodeToSearch}`,
+    `piece_code.eq.${pcodeToSearch}`,
+    `piece_code.ilike.%${target}%`,
     `raw_value.eq.${uidToSearch}`,
     `raw_value.eq.${tcodeToSearch}`,
-    `traceability_code.eq.${tcodeToSearch}`
+    `raw_value.eq.${pcodeToSearch}`,
+    `raw_value.ilike.%${target}%`,
+    `traceability_code.eq.${tcodeToSearch}`,
+    `traceability_code.ilike.%${target}%`
   ];
   if (idToSearch) {
     filterConditions.push(`piece_id.eq.${idToSearch}`);
@@ -368,6 +433,49 @@ export async function getPieceTraceability(pieceIdOrCode) {
   } catch (e) {
     console.warn('Erro ao buscar leituras de rastreabilidade:', e);
   }
+
+  // O status da peça é canônico. A leitura anterior pode continuar aprovada
+  // no histórico, mas não pode sobrescrever uma reprovação já confirmada.
+  let computedStatus = normalizeCurrentPieceStatus(piece);
+  if (!computedStatus) {
+    if (readings.some((reading) => reading.status === 'rejected')) computedStatus = 'rejected';
+    else if (readings.some((reading) => reading.status === 'blocked')) computedStatus = 'blocked';
+    else if (readings.some((reading) => reading.status === 'approved')) computedStatus = 'approved';
+    else computedStatus = 'pending';
+  }
+
+  // 3. Montar objeto consolidado da peça garantindo que nenhum campo físico fique vazio
+  const resolvedPiece = {
+    id: piece?.id || (isUuid ? target : null),
+    piece_uid: piece?.piece_uid || target,
+    traceability_code: piece?.traceability_code || piece?.piece_code || target,
+    piece_code: piece?.piece_code || target,
+    piece_name: piece?.piece_name || pcpRowData?.pieceName || 'Peça de Produção MES',
+    material: piece?.material || pcpRowData?.material || 'MDF',
+    color: piece?.color || pcpRowData?.color || 'Padrão',
+    thickness: Number(piece?.thickness || pcpRowData?.thickness || 15),
+    width: Number(piece?.width || pcpRowData?.width || 0),
+    height: Number(piece?.height || pcpRowData?.height || 0),
+    length: Number(piece?.length || piece?.height || pcpRowData?.height || 0),
+    environment: piece?.environment || pcpRowData?.environmentName || 'Geral',
+    module_name: piece?.module_name || pcpRowData?.moduleName || 'Móvel',
+    status: computedStatus,
+    current_stage: piece?.current_stage || 'Corte',
+    lot_id: piece?.lot_id || null,
+    lot_code: piece?.lot_code || piece?.production_lots?.lot_code || pcpRowData?.lotCode || null,
+    order_number: piece?.order_number || piece?.production_lots?.production_orders?.order_number || piece?.production_lots?.production_orders?.order_code || pcpRowData?.orderCode || null,
+    customer_name: piece?.customer_name || piece?.production_lots?.production_orders?.customer_name || piece?.production_lots?.customer_name || pcpRowData?.customer || null,
+    replacement_status: piece?.replacement_status || 'none',
+    production_lots: piece?.production_lots || {
+      id: null,
+      lot_code: pcpRowData?.lotCode || 'LOTE-PCP',
+      production_orders: {
+        id: null,
+        order_code: pcpRowData?.orderCode || 'PED-PCP',
+        customer_name: pcpRowData?.customer || 'Cliente Retaguarda'
+      }
+    }
+  };
 
   // 4. Resolução de Rota Produtiva com fallback automático do PCP
   let route = [];
@@ -443,11 +551,18 @@ export async function rejectPieceFromCollection({
   notes,
   action,
   defectId = null,
+  defectCode = null,
+  defectName = null,
+  sixMCategory = 'Método',
+  severity = 'medium',
   disposition = 'scrap',
+  requiresReplacement = true,
   operatorId,
   operatorName,
   cellName,
-  workstationId
+  workstationId,
+  clientEventId = null,
+  client_event_id = null
 }) {
   if (!pieceId && !traceabilityCode) throw new Error('ID ou código da peça é obrigatório.');
 
@@ -457,74 +572,40 @@ export async function rejectPieceFromCollection({
     reason,
     notes,
     disposition: disposition || (action === 'block' ? 'hold' : (action === 'rework' ? 'rework' : (action === 'replacement' ? 'replacement' : 'scrap'))),
+    requires_replacement: requiresReplacement,
     defect_id: defectId || null,
+    defect_code: defectCode || null,
+    defect_name: defectName || reason,
+    six_m_category: sixMCategory || 'Método',
+    severity: severity || 'medium',
     operator_name: operatorName,
     operator_id: operatorId || null,
     cell_name: cellName,
     machine_id: workstationId || null,
-    client_event_id: crypto.randomUUID()
+    client_event_id: clientEventId || client_event_id || crypto.randomUUID()
   };
 
-  try {
-    const { data: rpcResult, error: rpcError } = await supabase.rpc('register_quality_rejection', {
-      p_payload: rpcPayload
-    });
-    if (!rpcError && rpcResult) {
-      await auditLog(
-        AUDIT_ACTIONS.STEP_SCRAP,
-        'production_piece',
-        pieceId || rpcResult.nonconformity_id,
-        { reason, notes, action, disposition, rpcResult }
-      );
-      return { success: true, ...rpcResult };
-    }
-  } catch (err) {
-    console.warn('RPC register_quality_rejection falhou, executando fallback local:', err);
+  const { data: rpcResult, error: rpcError } = await supabase.rpc('register_quality_rejection', {
+    p_payload: rpcPayload
+  });
+
+  if (rpcError) {
+    console.error('Erro na RPC register_quality_rejection:', rpcError);
+    throw new Error(`Falha ao registrar reprovação: ${rpcError.message || rpcError}`);
   }
 
-  // Fallback para rastreabilidade legada se RPC falhar
-  const payload = {
-    rawValue: traceabilityCode,
-    status: 'rejected',
-    operator: operatorName,
-    operatorId,
-    cellName,
-    machineId: workstationId,
-    notes: `${reason} - ${notes || ''}`
-  };
-
-  await registerTraceabilityRejection(payload);
-
-  if (action === 'block') {
-    const { data: piece } = await supabase
-      .from('production_pieces')
-      .select('lot_id')
-      .eq('piece_uid', traceabilityCode)
-      .maybeSingle();
-
-    if (piece?.lot_id) {
-      await supabase
-        .from('production_lots')
-        .update({ status: 'blocked' })
-        .eq('id', piece.lot_id);
-
-      await auditLog(
-        AUDIT_ACTIONS.LOT_BLOCK,
-        'production_lot',
-        piece.lot_id,
-        { reason: `Bloqueado por reprovação de peça: ${reason}`, piece_code: traceabilityCode }
-      );
-    }
+  if (!rpcResult?.success) {
+    throw new Error(rpcResult?.message || 'A reprovação não foi confirmada pelo banco de dados.');
   }
 
   await auditLog(
     AUDIT_ACTIONS.STEP_SCRAP,
     'production_piece',
-    pieceId,
-    { reason, notes, action }
+    pieceId || rpcResult?.nonconformity_id,
+    { reason, notes, action, disposition, rpcResult }
   );
 
-  return { success: true };
+  return { success: true, ...rpcResult };
 }
 
 /**
@@ -592,3 +673,5 @@ export async function requestPieceReplacement({ pieceId, reason, notes, priority
 
   return data;
 }
+
+export const rejectPiece = rejectPieceFromCollection;
