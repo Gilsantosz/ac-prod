@@ -656,3 +656,35 @@ export async function resolveAlertManually(alertId, note = 'Resolvido manualment
   if (error) throw error;
   return data;
 }
+
+/**
+ * Força a resolução em lote de múltiplos alertas industriais via RPC.
+ * 
+ * @param {string[]} alertIds - Array de UUIDs dos alertas
+ * @param {string} note - Observação ou justificativa em lote
+ */
+export async function resolveAlertsInBulk(alertIds = [], note = 'Baixa em lote realizada.') {
+  if (!alertIds || alertIds.length === 0) return { success: true, resolvedCount: 0 };
+
+  const results = await Promise.allSettled(
+    alertIds.map((id) =>
+      supabase.rpc('resolve_mes_alert', {
+        p_alert_id: id,
+        p_resolution_note: note
+      })
+    )
+  );
+
+  const successful = results.filter(r => r.status === 'fulfilled' && !r.value?.error);
+  const failed = results.filter(r => r.status === 'rejected' || r.value?.error);
+
+  if (failed.length > 0 && successful.length === 0) {
+    throw new Error('Falha ao resolver alertas em lote.');
+  }
+
+  return {
+    success: true,
+    resolvedCount: successful.length,
+    failedCount: failed.length
+  };
+}
