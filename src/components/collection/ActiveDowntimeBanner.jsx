@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Clock, StopCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { finishDowntime } from '@/lib/downtimeService';
+import { getReasonMeta } from './DowntimeDialog';
 import { toast } from 'sonner';
 
 export default function ActiveDowntimeBanner({
@@ -37,6 +38,9 @@ export default function ActiveDowntimeBanner({
   const seconds = elapsedSeconds % 60;
   const formattedTime = `${hours > 0 ? `${hours}h ` : ''}${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
 
+  const reasonMeta = getReasonMeta({ name: activeDowntime.reason, code: activeDowntime.downtime_reason_code });
+  const ReasonIcon = reasonMeta.icon || AlertTriangle;
+
   const handleFinish = async () => {
     try {
       setLoading(true);
@@ -61,19 +65,22 @@ export default function ActiveDowntimeBanner({
   return (
     <div className="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white rounded-2xl p-4 shadow-xl border border-amber-400/30 flex flex-col md:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top duration-300">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur border border-white/20 flex items-center justify-center shrink-0 animate-pulse">
-          <AlertTriangle className="w-6 h-6 text-amber-200" />
+        <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur border border-white/30 flex items-center justify-center shrink-0 shadow-inner">
+          <ReasonIcon className="w-6 h-6 text-white" />
         </div>
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded-full border border-white/30 text-amber-100">
-              PARADA ATIVA NA CÉLULA
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-bold uppercase tracking-wider bg-white/20 px-2.5 py-0.5 rounded-full border border-white/30 text-amber-100">
+              PARADA ATIVA EM ANDAMENTO
             </span>
-            <span className="text-xs text-amber-100 font-medium">
-              Motivo: <strong className="text-white">{activeDowntime.reason || 'Operacional'}</strong>
+            <span className="text-xs text-amber-100 font-semibold bg-black/20 px-2 py-0.5 rounded-md border border-white/10">
+              {reasonMeta.categoryLabel}
             </span>
           </div>
-          <p className="text-xs text-amber-100 mt-1">
+          <p className="text-sm font-bold text-white mt-1 flex items-center gap-1.5">
+            Motivo: <span className="underline decoration-amber-300 underline-offset-2 font-extrabold">{activeDowntime.reason || reasonMeta.cleanName}</span>
+          </p>
+          <p className="text-xs text-amber-100/90 mt-0.5">
             Iniciada às {new Date(activeDowntime.started_at || activeDowntime.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • Operador: <strong className="text-white">{activeDowntime.operator || 'N/A'}</strong>
           </p>
         </div>
