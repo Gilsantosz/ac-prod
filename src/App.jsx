@@ -1,14 +1,14 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, HashRouter, Route, Routes, useLocation, Navigate } from 'react-router-dom';
+import CustomTitleBar from '@/components/desktop/CustomTitleBar';
 
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
-import { Navigate } from 'react-router-dom';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { Toaster as SonnerToaster } from 'sonner';
 import Login from '@/pages/Login';
@@ -49,7 +49,6 @@ import QualityPage from '@/pages/QualityPage';
 import { useProductionRealtimeSync } from '@/hooks/useProductionRealtimeSync';
 import { isSupabaseConfigured } from '@/lib/supabaseClient';
 
-
 const AcProdRedirect = () => {
   const location = useLocation();
   const cleanPath = location.pathname.replace(/^\/ac-prod/, '');
@@ -63,7 +62,7 @@ const MissingSupabaseConfiguration = () => (
       <div className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-amber-300">
         Configuração necessária
       </div>
-      <h1 className="mt-5 text-2xl md:text-3xl font-bold">O simulador abriu corretamente</h1>
+      <h1 className="mt-5 text-2xl md:text-3xl font-bold">O aplicativo abriu corretamente</h1>
       <p className="mt-3 text-sm md:text-base leading-relaxed text-slate-300">
         Falta somente informar a conexão pública do Supabase. Nenhum dado de produção será enviado enquanto essa configuração estiver ausente.
       </p>
@@ -249,13 +248,17 @@ function App() {
     ? ''
     : import.meta.env.BASE_URL.replace(/\/$/, '');
 
+  const isElectron = typeof window !== 'undefined' && (Boolean(window.leoFlow) || window.location.protocol === 'file:');
+  const AppRouter = isElectron ? HashRouter : Router;
+
   return (
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>
-        <Router basename={routerBase}>
+        <AppRouter {...(!isElectron ? { basename: routerBase } : {})}>
+          <CustomTitleBar />
           <ScrollToTop />
           <AuthenticatedApp />
-        </Router>
+        </AppRouter>
 
         <Toaster />
         <SonnerToaster position="top-right" richColors />

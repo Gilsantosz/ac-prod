@@ -1,0 +1,61 @@
+appId: com.leoflow.controleproducao
+productName: Leo Flow
+executableName: LeoFlow
+copyright: Copyright © 2026 Gil Santos
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - "dist/**/*"
+  - "dist-electron/**/*"
+  - "build/icon.png"
+  - "build/icon.ico"
+  - "build/icon.icns"
+  - "package.json"
+
+extraResources:
+  - from: "build"
+    to: "build"
+    filter: ["*.png", "*.ico", "*.icns"]
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  artifactName: Leo-Flow-Setup-${version}-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Leo Flow
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  perMachine: false
+  runAfterFinish: true
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: build/icon.icns
+  category: public.app-category.business
+  artifactName: Leo-Flow-${version}-${arch}.${ext}
+
+linux:
+  target:
+    - AppImage
+    - deb
+  icon: build/icon.png
+  category: Utility
+  artifactName: Leo-Flow-${version}-${arch}.${ext}
+
+compression: maximum
