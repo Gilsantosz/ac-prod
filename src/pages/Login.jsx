@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   LogIn,
   Mail,
@@ -18,6 +18,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import LeoLogo from '@/components/ui/LeoLogo';
+import ForgotPasswordModal from '@/components/auth/ForgotPasswordModal';
 
 const SYSTEM_HIGHLIGHTS = [
   {
@@ -47,6 +48,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showForgotModal, setShowForgotModal] = useState(false);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -206,12 +208,13 @@ export default function Login() {
                       <Label htmlFor="password" className="text-xs font-bold text-slate-300 uppercase tracking-wider">
                         Senha
                       </Label>
-                      <Link
-                        to="/forgot-password"
-                        className="text-xs text-slate-400 hover:text-[#76FB91] transition-colors font-medium"
+                      <button
+                        type="button"
+                        onClick={() => setShowForgotModal(true)}
+                        className="text-xs text-slate-400 hover:text-[#76FB91] transition-colors font-medium cursor-pointer"
                       >
                         Esqueceu a senha?
-                      </Link>
+                      </button>
                     </div>
                     <div className="relative">
                       <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
@@ -267,6 +270,12 @@ export default function Login() {
 
         </div>
       </main>
+
+      {/* ── Modal de Esqueci a Senha ───────────────────────────────────────── */}
+      <ForgotPasswordModal
+        open={showForgotModal}
+        onOpenChange={setShowForgotModal}
+      />
 
       {/* ── Footer ─────────────────────────────────────────────────────────── */}
       <footer className="relative z-10 w-full max-w-7xl mx-auto px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-500 border-t border-slate-900">
