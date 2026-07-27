@@ -109,11 +109,26 @@ function buildApprovedPieceSteps(readings = []) {
   );
 }
 
+function isPieceFullyCompleted(piece, approvedPieceSteps) {
+  const route = (piece.route_steps || []).map(stepKey);
+  if (route.length > 0) {
+    const completedSteps = new Set((piece.completed_steps || []).map(stepKey));
+    return route.every((step) => completedSteps.has(step) || approvedPieceSteps.has(`${piece.id}::${step}`));
+  }
+  return COMPLETED_STATUSES.has(normalizeStatus(piece.status));
+}
+
 function hasPieceStepEvidence(piece, step, approvedPieceSteps) {
-  if (COMPLETED_STATUSES.has(normalizeStatus(piece.status))) return true;
   const targetStep = stepKey(step);
   const completedSteps = new Set((piece.completed_steps || []).map(stepKey));
-  return completedSteps.has(targetStep) || approvedPieceSteps.has(`${piece.id}::${targetStep}`);
+  if (completedSteps.has(targetStep) || approvedPieceSteps.has(`${piece.id}::${targetStep}`)) {
+    return true;
+  }
+  const route = (piece.route_steps || []).map(stepKey);
+  if (route.length > 0 || (piece.completed_steps && piece.completed_steps.length > 0)) {
+    return false;
+  }
+  return COMPLETED_STATUSES.has(normalizeStatus(piece.status));
 }
 
 function normalizeOrder(order = null) {
@@ -288,10 +303,10 @@ export function buildPieceProgress(pieces = [], readings = [], fallback = {}) {
       .map((reading) => reading.piece_id)
   );
   const total = active.length;
-  const completed = active.filter((piece) => COMPLETED_STATUSES.has(normalizeStatus(piece.status))).length;
+  const completed = active.filter((piece) => isPieceFullyCompleted(piece, approvedByPieceStep)).length;
   const blocked = active.filter((piece) => BLOCKED_STATUSES.has(normalizeStatus(piece.status))).length;
   const inProgress = active.filter((piece) => (
-    !COMPLETED_STATUSES.has(normalizeStatus(piece.status))
+    !isPieceFullyCompleted(piece, approvedByPieceStep)
     && !BLOCKED_STATUSES.has(normalizeStatus(piece.status))
     && (
       (Array.isArray(piece.completed_steps) && piece.completed_steps.length > 0)
