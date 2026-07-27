@@ -23,6 +23,7 @@ import CollectionPieceDetailPanel from '@/components/collection/CollectionPieceD
 import CollectionRejectPieceModal from '@/components/collection/CollectionRejectPieceModal';
 import CollectionPieceTraceabilityDrawer from '@/components/collection/CollectionPieceTraceabilityDrawer';
 import TraceabilityKpiCards from '@/components/traceability/TraceabilityKpiCards';
+import CollectionHeaderGuide from '@/components/collection/CollectionHeaderGuide';
 import ActiveDowntimeBanner from '@/components/collection/ActiveDowntimeBanner';
 import DowntimeDialog from '@/components/collection/DowntimeDialog';
 import { getActiveDowntime } from '@/lib/downtimeService';
@@ -719,6 +720,9 @@ export default function TraceabilityCollection({ embedded = false }) {
       {!embedded && (
         <PageHeader title="Coleta por Código / RFID" subtitle="Estação de controle operacional e baixa produtiva por posto." icon={ScanLine} />
       )}
+
+      {/* Cabeçalho de Orientação ao Operador */}
+      <CollectionHeaderGuide operator={operator} cellName={cellName} machine={machine} />
 
       {/* Contexto de coleta (célula, máquina, turno, operador) */}
       <div className="flex flex-col sm:flex-row gap-3 sm:items-start bg-card border border-border rounded-2xl p-4">

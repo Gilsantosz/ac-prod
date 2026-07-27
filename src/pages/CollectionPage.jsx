@@ -40,7 +40,7 @@ export default function CollectionPage() {
           }
         />
         <div className="bg-card border border-border/60 rounded-2xl p-4 sm:p-6 shadow-sm">
-          <TraceabilityCollection />
+          <TraceabilityCollection embedded={true} />
         </div>
       </div>
     </OperationalLoginGate>
