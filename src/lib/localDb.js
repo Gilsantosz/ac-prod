@@ -671,8 +671,25 @@ const auth = {
     // Inclui o basename /ac-prod no redirectTo para GitHub Pages e produção
     const base = import.meta.env.BASE_URL || '/ac-prod/';
     const redirectTo = `${window.location.origin}${base}reset-password`;
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
-    if (error) throw new Error(error.message);
+
+    // Invoca a Edge Function recover-password (isenta do limite de taxa de 2 e-mails/h do SMTP nativo)
+    const { data, error } = await supabase.functions.invoke('recover-password', {
+      body: { email, redirectTo },
+    });
+
+    if (error) {
+      let message = error.message;
+      try {
+        const details = await error.context?.json();
+        message = details?.error || details?.message || message;
+      } catch { /* resposta sem JSON */ }
+      throw new Error(message || 'Não foi possível solicitar a recuperação.');
+    }
+
+    if (data?.success === false) {
+      throw new Error(data?.error || 'Não foi possível solicitar a recuperação.');
+    }
+
     return { success: true };
   },
 
