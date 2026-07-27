@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { base44 } from '@/lib/localDb';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { Download, Gauge, LineChart, ScanLine, Target, TrendingUp } from 'lucide-react';
+import { Download, Gauge, LineChart, Target, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { monthlySeries, monthlyByCell, monthOverMonth, seasonalityAlerts, executiveSummary, nextMonthProjection, cellBenchmark } from '@/lib/reportMetrics';
@@ -20,7 +20,6 @@ import MonthlyTrendChart from '@/components/reports/MonthlyTrendChart';
 import CellTrendChart from '@/components/reports/CellTrendChart';
 import PageHeader from '@/components/ui/PageHeader';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import TraceabilityReadingsReport from '@/components/reports/TraceabilityReadingsReport';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import TrendLineChart from '@/components/trend/TrendLineChart';
@@ -34,7 +33,7 @@ export default function Reports() {
   const reportRef = useRef(null);
   const { getCell } = useCells();
   const requestedTab = searchParams.get('tab');
-  const activeTab = ['production', 'traceability', 'trend'].includes(requestedTab) ? requestedTab : 'production';
+  const activeTab = ['production', 'trend'].includes(requestedTab) ? requestedTab : 'production';
 
   const { data: all = [] } = useQuery({
     queryKey: ['production'],
@@ -105,7 +104,6 @@ export default function Reports() {
       >
         <TabsList className="h-auto p-1 bg-card border border-border rounded-md">
           <TabsTrigger value="production" className="h-9 gap-2"><LineChart className="w-4 h-4" /> Produção</TabsTrigger>
-          <TabsTrigger value="traceability" className="h-9 gap-2"><ScanLine className="w-4 h-4" /> Rastreabilidade</TabsTrigger>
           <TabsTrigger value="trend" className="h-9 gap-2"><TrendingUp className="w-4 h-4" /> Tendência</TabsTrigger>
         </TabsList>
         <TabsContent value="production" className="space-y-5">
@@ -124,7 +122,6 @@ export default function Reports() {
             </>
           )}
         </TabsContent>
-        <TabsContent value="traceability"><TraceabilityReadingsReport /></TabsContent>
         <TabsContent value="trend" className="space-y-5">
           <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-end gap-2.5 w-full sm:w-auto">
             <div className="space-y-1.5 w-full sm:w-48 shrink-0">
