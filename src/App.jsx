@@ -34,7 +34,6 @@ import SystemLogs from '@/pages/SystemLogs';
 import DownloadsBackups from '@/pages/DownloadsBackups';
 import AiOperations from '@/pages/AiOperations';
 import ProductionRoutes from '@/pages/ProductionRoutes';
-import MesHub from '@/pages/MesHub';
 import CollectionPage from '@/pages/CollectionPage';
 import PackagingPage from '@/pages/PackagingPage';
 import ShippingPage from '@/pages/ShippingPage';
@@ -166,7 +165,7 @@ const AuthenticatedApp = () => {
 
           <Route path="/rotas-produtivas" element={<ProductionRoutes />} />
           <Route path="/marcenaria" element={<JoineryPage />} />
-          <Route path="/mes" element={<MesHub />} />
+          <Route path="/mes" element={<Navigate to="/" replace />} />
           <Route path="/integridade-lote" element={<LotIntegrity />} />
           <Route path="/acompanhamento-lotes" element={<LotTrackingDashboard />} />
           <Route path="/logs-integridade" element={<IntegrityLogs />} />

@@ -332,18 +332,6 @@ export const appRoutes = [
     permission: 'manage_operators',
     showInSidebar: true,
     showInDashboardHub: true
-  },
-
-  // ─── CENTRAL MES OPERACIONAL ──────────────────────────────────────
-  {
-    path: '/mes',
-    label: 'Central MES',
-    description: 'Painel operacional integrado com atalhos de fluxo e gargalos',
-    icon: Cpu,
-    group: 'operation',
-    permission: 'view_dashboards',
-    showInSidebar: true,
-    showInDashboardHub: false
   }
 ];
 
@@ -375,7 +363,6 @@ const PAGE_ACCESS_OVERRIDES = {
   '/logs-sistema': { viewPermission: 'view_audit_logs', adminOnly: true },
   '/downloads-backups': { viewPermission: 'view_backups', editPermission: 'manage_backups', adminOnly: true },
   '/logs-integridade': { viewPermission: 'view_integrity_logs' },
-  '/mes': { viewPermission: 'view_dashboards' },
   '/reposicao': { viewPermission: 'view_replacements', editPermission: 'manage_replacements' },
   '/qualidade': { viewPermission: 'view_quality', editPermission: 'manage_quality' },
 };
