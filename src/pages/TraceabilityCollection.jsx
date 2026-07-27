@@ -27,8 +27,9 @@ import TraceabilityKpiCards from '@/components/traceability/TraceabilityKpiCards
 import CollectionHeaderGuide from '@/components/collection/CollectionHeaderGuide';
 import ActiveDowntimeBanner from '@/components/collection/ActiveDowntimeBanner';
 import DowntimeDialog from '@/components/collection/DowntimeDialog';
+import CollectionFullscreenKiosk from '@/components/collection/CollectionFullscreenKiosk';
 import { getActiveDowntime } from '@/lib/downtimeService';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Maximize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { invalidateAllMesQueries } from '@/config/queryKeys';
 import {
@@ -117,8 +118,9 @@ export default function TraceabilityCollection({ embedded = false }) {
   const [pieceToReject, setPieceToReject] = useState(null);
   const [refreshReadsSignal, setRefreshReadsSignal] = useState(0);
 
-  // Estado para registro de paradas operacionais
+  // Estado para registro de paradas operacionais e modo kiosk em tela cheia
   const [downtimeDialogOpen, setDowntimeDialogOpen] = useState(false);
+  const [kioskOpen, setKioskOpen] = useState(false);
 
   const [feedback, setFeedback] = useState(() => {
     try {
@@ -731,11 +733,21 @@ export default function TraceabilityCollection({ embedded = false }) {
   return (
     <div className={pageClass}>
       {!embedded && (
-        <PageHeader 
-          title="Coleta / Bipagem" 
-          subtitle="Estação de controle operacional de coleta — bipagem por código de barras, QR Code ou RFID." 
-          icon={ScanLine} 
-        />
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <PageHeader 
+            title="Coleta / Bipagem" 
+            subtitle="Estação de controle operacional de coleta — bipagem por código de barras, QR Code ou RFID." 
+            icon={ScanLine} 
+          />
+          <Button
+            onClick={() => setKioskOpen(true)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-2 h-11 px-5 rounded-xl shadow-md shadow-emerald-950/20 shrink-0 self-start sm:self-center transition-all"
+            data-testid="toggle-kiosk-mode-btn"
+          >
+            <Maximize2 className="w-4 h-4" />
+            Modo Foco (Tela Cheia)
+          </Button>
+        </div>
       )}
 
       {/* Contexto de coleta (célula, máquina, turno, operador) */}
@@ -945,6 +957,33 @@ export default function TraceabilityCollection({ embedded = false }) {
           refetchActiveDowntime();
           refreshData();
         }}
+      />
+
+      <CollectionFullscreenKiosk
+        open={kioskOpen}
+        onClose={() => setKioskOpen(false)}
+        cellName={cellName}
+        machine={machine}
+        shift={shift}
+        operator={operator}
+        operatorId={operatorId}
+        mode={mode}
+        setMode={setMode}
+        handleRead={handleRead}
+        feedback={feedback}
+        cellStats={cellStats}
+        currentGeneralLot={currentGeneralLot}
+        currentClientLotCode={currentClientLotCode}
+        activeDowntime={activeDowntime}
+        refetchActiveDowntime={refetchActiveDowntime}
+        refreshData={refreshData}
+        onOpenDowntime={() => setDowntimeDialogOpen(true)}
+        selectedPiece={selectedPiece}
+        onSelectPiece={setSelectedPiece}
+        handleOpenRejectModal={handleOpenRejectModal}
+        handleOpenReadingOccurrence={handleOpenReadingOccurrence}
+        handleOpenTraceabilityDrawer={handleOpenTraceabilityDrawer}
+        refreshReadsSignal={refreshReadsSignal}
       />
     </div>
   );
