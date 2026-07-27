@@ -11,7 +11,7 @@ import BackButton from '@/components/ui/BackButton';
 import { useRealtimeSync } from '@/hooks/useRealtimeSync';
 import { useTheme } from '@/hooks/useTheme';
 import { useFullscreenMode } from '@/hooks/useFullscreenMode';
-import OperationModePrompt from '@/components/layout/OperationModePrompt';
+import FullscreenGate from '@/components/layout/FullscreenGate';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -418,8 +418,8 @@ function AppShell() {
         </main>
       </div>
       {user && <LeoAssistantChat user={user} />}
-      {/* Prompt de orientação — exibido só na 1ª abertura como PWA */}
-      <OperationModePrompt onEnterFullscreen={enterFullscreen} />
+      {/* Gate de tela cheia — aparece ao abrir como PWA */}
+      <FullscreenGate />
     </div>
   );
 }
