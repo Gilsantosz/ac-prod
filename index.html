@@ -64,14 +64,22 @@
 
     <!-- ─── SPA Routing: GitHub Pages redirect ─────────────────────────── -->
     <script>
-      // GitHub Pages SPA redirect: se vier de 404.html com ?p=, redireciona para a rota correta
-      (function () {
+      // Single Page Apps for GitHub Pages: decodifica redirecionamento vindo de 404.html
+      (function(l) {
+        if (l.search[1] === '/') {
+          var decoded = l.search.slice(1).split('&').map(function(s) {
+            return s.replace(/~and~/g, '&');
+          }).join('?');
+          window.history.replaceState(null, null,
+            l.pathname.slice(0, -1) + decoded + l.hash
+          );
+        }
         var redirect = sessionStorage.redirect;
         delete sessionStorage.redirect;
         if (redirect && redirect !== location.href) {
           history.replaceState(null, null, redirect);
         }
-      })();
+      }(window.location));
     </script>
 
     <!-- ─── Performance: preconnect ao Supabase ────────────────────────── -->
