@@ -191,13 +191,15 @@ export default function Login() {
                     <div className="relative">
                       <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
                       <Input
-                        id="email"
+                        id="user-email-input"
+                        name="user_email_identity"
                         type="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         required
                         placeholder="voce@empresa.com"
                         autoComplete="off"
+                        aria-autocomplete="none"
                         data-lpignore="true"
                         data-1password-ignore="true"
                         className="pl-10 h-11 bg-slate-950/90 border-slate-800 text-slate-100 placeholder:text-slate-600 rounded-xl focus:border-[#76FB91] focus:ring-[#76FB91]/20 text-sm transition-all"
@@ -221,13 +223,16 @@ export default function Login() {
                     <div className="relative">
                       <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
                       <Input
-                        id="password"
-                        type="password"
+                        id="user-password-input"
+                        name="user_login_secret"
+                        type="text"
+                        style={{ WebkitTextSecurity: 'disc' }}
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         required
                         placeholder="••••••••"
-                        autoComplete="new-password"
+                        autoComplete="off"
+                        aria-autocomplete="none"
                         data-lpignore="true"
                         data-1password-ignore="true"
                         className="pl-10 h-11 bg-slate-950/90 border-slate-800 text-slate-100 placeholder:text-slate-600 rounded-xl focus:border-[#76FB91] focus:ring-[#76FB91]/20 text-sm transition-all"
