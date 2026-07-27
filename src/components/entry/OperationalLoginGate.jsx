@@ -37,18 +37,6 @@ export default function OperationalLoginGate({ children }) {
       <div className="absolute bottom-1/4 left-1/3 w-72 h-72 rounded-full bg-teal-500/5 blur-[80px] pointer-events-none" />
 
       <div className="relative w-full max-w-md space-y-6 z-10">
-        
-        {/* Banner Superior de Orientação ao Operador */}
-        <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-emerald-950/40 via-background to-teal-950/40 p-4 text-center shadow-lg backdrop-blur-md space-y-2">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-300">
-            <ScanLine className="w-3.5 h-3.5 animate-pulse" />
-            <span>Estação de Coleta / Bipagem MES</span>
-          </div>
-          <p className="text-xs text-muted-foreground leading-relaxed max-w-sm mx-auto">
-            Identifique-se com seu <strong>Nome/Login</strong> e <strong>Matrícula</strong> de operador para acessar o terminal de bipagem da célula de produção.
-          </p>
-        </div>
-
         {/* Cabeçalho com Animação sutil */}
         <div className="text-center space-y-3">
           <div className="relative inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20 mb-1 group transition-all duration-300 hover:border-emerald-500/40">

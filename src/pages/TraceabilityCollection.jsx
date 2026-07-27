@@ -718,11 +718,12 @@ export default function TraceabilityCollection({ embedded = false }) {
   return (
     <div className={pageClass}>
       {!embedded && (
-        <PageHeader title="Coleta por Código / RFID" subtitle="Estação de controle operacional e baixa produtiva por posto." icon={ScanLine} />
+        <PageHeader 
+          title="Coleta / Bipagem" 
+          subtitle="Estação de controle operacional de coleta — bipagem por código de barras, QR Code ou RFID." 
+          icon={ScanLine} 
+        />
       )}
-
-      {/* Cabeçalho de Orientação ao Operador */}
-      <CollectionHeaderGuide operator={operator} cellName={cellName} machine={machine} />
 
       {/* Contexto de coleta (célula, máquina, turno, operador) */}
       <div className="flex flex-col sm:flex-row gap-3 sm:items-start bg-card border border-border rounded-2xl p-4">
