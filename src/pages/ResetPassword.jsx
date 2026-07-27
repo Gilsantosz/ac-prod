@@ -106,7 +106,7 @@ export default function ResetPassword() {
               </button>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
               <div className="space-y-1.5">
                 <Label htmlFor="password" className="text-xs font-bold text-slate-300 uppercase tracking-wider">
                   Nova Senha
@@ -121,6 +121,7 @@ export default function ResetPassword() {
                     required
                     placeholder="Mínimo 6 caracteres"
                     autoComplete="new-password"
+                    data-lpignore="true"
                     className="pl-10 h-11 bg-slate-950/90 border-slate-800 text-slate-100 placeholder:text-slate-600 rounded-xl focus:border-[#76FB91] focus:ring-[#76FB91]/20 text-sm transition-all"
                   />
                 </div>
@@ -140,6 +141,7 @@ export default function ResetPassword() {
                     required
                     placeholder="Repita a nova senha"
                     autoComplete="new-password"
+                    data-lpignore="true"
                     className="pl-10 h-11 bg-slate-950/90 border-slate-800 text-slate-100 placeholder:text-slate-600 rounded-xl focus:border-[#76FB91] focus:ring-[#76FB91]/20 text-sm transition-all"
                   />
                 </div>

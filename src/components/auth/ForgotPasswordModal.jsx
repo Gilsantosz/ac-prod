@@ -86,7 +86,7 @@ export default function ForgotPasswordModal({ open, onOpenChange }) {
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4 my-2">
+          <form onSubmit={handleSubmit} className="space-y-4 my-2" autoComplete="off">
             <div className="space-y-1.5">
               <Label htmlFor="forgot-email" className="text-xs font-bold text-slate-300 uppercase tracking-wider">
                 E-mail Cadastrado
@@ -100,7 +100,8 @@ export default function ForgotPasswordModal({ open, onOpenChange }) {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   placeholder="voce@empresa.com"
-                  autoComplete="email"
+                  autoComplete="off"
+                  data-lpignore="true"
                   className="pl-10 h-11 bg-slate-950/90 border-slate-800 text-slate-100 placeholder:text-slate-600 rounded-xl focus:border-[#76FB91] focus:ring-[#76FB91]/20 text-sm transition-all"
                 />
               </div>

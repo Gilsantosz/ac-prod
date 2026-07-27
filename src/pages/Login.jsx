@@ -183,7 +183,7 @@ export default function Login() {
                 </div>
 
                 {/* Form */}
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
                   <div className="space-y-1.5">
                     <Label htmlFor="email" className="text-xs font-bold text-slate-300 uppercase tracking-wider">
                       E-mail Corporativo
@@ -197,7 +197,9 @@ export default function Login() {
                         onChange={(e) => setEmail(e.target.value)}
                         required
                         placeholder="voce@empresa.com"
-                        autoComplete="email"
+                        autoComplete="off"
+                        data-lpignore="true"
+                        data-[#1password-ignore]="true"
                         className="pl-10 h-11 bg-slate-950/90 border-slate-800 text-slate-100 placeholder:text-slate-600 rounded-xl focus:border-[#76FB91] focus:ring-[#76FB91]/20 text-sm transition-all"
                       />
                     </div>
@@ -225,7 +227,9 @@ export default function Login() {
                         onChange={(e) => setPassword(e.target.value)}
                         required
                         placeholder="••••••••"
-                        autoComplete="current-password"
+                        autoComplete="new-password"
+                        data-lpignore="true"
+                        data-[#1password-ignore]="true"
                         className="pl-10 h-11 bg-slate-950/90 border-slate-800 text-slate-100 placeholder:text-slate-600 rounded-xl focus:border-[#76FB91] focus:ring-[#76FB91]/20 text-sm transition-all"
                       />
                     </div>
