@@ -84,7 +84,7 @@ export default function PromobIntegration() {
     setSearchParams(value === 'import' ? {} : { tab: value }, { replace: true });
   };
 
-  // ─── Efeitos de carregamento de dados ──────────────────────────
+  // ─── Efeitos de carregamento de dados e Realtime ────────────────
   useEffect(() => {
     if (activeTab === 'history') fetchBatches();
     if (activeTab === 'orders') fetchOrders();
@@ -92,6 +92,29 @@ export default function PromobIntegration() {
     if (activeTab === 'backup') fetchBackups();
     if (activeTab === 'settings') fetchSettings();
   }, [activeTab, batchPage, batchSearch, batchStatusFilter, orderPage, orderSearch, orderStatusFilter, logPage, logSeverityFilter, backupPage]);
+
+  // Escuta em tempo real para atualizar o andamento do lote e das OPs instantaneamente
+  useEffect(() => {
+    const channel = supabase
+      .channel('realtime-pcp-dashboard')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_orders' }, () => {
+        if (activeTab === 'orders') fetchOrders();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_lots' }, () => {
+        if (activeTab === 'orders') fetchOrders();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_stage_readings' }, () => {
+        if (activeTab === 'orders') fetchOrders();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'promob_import_batches' }, () => {
+        if (activeTab === 'history') fetchBatches();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeTab]);
 
   // ─── 1. Histórico de Importações ────────────────────────────────
   const fetchBatches = async () => {
@@ -107,7 +130,7 @@ export default function PromobIntegration() {
         query = query.eq('status', batchStatusFilter);
       }
       if (batchSearch) {
-        query = query.or(`file_name.ilike.%${batchSearch}%,customer_name.ilike.%${batchSearch}%,order_code.ilike.%${batchSearch}%`);
+        query = query.or(`file_name.ilike.%${batchSearch}%,customer_name.ilike.%${batchSearch}%,order_code.ilike.%${batchSearch}%,general_lot_code.ilike.%${batchSearch}%`);
       }
 
       const { data, count, error } = await query;
@@ -569,26 +592,7 @@ export default function PromobIntegration() {
 
         {/* ── 1. Entrada / Importação do PCP ─────────────────────────── */}
         <TabsContent value="import" className="space-y-6 outline-none">
-          <div className="flex border-b border-border/40 pb-2 gap-4 flex-wrap">
-            <button
-              onClick={() => setImportMode('pcp')}
-              className={cn(
-                "pb-2 text-xs font-bold transition-all relative flex items-center gap-1.5",
-                importMode === 'pcp' ? "text-[#2d9c4a] border-b-2 border-[#2d9c4a]" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <FileText className="w-3.5 h-3.5" /> Padrão PCP Traceabilidade (XLSX, CSV)
-            </button>
-          </div>
-
-          {importMode === 'promob' ? (
-            <XmlImportTab onSwitchToPcp={(file) => {
-              setImportMode('pcp');
-              setPreselectedPcpFile(file);
-            }} />
-          ) : (
-            <PcpImportTab preselectedFile={preselectedPcpFile} clearPreselected={() => setPreselectedPcpFile(null)} />
-          )}
+          <PcpImportTab preselectedFile={preselectedPcpFile} clearPreselected={() => setPreselectedPcpFile(null)} />
         </TabsContent>
 
         {/* ── 2. Histórico de Importações ────────────────────────── */}
@@ -599,7 +603,7 @@ export default function PromobIntegration() {
               <Input
                 value={batchSearch}
                 onChange={e => { setBatchSearch(e.target.value); setBatchPage(0); }}
-                placeholder="Buscar por arquivo, cliente ou pedido..."
+                placeholder="Buscar por lote geral, arquivo, cliente ou pedido..."
                 className="pl-9"
               />
             </div>
@@ -631,7 +635,7 @@ export default function PromobIntegration() {
                 <table className="w-full text-sm">
                   <thead className="bg-secondary/30 border-b border-border/60">
                     <tr>
-                      {['Data/Hora', 'Arquivo', 'Cliente/Projeto', 'Pedido', 'Peças', 'Status', 'Retenção 4 Anos', ''].map(h => (
+                      {['Data/Hora', 'Arquivo', 'Lote Geral', 'Cliente/Projeto', 'Pedido', 'Peças', 'Status', 'Retenção 4 Anos', 'Ações'].map(h => (
                         <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                           {h}
                         </th>
@@ -647,6 +651,15 @@ export default function PromobIntegration() {
                         <td className="px-4 py-3 max-w-[180px] truncate">
                           <p className="font-semibold text-foreground text-xs">{batch.file_name || 'Sem nome'}</p>
                           <p className="text-[10px] text-muted-foreground">{(batch.file_size / 1024).toFixed(1)} KB</p>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-xs font-mono font-bold">
+                          {batch.general_lot_code ? (
+                            <span className="bg-[#2d9c4a]/10 text-[#2d9c4a] border border-[#2d9c4a]/30 px-2 py-0.5 rounded-md">
+                              {batch.general_lot_code}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-xs">
                           <p className="text-foreground font-medium">{batch.customer_name || '—'}</p>
@@ -721,7 +734,7 @@ export default function PromobIntegration() {
               <Input
                 value={orderSearch}
                 onChange={e => { setOrderSearch(e.target.value); setOrderPage(0); }}
-                placeholder="Buscar por código da OP, cliente ou projeto..."
+                placeholder="Buscar por código da OP, lote geral, cliente ou projeto..."
                 className="pl-9"
               />
             </div>
@@ -754,7 +767,7 @@ export default function PromobIntegration() {
                 <table className="w-full text-sm">
                   <thead className="bg-secondary/30 border-b border-border/60">
                     <tr>
-                      {['Data Criada', 'Código OP', 'Cliente', 'Projeto', 'Entrega', 'Status', 'Ações'].map(h => (
+                      {['Data Criada', 'Código OP', 'Cliente', 'Projeto / Lote', 'Andamento do Lote', 'Entrega', 'Status', 'Ações'].map(h => (
                         <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                           {h}
                         </th>
@@ -773,8 +786,35 @@ export default function PromobIntegration() {
                         <td className="px-4 py-3 text-xs text-foreground font-medium">
                           {order.customer_name || '—'}
                         </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground truncate max-w-[150px]">
-                          {order.promob_project_name || '—'}
+                        <td className="px-4 py-3 text-xs text-muted-foreground truncate max-w-[170px]">
+                          <p className="text-foreground font-medium truncate">{order.promob_project_name || '—'}</p>
+                          {order.lotCode && order.lotCode !== order.order_code && (
+                            <p className="text-[10px] text-[#2d9c4a] font-mono font-bold">Lote: {order.lotCode}</p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 min-w-[200px]">
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="font-bold text-foreground">
+                                {order.percent || 0}% concluído
+                              </span>
+                              <span className="text-muted-foreground text-[10px]">
+                                {order.completedOps || 0}/{order.totalOps || order.totalPieces || 0} ops
+                              </span>
+                            </div>
+                            <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
+                              <div
+                                className="h-full bg-[#2d9c4a] transition-all duration-300"
+                                style={{ width: `${order.percent || 0}%` }}
+                              />
+                            </div>
+                            {order.currentStage && (
+                              <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#2d9c4a] inline-block animate-pulse" />
+                                Etapa atual: <span className="font-semibold text-foreground capitalize">{order.currentStage}</span>
+                              </p>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
                           {order.delivery_date ? new Date(order.delivery_date).toLocaleDateString('pt-BR') : '—'}
@@ -788,7 +828,7 @@ export default function PromobIntegration() {
                           <Button asChild variant="outline" size="sm" className="h-7 text-[10px]">
                             <Link to="/rastreabilidade?tab=kanban">Kanban</Link>
                           </Button>
-                          {(order.status === 'released' || order.status === 'in_production') && (
+                          {(order.status === 'released' || order.status === 'in_production' || order.status === 'in_progress') && (
                             <Button asChild variant="outline" size="sm" className="h-7 text-[10px] text-amber-600 hover:text-amber-700">
                               <Link to="/rastreabilidade?tab=packaging">Embalar</Link>
                             </Button>
@@ -803,7 +843,6 @@ export default function PromobIntegration() {
                     ))}
                   </tbody>
                 </table>
-
               )}
             </div>
 
