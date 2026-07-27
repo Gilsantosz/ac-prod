@@ -50,8 +50,8 @@ export const appRoutes = [
     icon: Layers,
     group: 'operation',
     permission: 'view_traceability',
-    showInSidebar: true,
-    showInDashboardHub: true
+    showInSidebar: false,
+    showInDashboardHub: false
   },
   {
     path: '/integridade-lote',
@@ -83,16 +83,6 @@ export const appRoutes = [
     showInSidebar: true,
     showInDashboardHub: true,
     aliases: ['/rastreabilidade/marcenaria']
-  },
-  {
-    path: '/oee',
-    label: 'OEE',
-    description: 'Monitoramento de eficiência global de equipamentos em tempo real',
-    icon: Gauge,
-    group: 'operation',
-    permission: 'view_dashboards',
-    showInSidebar: true,
-    showInDashboardHub: true
   },
 
 
@@ -204,6 +194,16 @@ export const appRoutes = [
     label: 'Resumo Diário',
     description: 'Visualização rápida de rendimento por turno e relatórios operacionais',
     icon: ClipboardList,
+    group: 'management',
+    permission: 'view_dashboards',
+    showInSidebar: true,
+    showInDashboardHub: true
+  },
+  {
+    path: '/oee',
+    label: 'OEE',
+    description: 'Monitoramento de eficiência global de equipamentos em tempo real',
+    icon: Gauge,
     group: 'management',
     permission: 'view_dashboards',
     showInSidebar: true,

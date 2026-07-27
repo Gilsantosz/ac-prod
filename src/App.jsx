@@ -28,7 +28,6 @@ import Gamification from '@/pages/Gamification';
 import Reports from '@/pages/Reports';
 import Users from '@/pages/Users';
 import Operators from '@/pages/Operators';
-import Traceability from '@/pages/Traceability';
 import PromobIntegration from '@/pages/PromobIntegration';
 import SystemLogs from '@/pages/SystemLogs';
 import DownloadsBackups from '@/pages/DownloadsBackups';
@@ -137,15 +136,15 @@ const AuthenticatedApp = () => {
           <Route path="/usuarios" element={<Users />} />
           <Route path="/relatorios" element={<Reports />} />
           <Route path="/ia-operacional" element={<AiOperations />} />
-           {/* ── Novas rotas MES Leo Madeiras ── */}
-          <Route path="/rastreabilidade" element={<Traceability />} />
-          <Route path="/rastreabilidade/kanban" element={<Navigate to="/rastreabilidade?tab=kanban" replace />} />
-          <Route path="/rastreabilidade/buscar" element={<Navigate to="/rastreabilidade?tab=search" replace />} />
-          <Route path="/rastreabilidade/historico" element={<Navigate to="/rastreabilidade?tab=timeline" replace />} />
+          {/* ── Rotas Rastreabilidade Redirecionadas ── */}
+          <Route path="/rastreabilidade" element={<Navigate to="/pcp?tab=orders" replace />} />
+          <Route path="/rastreabilidade/kanban" element={<Navigate to="/pcp?tab=orders" replace />} />
+          <Route path="/rastreabilidade/buscar" element={<Navigate to="/pcp?tab=history" replace />} />
+          <Route path="/rastreabilidade/historico" element={<Navigate to="/pcp?tab=history" replace />} />
           <Route path="/rastreabilidade/marcenaria" element={<Navigate to="/marcenaria" replace />} />
-          <Route path="/rastreabilidade/embalagem" element={<Navigate to="/rastreabilidade?tab=packaging" replace />} />
-          <Route path="/rastreabilidade/expedicao" element={<Navigate to="/rastreabilidade?tab=shipping" replace />} />
-          <Route path="/rastreabilidade/alertas" element={<Navigate to="/rastreabilidade?tab=alerts" replace />} />
+          <Route path="/rastreabilidade/embalagem" element={<Navigate to="/embalagem" replace />} />
+          <Route path="/rastreabilidade/expedicao" element={<Navigate to="/expedicao" replace />} />
+          <Route path="/rastreabilidade/alertas" element={<Navigate to="/alertas-mes" replace />} />
 
           <Route path="/pcp" element={<PromobIntegration />} />
           <Route path="/pcp/importar" element={<Navigate to="/pcp?tab=import" replace />} />
