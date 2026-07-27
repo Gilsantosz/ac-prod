@@ -39,17 +39,6 @@ const FLOW = [
   { icon: FileText, label: 'Relatórios' },
 ];
 
-function MicrosoftIcon() {
-  return (
-    <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="#f35325" d="M1 1h10v10H1z" />
-      <path fill="#81bc06" d="M13 1h10v10H13z" />
-      <path fill="#05a6f0" d="M1 13h10v10H1z" />
-      <path fill="#ffba08" d="M13 13h10v10H13z" />
-    </svg>
-  );
-}
-
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -57,13 +46,10 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [microsoftAuthError, setMicrosoftAuthError] = useState(false);
-  const [microsoftLoading, setMicrosoftLoading] = useState(false);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
-    setMicrosoftAuthError(false);
     setLoading(true);
     try {
       await login(email, password);
@@ -71,29 +57,6 @@ export default function Login() {
     } catch (err) {
       setError(err?.message || 'Falha ao entrar. Verifique suas credenciais.');
       setLoading(false);
-    }
-  };
-
-  const handleMicrosoftLogin = async () => {
-    setError('');
-    setMicrosoftAuthError(false);
-    setMicrosoftLoading(true);
-    try {
-      // Usa o método centralizado do localDb que já monta o redirectTo correto
-      await base44.auth.loginWithProvider('azure', '/');
-      // Se chegou aqui sem erro, o redirecionamento para a Microsoft ocorreu
-      // A página será redirecionada — não há mais código para executar
-    } catch (err) {
-      setMicrosoftLoading(false);
-      setMicrosoftAuthError(true);
-      const msg = err?.message || '';
-      if (msg.includes('provider is not enabled') || msg.includes('not supported')) {
-        setError('O login Microsoft ainda não está ativado. O administrador precisa configurar o Azure AD no painel do Supabase.');
-      } else if (msg.includes('redirect')) {
-        setError('URL de redirecionamento não autorizada. Verifique a configuração no Supabase.');
-      } else {
-        setError(err?.message || 'Não foi possível iniciar o login com a Microsoft. Tente novamente.');
-      }
     }
   };
 
@@ -206,10 +169,10 @@ export default function Login() {
               </div>
             </div>
 
-            {(error || microsoftAuthError) && (
+            {error && (
               <div className="flex items-start gap-2.5 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3.5 py-3" role="alert">
                 <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{error || 'O login Microsoft não está habilitado. Use suas credenciais cadastradas.'}</span>
+                <span>{error}</span>
               </div>
             )}
 
@@ -224,32 +187,11 @@ export default function Login() {
             </button>
           </form>
 
-          <div className="flex items-center gap-4 my-5" aria-hidden="true">
-            <div className="flex-1 h-px bg-slate-200" />
-            <span className="text-[11px] uppercase font-semibold text-slate-500">ou</span>
-            <div className="flex-1 h-px bg-slate-200" />
-          </div>
-
-          <button
-            id="login-microsoft-btn"
-            type="button"
-            onClick={handleMicrosoftLogin}
-            disabled={microsoftLoading}
-            className="w-full h-12 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-black flex items-center justify-center gap-3 hover:bg-slate-50 active:scale-[0.99] transition-all"
-          >
-            {microsoftLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MicrosoftIcon />}
-            {microsoftLoading ? 'Abrindo Microsoft...' : 'Continuar com Microsoft'}
-          </button>
-
           <div className="flex items-center justify-center gap-4 text-sm mt-6">
             <Link to="/forgot-password" className="text-slate-500 hover:text-black transition-colors">
               Esqueceu a senha?
             </Link>
           </div>
-
-          <p className="mt-4 text-center text-xs leading-relaxed text-slate-500">
-            O acesso Microsoft é liberado somente para e-mails previamente cadastrados por um administrador.
-          </p>
 
           <div className="lg:hidden mt-8 pt-6 border-t border-slate-200 flex items-center justify-center gap-3 text-slate-600">
             <PackageCheck className="w-5 h-5 text-[#00552f]" />
