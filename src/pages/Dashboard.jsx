@@ -93,6 +93,7 @@ export default function Dashboard({ kioskModeOverride = false }) {
     initialData: [],
     staleTime: 0,
     refetchOnMount: true,
+    refetchInterval: 10000,
   });
 
   const { data: goals = [] } = useQuery({

@@ -8,14 +8,20 @@ const TABLE_TO_QUERY_KEYS = {
   production_entries: [
     ['production'],
     ['productionEntries'],
+    ['recent-entries'],
     ['daily-summary-history'],
     ['test-entries-list'],
     ['mes-hub-kpis'],
+    ['cellKpis'],
+    ['oeeStats'],
+    ['downtimeStats'],
   ],
   production_daily_goals: [
     ['productionDailyGoals'],
+    ['dailyGoals'],
     ['daily-summary-history-goals'],
     ['cellKpis'],
+    ['goals-list'],
   ],
   production_realtime_counters: [
     ['realtimeCounters'],
@@ -49,11 +55,13 @@ const TABLE_TO_QUERY_KEYS = {
     ['all-alerts-list'],
     ['oeeStats'],
     ['downtimeStats'],
+    ['pcp-batches'],
   ],
   production_orders: [
     ['production-orders'],
     ['production-lots'],
     ['mes-hub-kpis'],
+    ['pcp-batches'],
   ],
   production_lots: [
     ['production-lots'],
@@ -65,6 +73,7 @@ const TABLE_TO_QUERY_KEYS = {
     ['lot-tracking-dashboard'],
     ['mes-hub-kpis'],
     ['cellKpis'],
+    ['pcp-batches'],
   ],
   production_pieces: [
     ['production-lots'],
@@ -82,11 +91,13 @@ const TABLE_TO_QUERY_KEYS = {
     ['productionLots'],
     ['trace-search'],
     ['test-lot-details'],
+    ['pcp-batches'],
   ],
   lot_step_events: [
     ['lot-events'],
     ['joinery-events'],
     ['production-lots'],
+    ['pcp-batches'],
   ],
   occurrences: [
     ['occurrences'],
@@ -108,6 +119,26 @@ const TABLE_TO_QUERY_KEYS = {
   ],
   shipments: [['shipments']],
   shipment_items: [['shipments']],
+  replacement_orders: [
+    ['replacements'],
+    ['replacement-orders'],
+    ['rejected-pieces'],
+    ['production-lots'],
+  ],
+  rejected_pieces: [
+    ['replacements'],
+    ['replacement-orders'],
+    ['rejected-pieces'],
+    ['production-lots'],
+  ],
+  quality_defects: [
+    ['quality-defects'],
+    ['quality-occurrences'],
+  ],
+  quality_occurrences: [
+    ['quality-defects'],
+    ['quality-occurrences'],
+  ],
 };
 
 const REALTIME_TABLES = Object.keys(TABLE_TO_QUERY_KEYS);
@@ -196,7 +227,6 @@ export function useProductionRealtimeSync(options = {}) {
       }
 
       queryKeys.forEach((queryKey) => {
-        if (table === 'production_entries' && queryKey[0] === 'production') return;
         triggerInvalidate(queryKey);
       });
     };
@@ -228,10 +258,12 @@ export function useProductionRealtimeSync(options = {}) {
         console.warn('[Production Realtime] Canal websocket temporariamente indisponível. Ativando fallback de atualização periódica.');
         if (!fallbackInterval) {
           fallbackInterval = setInterval(() => {
-            queryClient.invalidateQueries({ queryKey: ['mes-hub-kpis'] });
+            queryClient.invalidateQueries({ queryKey: ['production'] });
+            queryClient.invalidateQueries({ queryKey: ['production-lots'] });
+            queryClient.invalidateQueries({ queryKey: ['occurrences'] });
             queryClient.invalidateQueries({ queryKey: ['collection-kpis'] });
             queryClient.invalidateQueries({ queryKey: ['cellKpis'] });
-          }, 10000);
+          }, 15000);
         }
       } else if (status === 'SUBSCRIBED') {
         if (fallbackInterval) {

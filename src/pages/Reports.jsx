@@ -39,6 +39,7 @@ export default function Reports() {
     queryKey: ['production'],
     queryFn: () => base44.entities.ProductionEntry.list('-created_date', 2000),
     initialData: [],
+    refetchInterval: 15000,
   });
 
   const filtered = useMemo(() => all.filter((e) => {

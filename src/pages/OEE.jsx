@@ -36,12 +36,14 @@ export default function OEE() {
     queryKey: ['production'],
     queryFn: () => base44.entities.ProductionEntry.list('-date', 5000),
     initialData: [],
+    refetchInterval: 15000,
   });
 
   const { data: allOccurrences = [] } = useQuery({
     queryKey: ['occurrences'],
     queryFn: () => base44.entities.Occurrence.list('-created_date', 500),
     initialData: [],
+    refetchInterval: 15000,
   });
 
   const cells = useMemo(() => [...new Set(all.map((e) => e.cell).filter(Boolean))], [all]);
