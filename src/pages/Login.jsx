@@ -79,11 +79,21 @@ export default function Login() {
     setMicrosoftAuthError(false);
     setMicrosoftLoading(true);
     try {
+      // Usa o método centralizado do localDb que já monta o redirectTo correto
       await base44.auth.loginWithProvider('azure', '/');
+      // Se chegou aqui sem erro, o redirecionamento para a Microsoft ocorreu
+      // A página será redirecionada — não há mais código para executar
     } catch (err) {
-      setMicrosoftAuthError(true);
-      setError(err?.message || 'O acesso Microsoft não pôde ser iniciado.');
       setMicrosoftLoading(false);
+      setMicrosoftAuthError(true);
+      const msg = err?.message || '';
+      if (msg.includes('provider is not enabled') || msg.includes('not supported')) {
+        setError('O login Microsoft ainda não está ativado. O administrador precisa configurar o Azure AD no painel do Supabase.');
+      } else if (msg.includes('redirect')) {
+        setError('URL de redirecionamento não autorizada. Verifique a configuração no Supabase.');
+      } else {
+        setError(err?.message || 'Não foi possível iniciar o login com a Microsoft. Tente novamente.');
+      }
     }
   };
 
