@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { LogOut, Sun, Moon, Menu, X,
-  ChevronLeft,
+  ChevronLeft, Maximize2, Minimize2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { KioskProvider, useKiosk } from '@/lib/KioskContext';
@@ -10,10 +10,13 @@ import LeoLogo from '@/components/ui/LeoLogo';
 import BackButton from '@/components/ui/BackButton';
 import { useRealtimeSync } from '@/hooks/useRealtimeSync';
 import { useTheme } from '@/hooks/useTheme';
+import { useFullscreenMode } from '@/hooks/useFullscreenMode';
+import OperationModePrompt from '@/components/layout/OperationModePrompt';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -36,6 +39,7 @@ function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { kiosk } = useKiosk();
   const { user, logout } = useAuth();
+  const { isFullscreen, isAvailable, enterFullscreen, exitFullscreen } = useFullscreenMode();
 
   // Sidebar collapse state — persisted
   const [collapsed, setCollapsed] = useState(() => {
@@ -214,6 +218,20 @@ function AppShell() {
                     <p className="font-semibold text-foreground truncate">{user.name || user.email}</p>
                     <p className="text-muted-foreground capitalize mt-0.5">{user.role || 'Operador'}</p>
                   </div>
+                  {isAvailable && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={isFullscreen ? exitFullscreen : enterFullscreen}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm cursor-pointer"
+                      >
+                        {isFullscreen
+                          ? <><Minimize2 className="w-4 h-4 shrink-0" /><span>Sair do Modo Operação</span></>
+                          : <><Maximize2 className="w-4 h-4 shrink-0" /><span>Modo Operação</span></>}
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={logout}
                     className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm text-destructive focus:bg-destructive/10 focus:text-destructive cursor-pointer"
@@ -253,6 +271,18 @@ function AppShell() {
 
           <div className="flex items-center gap-2">
             <NotificationCenter />
+            {isAvailable && (
+              <button
+                className="flex items-center justify-center w-10 h-10 rounded-xl border border-border/80 bg-card text-muted-foreground hover:text-foreground active:scale-95 transition-all"
+                onClick={isFullscreen ? exitFullscreen : enterFullscreen}
+                title={isFullscreen ? 'Sair do Modo Operação' : 'Entrar no Modo Operação'}
+                aria-label={isFullscreen ? 'Sair do Modo Operação' : 'Entrar no Modo Operação'}
+              >
+                {isFullscreen
+                  ? <Minimize2 className="w-4.5 h-4.5 text-[#76FB91]" />
+                  : <Maximize2 className="w-4.5 h-4.5" />}
+              </button>
+            )}
             <button
               className="flex items-center justify-center w-10 h-10 rounded-xl border border-border/80 bg-card text-muted-foreground hover:text-foreground active:scale-95 transition-all"
               onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
@@ -388,6 +418,8 @@ function AppShell() {
         </main>
       </div>
       {user && <LeoAssistantChat user={user} />}
+      {/* Prompt de orientação — exibido só na 1ª abertura como PWA */}
+      <OperationModePrompt onEnterFullscreen={enterFullscreen} />
     </div>
   );
 }

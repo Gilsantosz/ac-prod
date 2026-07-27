@@ -450,3 +450,43 @@ body {
   user-select: none;
 }
 
+/* ─── PWA Display-Mode: ocultar elementos exclusivos de navegador ──────── */
+/* Oculta botões de "instalar", "abrir no navegador" etc. quando em PWA    */
+@media (display-mode: standalone),
+       (display-mode: window-controls-overlay),
+       (display-mode: fullscreen) {
+  .browser-only-btn,
+  .install-pwa-btn,
+  .open-in-browser-btn {
+    display: none !important;
+  }
+}
+
+/* ─── Window Controls Overlay ─────────────────────────────────────────── */
+/* Ajusta o cabeçalho da app quando o Chrome ativa o WCO                   */
+@media (display-mode: window-controls-overlay) {
+  .app-titlebar {
+    position: fixed;
+    top: env(titlebar-area-y, 0);
+    left: env(titlebar-area-x, 0);
+    width: env(titlebar-area-width, 100%);
+    height: env(titlebar-area-height, 48px);
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+  .app-titlebar button,
+  .app-titlebar a {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+}
+
+/* ─── Modo Operação (Fullscreen via JS API) ───────────────────────────── */
+/* Quando em tela cheia total via requestFullscreen()                       */
+:fullscreen #root,
+:-webkit-full-screen #root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
