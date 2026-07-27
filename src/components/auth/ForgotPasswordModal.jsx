@@ -27,17 +27,16 @@ export default function ForgotPasswordModal({ open, onOpenChange }) {
       setSent(true);
     } catch (err) {
       const rawMsg = (err?.message || '').toLowerCase();
-      let userMessage = 'Não foi possível solicitar a recuperação. Verifique o e-mail informado.';
 
+      // Se der rate limit (429), significa que o e-mail JÁ FOI ENVIADO recentemente.
+      // Trata como sucesso na UI para o usuário não ficar travado com aviso de erro.
       if (rawMsg.includes('rate limit') || rawMsg.includes('too many requests') || rawMsg.includes('429')) {
-        userMessage = 'Limite de envios atingido para este e-mail. Por segurança, aguarde 1 a 2 minutos antes de tentar novamente (verifique também a pasta de Spam).';
+        setSent(true);
       } else if (rawMsg.includes('user not found') || rawMsg.includes('invalid email')) {
-        userMessage = 'E-mail não encontrado no cadastro do sistema. Verifique o endereço digitado.';
-      } else if (err?.message) {
-        userMessage = err.message;
+        setError('E-mail não encontrado no cadastro do sistema. Verifique o endereço digitado.');
+      } else {
+        setError(err?.message || 'Não foi possível solicitar a recuperação. Tente novamente.');
       }
-
-      setError(userMessage);
     } finally {
       setLoading(false);
     }
