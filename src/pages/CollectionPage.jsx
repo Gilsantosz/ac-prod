@@ -16,6 +16,19 @@ export default function CollectionPage() {
     };
   }, [logout]);
 
+  if (!isLoggedIn) {
+    return (
+      <div className="p-2 sm:p-6 lg:p-8 max-w-[1600px] mx-auto">
+        <OperationalLoginGate
+          pageTitle="Coleta / Bipagem"
+          pageSubtitle="ESTAÇÃO DE CONTROLE OPERACIONAL"
+          pageDescription="Identificação do operador para início do turno de produção."
+          icon={PlusCircle}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-5 sm:space-y-6">
       <PageHeader
@@ -24,23 +37,21 @@ export default function CollectionPage() {
         icon={PlusCircle}
         actions={
           <div className="flex items-center gap-3">
-            {isLoggedIn && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={logout}
-                className="rounded-xl border-emerald-500/30 hover:bg-emerald-500/10 text-foreground gap-2 h-9"
-              >
-                <LogOut className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span>Trocar Operador</span>
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={logout}
+              className="rounded-xl border-emerald-500/30 hover:bg-emerald-500/10 text-foreground gap-2 h-9"
+            >
+              <LogOut className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Trocar Operador</span>
+            </Button>
           </div>
         }
       />
-      <OperationalLoginGate>
+      <div className="bg-card border border-border/60 rounded-2xl p-4 sm:p-6 shadow-sm">
         <TraceabilityCollection embedded={true} />
-      </OperationalLoginGate>
+      </div>
     </div>
   );
 }
