@@ -11,6 +11,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useOperatorSession } from '@/hooks/useOperatorSession';
 import { useCollectionQueue } from '@/hooks/useCollectionQueue';
 import { useCells } from '@/hooks/useCells';
+import { getOperatorAllowedCells } from '@/lib/operatorCellRules';
 import {
   fetchProductionMachines,
   processProductionReading,
@@ -203,10 +204,10 @@ export default function TraceabilityCollection({ embedded = false }) {
   const operator = opSession?.name || user?.name || user?.email || '';
   const operatorId = opSession?.id || null;
 
-  // Listas de células autorizadas
+  // Listas de células estritamente autorizadas para este operador
   const displayCells = useMemo(() => {
-    return opSession ? (opSession.cells || []) : activeCells;
-  }, [opSession, activeCells]);
+    return getOperatorAllowedCells({ user, opSession, allCells: activeCells });
+  }, [user, opSession, activeCells]);
 
   const [cellName, setCellName] = useState(() => {
     if (opSession?.primary_cell) {
@@ -220,6 +221,18 @@ export default function TraceabilityCollection({ embedded = false }) {
   const [shift, setShift] = useState(() => opSession?.shift || currentShift());
   const [machine, setMachine] = useState(null);
   const shiftRange = useMemo(() => getShiftRange(shift), [shift]);
+
+  // Garantir que a célula selecionada esteja na lista de células permitidas do operador
+  useEffect(() => {
+    if (displayCells.length > 0) {
+      const isAllowed = displayCells.some(c => c.name === cellName || c.id === cellName);
+      if (!isAllowed) {
+        setCellName(displayCells[0].name);
+      }
+    } else if (opSession || user?.role === 'operator') {
+      setCellName('');
+    }
+  }, [displayCells, cellName, opSession, user]);
 
   // Sincronizar célula e turno quando a sessão operacional mudar
   useEffect(() => {

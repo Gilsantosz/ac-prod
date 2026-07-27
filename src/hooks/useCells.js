@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { getCells } from '@/lib/cellsGoalsService';
 import { useAuth } from '@/lib/AuthContext';
+import { getOperatorAllowedCells } from '@/lib/operatorCellRules';
 
 const HOURS_KEY = { '1º Turno': 'hoursShift1', '2º Turno': 'hoursShift2', '3º Turno': 'hoursShift3' };
 
@@ -16,16 +17,7 @@ export function useCells() {
   });
 
   const scopedCells = useMemo(() => {
-    if (!user || user.role === 'admin') return cells;
-    const allowedNames = Array.isArray(user.managed_cells) && user.managed_cells.length
-      ? user.managed_cells
-      : user.cell
-        ? [user.cell]
-        : [];
-    if (user.role === 'operator' || allowedNames.length > 0) {
-      return cells.filter((cell) => allowedNames.includes(cell.name));
-    }
-    return cells;
+    return getOperatorAllowedCells({ user, allCells: cells });
   }, [cells, user]);
 
   const activeCells = useMemo(

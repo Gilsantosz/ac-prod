@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/lib/AuthContext';
 import { useOperatorSession } from '@/hooks/useOperatorSession';
+import { getOperatorAllowedCells } from '@/lib/operatorCellRules';
 import {
   registerManualQuantitativeEntry,
   registerGeneralLot,
@@ -66,11 +67,14 @@ export default function ManualProductionEntryPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      // 1. Células
-      const { data: cellsData } = await supabase.from('cells').select('name').eq('active', true).order('name');
-      const cells = (cellsData || []).map(c => c.name);
+      // 1. Células autorizadas para o operador/usuário
+      const { data: cellsData } = await supabase.from('cells').select('id, name, type, active').eq('active', true).order('name');
+      const allowedCellsObj = getOperatorAllowedCells({ user, opSession: operatorSession, allCells: cellsData || [] });
+      const cells = allowedCellsObj.map(c => c.name);
       setActiveCells(cells);
-      if (cells.length > 0 && !selectedCell) setSelectedCell(cells[0]);
+      if (cells.length > 0 && (!selectedCell || !cells.includes(selectedCell))) {
+        setSelectedCell(cells[0]);
+      }
 
       // 2. Lotes disponíveis
       const lots = await fetchAvailableGeneralLots(50);
