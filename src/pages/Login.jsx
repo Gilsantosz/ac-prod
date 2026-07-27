@@ -199,7 +199,7 @@ export default function Login() {
                         placeholder="voce@empresa.com"
                         autoComplete="off"
                         data-lpignore="true"
-                        data-[#1password-ignore]="true"
+                        data-1password-ignore="true"
                         className="pl-10 h-11 bg-slate-950/90 border-slate-800 text-slate-100 placeholder:text-slate-600 rounded-xl focus:border-[#76FB91] focus:ring-[#76FB91]/20 text-sm transition-all"
                       />
                     </div>
@@ -229,7 +229,7 @@ export default function Login() {
                         placeholder="••••••••"
                         autoComplete="new-password"
                         data-lpignore="true"
-                        data-[#1password-ignore]="true"
+                        data-1password-ignore="true"
                         className="pl-10 h-11 bg-slate-950/90 border-slate-800 text-slate-100 placeholder:text-slate-600 rounded-xl focus:border-[#76FB91] focus:ring-[#76FB91]/20 text-sm transition-all"
                       />
                     </div>
