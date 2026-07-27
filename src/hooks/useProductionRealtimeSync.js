@@ -235,47 +235,68 @@ export function useProductionRealtimeSync(options = {}) {
       channelName,
       cleanChannelPart(cellName),
       cleanChannelPart(machineId),
+      Math.random().toString(36).substring(2, 9),
     ].join(':');
 
-    let channel = supabase.channel(realtimeChannelName);
-
-    REALTIME_TABLES.forEach((table) => {
-      channel = channel.on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table,
-        },
-        handlePayload,
-      );
-    });
-
+    let channel = null;
     let fallbackInterval = null;
 
-    channel.subscribe((status) => {
-      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        console.warn('[Production Realtime] Canal websocket temporariamente indisponível. Ativando fallback de atualização periódica.');
-        if (!fallbackInterval) {
-          fallbackInterval = setInterval(() => {
-            queryClient.invalidateQueries({ queryKey: ['production'] });
-            queryClient.invalidateQueries({ queryKey: ['production-lots'] });
-            queryClient.invalidateQueries({ queryKey: ['occurrences'] });
-            queryClient.invalidateQueries({ queryKey: ['collection-kpis'] });
-            queryClient.invalidateQueries({ queryKey: ['cellKpis'] });
-          }, 15000);
+    try {
+      channel = supabase.channel(realtimeChannelName);
+
+      REALTIME_TABLES.forEach((table) => {
+        channel = channel.on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table,
+          },
+          handlePayload,
+        );
+      });
+
+      channel.subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('[Production Realtime] Canal websocket temporariamente indisponível. Ativando fallback de atualização periódica.');
+          if (!fallbackInterval) {
+            fallbackInterval = setInterval(() => {
+              queryClient.invalidateQueries({ queryKey: ['production'] });
+              queryClient.invalidateQueries({ queryKey: ['production-lots'] });
+              queryClient.invalidateQueries({ queryKey: ['occurrences'] });
+              queryClient.invalidateQueries({ queryKey: ['collection-kpis'] });
+              queryClient.invalidateQueries({ queryKey: ['cellKpis'] });
+            }, 15000);
+          }
+        } else if (status === 'SUBSCRIBED') {
+          if (fallbackInterval) {
+            clearInterval(fallbackInterval);
+            fallbackInterval = null;
+          }
         }
-      } else if (status === 'SUBSCRIBED') {
-        if (fallbackInterval) {
-          clearInterval(fallbackInterval);
-          fallbackInterval = null;
-        }
+      });
+    } catch (err) {
+      console.warn('[Production Realtime] Erro ao registrar canal realtime:', err);
+      if (!fallbackInterval) {
+        fallbackInterval = setInterval(() => {
+          queryClient.invalidateQueries({ queryKey: ['production'] });
+          queryClient.invalidateQueries({ queryKey: ['production-lots'] });
+          queryClient.invalidateQueries({ queryKey: ['occurrences'] });
+          queryClient.invalidateQueries({ queryKey: ['collection-kpis'] });
+          queryClient.invalidateQueries({ queryKey: ['cellKpis'] });
+        }, 15000);
       }
-    });
+    }
 
     return () => {
       if (fallbackInterval) clearInterval(fallbackInterval);
-      supabase.removeChannel(channel);
+      if (channel) {
+        try {
+          supabase.removeChannel(channel);
+        } catch {
+          /* noop */
+        }
+      }
       debounceTimers.forEach(clearTimeout);
     };
   }, [queryClient, enabled, cellName, machineId, debounceMs, channelName]);
