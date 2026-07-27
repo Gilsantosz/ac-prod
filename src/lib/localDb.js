@@ -82,7 +82,28 @@ const normalizeFromDb = (entity, row) => {
   };
 
   if (entity === 'ProductionEntry') {
-    return { ...base, date: row.date?.toString?.() ?? row.date };
+    const cell = row.cell ?? row.cell_name ?? '';
+    const shift = row.shift ?? '1';
+    const produced = Number(row.produced ?? row.produced_qty ?? 0);
+    const scrap = Number(row.scrap ?? row.scrap_qty ?? 0);
+    const target = Number(row.target ?? row.target_qty ?? 0);
+    const downtime = Number(row.downtime ?? row.downtime_minutes ?? 0);
+    return {
+      ...base,
+      date: row.date?.toString?.() ?? row.date,
+      cell,
+      cell_name: cell,
+      shift,
+      produced,
+      produced_qty: produced,
+      scrap,
+      scrap_qty: scrap,
+      target,
+      target_qty: target,
+      downtime,
+      downtime_minutes: downtime,
+      operator: row.operator || row.operator_name || 'Operador',
+    };
   }
   if (entity === 'DailyGoal') {
     return {

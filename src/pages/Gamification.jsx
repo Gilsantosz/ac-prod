@@ -23,6 +23,7 @@ export default function Gamification() {
     queryKey: ['production'],
     queryFn: () => base44.entities.ProductionEntry.list('-created_date', 2000),
     initialData: [],
+    refetchInterval: 10000,
   });
 
   const monthEntries = useMemo(

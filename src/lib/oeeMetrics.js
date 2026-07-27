@@ -8,20 +8,22 @@ const pct = (n) => Math.round(n * 100 * 10) / 10; // fração 0-1 → % com 1 ca
 // Calcula os 3 componentes do OEE para um conjunto de entradas.
 // `getCell` resolve o cadastro da célula (para tempo planejado por turno).
 export function computeOEE(entries, getCell) {
-  const produced = entries.reduce((a, e) => a + (Number(e.produced) || 0), 0);
-  const target = entries.reduce((a, e) => a + (Number(e.target) || 0), 0);
-  const scrap = entries.reduce((a, e) => a + (Number(e.scrap) || 0), 0);
-  const downtimeMin = entries.reduce((a, e) => a + (Number(e.downtime) || 0), 0);
+  const produced = entries.reduce((a, e) => a + (Number(e.produced ?? e.produced_qty) || 0), 0);
+  const target = entries.reduce((a, e) => a + (Number(e.target ?? e.target_qty) || 0), 0);
+  const scrap = entries.reduce((a, e) => a + (Number(e.scrap ?? e.scrap_qty) || 0), 0);
+  const downtimeMin = entries.reduce((a, e) => a + (Number(e.downtime ?? e.downtime_minutes) || 0), 0);
 
   // Tempo planejado (min): soma das horas de turno de cada combinação célula+turno+data
   const seen = new Set();
   let plannedMin = 0;
   entries.forEach((e) => {
-    const k = `${e.date}|${e.cell}|${e.shift}`;
+    const cellName = e.cell || e.cell_name;
+    const shift = e.shift || '1';
+    const k = `${e.date}|${cellName}|${shift}`;
     if (seen.has(k)) return;
     seen.add(k);
-    const cell = getCell ? getCell(e.cell) : null;
-    const hours = cell ? (cell[HOURS_KEY[e.shift]] ?? 8) : 8;
+    const cellObj = getCell ? getCell(cellName) : null;
+    const hours = cellObj ? (cellObj[HOURS_KEY[shift]] ?? 8) : 8;
     plannedMin += hours * 60;
   });
 
@@ -51,8 +53,9 @@ export function computeOEE(entries, getCell) {
 export function oeeByCell(entries, getCell) {
   const byCell = {};
   entries.forEach((e) => {
-    if (!e.cell) return;
-    (byCell[e.cell] = byCell[e.cell] || []).push(e);
+    const cellName = e.cell || e.cell_name;
+    if (!cellName) return;
+    (byCell[cellName] = byCell[cellName] || []).push(e);
   });
   return Object.entries(byCell)
     .map(([cell, list]) => ({ cell, ...computeOEE(list, getCell) }))

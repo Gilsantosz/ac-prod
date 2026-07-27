@@ -20,10 +20,10 @@ export function monthlySeries(entries) {
     const k = monthKey(e.date);
     if (!k) return;
     if (!map[k]) map[k] = { key: k, produced: 0, target: 0, scrap: 0, downtime: 0, count: 0 };
-    map[k].produced += Number(e.produced) || 0;
-    map[k].target += Number(e.target) || 0;
-    map[k].scrap += Number(e.scrap) || 0;
-    map[k].downtime += Number(e.downtime) || 0;
+    map[k].produced += Number(e.produced ?? e.produced_qty) || 0;
+    map[k].target += Number(e.target ?? e.target_qty) || 0;
+    map[k].scrap += Number(e.scrap ?? e.scrap_qty) || 0;
+    map[k].downtime += Number(e.downtime ?? e.downtime_minutes) || 0;
     map[k].count += 1;
   });
   return Object.values(map)
@@ -38,13 +38,14 @@ export function monthlySeries(entries) {
 
 // Série mensal por célula -> { months: [labels], cells: [name], rows: [{ label, [cell]: produced }] }
 export function monthlyByCell(entries) {
-  const cells = [...new Set(entries.map((e) => e.cell).filter(Boolean))].sort();
+  const cells = [...new Set(entries.map((e) => e.cell || e.cell_name).filter(Boolean))].sort();
   const map = {};
   entries.forEach((e) => {
     const k = monthKey(e.date);
-    if (!k || !e.cell) return;
+    const cellName = e.cell || e.cell_name;
+    if (!k || !cellName) return;
     if (!map[k]) map[k] = { key: k, label: monthLabel(k) };
-    map[k][e.cell] = (map[k][e.cell] || 0) + (Number(e.produced) || 0);
+    map[k][cellName] = (map[k][cellName] || 0) + (Number(e.produced ?? e.produced_qty) || 0);
   });
   const rows = Object.values(map).sort((a, b) => a.key.localeCompare(b.key));
   // garante que toda célula exista em todas as linhas (0 quando ausente)

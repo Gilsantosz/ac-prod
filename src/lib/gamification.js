@@ -8,14 +8,16 @@ const SCRAP_GREAT = 1;
 function groupTeams(entries) {
   const teams = {};
   entries.forEach((e) => {
-    if (!e.cell || !e.shift) return;
-    const key = `${e.cell}__${e.shift}`;
-    (teams[key] = teams[key] || { cell: e.cell, shift: e.shift, days: {} });
+    const cell = e.cell || e.cell_name;
+    const shift = e.shift || '1';
+    if (!cell) return;
+    const key = `${cell}__${shift}`;
+    teams[key] = teams[key] || { cell, shift, days: {} };
     const day = e.date || '—';
     const d = (teams[key].days[day] = teams[key].days[day] || { produced: 0, target: 0, scrap: 0 });
-    d.produced += Number(e.produced) || 0;
-    d.target += Number(e.target) || 0;
-    d.scrap += Number(e.scrap) || 0;
+    d.produced += Number(e.produced ?? e.produced_qty) || 0;
+    d.target += Number(e.target ?? e.target_qty) || 0;
+    d.scrap += Number(e.scrap ?? e.scrap_qty) || 0;
   });
   return teams;
 }
