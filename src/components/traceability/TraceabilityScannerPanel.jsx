@@ -16,6 +16,7 @@ export default function TraceabilityScannerPanel({
   machine,
   readerContext,
   onOpenDowntime,
+  onToggleKiosk,
   activeDowntime,
 }) {
   const [value, setValue] = useState('');
@@ -126,7 +127,7 @@ export default function TraceabilityScannerPanel({
 
   return (
     <div className="bg-card border border-border rounded-md p-4 sm:p-5 space-y-5">
-      <ScannerModeSelector value={mode} onChange={onModeChange} onOpenDowntime={onOpenDowntime} />
+      <ScannerModeSelector value={mode} onChange={onModeChange} onOpenDowntime={onOpenDowntime} onToggleKiosk={onToggleKiosk} />
 
       {activeDowntime ? (
         <div className="rounded-2xl border-2 border-amber-600/60 bg-amber-500/10 p-5 text-amber-900 dark:text-amber-200 space-y-2 shadow-md animate-in fade-in duration-200">

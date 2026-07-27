@@ -694,6 +694,7 @@ export default function TraceabilityCollection({ embedded = false }) {
       operator={operator}
       machine={machine}
       onOpenDowntime={() => setDowntimeDialogOpen(true)}
+      onToggleKiosk={() => setKioskOpen(true)}
       activeDowntime={activeDowntime}
       readerContext={currentGeneralLot?.general_lot_code ? (
         <div
@@ -733,21 +734,21 @@ export default function TraceabilityCollection({ embedded = false }) {
   return (
     <div className={pageClass}>
       {!embedded && (
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <PageHeader 
-            title="Coleta / Bipagem" 
-            subtitle="Estação de controle operacional de coleta — bipagem por código de barras, QR Code ou RFID." 
-            icon={ScanLine} 
-          />
-          <Button
-            onClick={() => setKioskOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-2 h-11 px-5 rounded-xl shadow-md shadow-emerald-950/20 shrink-0 self-start sm:self-center transition-all"
-            data-testid="toggle-kiosk-mode-btn"
-          >
-            <Maximize2 className="w-4 h-4" />
-            Modo Foco (Tela Cheia)
-          </Button>
-        </div>
+        <PageHeader 
+          title="Coleta / Bipagem" 
+          subtitle="Estação de controle operacional de coleta — bipagem por código de barras, QR Code ou RFID." 
+          icon={ScanLine} 
+          actions={
+            <Button
+              onClick={() => setKioskOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs gap-2 h-11 px-5 rounded-xl shadow-md shadow-emerald-950/20 shrink-0 transition-all cursor-pointer"
+              data-testid="toggle-kiosk-mode-btn"
+            >
+              <Maximize2 className="w-4.5 h-4.5" />
+              Modo Foco (Tela Cheia)
+            </Button>
+          }
+        />
       )}
 
       {/* Contexto de coleta (célula, máquina, turno, operador) */}
@@ -802,6 +803,18 @@ export default function TraceabilityCollection({ embedded = false }) {
           <div className="h-10 rounded-xl border border-input bg-secondary/50 px-3 flex items-center text-sm font-medium truncate">
             {operator || 'Não identificado'}
           </div>
+        </div>
+
+        <div className="space-y-1.5 flex-[0.8] self-end">
+          <Button
+            onClick={() => setKioskOpen(true)}
+            className="w-full h-10 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs uppercase tracking-wider gap-2 rounded-xl shadow-md transition-all cursor-pointer"
+            title="Abrir Modo Foco / Tela Cheia"
+            data-testid="context-bar-kiosk-btn"
+          >
+            <Maximize2 className="w-4 h-4" />
+            Modo Foco
+          </Button>
         </div>
       </div>
 

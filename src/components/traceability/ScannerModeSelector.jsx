@@ -1,4 +1,4 @@
-import { Barcode, Keyboard, ScanLine, AlertTriangle } from 'lucide-react';
+import { Barcode, Keyboard, ScanLine, AlertTriangle, Maximize2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const MODES = [
@@ -7,9 +7,9 @@ const MODES = [
   { value: 'manual', label: 'Manual', icon: Keyboard },
 ];
 
-export default function ScannerModeSelector({ value, onChange, onOpenDowntime }) {
+export default function ScannerModeSelector({ value, onChange, onOpenDowntime, onToggleKiosk }) {
   return (
-    <div className="grid grid-cols-2 xl:grid-cols-4 gap-2" role="radiogroup" aria-label="Modo de leitura">
+    <div className="grid grid-cols-2 lg:grid-cols-5 gap-2" role="radiogroup" aria-label="Modo de leitura">
       {MODES.map(({ value: mode, label, icon: Icon }) => (
         <button
           key={mode}
@@ -18,7 +18,7 @@ export default function ScannerModeSelector({ value, onChange, onOpenDowntime })
           aria-checked={value === mode}
           onClick={() => onChange(mode)}
           className={cn(
-            'h-14 px-3 rounded-md border flex items-center justify-center gap-2 text-sm font-semibold transition-colors',
+            'h-14 px-3 rounded-md border flex items-center justify-center gap-2 text-sm font-semibold transition-colors cursor-pointer',
             value === mode
               ? 'bg-[#00522d] border-[#00522d] text-white'
               : 'bg-card border-border text-muted-foreground hover:text-foreground hover:bg-secondary',
@@ -28,6 +28,17 @@ export default function ScannerModeSelector({ value, onChange, onOpenDowntime })
           <span>{label}</span>
         </button>
       ))}
+
+      {onToggleKiosk && (
+        <button
+          type="button"
+          onClick={() => onToggleKiosk?.()}
+          className="h-14 px-3 rounded-md border border-emerald-600/80 bg-emerald-700 hover:bg-emerald-800 text-white flex items-center justify-center gap-2 text-sm font-extrabold shadow-sm transition-colors cursor-pointer"
+        >
+          <Maximize2 className="w-5 h-5 shrink-0" />
+          <span>Modo Foco</span>
+        </button>
+      )}
 
       {/* Botão de Registrar Parada substituindo o antigo RFID */}
       <button
