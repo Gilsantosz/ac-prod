@@ -135,19 +135,16 @@ export default defineConfig(({ mode }) => {
           skipWaiting: true,
           clientsClaim: true,
           cleanupOutdatedCaches: true,
-          // Cache estático
+          // Mantém somente os arquivos estáticos do aplicativo no cache.
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-          // Estratégia network-first para API calls Supabase
+          // Dados MES são transacionais: nunca reutilizar respostas antigas do Supabase.
+          // O modo offline e a fila durável de coletas são controlados pela aplicação,
+          // não pelo cache HTTP do Service Worker.
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
-              handler: 'NetworkFirst',
-              options: {
-                cacheName: 'supabase-api',
-                expiration: { maxEntries: 100, maxAgeSeconds: 60 * 5 },
-                networkTimeoutSeconds: 10,
-              },
+              handler: 'NetworkOnly',
             },
           ],
         },
