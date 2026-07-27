@@ -571,15 +571,6 @@ export default function PromobIntegration() {
         <TabsContent value="import" className="space-y-6 outline-none">
           <div className="flex border-b border-border/40 pb-2 gap-4 flex-wrap">
             <button
-              onClick={() => setImportMode('promob')}
-              className={cn(
-                "pb-2 text-xs font-bold transition-all relative flex items-center gap-1.5",
-                importMode === 'promob' ? "text-[#2d9c4a] border-b-2 border-[#2d9c4a]" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Upload className="w-3.5 h-3.5" /> Integração Promob (XML/CSV)
-            </button>
-            <button
               onClick={() => setImportMode('pcp')}
               className={cn(
                 "pb-2 text-xs font-bold transition-all relative flex items-center gap-1.5",
