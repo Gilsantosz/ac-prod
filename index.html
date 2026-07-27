@@ -34,6 +34,34 @@
 
     <title>Leo Flow — Controle de Produção</title>
 
+    <!-- ─── Auto-limpeza de Service Worker desatualizado ─────────────── -->
+    <script>
+      // Versão atual do manifest — incrementar a cada mudança de manifest
+      var MANIFEST_VERSION = '1.3.3-fullscreen';
+      var storedVersion = localStorage.getItem('lf_manifest_version');
+      if (storedVersion !== MANIFEST_VERSION) {
+        localStorage.setItem('lf_manifest_version', MANIFEST_VERSION);
+        // Cancela todos os service workers antigos e recarrega a página
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(registrations) {
+            var promises = registrations.map(function(r) { return r.unregister(); });
+            return Promise.all(promises);
+          }).then(function() {
+            // Limpa caches do workbox
+            if ('caches' in window) {
+              caches.keys().then(function(names) {
+                names.forEach(function(name) { caches.delete(name); });
+              });
+            }
+            // Força reload apenas se houve mudança de versão (não na primeira visita)
+            if (storedVersion) {
+              window.location.reload(true);
+            }
+          });
+        }
+      }
+    </script>
+
     <!-- ─── SPA Routing: GitHub Pages redirect ─────────────────────────── -->
     <script>
       // GitHub Pages SPA redirect: se vier de 404.html com ?p=, redireciona para a rota correta
