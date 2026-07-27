@@ -41,7 +41,16 @@ export default function ResetPassword() {
       await base44.auth.resetPassword({ newPassword: password });
       setSuccess(true);
     } catch (err) {
-      setError(err?.message || 'Falha ao redefinir a senha. O link pode ter expirado.');
+      const rawMsg = (err?.message || '').toLowerCase();
+      let userMessage = 'Falha ao redefinir a senha. O link de recuperação pode ter expirado.';
+      if (rawMsg.includes('same password') || rawMsg.includes('should be different')) {
+        userMessage = 'A nova senha deve ser diferente da senha anterior.';
+      } else if (rawMsg.includes('rate limit') || rawMsg.includes('429')) {
+        userMessage = 'Muitas tentativas em curto intervalo. Aguarde 1 a 2 minutos e tente salvar novamente.';
+      } else if (err?.message) {
+        userMessage = err.message;
+      }
+      setError(userMessage);
     } finally {
       setLoading(false);
     }

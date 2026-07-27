@@ -26,7 +26,18 @@ export default function ForgotPasswordModal({ open, onOpenChange }) {
       await base44.auth.resetPasswordRequest(email);
       setSent(true);
     } catch (err) {
-      setError(err?.message || 'Não foi possível solicitar a recuperação. Verifique o e-mail informado.');
+      const rawMsg = (err?.message || '').toLowerCase();
+      let userMessage = 'Não foi possível solicitar a recuperação. Verifique o e-mail informado.';
+
+      if (rawMsg.includes('rate limit') || rawMsg.includes('too many requests') || rawMsg.includes('429')) {
+        userMessage = 'Limite de envios atingido para este e-mail. Por segurança, aguarde 1 a 2 minutos antes de tentar novamente (verifique também a pasta de Spam).';
+      } else if (rawMsg.includes('user not found') || rawMsg.includes('invalid email')) {
+        userMessage = 'E-mail não encontrado no cadastro do sistema. Verifique o endereço digitado.';
+      } else if (err?.message) {
+        userMessage = err.message;
+      }
+
+      setError(userMessage);
     } finally {
       setLoading(false);
     }
