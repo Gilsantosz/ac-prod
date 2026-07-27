@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import { invalidateAllMesQueries } from '@/config/queryKeys';
 import { useAuth } from '@/lib/AuthContext';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import PageHeader from '@/components/ui/PageHeader';
@@ -32,6 +34,7 @@ import ApiConfigTab from '@/components/promob/ApiConfigTab';
 
 export default function PromobIntegration() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin';
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
@@ -210,40 +213,83 @@ export default function PromobIntegration() {
         }
       }
 
-      // 3. Deletar backup correspondente se existir indexado em backup_files
-      await supabase
-        .from('backup_files')
-        .delete()
-        .eq('import_batch_id', batchToDelete.id);
+      // 3. Tentar exclusão atômica backend via RPC delete_promob_import_batch
+      const { error: rpcErr } = await supabase.rpc('delete_promob_import_batch', {
+        p_batch_id: batchToDelete.id,
+      });
 
-      // 4. Excluir a ordem de produção (OP) associada se houver generated_op_id (o cascade cuidará dos lotes/roteiros)
-      if (batchToDelete.generated_op_id) {
-        const { error: opErr } = await supabase
-          .from('production_orders')
-          .delete()
-          .eq('id', batchToDelete.generated_op_id);
+      if (rpcErr) {
+        console.warn('RPC delete_promob_import_batch não disponível ou falhou, executando deleção em cascata:', rpcErr);
 
-        if (opErr) throw opErr;
-      } else if (batchToDelete.order_code) {
-        const { error: opErr } = await supabase
-          .from('production_orders')
-          .delete()
-          .eq('order_code', batchToDelete.order_code);
+        const opId = batchToDelete.generated_op_id;
+        const orderCode = batchToDelete.order_code;
 
-        if (opErr) {
-          console.warn('Erro ao remover OP via código de pedido:', opErr);
+        // Coletar lotes
+        let lotIds = [];
+        const { data: lots } = await supabase
+          .from('production_lots')
+          .select('id')
+          .or(`pcp_import_batch_id.eq.${batchToDelete.id}${opId ? `,order_id.eq.${opId}` : ''}`);
+        if (lots && lots.length > 0) {
+          lotIds = lots.map((l) => l.id);
         }
+
+        // Coletar peças
+        let pieceIds = [];
+        const { data: pieces } = await supabase
+          .from('production_pieces')
+          .select('id')
+          .or(`pcp_import_batch_id.eq.${batchToDelete.id}${lotIds.length > 0 ? `,lot_id.in.(${lotIds.join(',')})` : ''}${opId ? `,production_order_id.eq.${opId}` : ''}`);
+        if (pieces && pieces.length > 0) {
+          pieceIds = pieces.map((p) => p.id);
+        }
+
+        // Deletar leituras e eventos
+        if (pieceIds.length > 0) {
+          await supabase.from('production_stage_readings').delete().in('piece_id', pieceIds);
+          await supabase.from('collection_stage_facts').delete().in('piece_id', pieceIds);
+          await supabase.from('production_collection_events').delete().in('piece_id', pieceIds);
+          await supabase.from('production_events').delete().in('piece_id', pieceIds);
+        }
+        if (lotIds.length > 0) {
+          await supabase.from('production_stage_readings').delete().in('lot_id', lotIds);
+          await supabase.from('collection_stage_facts').delete().in('lot_id', lotIds);
+          await supabase.from('production_collection_events').delete().in('lot_id', lotIds);
+          await supabase.from('production_events').delete().in('lot_id', lotIds);
+        }
+        await supabase.from('production_collection_events').delete().eq('pcp_import_batch_id', batchToDelete.id);
+
+        // Deletar peças
+        if (pieceIds.length > 0) {
+          await supabase.from('production_pieces').delete().in('id', pieceIds);
+        }
+        await supabase.from('production_pieces').delete().eq('pcp_import_batch_id', batchToDelete.id);
+
+        // Deletar lotes
+        if (lotIds.length > 0) {
+          await supabase.from('production_lots').delete().in('id', lotIds);
+        }
+        await supabase.from('production_lots').delete().eq('pcp_import_batch_id', batchToDelete.id);
+
+        // Deletar OPs
+        if (opId) {
+          await supabase.from('production_orders').delete().eq('id', opId);
+        }
+        if (orderCode) {
+          await supabase.from('production_orders').delete().eq('order_code', orderCode);
+        }
+
+        // Deletar registros de importação e backups
+        await supabase.from('backup_files').delete().eq('import_batch_id', batchToDelete.id);
+        await supabase.from('promob_import_rows').delete().eq('import_batch_id', batchToDelete.id);
+        await supabase.from('pcp_import_logs').delete().eq('import_batch_id', batchToDelete.id);
+        await supabase.from('promob_import_batches').delete().eq('id', batchToDelete.id);
       }
 
-      // 5. Excluir o lote de importação em promob_import_batches
-      const { error: batchErr } = await supabase
-        .from('promob_import_batches')
-        .delete()
-        .eq('id', batchToDelete.id);
+      // 4. Invalidar todos os caches de MES para atualizar KPIs em tempo real em todas as páginas
+      invalidateAllMesQueries(queryClient);
 
-      if (batchErr) throw batchErr;
-
-      toast.success('Importação e seus dados associados excluídos com sucesso!');
+      toast.success('Importação e todos os seus dados associados foram excluídos e os KPIs atualizados!');
       setIsDeleteModalOpen(false);
       setBatchToDelete(null);
       setDeletePassword('');

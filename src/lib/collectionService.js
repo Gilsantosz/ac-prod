@@ -230,54 +230,95 @@ export async function getCollectionKpis({
     p_shift: shift,
     p_date_from: dateFrom,
     p_date_to: dateTo,
-    // Informar os sete argumentos seleciona de forma inequívoca a versão
-    // acumulativa do RPC (lote ativo + atividade do turno).
     p_pcp_import_batch_id: pcpImportBatchId,
     p_lot_id: lotId,
   });
-  if (!snapshotError) return snapshot || {};
-
-  const snapshotUnavailable = snapshotError.code === 'PGRST202'
-    || /get_collection_cell_snapshot|schema cache/i.test(snapshotError.message || '');
-  if (!snapshotUnavailable) throw snapshotError;
-
-  // Compatibilidade durante a aplicação da migration 032.
-  let query = supabase
-    .from('production_stage_readings')
-    .select('status, quantity');
-
-  if (resolvedCellName) query = query.eq('cell_name', resolvedCellName);
-
-  if (workstationId) query = query.eq('machine_id', workstationId);
-  
-  if (operatorId) {
-    query = query.eq('operator_id', operatorId);
+  if (!snapshotError && snapshot && typeof snapshot === 'object' && ('expected' in snapshot || 'approved' in snapshot)) {
+    return snapshot;
   }
 
+  // Mapeamento canônico do código da célula
+  const cellCodeMap = {
+    'corte': 'cut', 'cut': 'cut',
+    'borda': 'edge', 'bordo': 'edge', 'edge': 'edge',
+    'furação': 'drill', 'furacao': 'drill', 'drill': 'drill',
+    'usinagem': 'cnc', 'cnc': 'cnc',
+    'marcenaria': 'joinery', 'joinery': 'joinery',
+    'separaçao': 'separation', 'separacao': 'separation', 'separation': 'separation',
+    'embalagem': 'packaging', 'packaging': 'packaging'
+  };
+  const stepCode = cellCodeMap[resolvedCellName.toLowerCase()] || resolvedCellName.toLowerCase();
+
+  // 1. Buscar peças ativas atreladas a lotes não encerrados/cancelados
+  const { data: pieces } = await supabase
+    .from('production_pieces')
+    .select('id, status, rework_status, replacement_status, route_steps, requires_cut, requires_edge, requires_cnc, requires_joinery, pcp_import_batch_id, lot_id, production_lots!inner(status, pcp_import_batch_id)')
+    .not('status', 'in', '("cancelled","replaced","shipped")')
+    .not('production_lots.status', 'in', '("closed","shipped","cancelled")');
+
+  let activePieces = pieces || [];
+  if (pcpImportBatchId) {
+    activePieces = activePieces.filter(p => (p.pcp_import_batch_id || p.production_lots?.pcp_import_batch_id) === pcpImportBatchId);
+  }
+  if (lotId) {
+    activePieces = activePieces.filter(p => p.lot_id === lotId);
+  }
+
+  // Filtrar peças que passam por esta etapa
+  const cellPieces = activePieces.filter(p => {
+    const route = Array.isArray(p.route_steps) ? p.route_steps : [];
+    if (route.length > 0) return route.includes(stepCode);
+    if (stepCode === 'cut') return p.requires_cut !== false;
+    if (stepCode === 'edge') return !!p.requires_edge;
+    if (stepCode === 'cnc') return !!p.requires_cnc;
+    if (stepCode === 'joinery') return !!p.requires_joinery;
+    return true;
+  });
+
+  const expected = cellPieces.length;
+  const rework = cellPieces.filter(p => ['rework_pending', 'rework_in_progress'].includes(p.status) || p.rework_status === 'in_progress').length;
+  const replacement = cellPieces.filter(p => ['replacement_requested', 'replacement_in_production'].includes(p.status) || p.replacement_status === 'in_production').length;
+
+  // 2. Buscar aprovadas
+  const { data: approvedFacts } = await supabase
+    .from('collection_stage_facts')
+    .select('piece_id')
+    .eq('step_code_canonico', stepCode);
+
+  const approvedPieceIds = new Set((approvedFacts || []).map(f => f.piece_id));
+  const approvedCumulative = cellPieces.filter(p => approvedPieceIds.has(p.id)).length;
+  const pending = Math.max(expected - approvedCumulative, 0);
+
+  // 3. Leituras do turno/estação
+  let query = supabase
+    .from('production_collection_events')
+    .select('status, result_status');
+
+  if (resolvedCellName) query = query.ilike('cell_name', resolvedCellName);
+  if (workstationId) query = query.eq('machine_id', workstationId);
+  if (operatorId) query = query.eq('operator_id', operatorId);
   if (shift) query = query.eq('shift', shift);
   if (dateFrom) query = query.gte('created_at', dateFrom);
   if (dateTo) query = query.lte('created_at', dateTo);
 
-  const { data, error } = await query;
-  if (error) throw error;
+  const { data: events } = await query;
+  const rows = events || [];
 
-  const rows = data || [];
-  const quantityOf = (row) => Math.max(Number(row.quantity) || 1, 1);
-  const approved = rows.filter(r => r.status === 'approved').reduce((sum, r) => sum + quantityOf(r), 0);
-  const rejected = rows.filter(r => r.status === 'rejected').reduce((sum, r) => sum + quantityOf(r), 0);
-  const blocked = rows.filter(r => ['blocked', 'duplicated'].includes(r.status)).reduce((sum, r) => sum + quantityOf(r), 0);
+  const shiftApproved = rows.filter(r => r.status === 'synced' && r.result_status === 'approved').length;
+  const shiftRejected = rows.filter(r => r.result_status === 'rejected').length;
+  const shiftBlocked = rows.filter(r => ['blocked', 'duplicated'].includes(r.result_status)).length;
 
   return {
-    total: approved + rejected + blocked,
-    approved,
-    rejected,
-    blocked,
-    expected: approved,
-    pending: 0,
-    rework: 0,
-    replacement: 0,
-    active_lots: 0,
-    active_pcp_batches: 0,
+    total: rows.length,
+    approved: approvedCumulative,
+    rejected: shiftRejected,
+    blocked: shiftBlocked,
+    expected,
+    pending,
+    rework,
+    replacement,
+    active_lots: new Set(cellPieces.map(p => p.lot_id)).size,
+    active_pcp_batches: new Set(cellPieces.map(p => p.pcp_import_batch_id || p.production_lots?.pcp_import_batch_id).filter(Boolean)).size,
   };
 }
 
