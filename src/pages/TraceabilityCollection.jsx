@@ -28,6 +28,7 @@ import CollectionHeaderGuide from '@/components/collection/CollectionHeaderGuide
 import ActiveDowntimeBanner from '@/components/collection/ActiveDowntimeBanner';
 import DowntimeDialog from '@/components/collection/DowntimeDialog';
 import CollectionFullscreenKiosk from '@/components/collection/CollectionFullscreenKiosk';
+import CollectionErrorBoundary from '@/components/ui/CollectionErrorBoundary';
 import { getActiveDowntime } from '@/lib/downtimeService';
 import { AlertTriangle, Maximize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -972,32 +973,34 @@ export default function TraceabilityCollection({ embedded = false }) {
         }}
       />
 
-      <CollectionFullscreenKiosk
-        open={kioskOpen}
-        onClose={() => setKioskOpen(false)}
-        cellName={cellName}
-        machine={machine}
-        shift={shift}
-        operator={operator}
-        operatorId={operatorId}
-        mode={mode}
-        setMode={setMode}
-        handleRead={handleRead}
-        feedback={feedback}
-        cellStats={cellStats}
-        currentGeneralLot={currentGeneralLot}
-        currentClientLotCode={currentClientLotCode}
-        activeDowntime={activeDowntime}
-        refetchActiveDowntime={refetchActiveDowntime}
-        refreshData={refreshData}
-        onOpenDowntime={() => setDowntimeDialogOpen(true)}
-        selectedPiece={selectedPiece}
-        onSelectPiece={setSelectedPiece}
-        handleOpenRejectModal={handleOpenRejectModal}
-        handleOpenReadingOccurrence={handleOpenReadingOccurrence}
-        handleOpenTraceabilityDrawer={handleOpenTraceabilityDrawer}
-        refreshReadsSignal={refreshReadsSignal}
-      />
+      <CollectionErrorBoundary onReset={() => setKioskOpen(false)}>
+        <CollectionFullscreenKiosk
+          open={kioskOpen}
+          onClose={() => setKioskOpen(false)}
+          cellName={cellName}
+          machine={machine}
+          shift={shift}
+          operator={operator}
+          operatorId={operatorId}
+          mode={mode}
+          setMode={setMode}
+          handleRead={handleRead}
+          feedback={feedback}
+          cellStats={cellStats}
+          currentGeneralLot={currentGeneralLot}
+          currentClientLotCode={currentClientLotCode}
+          activeDowntime={activeDowntime}
+          refetchActiveDowntime={refetchActiveDowntime}
+          refreshData={refreshData}
+          onOpenDowntime={() => setDowntimeDialogOpen(true)}
+          selectedPiece={selectedPiece}
+          onSelectPiece={setSelectedPiece}
+          handleOpenRejectModal={handleOpenRejectModal}
+          handleOpenReadingOccurrence={handleOpenReadingOccurrence}
+          handleOpenTraceabilityDrawer={handleOpenTraceabilityDrawer}
+          refreshReadsSignal={refreshReadsSignal}
+        />
+      </CollectionErrorBoundary>
     </div>
   );
 }

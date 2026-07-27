@@ -165,8 +165,10 @@ export async function getCollectionHistoryCount({
  */
 export function subscribeToCollectionHistory({ cellName, cellId, callback, onStatus, channelSuffix = '' }) {
   const trimmedName = cellName?.trim();
-  const suffix = channelSuffix ? `-${channelSuffix}` : '';
+  const uniqueId = Math.random().toString(36).substring(2, 7);
+  const suffix = channelSuffix ? `-${channelSuffix}-${uniqueId}` : `-${uniqueId}`;
   const channelName = `collection-history-${trimmedName || cellId || 'all'}${suffix}`;
+
   const changeConfig = {
     event: '*',
     schema: 'public',
@@ -181,23 +183,34 @@ export function subscribeToCollectionHistory({ cellName, cellId, callback, onSta
   };
   if (trimmedName) readingsConfig.filter = `cell_name=eq.${trimmedName}`;
 
-  const channel = supabase
-    .channel(channelName)
-    .on('postgres_changes', changeConfig, callback)
-    .on('postgres_changes', readingsConfig, callback)
-    .on(
-      'postgres_changes',
-      { event: 'UPDATE', schema: 'public', table: 'production_pieces' },
-      callback,
-    )
-    .subscribe((status) => onStatus?.(status));
+  try {
+    const channel = supabase
+      .channel(channelName)
+      .on('postgres_changes', changeConfig, callback)
+      .on('postgres_changes', readingsConfig, callback)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'production_pieces' },
+        callback,
+      )
+      .subscribe((status) => onStatus?.(status));
 
-  return channel;
+    return channel;
+  } catch (err) {
+    console.error('Erro ao subscrever ao canal realtime:', err);
+    onStatus?.('CHANNEL_ERROR');
+    return null;
+  }
 }
 
 export function unsubscribeFromCollectionHistory(channel) {
   if (!channel) return Promise.resolve();
-  return supabase.removeChannel(channel);
+  try {
+    return supabase.removeChannel(channel);
+  } catch (err) {
+    console.warn('Erro ao remover canal de realtime:', err);
+    return Promise.resolve();
+  }
 }
 
 /**
