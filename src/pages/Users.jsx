@@ -7,8 +7,8 @@ import { toast } from 'sonner';
 import {
   ShieldAlert, Users as UsersIcon, Shield, Clock, Mail, Trash2, Edit3, ShieldCheck,
   Activity, CheckCircle2, RefreshCw, Send, UserCheck, Plus, Check, X, Loader2
-} from 'lucide-react';
 import InviteUserForm from '@/components/users/InviteUserForm';
+import CreateUserModal from '@/components/users/CreateUserModal';
 import UserList from '@/components/users/UserList';
 import ReportSchedulesManager from '@/components/users/ReportSchedulesManager';
 import PageHeader from '@/components/ui/PageHeader';
@@ -20,11 +20,11 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-
 export default function Users() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [saving, setSaving] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   // States para a aba Escopos
   const [selectedUserForScope, setSelectedUserForScope] = useState(null);
@@ -428,11 +428,19 @@ export default function Users() {
 
         {/* ─── 1. ABA CONTAS ──────────────────────────────────────── */}
         <TabsContent value="accounts" className="space-y-6">
-          {canManageUsers && <InviteUserForm onInvite={handleInvite} saving={saving} />}
+          {canManageUsers && (
+            <CreateUserModal
+              open={isCreateModalOpen}
+              onOpenChange={setIsCreateModalOpen}
+              onInvite={handleInvite}
+              saving={saving}
+            />
+          )}
           <UserList
             users={users}
             currentUserId={me?.id}
             readOnly={!canManageUsers}
+            onOpenCreateModal={() => setIsCreateModalOpen(true)}
             onUpdate={(id, payload) => updateUser.mutate({ id, payload })}
             onDelete={(id) => {
               if (confirm('Tem certeza que deseja remover este colaborador?')) {
