@@ -119,27 +119,33 @@ export default function LotCard({ lot, _stage, onAdvance, onBlock, onUnblock }) 
       </div>
 
       {routeProgress.length > 0 && (
-        <div className="space-y-1 border-t border-border/60 pt-2">
-          <div className="flex items-center justify-between gap-2 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
-            <span>Coletas por etapa</span>
-            <span>Real / previsto</span>
+        <div className="space-y-1.5 border-t border-border/60 pt-2.5">
+          <div className="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+            <span>COLETAS POR ETAPA</span>
+            <span>REAL / PREVISTO</span>
           </div>
-          {visibleRouteProgress.map((step) => (
-            <div key={step.id || `${step.step_order}-${step.step_name}`} className="flex items-center justify-between gap-2 text-[11px]">
-              <span className="truncate text-muted-foreground">{translateStage(step.step_name)}</span>
-              <span className={cn(
-                'font-semibold shrink-0',
-                step.pending === 0 ? 'text-emerald-600' : step.collected > 0 ? 'text-amber-600' : 'text-muted-foreground'
-              )}>
-                {step.collected}/{step.total}
-              </span>
-            </div>
-          ))}
+          {visibleRouteProgress.map((step) => {
+            const isDone = Number(step.total) > 0 && Number(step.collected) >= Number(step.total);
+            const isPartial = !isDone && Number(step.collected) > 0;
+            return (
+              <div key={step.id || `${step.step_order}-${step.step_name}`} className="flex items-center justify-between gap-2 text-xs">
+                <span className={cn("truncate font-medium", isDone ? "text-foreground" : "text-muted-foreground")}>
+                  {translateStage(step.step_name)}
+                </span>
+                <span className={cn(
+                  'font-bold shrink-0 tabular-nums text-xs',
+                  isDone ? 'text-[#2d9c4a]' : isPartial ? 'text-amber-600' : 'text-muted-foreground/70'
+                )}>
+                  {step.collected}/{step.total}
+                </span>
+              </div>
+            );
+          })}
           {routeProgress.length > 4 && (
             <button
               type="button"
               onClick={() => setShowAllStages((current) => !current)}
-              className="text-[10px] font-medium text-[#2d9c4a] hover:underline"
+              className="text-[11px] font-semibold text-[#2d9c4a] hover:underline pt-0.5"
             >
               {showAllStages ? 'Recolher etapas' : `Ver mais ${hiddenStageCount} ${hiddenStageCount === 1 ? 'etapa' : 'etapas'}`}
             </button>

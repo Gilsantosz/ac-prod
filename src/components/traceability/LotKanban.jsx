@@ -95,40 +95,51 @@ export default function LotKanban({ trace }) {
   return (
     <div className="space-y-4">
       {/* Controles de agrupamento */}
-      <div className="flex items-center justify-between bg-card border border-border/60 rounded-2xl p-3 shadow-sm flex-wrap gap-3">
-        <div className="flex items-center gap-2.5">
-          <span className="text-xs font-semibold text-muted-foreground">Agrupar por:</span>
-          <div className="flex bg-secondary/35 rounded-lg p-0.5">
+      <div className="flex items-center justify-between bg-card border border-border/60 rounded-2xl p-3.5 shadow-sm flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-bold text-muted-foreground">Agrupar por:</span>
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setGroupMode('none')}
               className={cn(
-                "px-3 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5",
-                groupMode === 'none' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                "px-3.5 py-1.5 text-xs font-semibold rounded-full border transition-all flex items-center gap-2 select-none",
+                groupMode === 'none'
+                  ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-500/40 shadow-sm"
+                  : "bg-background text-muted-foreground border-border/60 hover:text-foreground hover:border-border"
               )}
             >
+              <span className={cn("w-2 h-2 rounded-full", groupMode === 'none' ? "bg-emerald-500" : "bg-muted-foreground/30")} />
               <Layers className="w-3.5 h-3.5" /> Lista
             </button>
+
             <button
               onClick={() => setGroupMode('cover')}
               className={cn(
-                "px-3 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5",
-                groupMode === 'cover' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                "px-3.5 py-1.5 text-xs font-semibold rounded-full border transition-all flex items-center gap-2 select-none",
+                groupMode === 'cover'
+                  ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-500/40 shadow-sm"
+                  : "bg-background text-muted-foreground border-border/60 hover:text-foreground hover:border-border"
               )}
             >
+              <span className={cn("w-2 h-2 rounded-full", groupMode === 'cover' ? "bg-emerald-500" : "bg-muted-foreground/30")} />
               <User className="w-3.5 h-3.5 text-purple-500" /> Capa / Cliente
             </button>
+
             <button
               onClick={() => setGroupMode('batch')}
               className={cn(
-                "px-3 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5",
-                groupMode === 'batch' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                "px-3.5 py-1.5 text-xs font-semibold rounded-full border transition-all flex items-center gap-2 select-none",
+                groupMode === 'batch'
+                  ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-500/40 shadow-sm"
+                  : "bg-background text-muted-foreground border-border/60 hover:text-foreground hover:border-border"
               )}
             >
+              <span className={cn("w-2 h-2 rounded-full", groupMode === 'batch' ? "bg-emerald-500" : "bg-muted-foreground/30")} />
               <Package className="w-3.5 h-3.5 text-blue-500" /> Lote Geral (Carga)
             </button>
           </div>
         </div>
-        <div className="text-xs text-muted-foreground font-medium">
+        <div className="text-xs text-muted-foreground font-semibold">
           Total de <span className="text-foreground font-bold">{trace.lots.data.length}</span> lotes listados
         </div>
       </div>
@@ -137,37 +148,43 @@ export default function LotKanban({ trace }) {
         <div className="flex gap-4 min-w-max">
           {KANBAN_STAGES.map(stage => {
             const stageLots = trace.lotsByStage[stage.code] || [];
-            if (stageLots.length === 0 && stage.code !== 'released') return null;
+            if (stageLots.length === 0 && stage.code !== 'released' && stage.code !== 'imported' && stage.code !== 'separation') return null;
 
             const stageLotsGrouped = getGroupedLotsForStage(stageLots);
 
             return (
-              <div key={stage.code} className="w-72 shrink-0 space-y-2">
+              <div key={stage.code} className="w-80 shrink-0 space-y-3">
                 {/* Header da coluna */}
-                <button
-                  onClick={() => toggleStage(stage.code)}
+                <div
                   className={cn(
-                    'w-full flex items-center justify-between px-3 py-2 rounded-xl',
-                    stage.bg, 'hover:opacity-80 transition-opacity'
+                    'w-full flex items-center justify-between px-4 py-2.5 rounded-2xl border shadow-sm',
+                    stage.bg, 'border-border/40'
                   )}
                 >
-                  <div className="flex items-center gap-2">
-                    <span className={cn('font-semibold text-sm', stage.color)}>
+                  <div className="flex items-center gap-2.5">
+                    <span className={cn('font-bold text-sm', stage.color)}>
                       {stage.label}
                     </span>
                     <span className={cn(
-                      'text-xs font-bold px-2 py-0.5 rounded-full',
+                      'text-xs font-extrabold px-2 py-0.5 rounded-full',
                       stageLots.length > 0 ? stage.color : 'text-muted-foreground',
-                      'bg-white/50 dark:bg-black/20'
+                      'bg-background/80 shadow-xs'
                     )}>
                       {stageLots.length}
                     </span>
                   </div>
-                  <ChevronRight className={cn(
-                    'w-4 h-4', stage.color,
-                    'transition-transform', expandedStages[stage.code] ? 'rotate-90' : ''
-                  )} />
-                </button>
+                  
+                  <button
+                    onClick={() => toggleStage(stage.code)}
+                    className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-background/50 transition-colors"
+                    title={expandedStages[stage.code] ? "Recolher coluna" : "Expandir coluna"}
+                  >
+                    <ChevronRight className={cn(
+                      'w-4 h-4', stage.color,
+                      'transition-transform', expandedStages[stage.code] ? 'rotate-90' : ''
+                    )} />
+                  </button>
+                </div>
 
                 {/* Lotes da coluna */}
                 {expandedStages[stage.code] && (
