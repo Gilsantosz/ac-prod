@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import { 
   LogIn, 
   User, 
-  Lock, 
   ShieldCheck, 
   ShieldAlert, 
   Shield, 

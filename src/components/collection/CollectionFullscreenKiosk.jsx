@@ -9,10 +9,7 @@ import {
   User, 
   Activity, 
   Box, 
-  RadioTower, 
-  Check, 
-  Ban, 
-  Maximize2 
+  RadioTower
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TraceabilityScannerPanel from '@/components/traceability/TraceabilityScannerPanel';

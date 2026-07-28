@@ -5,10 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  User as UserIcon, Edit3, Trash2, Save, X, LayoutDashboard, PlusCircle, AlertOctagon,
-  Boxes, HardHat, LineChart, Zap, Users, KeyRound, Send, BrainCircuit,
-  Plug, GitFork, Box, Truck, BellRing, Layers, ShieldAlert, MailCheck, Check, Search, Plus, ChevronDown, ChevronUp, Mail
+import { Edit3, Trash2, Save, X, Users, KeyRound, Send, Check, Search, Plus, ChevronDown, ChevronUp, Mail
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCells } from '@/hooks/useCells';

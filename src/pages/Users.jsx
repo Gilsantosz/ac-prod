@@ -8,7 +8,6 @@ import {
   ShieldAlert, Users as UsersIcon, Shield, Clock, Mail, Trash2, Edit3, ShieldCheck,
   Activity, CheckCircle2, RefreshCw, Send, UserCheck, Plus, Check, X, Loader2
 } from 'lucide-react';
-import InviteUserForm from '@/components/users/InviteUserForm';
 import CreateUserModal from '@/components/users/CreateUserModal';
 import UserList from '@/components/users/UserList';
 import ReportSchedulesManager from '@/components/users/ReportSchedulesManager';

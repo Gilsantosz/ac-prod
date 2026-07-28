@@ -12,13 +12,20 @@ export default function ForgotPassword() {
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
     setLoading(true);
-    try { await base44.auth.resetPasswordRequest(email); } catch { /* ignore */ }
-    setSent(true);
-    setLoading(false);
+    try {
+      await base44.auth.resetPasswordRequest(email);
+      setSent(true);
+    } catch (err) {
+      setError(err?.message || 'Não foi possível enviar o link. Tente novamente em alguns minutos.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -38,6 +45,9 @@ export default function ForgotPassword() {
               <Label htmlFor="email">E-mail</Label>
               <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
+            {error && (
+              <p className="text-sm text-destructive" role="alert">{error}</p>
+            )}
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Enviar link'}
             </Button>

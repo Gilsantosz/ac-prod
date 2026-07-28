@@ -689,13 +689,10 @@ const auth = {
   setToken: () => { /* Gerenciado pelo Supabase Auth automaticamente */ },
 
   resetPasswordRequest: async (email) => {
-    // Inclui o basename /ac-prod no redirectTo para GitHub Pages e produção
-    const base = import.meta.env.BASE_URL || '/ac-prod/';
-    const redirectTo = `${window.location.origin}${base}reset-password`;
-
-    // Invoca a Edge Function recover-password (isenta do limite de taxa de 2 e-mails/h do SMTP nativo)
+    // A Edge Function define a URL pública confiável. O cliente não envia
+    // window.location.origin, pois no app local isso criava links localhost.
     const { data, error } = await supabase.functions.invoke('recover-password', {
-      body: { email, redirectTo },
+      body: { email },
     });
 
     if (error) {

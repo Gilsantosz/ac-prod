@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import {
-  Upload, FileText, CheckCircle, AlertTriangle, RefreshCw, X, Download, Plus, Trash2, Layers
+  Upload, FileText, CheckCircle, RefreshCw, X, Plus, Trash2, Layers
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { assertSafeImportFile, assertWorksheetBounds } from '@/lib/spreadsheetSecurity';

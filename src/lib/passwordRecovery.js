@@ -1,0 +1,86 @@
+const RECOVERY_QUERY_KEYS = [
+  'access_token',
+  'refresh_token',
+  'token_hash',
+  'type',
+  'code',
+  'error',
+  'error_code',
+  'error_description',
+];
+
+const getParams = (location) => {
+  const search = new URLSearchParams(location.search || '');
+  const hash = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+  return { search, hash };
+};
+
+const firstParam = (search, hash, key) => search.get(key) || hash.get(key);
+
+const recoveryErrorMessage = (search, hash) => {
+  const description = firstParam(search, hash, 'error_description');
+  const code = firstParam(search, hash, 'error_code') || firstParam(search, hash, 'error');
+
+  if (!description && !code) return null;
+
+  const normalized = `${code || ''} ${description || ''}`.toLowerCase();
+  if (normalized.includes('expired')) {
+    return 'Este link de recuperação expirou. Solicite um novo link para continuar.';
+  }
+
+  return 'Este link de recuperação é inválido ou já foi utilizado. Solicite um novo link.';
+};
+
+export const clearRecoveryCredentialsFromUrl = (location = window.location) => {
+  const cleaned = new URL(location.href);
+  RECOVERY_QUERY_KEYS.forEach((key) => cleaned.searchParams.delete(key));
+  cleaned.hash = '';
+  window.history.replaceState(null, '', `${cleaned.pathname}${cleaned.search}`);
+};
+
+export const resolvePasswordRecoverySession = async (
+  auth,
+  location = window.location,
+) => {
+  const { search, hash } = getParams(location);
+  const authError = recoveryErrorMessage(search, hash);
+  if (authError) throw new Error(authError);
+
+  const accessToken = firstParam(search, hash, 'access_token');
+  const refreshToken = firstParam(search, hash, 'refresh_token');
+  const tokenHash = firstParam(search, hash, 'token_hash');
+  const type = firstParam(search, hash, 'type');
+  const code = firstParam(search, hash, 'code');
+
+  if (accessToken && refreshToken) {
+    const { data, error } = await auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    if (error) throw error;
+    if (data?.session?.user) return data.session;
+  }
+
+  if (tokenHash && type === 'recovery') {
+    const { data, error } = await auth.verifyOtp({
+      token_hash: tokenHash,
+      type: 'recovery',
+    });
+    if (error) throw error;
+    if (data?.session?.user) return data.session;
+  }
+
+  if (code) {
+    const { data, error } = await auth.exchangeCodeForSession(code);
+    if (error) throw error;
+    if (data?.session?.user) return data.session;
+  }
+
+  // O supabase-js processa links implícitos automaticamente quando
+  // detectSessionInUrl=true. getSession aguarda essa inicialização.
+  const { data, error } = await auth.getSession();
+  if (error) throw error;
+  if (data?.session?.user) return data.session;
+
+  throw new Error('Link de recuperação inválido ou expirado.');
+};

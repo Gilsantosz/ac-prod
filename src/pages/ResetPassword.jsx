@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/lib/localDb';
+import { supabase } from '@/lib/supabaseClient';
+import {
+  clearRecoveryCredentialsFromUrl,
+  resolvePasswordRecoverySession,
+} from '@/lib/passwordRecovery';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, Lock, ShieldAlert, CheckCircle2, ArrowLeft } from 'lucide-react';
@@ -13,13 +18,31 @@ export default function ResetPassword() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [linkStatus, setLinkStatus] = useState('validating');
+  const [linkError, setLinkError] = useState('');
 
   useEffect(() => {
-    // Trata hash de URL vindo do e-mail do Supabase (#access_token=...&type=recovery)
-    const hash = window.location.hash;
-    if (hash && hash.includes('type=recovery')) {
-      console.log('[Leo Flow] Sessão de recuperação de senha detectada.');
-    }
+    let active = true;
+
+    const validateRecoveryLink = async () => {
+      try {
+        await resolvePasswordRecoverySession(supabase.auth);
+        if (!active) return;
+        clearRecoveryCredentialsFromUrl();
+        setLinkStatus('valid');
+      } catch (err) {
+        if (!active) return;
+        setLinkError(
+          err?.message?.toLowerCase().includes('expired')
+            ? 'Este link expirou. Solicite uma nova mensagem de recuperação.'
+            : 'Este link é inválido, já foi utilizado ou expirou.',
+        );
+        setLinkStatus('invalid');
+      }
+    };
+
+    validateRecoveryLink();
+    return () => { active = false; };
   }, []);
 
   const handleSubmit = async (e) => {
@@ -39,6 +62,12 @@ export default function ResetPassword() {
     setLoading(true);
     try {
       await base44.auth.resetPassword({ newPassword: password });
+      try {
+        await base44.auth.logout();
+      } catch {
+        // A senha já foi salva. Uma eventual falha de logout não deve induzir
+        // o usuário a repetir a alteração com o mesmo link de uso único.
+      }
       setSuccess(true);
     } catch (err) {
       const rawMsg = (err?.message || '').toLowerCase();
@@ -84,7 +113,35 @@ export default function ResetPassword() {
 
           <div className="h-px w-full bg-slate-800/80" />
 
-          {success ? (
+          {linkStatus === 'validating' ? (
+            <div className="flex flex-col items-center text-center py-8 space-y-3" role="status">
+              <Loader2 className="w-8 h-8 animate-spin text-[#76FB91]" />
+              <p className="text-sm font-semibold text-slate-200">Validando seu link...</p>
+              <p className="text-xs text-slate-400">Aguarde enquanto confirmamos a solicitação com segurança.</p>
+            </div>
+          ) : linkStatus === 'invalid' ? (
+            <div className="space-y-5">
+              <div className="flex flex-col items-center text-center p-5 bg-rose-950/40 border border-rose-800/60 rounded-2xl space-y-2" role="alert">
+                <ShieldAlert className="w-11 h-11 text-rose-400" />
+                <h2 className="text-base font-bold text-rose-200">Link inválido ou expirado</h2>
+                <p className="text-xs text-slate-300 leading-relaxed">{linkError}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/forgot-password', { replace: true })}
+                className="w-full h-11 rounded-xl bg-[#005f2f] hover:bg-[#004a24] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-[#005f2f]/30 active:scale-[0.98] transition-all cursor-pointer"
+              >
+                Solicitar Novo Link
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/login', { replace: true })}
+                className="w-full text-center text-xs text-slate-400 hover:text-slate-200 transition-colors"
+              >
+                Voltar ao login
+              </button>
+            </div>
+          ) : success ? (
             <div className="space-y-6">
               <div className="flex flex-col items-center text-center p-5 bg-emerald-950/40 border border-emerald-800/50 rounded-2xl space-y-2">
                 <CheckCircle2 className="w-12 h-12 text-[#76FB91] animate-in zoom-in-50 duration-300" />

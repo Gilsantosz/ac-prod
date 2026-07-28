@@ -1,15 +1,10 @@
 import { useState } from 'react';
 import { 
-  Info, 
   ScanLine, 
-  CheckCircle2, 
-  AlertTriangle, 
-  Cpu, 
   ChevronDown, 
   ChevronUp, 
   HelpCircle,
-  Zap,
-  RotateCcw
+  Zap
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
