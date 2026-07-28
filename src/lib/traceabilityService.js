@@ -504,7 +504,18 @@ export async function fetchRealtimeCounters(params = {}) {
 
   const { data, error } = await query;
   if (error) throw error;
-  return data || [];
+  if (data && data.length > 0) return data;
+
+  // Fallback: se não houver contadores na data exata, busca contadores acumulados recentes
+  let fallbackQuery = supabase
+    .from('production_realtime_counters')
+    .select('*');
+  if (params.cellName) fallbackQuery = fallbackQuery.eq('cell_name', params.cellName);
+  if (params.machineId) fallbackQuery = fallbackQuery.eq('machine_id', params.machineId);
+  if (params.lotId) fallbackQuery = fallbackQuery.eq('lot_id', params.lotId);
+
+  const { data: fallbackData } = await fallbackQuery.order('updated_at', { ascending: false }).limit(100);
+  return fallbackData || [];
 }
 
 export async function fetchProductionMachines(cellName) {

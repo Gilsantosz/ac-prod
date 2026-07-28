@@ -14,7 +14,16 @@ async function fetchCellCounters(date) {
     .select('cell_name, approved_quantity, rejected_quantity, blocked_quantity, pending_quantity, planned_quantity, metric_unit_label, updated_at')
     .eq('date', date);
   if (error) throw error;
-  return data || [];
+  if (data && data.length > 0) return data;
+
+  // Fallback: se não houver registros para a data exata (ex: lotes ativos criados em datas anteriores), busca os contadores mais recentes dos lotes ativos
+  const { data: fallbackData, error: fallbackErr } = await supabase
+    .from('production_realtime_counters')
+    .select('cell_name, approved_quantity, rejected_quantity, blocked_quantity, pending_quantity, planned_quantity, metric_unit_label, updated_at')
+    .order('updated_at', { ascending: false })
+    .limit(100);
+  if (fallbackErr) return [];
+  return fallbackData || [];
 }
 
 function aggregateByCell(rows) {
