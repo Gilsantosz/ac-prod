@@ -401,6 +401,11 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   // Busca silenciosa da timeline da peça ativa
   useEffect(() => {
+    if (selectedPiece?.is_unresolved_collection) {
+      setSelectedPieceEvents([]);
+      setLoadingPieceEvents(false);
+      return;
+    }
     if (!selectedPiece?.id && !selectedPiece?.piece_uid) {
       setSelectedPieceEvents([]);
       return;
@@ -421,7 +426,7 @@ export default function TraceabilityCollection({ embedded = false }) {
     };
     loadEvents();
     return () => { isMounted = false; };
-  }, [selectedPiece?.id, selectedPiece?.piece_uid, refreshReadsSignal]);
+  }, [selectedPiece?.id, selectedPiece?.piece_uid, selectedPiece?.is_unresolved_collection, refreshReadsSignal]);
 
   // ─── Função que processa um evento da fila ──────────────────────────────────
   const processEvent = useCallback(async (event) => {
