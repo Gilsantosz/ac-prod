@@ -1,4 +1,4 @@
-import { Layers, User, Clock, RefreshCw, AlertOctagon, HelpCircle } from 'lucide-react';
+import { Layers, User, Clock, RefreshCw, AlertOctagon, HelpCircle, MapPin, Monitor, CalendarDays } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -37,12 +37,14 @@ export default function CollectionPieceDetailPanel({
     );
   }
 
+  const isUnresolvedCollection = Boolean(piece.is_unresolved_collection);
   const isRejected = piece.status === 'rejected';
   const isBlocked = piece.status === 'blocked';
   const isRework = piece.status === 'rework';
   const isApproved = piece.status === 'approved' || piece.status === 'active';
 
   const getStatusBadge = () => {
+    if (isUnresolvedCollection) return <Badge className="bg-zinc-600 text-white border-0 text-xs">NÃO LOCALIZADA</Badge>;
     if (isRejected) return <Badge className="bg-rose-500 text-white border-0 text-xs">REPROVADA</Badge>;
     if (isBlocked) return <Badge className="bg-amber-500 text-white border-0 text-xs">BLOQUEADA</Badge>;
     if (isRework) return <Badge className="bg-purple-500 text-white border-0 text-xs">RETRABALHO</Badge>;
@@ -64,7 +66,9 @@ export default function CollectionPieceDetailPanel({
       <div className="flex justify-between items-start gap-4 pb-4 border-b border-border/40">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <h4 className="font-extrabold text-foreground text-base font-mono">{piece.piece_uid || piece.traceability_code}</h4>
+            <h4 className="font-extrabold text-foreground text-base font-mono">
+              {piece.piece_uid || piece.traceability_code || piece.raw_value || 'Sem identificação'}
+            </h4>
             {getStatusBadge()}
             {piece.is_manual || piece.entry_type === 'manual_quantitativo' ? (
               <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 text-xs font-bold">
@@ -77,7 +81,7 @@ export default function CollectionPieceDetailPanel({
             )}
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            Peça: <span className="font-bold text-foreground">{piece.piece_name || 'Sem nome'}</span>
+            Peça: <span className="font-bold text-foreground">{piece.piece_name || (isUnresolvedCollection ? 'Não localizada no cadastro' : 'Sem nome')}</span>
           </p>
         </div>
 
@@ -92,8 +96,42 @@ export default function CollectionPieceDetailPanel({
         </Button>
       </div>
 
+      {isUnresolvedCollection && (
+        <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4 space-y-3">
+          <div>
+            <p className="text-xs font-extrabold text-amber-700 dark:text-amber-400">Coleta registrada sem peça vinculada</p>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              O código foi recebido pelo sistema, mas nenhuma peça canônica correspondente foi localizada. Os dados originais da coleta permanecem preservados.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <p className="flex items-center gap-2">
+              <CalendarDays className="w-3.5 h-3.5 text-muted-foreground" />
+              <span>{piece.created_at ? new Date(piece.created_at).toLocaleString('pt-BR') : 'Data não informada'}</span>
+            </p>
+            <p className="flex items-center gap-2">
+              <User className="w-3.5 h-3.5 text-muted-foreground" />
+              <span>{piece.operator_name || 'Operador não identificado'}{piece.registration ? ` · ${piece.registration}` : ''}</span>
+            </p>
+            <p className="flex items-center gap-2">
+              <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
+              <span>{piece.cell_name || 'Célula não informada'}{piece.shift ? ` · ${piece.shift}` : ''}</span>
+            </p>
+            <p className="flex items-center gap-2">
+              <Monitor className="w-3.5 h-3.5 text-muted-foreground" />
+              <span>{piece.machine_name || 'Posto geral'}</span>
+            </p>
+          </div>
+          {piece.unresolved_reason && (
+            <p className="text-[11px] text-muted-foreground border-t border-amber-500/15 pt-2">
+              Motivo informado: <strong className="text-foreground">{piece.unresolved_reason}</strong>
+            </p>
+          )}
+        </div>
+      )}
+
       {/* 2. Informações Básicas de Rastreabilidade */}
-      <div className="grid grid-cols-2 gap-4 text-xs">
+      {!isUnresolvedCollection && <div className="grid grid-cols-2 gap-4 text-xs">
         <div className="space-y-0.5">
           <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Lote</span>
           <p className="font-bold text-foreground">{piece.lot_code || 'LOTE-N/A'}</p>
@@ -142,10 +180,10 @@ export default function CollectionPieceDetailPanel({
             <p className="font-bold text-amber-700 capitalize">{piece.replacement_status}</p>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* 3. Fluxo Produtivo Visual */}
-      <div className="space-y-2 pt-2">
+      {!isUnresolvedCollection && <div className="space-y-2 pt-2">
         <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Fluxo da Rota</span>
         <PieceProductionFlow
           route={piece.route || []}
@@ -153,10 +191,10 @@ export default function CollectionPieceDetailPanel({
           completedSteps={piece.completedSteps || events.filter(e => e.status === 'approved').map(e => e.step_name)}
           status={piece.status}
         />
-      </div>
+      </div>}
 
       {/* 4. Timeline Resumida */}
-      <div className="space-y-3 pt-2">
+      {!isUnresolvedCollection && <div className="space-y-3 pt-2">
         <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Últimas Movimentações ({events.length})</span>
         
         {events.length === 0 ? (
@@ -199,10 +237,10 @@ export default function CollectionPieceDetailPanel({
             })}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* 5. Ações de Detalhe da Peça */}
-      <div className="flex flex-col gap-2 pt-4 border-t border-border/40">
+      {!isUnresolvedCollection && <div className="flex flex-col gap-2 pt-4 border-t border-border/40">
         <div className="flex gap-2.5">
           {canReject && !isRejected && piece.status !== 'replaced' && (
             <Button
@@ -236,7 +274,7 @@ export default function CollectionPieceDetailPanel({
             <Layers className="w-4 h-4" /> Rastreabilidade
           </Button>
         </div>
-      </div>
+      </div>}
 
     </div>
   );
