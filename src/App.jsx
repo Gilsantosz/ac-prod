@@ -44,6 +44,7 @@ import JoineryPage from '@/pages/JoineryPage';
 import ManualProductionEntryPage from '@/pages/ManualProductionEntryPage';
 import ReplacementPage from '@/pages/ReplacementPage';
 import QualityPage from '@/pages/QualityPage';
+import Traceability from '@/pages/Traceability';
 import { useProductionRealtimeSync } from '@/hooks/useProductionRealtimeSync';
 import { isSupabaseConfigured } from '@/lib/supabaseClient';
 
@@ -136,11 +137,11 @@ const AuthenticatedApp = () => {
           <Route path="/usuarios" element={<Users />} />
           <Route path="/relatorios" element={<Reports />} />
           <Route path="/ia-operacional" element={<AiOperations />} />
-          {/* ── Rotas Rastreabilidade Redirecionadas ── */}
-          <Route path="/rastreabilidade" element={<Navigate to="/pcp?tab=orders" replace />} />
-          <Route path="/rastreabilidade/kanban" element={<Navigate to="/pcp?tab=orders" replace />} />
-          <Route path="/rastreabilidade/buscar" element={<Navigate to="/pcp?tab=history" replace />} />
-          <Route path="/rastreabilidade/historico" element={<Navigate to="/pcp?tab=history" replace />} />
+          {/* ── Rotas Rastreabilidade Geral ── */}
+          <Route path="/rastreabilidade" element={<Traceability />} />
+          <Route path="/rastreabilidade/kanban" element={<Navigate to="/rastreabilidade?tab=kanban" replace />} />
+          <Route path="/rastreabilidade/buscar" element={<Navigate to="/rastreabilidade?tab=search" replace />} />
+          <Route path="/rastreabilidade/historico" element={<Navigate to="/rastreabilidade?tab=timeline" replace />} />
           <Route path="/rastreabilidade/marcenaria" element={<Navigate to="/marcenaria" replace />} />
           <Route path="/rastreabilidade/embalagem" element={<Navigate to="/embalagem" replace />} />
           <Route path="/rastreabilidade/expedicao" element={<Navigate to="/expedicao" replace />} />

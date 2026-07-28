@@ -50,8 +50,8 @@ export const appRoutes = [
     icon: Layers,
     group: 'operation',
     permission: 'view_traceability',
-    showInSidebar: false,
-    showInDashboardHub: false
+    showInSidebar: true,
+    showInDashboardHub: true
   },
   {
     path: '/integridade-lote',
