@@ -240,6 +240,75 @@ export const AuthProvider = ({ children }) => {
     };
   }, [fetchProfile, rejectUnauthorizedSession]);
 
+  // ─── Detector de Hibernação, Modo Descanso e Bloqueio de Tela ─────────────
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let lastTick = Date.now();
+    let lastHiddenTime = null;
+    let wasFrozen = false;
+
+    const performSleepLogout = async (reason) => {
+      console.warn(`[Leo Flow] Sessão encerrada por segurança (${reason}): O sistema detectou descanso/hibernação.`);
+      clearPersistedAuthSession();
+      setUser(null);
+      setIsAuthenticated(false);
+      setAuthError({
+        type: 'sleep_logout',
+        message: 'O computador entrou em modo de descanso ou hibernação. Por segurança, digite suas credenciais novamente.',
+      });
+      try {
+        await supabase.auth.signOut();
+      } catch { /* noop */ }
+      redirectTo('/login');
+    };
+
+    // Monitor 1: Heartbeat de 1s que detecta interrupção da CPU (Hibernação/Sleep)
+    const heartbeatInterval = setInterval(() => {
+      const now = Date.now();
+      const delta = now - lastTick;
+      lastTick = now;
+
+      // Se o tick de 1000ms levou mais de 4000ms, o SO dormiu ou hibernou
+      if (delta > 4000) {
+        performSleepLogout('system_sleep_delta');
+      }
+    }, 1000);
+
+    // Monitor 2: Mudança de visibilidade / Ocultação / Bloqueio de tela
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        lastHiddenTime = Date.now();
+      } else if (document.visibilityState === 'visible') {
+        if (wasFrozen) {
+          wasFrozen = false;
+          performSleepLogout('page_resume_from_freeze');
+          return;
+        }
+
+        if (lastHiddenTime && Date.now() - lastHiddenTime > 10000) {
+          lastHiddenTime = null;
+          performSleepLogout('idle_screen_rest');
+        }
+      }
+    };
+
+    // Monitor 3: Evento Page Lifecycle Freeze (antes do descanso profundo)
+    const handleFreeze = () => {
+      wasFrozen = true;
+      clearPersistedAuthSession();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('freeze', handleFreeze);
+
+    return () => {
+      clearInterval(heartbeatInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('freeze', handleFreeze);
+    };
+  }, [isAuthenticated]);
+
   // ─── checkUserAuth — compatibilidade com ProtectedRoute ──────────────────────
   const checkUserAuth = useCallback(async () => {
     setIsLoadingAuth(true);

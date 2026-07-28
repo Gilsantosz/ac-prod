@@ -42,7 +42,7 @@ const SYSTEM_HIGHLIGHTS = [
 ];
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, authError } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -240,13 +240,14 @@ export default function Login() {
                     </div>
                   </div>
 
-                  {error && (
+                  {(error || authError?.message) && (
                     <div
-                      className="flex items-start gap-2.5 text-xs text-rose-300 bg-rose-950/60 border border-rose-800/60 rounded-xl p-3"
+                      className="flex items-start gap-2.5 text-xs text-rose-300 bg-rose-950/60 border border-rose-800/60 rounded-xl p-3 shadow-sm"
                       role="alert"
+                      aria-live="assertive"
                     >
                       <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
-                      <span className="leading-relaxed">{error}</span>
+                      <span className="leading-relaxed">{error || authError?.message}</span>
                     </div>
                   )}
 
