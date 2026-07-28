@@ -22,35 +22,37 @@ const inMemoryAuthStorage = new Map();
 const createBrowserAuthStorage = () => {
   if (typeof window === 'undefined') return undefined;
 
+  // Limpa preventivamente chaves antigas do localStorage para evitar persistência entre fechamentos do PWA
+  try {
+    window.localStorage?.removeItem(AUTH_STORAGE_KEY);
+    window.localStorage?.removeItem(FALLBACK_SESSION_KEY);
+    window.localStorage?.removeItem('ac-prod-auth');
+    window.localStorage?.removeItem('ac-prod-auth-fallback');
+  } catch { /* noop */ }
+
   return {
     getItem: (key) => {
       try {
-        const stored = window.localStorage?.getItem(key);
-        if (stored) return stored;
-      } catch { /* fallback para sessionStorage abaixo */ }
-      try {
         const stored = window.sessionStorage?.getItem(key);
         if (stored) return stored;
-      } catch { /* fallback em memória abaixo */ }
+      } catch { /* fallback em memória */ }
       return inMemoryAuthStorage.get(key) || null;
     },
     setItem: (key, value) => {
       let persisted = false;
       try {
-        window.localStorage?.setItem(key, value);
+        window.sessionStorage?.setItem(key, value);
         persisted = true;
-      } catch { /* fallback para sessionStorage abaixo */ }
+      } catch { /* fallback em memória abaixo */ }
       if (!persisted) {
-        try { window.sessionStorage?.setItem(key, value); }
-        catch { /* fallback em memória abaixo */ }
+        inMemoryAuthStorage.set(key, value);
       }
-      inMemoryAuthStorage.set(key, value);
+      // Remove do localStorage para impedir persistência entre fechamentos/reaberturas do PWA
+      try { window.localStorage?.removeItem(key); } catch { /* noop */ }
     },
     removeItem: (key) => {
-      try { window.localStorage?.removeItem(key); }
-      catch { /* noop */ }
-      try { window.sessionStorage?.removeItem(key); }
-      catch { /* noop */ }
+      try { window.sessionStorage?.removeItem(key); } catch { /* noop */ }
+      try { window.localStorage?.removeItem(key); } catch { /* noop */ }
       inMemoryAuthStorage.delete(key);
     },
   };
@@ -115,6 +117,12 @@ export const persistAuthSession = (session) => {
 };
 
 export const clearPersistedAuthSession = () => {
+  try {
+    window.localStorage?.removeItem(AUTH_STORAGE_KEY);
+    window.localStorage?.removeItem(FALLBACK_SESSION_KEY);
+    window.localStorage?.removeItem('ac-prod-auth');
+    window.localStorage?.removeItem('ac-prod-auth-fallback');
+  } catch { /* noop */ }
   authStorage?.removeItem(AUTH_STORAGE_KEY);
   authStorage?.removeItem(FALLBACK_SESSION_KEY);
 };
