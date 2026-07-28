@@ -1,10 +1,11 @@
 {
   "name": "leo-flow",
   "private": true,
-  "version": "1.3.2",
+  "version": "1.4.1-kpi-sync",
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
+    "update:local": "bash ./ATUALIZAR_ACPROD.command",
     "dev": "vite",
     "dev:web": "vite",
     "dev:electron": "node scripts/build-electron.js && electron .",
