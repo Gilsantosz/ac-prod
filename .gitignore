@@ -30,7 +30,10 @@ dist-ssr
 *.sw?
 
 .env
+# Caches and OS files
 .vite
+caches
+__MACOSX
 
 # Test artifacts
 coverage
