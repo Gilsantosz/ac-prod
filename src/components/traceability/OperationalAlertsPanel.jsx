@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import {
-  BellRing, RefreshCw, AlertTriangle, AlertCircle, CheckCircle, CheckCheck, CheckSquare, Boxes,
+  BellRing, RefreshCw, AlertTriangle, AlertCircle, CheckCircle, CheckCheck, Boxes,
   MapPin, Cpu, User, Box, Truck, Landmark, Search, Clock, History, FileText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';

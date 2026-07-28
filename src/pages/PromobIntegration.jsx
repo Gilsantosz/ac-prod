@@ -27,7 +27,6 @@ import {
 } from '@/components/ui/dialog';
 
 // ─── Sub-componentes ──────────────────────────────────────────
-import XmlImportTab from '@/components/promob/XmlImportTab';
 import PcpImportTab from '@/components/promob/PcpImportTab';
 import ApiConfigTab from '@/components/promob/ApiConfigTab';
 

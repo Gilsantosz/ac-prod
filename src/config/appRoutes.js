@@ -8,7 +8,7 @@
 import {
   LayoutDashboard, PlusCircle, ClipboardList, Gauge, Boxes,
   Layers, Plug, AlertOctagon, Trophy, LineChart, BrainCircuit,
-  Zap, Users, Shield, HardDrive, Truck, Box, BellRing, FolderKanban, GitFork, Cpu, ShieldCheck, Wrench, HardHat, Edit3,
+  Zap, Users, Shield, HardDrive, Truck, Box, BellRing, FolderKanban, GitFork, ShieldCheck, Wrench, HardHat, Edit3,
   ChartNoAxesCombined, RotateCcw, ShieldAlert
 } from 'lucide-react';
 

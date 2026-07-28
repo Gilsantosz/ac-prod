@@ -24,14 +24,11 @@ import CollectionPieceDetailPanel from '@/components/collection/CollectionPieceD
 import CollectionRejectPieceModal from '@/components/collection/CollectionRejectPieceModal';
 import CollectionPieceTraceabilityDrawer from '@/components/collection/CollectionPieceTraceabilityDrawer';
 import TraceabilityKpiCards from '@/components/traceability/TraceabilityKpiCards';
-import CollectionHeaderGuide from '@/components/collection/CollectionHeaderGuide';
 import ActiveDowntimeBanner from '@/components/collection/ActiveDowntimeBanner';
 import DowntimeDialog from '@/components/collection/DowntimeDialog';
 import CollectionFullscreenKiosk from '@/components/collection/CollectionFullscreenKiosk';
 import CollectionErrorBoundary from '@/components/ui/CollectionErrorBoundary';
 import { getActiveDowntime } from '@/lib/downtimeService';
-import { AlertTriangle, Maximize2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { invalidateAllMesQueries } from '@/config/queryKeys';
 import {
   getPieceTraceability,

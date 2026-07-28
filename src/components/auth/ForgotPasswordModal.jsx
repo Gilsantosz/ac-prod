@@ -28,10 +28,8 @@ export default function ForgotPasswordModal({ open, onOpenChange }) {
     } catch (err) {
       const rawMsg = (err?.message || '').toLowerCase();
 
-      // Se der rate limit (429), significa que o e-mail JÁ FOI ENVIADO recentemente.
-      // Trata como sucesso na UI para o usuário não ficar travado com aviso de erro.
       if (rawMsg.includes('rate limit') || rawMsg.includes('too many requests') || rawMsg.includes('429')) {
-        setSent(true);
+        setError('Muitas solicitações para este e-mail. Aguarde alguns minutos antes de pedir um novo link.');
       } else if (rawMsg.includes('user not found') || rawMsg.includes('invalid email')) {
         setError('E-mail não encontrado no cadastro do sistema. Verifique o endereço digitado.');
       } else {
