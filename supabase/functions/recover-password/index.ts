@@ -24,6 +24,76 @@ const sha256 = async (value: string) => {
     .join('');
 };
 
+const recoveryEmailHtml = (resetLink: string) => (
+  `<div style="font-family: sans-serif; padding: 24px; max-width: 480px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px;">
+    <h2 style="color: #005f2f; margin-bottom: 8px;">Leo Sob Medidas</h2>
+    <p style="color: #475569; font-size: 14px;">Você solicitou a redefinição de senha para o sistema Leo Flow.</p>
+    <div style="margin: 24px 0;">
+      <a href="${resetLink}" style="background-color: #005f2f; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Redefinir Minha Senha</a>
+    </div>
+    <p style="color: #94a3b8; font-size: 12px;">Se você não solicitou esta alteração, ignore este e-mail.</p>
+  </div>`
+);
+
+const sendViaGmailSmtp = async (
+  recipient: string,
+  resetLink: string,
+) => {
+  const smtpUser = Deno.env.get('SMTP_USER');
+  const smtpPass = Deno.env.get('SMTP_PASS');
+  if (!smtpUser || !smtpPass) return false;
+
+  const nodemailer = (await import('npm:nodemailer@6.9.9')).default;
+  const transporter = nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    auth: { user: smtpUser, pass: smtpPass },
+  });
+
+  await transporter.sendMail({
+    from: Deno.env.get('AUTH_EMAIL_FROM')
+      || Deno.env.get('REPORT_FROM_EMAIL')
+      || `"Leo Flow" <${smtpUser}>`,
+    to: recipient,
+    subject: 'Leo Flow — Recuperação de Senha',
+    html: recoveryEmailHtml(resetLink),
+    text: `Use este link para redefinir sua senha no Leo Flow: ${resetLink}`,
+  });
+  return true;
+};
+
+const sendViaConfiguredResend = async (
+  recipient: string,
+  resetLink: string,
+) => {
+  const resendKey = Deno.env.get('RESEND_API_KEY');
+  const configuredFrom = Deno.env.get('AUTH_EMAIL_FROM')
+    || Deno.env.get('REPORT_FROM_EMAIL');
+  if (!resendKey || !configuredFrom) return false;
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${resendKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: configuredFrom,
+      to: [recipient],
+      subject: 'Leo Flow — Recuperação de Senha',
+      html: recoveryEmailHtml(resetLink),
+      text: `Use este link para redefinir sua senha no Leo Flow: ${resetLink}`,
+    }),
+  });
+
+  if (!response.ok) {
+    const providerError = await response.text();
+    throw new Error(`Resend recusou a mensagem: ${providerError}`);
+  }
+  return true;
+};
+
 Deno.serve(async (request: Request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return json({ success: false, error: 'Método não permitido.' }, 405);
@@ -126,53 +196,45 @@ Deno.serve(async (request: Request) => {
 
     // A URL é definida somente no servidor para nunca gerar links localhost.
     const redirectTo = `${PUBLIC_APP_URL}/reset-password`;
-    const resendKey = Deno.env.get('RESEND_API_KEY');
-    if (resendKey) {
-      const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
-        type: 'recovery',
-        email: profile.email,
-        options: { redirectTo },
-      });
-      if (linkError) throw linkError;
+    const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+      type: 'recovery',
+      email: profile.email,
+      options: { redirectTo },
+    });
+    if (linkError) throw linkError;
 
-      const tokenHash = linkData?.properties?.hashed_token;
-      if (!tokenHash) throw new Error('O Supabase não gerou o token de recuperação.');
-      // O e-mail aponta primeiro para o app. Assim, scanners corporativos que
-      // fazem GET automático não consomem o token no endpoint /verify.
-      const resetLink = `${redirectTo}?token_hash=${encodeURIComponent(tokenHash)}&type=recovery`;
+    const tokenHash = linkData?.properties?.hashed_token;
+    if (!tokenHash) throw new Error('O Supabase não gerou o token de recuperação.');
+    // O e-mail aponta primeiro para o app. Assim, scanners corporativos que
+    // fazem GET automático não consomem o token no endpoint /verify.
+    const resetLink = `${redirectTo}?token_hash=${encodeURIComponent(tokenHash)}&type=recovery`;
+    let sent = false;
 
-      const resendResponse = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${resendKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: Deno.env.get('AUTH_EMAIL_FROM') || 'Leo Flow <onboarding@resend.dev>',
-          to: [profile.email],
-          subject: 'Leo Flow — Recuperação de Senha',
-          html: `<div style="font-family: sans-serif; padding: 24px; max-width: 480px; margin: 0 auto; border: 1px solid #e2e8f0; rounded: 12px;">
-            <h2 style="color: #005f2f; margin-bottom: 8px;">Leo Sob Medidas</h2>
-            <p style="color: #475569; font-size: 14px;">Você solicitou a redefinição de senha para o sistema Leo Flow.</p>
-            <div style="margin: 24px 0;">
-              <a href="${resetLink}" style="background-color: #005f2f; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Redefinir Minha Senha</a>
-            </div>
-            <p style="color: #94a3b8; font-size: 12px;">Se você não solicitou esta alteração, ignore este e-mail.</p>
-          </div>`,
-        }),
-      });
+    try {
+      sent = await sendViaGmailSmtp(profile.email, resetLink);
+    } catch (smtpError) {
+      console.error('[recover-password] Gmail SMTP recusou a mensagem:', smtpError);
+    }
 
-      if (!resendResponse.ok) {
-        const providerError = await resendResponse.text();
-        console.error('[recover-password] Falha no provedor de e-mail:', providerError);
-        throw new Error('O provedor de e-mail não aceitou a mensagem de recuperação.');
+    if (!sent) {
+      try {
+        sent = await sendViaConfiguredResend(profile.email, resetLink);
+      } catch (resendError) {
+        console.error('[recover-password] Resend recusou a mensagem:', resendError);
       }
-    } else {
+    }
+
+    if (!sent) {
       const { error: resetError } = await admin.auth.resetPasswordForEmail(
         profile.email,
         { redirectTo },
       );
-      if (resetError) throw resetError;
+      if (resetError) {
+        console.error('[recover-password] SMTP nativo recusou a mensagem:', resetError);
+        throw new Error(
+          'Não foi possível enviar o e-mail. Verifique a configuração SMTP do sistema.',
+        );
+      }
     }
 
     return json({
