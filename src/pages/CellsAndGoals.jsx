@@ -249,13 +249,19 @@ export default function CellsAndGoals() {
     onError: (err) => toast.error(`Erro ao atualizar status: ${err.message}`),
   });
 
+  const refreshGoals = async () => {
+    invalidateGoalQueries();
+    await Promise.all([
+      refetchEffectiveGoals(),
+      refetchSummary(),
+    ]);
+  };
+
   // Metas
   const mutationUpdateGoal = useMutation({
     mutationFn: ({ id, payload }) => updateProductionGoal(id, payload),
-    onSuccess: () => {
-      invalidateGoalQueries();
-      refetchGoals();
-      refetchSummary();
+    onSuccess: async () => {
+      await refreshGoals();
       toast.success('Meta diária atualizada com sucesso');
       setGoalDialogOpen(false);
       setEditingGoal(null);
@@ -265,11 +271,9 @@ export default function CellsAndGoals() {
 
   const mutationDeleteGoal = useMutation({
     mutationFn: deleteProductionGoal,
-    onSuccess: () => {
-      invalidateGoalQueries();
-      refetchEffectiveGoals();
-      refetchSummary();
-      toast.success('Meta diária removida');
+    onSuccess: async () => {
+      await refreshGoals();
+      toast.success('Meta diária removida com sucesso');
     },
     onError: (err) => toast.error(`Erro ao remover meta: ${err.message}`),
   });
@@ -337,14 +341,6 @@ export default function CellsAndGoals() {
       supabase.removeChannel(channel);
     };
   }, [refetchCells, refetchMachines, refetchEffectiveGoals, refetchSummary]);
-
-  const refreshGoals = async () => {
-    invalidateGoalQueries();
-    await Promise.all([
-      refetchEffectiveGoals(),
-      refetchSummary(),
-    ]);
-  };
 
   // ─── AÇÕES DE FORMULÁRIO ───────────────────────────────────────────────────
 
