@@ -33,10 +33,17 @@ import {
   createWorkstation,
   updateWorkstation,
   deleteWorkstation,
+  getProductionGoals,
   getEffectiveProductionGoals,
+  updateProductionGoal,
   deleteProductionGoal,
   getCellsGoalsSummary
 } from '@/lib/cellsGoalsService';
+import {
+  getProductionMetricRule,
+  getUnitLabel,
+  normalizeProductionUnit,
+} from '@/lib/productionUnitRules';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -54,6 +61,17 @@ export default function CellsAndGoals() {
   const [machineDialogOpen, setMachineDialogOpen] = useState(false);
   const [machineSaving, setMachineSaving] = useState(false);
   const [editingMachine, setEditingMachine] = useState(null);
+  
+  // Modais e edição de Meta Diária
+  const [goalDialogOpen, setGoalDialogOpen] = useState(false);
+  const [goalSaving, setGoalSaving] = useState(false);
+  const [editingGoal, setEditingGoal] = useState(null);
+  const [gCell, setGCell] = useState('');
+  const [gShift, setGShift] = useState('1º Turno');
+  const [gUnit, setGUnit] = useState('peças');
+  const [gTarget, setGTarget] = useState('');
+  const [gCapacity, setGCapacity] = useState('');
+  const [gDate, setGDate] = useState('');
   
   // Estados de formulário de Máquina/Posto
   const [mName, setMName] = useState('');
@@ -232,6 +250,19 @@ export default function CellsAndGoals() {
   });
 
   // Metas
+  const mutationUpdateGoal = useMutation({
+    mutationFn: ({ id, payload }) => updateProductionGoal(id, payload),
+    onSuccess: () => {
+      invalidateGoalQueries();
+      refetchGoals();
+      refetchSummary();
+      toast.success('Meta diária atualizada com sucesso');
+      setGoalDialogOpen(false);
+      setEditingGoal(null);
+    },
+    onError: (err) => toast.error(`Erro ao atualizar meta: ${err.message}`),
+  });
+
   const mutationDeleteGoal = useMutation({
     mutationFn: deleteProductionGoal,
     onSuccess: () => {
@@ -242,6 +273,45 @@ export default function CellsAndGoals() {
     },
     onError: (err) => toast.error(`Erro ao remover meta: ${err.message}`),
   });
+
+  const openEditGoalDialog = (goal) => {
+    setEditingGoal(goal);
+    setGCell(goal.cell_name || goal.area_name || '');
+    setGShift(goal.shift || '1º Turno');
+    setGUnit(goal.metric_unit || 'peças');
+    setGTarget(goal.target != null ? String(goal.target) : '');
+    setGCapacity(goal.capacity != null ? String(goal.capacity) : '');
+    setGDate(goal.date || date);
+    setGoalDialogOpen(true);
+  };
+
+  const handleGoalSubmit = async (e) => {
+    e.preventDefault();
+    if (!gCell || !gTarget) {
+      toast.error('Informe a célula e o valor da meta.');
+      return;
+    }
+    setGoalSaving(true);
+    try {
+      const metricUnit = normalizeProductionUnit(gUnit);
+      const metricRule = getProductionMetricRule({ cell: gCell, metric_unit: metricUnit });
+      const payload = {
+        date: gDate || date,
+        shift: gShift,
+        cell_name: gCell,
+        metric_unit: metricUnit,
+        metric_unit_label: getUnitLabel(metricUnit),
+        metric_name: metricRule.metricName,
+        target: Number(gTarget) || 0,
+        capacity: Number(gCapacity) || 0,
+      };
+      if (editingGoal) {
+        await mutationUpdateGoal.mutateAsync({ id: editingGoal.id, payload });
+      }
+    } finally {
+      setGoalSaving(false);
+    }
+  };
 
   // ─── SUBSCRIÇÕES REALTIME ──────────────────────────────────────────────────
 
@@ -960,17 +1030,30 @@ export default function CellsAndGoals() {
                               )}
                             </div>
                           </div>
-                          {!g.is_inherited && (
+                          <div className="flex items-center gap-1 shrink-0">
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl"
-                              onClick={() => mutationDeleteGoal.mutate(g.id)}
-                              title="Remover meta cadastrada nesta data"
+                              className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-xl"
+                              onClick={() => openEditGoalDialog(g)}
+                              title="Editar Meta"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl"
+                              onClick={() => {
+                                if (confirm(`Deseja realmente excluir a meta da célula "${g.cell_name || g.area_name}" (${g.shift})?`)) {
+                                  mutationDeleteGoal.mutate(g.id);
+                                }
+                              }}
+                              title="Remover Meta"
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
-                          )}
+                          </div>
                         </Card>
                       );
                     })}
@@ -1160,6 +1243,119 @@ export default function CellsAndGoals() {
                 className="rounded-xl text-xs h-9 font-bold bg-primary text-primary-foreground hover:bg-primary/95"
               >
                 {machineSaving ? 'Salvando...' : 'Salvar Posto'}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIÁLOGO MODAL: EDITAR META DIÁRIA */}
+      <Dialog open={goalDialogOpen} onOpenChange={setGoalDialogOpen}>
+        <DialogContent className="sm:max-w-[480px] rounded-2xl border-border bg-card">
+          <DialogHeader>
+            <DialogTitle className="font-bold text-foreground">Editar Meta Diária</DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Altere a meta de produção e a capacidade estimada para a célula e turno selecionados.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleGoalSubmit} className="space-y-4 pt-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">Data</Label>
+                <Input
+                  type="date"
+                  value={gDate}
+                  onChange={(e) => setGDate(e.target.value)}
+                  className="rounded-xl border-border/60 h-10 text-sm bg-transparent"
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">Turno</Label>
+                <Select value={gShift} onValueChange={setGShift}>
+                  <SelectTrigger className="rounded-xl border-border/60 bg-transparent h-10 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="1º Turno">1º Turno</SelectItem>
+                    <SelectItem value="2º Turno">2º Turno</SelectItem>
+                    <SelectItem value="3º Turno">3º Turno</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">Célula</Label>
+              <Select value={gCell} onValueChange={setGCell}>
+                <SelectTrigger className="rounded-xl border-border/60 bg-transparent h-10 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  {activeCells.map(c => (
+                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">Meta de Produção</Label>
+                <Input
+                  type="number"
+                  step="any"
+                  value={gTarget}
+                  onChange={(e) => setGTarget(e.target.value)}
+                  placeholder="Ex: 150"
+                  className="rounded-xl border-border/60 h-10 text-sm bg-transparent font-bold"
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">Capacidade Estimada</Label>
+                <Input
+                  type="number"
+                  step="any"
+                  value={gCapacity}
+                  onChange={(e) => setGCapacity(e.target.value)}
+                  placeholder="Ex: 150"
+                  className="rounded-xl border-border/60 h-10 text-sm bg-transparent font-bold"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">Unidade Métrica</Label>
+              <Select value={gUnit} onValueChange={setGUnit}>
+                <SelectTrigger className="rounded-xl border-border/60 bg-transparent h-10 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="peças">Peças</SelectItem>
+                  <SelectItem value="volumes">Volumes</SelectItem>
+                  <SelectItem value="metros">Metros Lineares</SelectItem>
+                  <SelectItem value="chapas">Chapas</SelectItem>
+                  <SelectItem value="capas">Capas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex justify-end gap-2.5 pt-4 border-t border-border/50">
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-xl text-xs h-9 font-semibold"
+                onClick={() => setGoalDialogOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={goalSaving}
+                className="rounded-xl text-xs h-9 font-bold bg-primary text-primary-foreground hover:bg-primary/95"
+              >
+                {goalSaving ? 'Salvando...' : 'Salvar Meta'}
               </Button>
             </div>
           </form>

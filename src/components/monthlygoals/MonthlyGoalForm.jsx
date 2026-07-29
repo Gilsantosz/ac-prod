@@ -10,13 +10,22 @@ import { supabase } from '@/lib/supabaseClient';
 const fmt = (value) => (Number(value) || 0).toLocaleString('pt-BR');
 const dayLabel = (date) => `${date.slice(8, 10)}/${date.slice(5, 7)}`;
 
-export default function MonthlyGoalForm({ onSubmit, saving, cells = [], workdays, dailyPreview, dailyDistribution, goals = [] }) {
+export default function MonthlyGoalForm({ onSubmit, saving, cells = [], workdays, dailyPreview, dailyDistribution, goals = [], editingGoal }) {
   const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [cell, setCell] = useState('');
   const [monthlyTarget, setMonthlyTarget] = useState('');
   const [existingId, setExistingId] = useState(null);
   const [loadingSum, setLoadingSum] = useState(false);
   const [computedSum, setComputedSum] = useState(null); // soma calculada do Supabase
+
+  useEffect(() => {
+    if (editingGoal) {
+      if (editingGoal.month) setMonth(editingGoal.month);
+      if (editingGoal.cell) setCell(editingGoal.cell);
+      if (editingGoal.monthlyTarget != null) setMonthlyTarget(String(editingGoal.monthlyTarget));
+      setExistingId(editingGoal.id);
+    }
+  }, [editingGoal]);
 
   // Carrega meta salva e/ou soma de production_daily_goals
   const loadData = useCallback(async () => {

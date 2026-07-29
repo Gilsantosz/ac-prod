@@ -11,6 +11,7 @@ import WorkdayCalendarEditor from './WorkdayCalendarEditor';
 export default function MonthlyGoalsManager() {
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
+  const [editingGoal, setEditingGoal] = useState(null);
   const { activeCells } = useCells();
 
   const { data: goals = [] } = useQuery({
@@ -73,16 +74,26 @@ export default function MonthlyGoalsManager() {
     } else {
       await createGoal.mutateAsync(payload);
     }
+    setEditingGoal(null);
     setSaving(false);
   };
 
 
   return (
     <div className="space-y-6">
-      <MonthlyGoalForm onSubmit={handleSubmit} saving={saving} cells={activeCells} workdays={workdays} dailyPreview={dailyPreview} dailyDistribution={dailyDistribution} goals={goals} />
+      <MonthlyGoalForm
+        onSubmit={handleSubmit}
+        saving={saving}
+        cells={activeCells}
+        workdays={workdays}
+        dailyPreview={dailyPreview}
+        dailyDistribution={dailyDistribution}
+        goals={goals}
+        editingGoal={editingGoal}
+      />
 
       <WorkdayCalendarEditor entries={calendar} onToggle={(date, isWorkday) => toggleDay.mutate({ date, isWorkday })} />
-      <MonthlyGoalList goals={goals} onDelete={(id) => removeGoal.mutate(id)} dailyPreview={dailyPreview} />
+      <MonthlyGoalList goals={goals} onDelete={(id) => removeGoal.mutate(id)} onEdit={(g) => setEditingGoal(g)} dailyPreview={dailyPreview} />
     </div>
   );
 }
