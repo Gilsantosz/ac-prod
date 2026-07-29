@@ -150,24 +150,38 @@ export default function CollectionRecentReadsPanel({
   }, [cellName, fetchReadings]);
 
   const handleSelect = (read) => {
-    if (!read.piece_id) return;
-    // Mapeia o item de leitura para o painel de detalhes
+    const traceabilityCode = read.traceability_code || read.raw_value || read.result_payload?.barcode || null;
+    const isUnresolvedCollection = !read.piece_id;
+
+    // Mapeia tanto peças canônicas quanto coletas não localizadas para o painel.
+    // O ID do evento mantém a seleção exata quando o mesmo código bruto foi lido mais de uma vez.
     const pieceDetail = {
-      id: read.piece_id || read.id,
-      piece_uid: read.traceability_code,
-      piece_name: read.piece_name || 'Peça Avulsa',
+      id: read.piece_id || null,
+      collection_event_id: read.id || read.event_id || null,
+      piece_uid: traceabilityCode,
+      traceability_code: traceabilityCode,
+      raw_value: read.raw_value || traceabilityCode,
+      piece_name: read.piece_name || (isUnresolvedCollection ? 'Peça não localizada' : 'Peça Avulsa'),
       lot_id: read.lot_id,
       lot_code: read.lot_code,
       order_number: read.order_number,
-      client_name: read.client_name,
+      client_name: read.client_name || read.customer_name,
       current_stage: read.current_stage_name,
       current_stage_name: read.current_stage_name,
       operator_name: read.operator_name,
+      registration: read.registration,
+      cell_name: read.cell_name,
+      shift: read.shift,
+      machine_name: read.machine_name || read.station_name,
+      created_at: read.created_at,
       status: read.event_status,
       reading_status: read.reading_status || read.result_status,
       replacement_status: read.replacement_status || 'none',
       route: read.route_steps || [],
-      completedSteps: read.completed_steps || []
+      completedSteps: read.completed_steps || [],
+      is_unresolved_collection: isUnresolvedCollection,
+      unresolved_reason: read.error_message || read.result_payload?.message || read.message || null,
+      source_read: read,
     };
     onSelectPiece(pieceDetail);
   };
@@ -309,7 +323,10 @@ export default function CollectionRecentReadsPanel({
             <CollectionReadItem
               key={read.id || read.event_id}
               read={read}
-              isSelected={selectedPiece && (selectedPiece.piece_uid === read.traceability_code || selectedPiece.id === read.piece_id)}
+              isSelected={Boolean(selectedPiece && (
+                (selectedPiece.collection_event_id && selectedPiece.collection_event_id === (read.id || read.event_id))
+                || (!selectedPiece.collection_event_id && selectedPiece.id && selectedPiece.id === read.piece_id)
+              ))}
               onSelect={handleSelect}
               onReject={onRejectPiece}
               onCreateOccurrence={onCreateOccurrence}

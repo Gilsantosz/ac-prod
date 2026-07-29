@@ -23,6 +23,14 @@ export default function CollectionReadItem({
   const traceabilityCode = isReplacementEntry
     ? (read.raw_value || read.result_payload?.barcode || read.traceability_code || 'Sem identificação')
     : (read.traceability_code || read.raw_value || 'Sem identificação');
+  const selectRead = () => onSelect(read);
+  const handleKeyDown = (event) => {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      selectRead();
+    }
+  };
 
   const formatHour = (isoString) => {
     try {
@@ -53,9 +61,14 @@ export default function CollectionReadItem({
 
   return (
     <div
-      onClick={() => onSelect(read)}
+      role="button"
+      tabIndex={0}
+      aria-pressed={Boolean(isSelected)}
+      aria-label={`Abrir detalhes da coleta ${traceabilityCode}`}
+      onClick={selectRead}
+      onKeyDown={handleKeyDown}
       className={cn(
-        'w-full text-left p-3.5 rounded-xl border transition-all duration-200 cursor-pointer space-y-2.5 flex flex-col justify-between hover:translate-y-[-1px] select-none',
+        'w-full text-left p-3.5 rounded-xl border transition-all duration-200 cursor-pointer space-y-2.5 flex flex-col justify-between hover:translate-y-[-1px] select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 focus-visible:ring-offset-2',
         isSelected
           ? 'border-emerald-500/50 bg-emerald-500/5 shadow-sm ring-1 ring-emerald-500/15'
           : 'border-border/50 bg-card hover:border-border/80'
