@@ -135,21 +135,33 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
     try {
       const metricUnit = normalizeProductionUnit(selectedUnit);
       const metricRule = getProductionMetricRule({ cell: finalCell, metric_unit: metricUnit });
-      const { error } = await supabase.from('production_daily_goals').upsert({
-        date,
-        shift,
-        cell_name: finalCell,
-        area_name: finalCell,
-        metric_unit: metricUnit,
-        metric_unit_label: getUnitLabel(metricUnit),
-        metric_name: metricRule.metricName,
-        capacity: number(capacity),
-        target: number(target),
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'date,shift,cell_name,metric_unit' });
+      const { data: savedGoal, error } = await supabase
+        .from('production_daily_goals')
+        .upsert({
+          date,
+          shift,
+          cell_name: finalCell,
+          area_name: finalCell,
+          metric_unit: metricUnit,
+          metric_unit_label: getUnitLabel(metricUnit),
+          metric_name: metricRule.metricName,
+          capacity: number(capacity),
+          target: number(target),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'date,shift,cell_name,metric_unit' })
+        .select('*')
+        .single();
       if (error) throw error;
-      toast.success(existingGoalId ? 'Meta atualizada com sucesso.' : 'Meta diária salva com sucesso.');
-      onSaved?.();
+      if (!savedGoal?.id || savedGoal.date !== date) {
+        throw new Error('O banco não confirmou a persistência da meta na data selecionada.');
+      }
+
+      setExistingGoalId(savedGoal.id);
+      setInheritedGoalDate(null);
+      toast.success(existingGoalId ? 'Meta atualizada com sucesso.' : 'Meta diária salva com sucesso.', {
+        description: `A meta continuará vigente a partir de ${date.split('-').reverse().join('/')}, até ser substituída.`,
+      });
+      await onSaved?.();
       await loadExistingGoal();
     } catch (error) {
       if (/row-level security policy|permission denied/i.test(error.message || '')) {

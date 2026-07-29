@@ -18,44 +18,48 @@ export async function sendEmail(opts: {
   const smtpPass = Deno.env.get('SMTP_PASS');
   const reportFrom = leoFlowSender(Deno.env.get('REPORT_FROM_EMAIL') || 'Leo Flow <alertas@acprod.com.br>');
 
-  if (resendKey) {
-    console.log(`Usando Resend API para envio para ${opts.recipients.join(', ')}`);
-    try {
-      const res = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${resendKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: reportFrom,
-          to: opts.recipients,
-          subject: opts.subject,
-          html: opts.html,
-          attachments: opts.attachments || []
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(JSON.stringify(data));
-      return {
-        success: true,
-        provider: 'resend',
-        providerMessageId: data?.id || null,
-        providerResponse: `HTTP ${res.status}`,
-        accepted: opts.recipients,
-        rejected: [],
-      };
-    } catch (err: any) {
-      console.error('Erro no envio via Resend:', err);
-      if (smtpUser && smtpPass) {
-        return sendViaSmtp(smtpUser, smtpPass, opts);
-      }
-      return { success: false, error: err.message };
-    }
-  } else if (smtpUser && smtpPass) {
-    return sendViaSmtp(smtpUser, smtpPass, opts);
-  } else {
-    return { success: false, error: 'Nenhum provedor de e-mail configurado (RESEND_API_KEY ou SMTP_USER/SMTP_PASS ausentes).' };
+  // O Gmail/SMTP é o canal oficial do sistema. Resend permanece como
+  // contingência para que uma indisponibilidade temporária não perca o envio.
+  if (smtpUser && smtpPass) {
+    const smtpResult = await sendViaSmtp(smtpUser, smtpPass, opts);
+    if (smtpResult.success || !resendKey) return smtpResult;
+    console.warn('SMTP Gmail indisponível; tentando contingência Resend.');
+  }
+
+  if (resendKey) return sendViaResend(resendKey, reportFrom, opts);
+  return { success: false, error: 'Nenhum provedor de e-mail configurado (SMTP_USER/SMTP_PASS ou RESEND_API_KEY ausentes).' };
+}
+
+async function sendViaResend(resendKey: string, reportFrom: string, opts: any) {
+  console.log(`Usando contingência Resend para envio para ${opts.recipients.join(', ')}`);
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${resendKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: reportFrom,
+        to: opts.recipients,
+        subject: opts.subject,
+        html: opts.html,
+        attachments: opts.attachments || []
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(JSON.stringify(data));
+    return {
+      success: true,
+      provider: 'resend',
+      providerMessageId: data?.id || null,
+      providerResponse: `HTTP ${res.status}`,
+      accepted: opts.recipients,
+      rejected: [],
+    };
+  } catch (err: any) {
+    console.error('Erro no envio via Resend:', err);
+    return { success: false, error: err.message };
   }
 }
 

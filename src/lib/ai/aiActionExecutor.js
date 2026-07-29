@@ -45,6 +45,27 @@ function progressLabel(value) {
   return Number.isFinite(numeric) ? `${numeric.toFixed(1).replace('.', ',')}%` : '0,0%';
 }
 
+function lotStageLines(stages = []) {
+  return stages
+    .slice()
+    .sort((a, b) => Number(a.stage_order || 0) - Number(b.stage_order || 0))
+    .map((stage) => {
+      const required = Number(stage.required_pieces || 0);
+      if (required === 0) return `- ${stage.stage_label || stage.stage_code}: não exigida para este lote`;
+      const completed = Number(
+        stage.effective_completed_pieces
+        ?? stage.completed_pieces
+        ?? 0
+      );
+      const traceable = Number(stage.traceable_completed_pieces ?? completed);
+      const manual = Number(stage.manual_quantity ?? stage.recorded_manual_quantity ?? 0);
+      const source = manual > 0
+        ? `; ${traceable} rastreável(is) + ${manual} por volume`
+        : (stage.traceable_collection_required === false ? '; coleta individual opcional' : '');
+      return `- ${stage.stage_label || stage.stage_code}: ${completed}/${required} (${progressLabel(stage.progress_percent)})${source}`;
+    });
+}
+
 export async function executeAiAction(actionPlan, { user, conversationContext = {} } = {}) {
   const { action, reportType, format, filters, schedule, templateCode, subject, message } = actionPlan;
 
@@ -274,13 +295,21 @@ export async function executeAiAction(actionPlan, { user, conversationContext = 
       const client = lotContext.clientLot
         || general?.client_lots?.find((item) => item.lot_code === lotContext.clientLotCode);
       const progress = client?.progress_percent ?? general?.progress_percent ?? 0;
-      const forecast = client?.forecast_at || general?.forecast_at || null;
+      const forecast = client?.predicted_ready_at
+        || client?.forecast_at
+        || general?.predicted_ready_at
+        || general?.forecast_at
+        || null;
       const forecastText = forecast
         ? new Date(forecast).toLocaleString('pt-BR')
         : 'ainda sem previsão confiável';
       const clientDescription = lotContext.clientLotCode
         ? `\n- Lote do cliente: **${lotContext.clientLotCode}**${client?.customer_name ? ` — ${client.customer_name}` : ''}`
         : `\n- Lotes de clientes vinculados: **${lotContext.clientLotCodes.length}**`;
+      const selectedStages = client?.stages?.length ? client.stages : (general?.stages || []);
+      const stagesText = lotStageLines(selectedStages);
+      const bottleneck = client?.bottleneck_stage || general?.bottleneck_stage || 'não identificado';
+      const integrity = client?.integrity_percent ?? general?.integrity_percent;
 
       await recordAiActionRun({
         user,
@@ -295,7 +324,16 @@ export async function executeAiAction(actionPlan, { user, conversationContext = 
       });
 
       return {
-        content: `Rastreabilidade localizada:\n\n- Lote geral PCP: **${lotContext.generalLotCode || '—'}**${clientDescription}\n- Andamento: **${progressLabel(progress)}**\n- Previsão até separação: **${forecastText}**`,
+        content: [
+          'Rastreabilidade localizada:',
+          '',
+          `- Lote geral PCP: **${lotContext.generalLotCode || '—'}**${clientDescription}`,
+          `- Andamento: **${progressLabel(progress)}**`,
+          `- Integridade: **${integrity == null ? 'não calculada' : progressLabel(integrity)}**`,
+          `- Gargalo atual: **${bottleneck}**`,
+          `- Previsão até separação: **${forecastText}**`,
+          ...(stagesText.length ? ['', 'Etapas da rota:', ...stagesText] : []),
+        ].join('\n'),
         contextPatch: { lastLotContext: lotContext },
         actions: [
           { label: 'Abrir Integridade do Lote', path: lotContext.links.integrity },

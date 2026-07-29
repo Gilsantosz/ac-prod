@@ -208,18 +208,9 @@ export default function Login() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="password" className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                        Senha
-                      </Label>
-                      <button
-                        type="button"
-                        onClick={() => setShowForgotModal(true)}
-                        className="text-xs text-slate-400 hover:text-[#76FB91] transition-colors font-medium cursor-pointer"
-                      >
-                        Esqueceu a senha?
-                      </button>
-                    </div>
+                    <Label htmlFor="password" className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                      Senha
+                    </Label>
                     <div className="relative">
                       <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
                       <Input
@@ -237,6 +228,15 @@ export default function Login() {
                         data-1password-ignore="true"
                         className="pl-10 h-11 bg-slate-950/90 border-slate-800 text-slate-100 placeholder:text-slate-600 rounded-xl focus:border-[#76FB91] focus:ring-[#76FB91]/20 text-sm transition-all"
                       />
+                    </div>
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setShowForgotModal(true)}
+                        className="text-xs text-slate-400 hover:text-[#76FB91] transition-colors font-medium cursor-pointer"
+                      >
+                        Esqueceu a senha?
+                      </button>
                     </div>
                   </div>
 

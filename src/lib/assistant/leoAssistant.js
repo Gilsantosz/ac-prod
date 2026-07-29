@@ -21,11 +21,11 @@ function navigationResponse(topic) {
 
 export async function askLeoAssistant(question, context = {}) {
   const { user, lastLotCode, currentPath, conversationContext } = context;
-  if (isProductionSearchQuestion(question)) {
-    return answerProductionQuestion(question, { user });
-  }
   if (isOperationalAiQuestion(question)) {
     return askOperationalCopilot(question, { user, conversationContext });
+  }
+  if (isProductionSearchQuestion(question)) {
+    return answerProductionQuestion(question, { user });
   }
   const intent = classifyAssistantIntent(question, { lastLotCode });
 
@@ -64,7 +64,7 @@ export async function askLeoAssistant(question, context = {}) {
     return {
       content: buildInsightsAnswer(snapshot),
       actions: [
-        { label: 'Abrir Painéis', path: '/painel' },
+        { label: 'Abrir Painéis', path: '/' },
         { label: 'Ver Ocorrências', path: '/ocorrencias' },
       ],
     };
@@ -93,7 +93,7 @@ export async function askLeoAssistant(question, context = {}) {
   if (/\beficiencia\b/.test(normalized)) {
     return {
       content: 'A eficiência compara o total produzido com a meta do período. Quando ela cai, cruze o resultado com paradas, refugo, célula e turno para encontrar a causa.',
-      actions: [{ label: 'Abrir Painéis', path: '/painel' }],
+      actions: [{ label: 'Abrir Painéis', path: '/' }],
     };
   }
 
@@ -107,7 +107,7 @@ export async function askLeoAssistant(question, context = {}) {
   if (/\bpromob\b/.test(normalized)) {
     return {
       content: 'A Integração Promob transforma pedidos importados em ordens, lotes e itens rastreáveis. Nessa área você acompanha configuração, importação e diferenças encontradas.',
-      actions: [{ label: 'Abrir Integração Promob', path: '/integracoes/promob' }],
+      actions: [{ label: 'Abrir PCP / Importações', path: '/pcp' }],
     };
   }
 
@@ -122,12 +122,12 @@ export async function askLeoAssistant(question, context = {}) {
   if (/o que (voce|vc) (faz|pode fazer)|como (voce|vc) ajuda|suas funcoes/.test(normalized)) {
     return {
       content: 'Posso consultar a situação completa de lotes e pedidos, mostrar etapas percorridas e pendentes, verificar embalagem e expedição, gerar insights produtivos e orientar a navegação pelo sistema.',
-      suggestions: ['Localizar um lote', 'Gerar insights produtivos', 'Onde vejo os relatórios?'],
+      suggestions: ['Localizar um lote', 'Analisar não conformidades', 'Prever riscos produtivos'],
     };
   }
 
   return {
-    content: 'Consigo ajudar com lotes, produção, metas, OEE, ocorrências, relatórios, Promob e navegação do sistema. Tente perguntar “qual a situação do lote ...?” ou “me dê insights produtivos”.',
-    suggestions: ['Localizar um lote', 'Insights dos últimos 7 dias', 'Onde registro produção?'],
+    content: 'Consigo responder sobre etapas de lotes, produção, metas, OEE, qualidade, não conformidades, paradas, previsões, relatórios, e-mails agendados e todas as páginas liberadas para seu perfil. Informe o assunto, período, célula ou código do lote para uma resposta baseada nos registros do sistema.',
+    suggestions: ['Etapas do lote 940004', 'Sugestões de qualidade hoje', 'Riscos para os próximos dias'],
   };
 }

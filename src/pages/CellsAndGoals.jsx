@@ -33,7 +33,7 @@ import {
   createWorkstation,
   updateWorkstation,
   deleteWorkstation,
-  getProductionGoals,
+  getEffectiveProductionGoals,
   deleteProductionGoal,
   getCellsGoalsSummary
 } from '@/lib/cellsGoalsService';
@@ -87,10 +87,14 @@ export default function CellsAndGoals() {
     initialData: [],
   });
 
-  // Metas do dia
-  const { data: goals = [], refetch: refetchGoals, isLoading: goalsLoading } = useQuery({
-    queryKey: ['production-daily-goals', date],
-    queryFn: () => getProductionGoals(date),
+  // Metas efetivas: a última meta cadastrada continua vigente até ser substituída.
+  const {
+    data: effectiveGoals = [],
+    refetch: refetchEffectiveGoals,
+    isLoading: effectiveGoalsLoading,
+  } = useQuery({
+    queryKey: ['production-effective-goals', date],
+    queryFn: () => getEffectiveProductionGoals(date),
     initialData: [],
   });
 
@@ -124,6 +128,7 @@ export default function CellsAndGoals() {
 
   const invalidateGoalQueries = () => {
     queryClient.invalidateQueries({ queryKey: ['production-daily-goals'] });
+    queryClient.invalidateQueries({ queryKey: ['production-effective-goals'] });
     queryClient.invalidateQueries({ queryKey: ['productionDailyGoals'] });
     queryClient.invalidateQueries({ queryKey: ['dailyGoals'] });
     queryClient.invalidateQueries({ queryKey: ['cells-goals-summary'] });
@@ -231,7 +236,7 @@ export default function CellsAndGoals() {
     mutationFn: deleteProductionGoal,
     onSuccess: () => {
       invalidateGoalQueries();
-      refetchGoals();
+      refetchEffectiveGoals();
       refetchSummary();
       toast.success('Meta diária removida');
     },
@@ -253,7 +258,7 @@ export default function CellsAndGoals() {
         refetchSummary();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_daily_goals' }, () => {
-        refetchGoals();
+        refetchEffectiveGoals();
         refetchSummary();
       })
       .subscribe();
@@ -261,7 +266,15 @@ export default function CellsAndGoals() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [refetchCells, refetchMachines, refetchGoals, refetchSummary]);
+  }, [refetchCells, refetchMachines, refetchEffectiveGoals, refetchSummary]);
+
+  const refreshGoals = async () => {
+    invalidateGoalQueries();
+    await Promise.all([
+      refetchEffectiveGoals(),
+      refetchSummary(),
+    ]);
+  };
 
   // ─── AÇÕES DE FORMULÁRIO ───────────────────────────────────────────────────
 
@@ -575,7 +588,7 @@ export default function CellsAndGoals() {
                         (m.metric_unit || '').toLowerCase().includes(machineQuery)
                       )
                     : allCellMachines;
-                  const cellGoals = goals.filter(g => g.cell_name === c.name);
+                  const cellGoals = effectiveGoals.filter(g => g.cell_name === c.name);
 
                   return (
                     <Card key={c.id} className={cn(
@@ -881,36 +894,51 @@ export default function CellsAndGoals() {
             </div>
 
             {/* Editor de Metas Diárias */}
-            <DailyGoalEditor date={date} activeCells={activeCells} onSaved={refetchGoals} />
+            <DailyGoalEditor date={date} activeCells={activeCells} onSaved={refreshGoals} />
 
             {/* Metas Ativas Cadastradas */}
             <Card className="border-border/60 shadow-sm overflow-hidden bg-card/40">
               <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Target className="w-4.5 h-4.5 text-primary animate-pulse" />
-                  <h3 className="font-bold text-sm text-foreground">Metas Diárias Configuradas ({goals.length})</h3>
+                  <div>
+                    <h3 className="font-bold text-sm text-foreground">
+                      Metas vigentes na data ({effectiveGoals.length})
+                    </h3>
+                    <p className="mt-0.5 text-[10px] text-muted-foreground">
+                      Permanecem ativas até que uma nova meta seja cadastrada para a mesma célula, turno e unidade.
+                    </p>
+                  </div>
                 </div>
               </div>
               <div className="p-5">
-                {goalsLoading ? (
+                {effectiveGoalsLoading ? (
                   <div className="flex flex-col items-center justify-center py-10 text-muted-foreground gap-2">
                     <RefreshCw className="w-6 h-6 animate-spin text-primary" />
                     <span className="text-xs">Carregando metas...</span>
                   </div>
-                ) : goals.length === 0 ? (
+                ) : effectiveGoals.length === 0 ? (
                   <div className="text-center py-10 text-muted-foreground text-xs border border-dashed border-border rounded-xl">
-                    Nenhuma meta configurada para a data selecionada. Cadastre metas acima para alimentar os gráficos.
+                    Nenhuma meta vigente para a data selecionada. Cadastre a primeira meta acima para alimentar os gráficos.
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {goals.map((g) => {
+                    {effectiveGoals.map((g) => {
                       const pct = g.capacity > 0 ? Math.round((g.target / g.capacity) * 100) : null;
                       return (
-                        <Card key={g.id} className="p-4 flex items-center justify-between border-border/50 bg-card shadow-sm hover:shadow transition-shadow">
+                        <Card
+                          key={`${g.id}-${g.effective_date}`}
+                          className="p-4 flex items-center justify-between border-border/50 bg-card shadow-sm hover:shadow transition-shadow"
+                        >
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-bold text-xs text-foreground truncate">{g.cell_name || g.area_name}</span>
                               <Badge variant="secondary" className="text-[9px] font-bold uppercase tracking-wider">{g.shift}</Badge>
+                              {g.is_inherited && (
+                                <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 text-[9px] font-semibold">
+                                  Vigente desde {String(g.inherited_from_date).split('-').reverse().join('/')}
+                                </Badge>
+                              )}
                               {pct !== null && (
                                 <Badge className={`text-[9px] font-semibold ${
                                   pct >= 100 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
@@ -932,15 +960,17 @@ export default function CellsAndGoals() {
                               )}
                             </div>
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl"
-                            onClick={() => mutationDeleteGoal.mutate(g.id)}
-                            title="Remover Meta"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+                          {!g.is_inherited && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl"
+                              onClick={() => mutationDeleteGoal.mutate(g.id)}
+                              title="Remover meta cadastrada nesta data"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
                         </Card>
                       );
                     })}

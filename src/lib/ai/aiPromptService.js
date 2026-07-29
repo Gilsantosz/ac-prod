@@ -28,7 +28,16 @@ function filtersFromQuestion(question) {
 
 export function isOperationalAiQuestion(question) {
   const text = normalizeText(question);
-  return /\b(relatorio|resumo executivo|comparar celula|desempenho|analise|insight|produtividade|gargalo|ia operacional|copilot|envie|enviar|mande|mandar|agenda|agendar|agendamento|cancele|cancelar|logs)\b/.test(text);
+  return /\b(relatorio|resumo executivo|comparar celula|desempenho|analise|insight|produtividade|gargalo|ia operacional|copilot|envie|enviar|mande|mandar|agenda|agendar|agendamento|cancele|cancelar|logs|qualidade|nao conformidade|defeito|pareto|fpy|acao corretiva|parada|downtime|previsao|preditiv\w*|risco|tendencia|etapa|rota produtiva)\b/.test(text);
+}
+
+export function classifyOperationalFocus(question) {
+  const text = normalizeText(question);
+  if (/\b(qualidade|nao conformidade|defeito|pareto|fpy|acao corretiva|5w2h)\b/.test(text)) return 'quality';
+  if (/\b(parada|downtime|maquina parada|motivo|causa|gargalo)\b/.test(text)) return 'downtime';
+  if (/\b(previsao|preditiv\w*|risco|tendencia|projecao)\b/.test(text)) return 'predictive';
+  if (/\b(lote|etapa|rota produtiva|rastreabilidade)\b/.test(text)) return 'lots';
+  return 'production';
 }
 
 export async function askOperationalCopilot(question, { user, conversationContext }) {
@@ -55,13 +64,14 @@ export async function askOperationalCopilot(question, { user, conversationContex
 
   const filters = filtersFromQuestion(question);
   const context = await fetchAiContext(filters, user);
+  const focus = classifyOperationalFocus(question);
   const analysis = analyzeProductionContext(context);
-  const content = formatInsightAnswer(context, analysis);
+  const content = formatInsightAnswer(context, analysis, { focus });
   await recordAiRequest({
     user,
     requestType: 'insight',
     prompt: question,
-    intent: 'production_analysis',
+    intent: `${focus}_analysis`,
     filters: context.filters,
     responseSummary: content,
     sourceTables: context.sources,

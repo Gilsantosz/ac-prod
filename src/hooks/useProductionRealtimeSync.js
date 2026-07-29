@@ -18,6 +18,9 @@ const TABLE_TO_QUERY_KEYS = {
   ],
   production_daily_goals: [
     ['productionDailyGoals'],
+    ['production-daily-goals'],
+    ['production-effective-goals'],
+    ['cells-goals-summary'],
     ['dailyGoals'],
     ['daily-summary-history-goals'],
     ['cellKpis'],

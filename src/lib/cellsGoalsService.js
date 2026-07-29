@@ -269,6 +269,56 @@ export async function deleteWorkstation(id) {
 
 // ─── METAS PRODUTIVAS ────────────────────────────────────────────────────────
 
+function normalizeGoalKeyPart(value) {
+  return String(value || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function productionGoalKey(goal) {
+  return [
+    normalizeGoalKeyPart(goal.cell_name || goal.area_name),
+    normalizeGoalKeyPart(goal.shift),
+    normalizeGoalKeyPart(goal.metric_unit),
+  ].join('||');
+}
+
+export function mergeEffectiveProductionGoals({
+  date,
+  exactGoals = [],
+  priorGoals = [],
+} = {}) {
+  const effectiveByKey = new Map();
+
+  priorGoals.forEach((goal) => {
+    const key = productionGoalKey(goal);
+    if (!effectiveByKey.has(key)) {
+      effectiveByKey.set(key, {
+        ...goal,
+        effective_date: date,
+        inherited_from_date: goal.date,
+        is_inherited: true,
+      });
+    }
+  });
+
+  exactGoals.forEach((goal) => {
+    effectiveByKey.set(productionGoalKey(goal), {
+      ...goal,
+      effective_date: date,
+      inherited_from_date: null,
+      is_inherited: false,
+    });
+  });
+
+  return [...effectiveByKey.values()].sort((a, b) => (
+    String(a.shift || '').localeCompare(String(b.shift || ''), 'pt-BR')
+    || String(a.cell_name || '').localeCompare(String(b.cell_name || ''), 'pt-BR')
+  ));
+}
+
 export async function getProductionGoals(date) {
   const query = supabase
     .from('production_daily_goals')
@@ -286,6 +336,42 @@ export async function getProductionGoals(date) {
     throw error;
   }
   return data || [];
+}
+
+/**
+ * Retorna as metas efetivas de uma data.
+ *
+ * Uma meta permanece válida nos dias seguintes até ser substituída por outra
+ * meta da mesma célula, turno e unidade. Isso evita que o cadastro aparente
+ * "sumir" apenas porque o usuário avançou a data.
+ */
+export async function getEffectiveProductionGoals(date) {
+  if (!date) return getProductionGoals();
+
+  const [exactResult, priorResult] = await Promise.all([
+    supabase
+      .from('production_daily_goals')
+      .select('*')
+      .eq('date', date)
+      .order('shift')
+      .order('cell_name'),
+    supabase
+      .from('production_daily_goals')
+      .select('*')
+      .lt('date', date)
+      .order('date', { ascending: false })
+      .order('updated_at', { ascending: false })
+      .limit(1000),
+  ]);
+
+  if (exactResult.error) throw exactResult.error;
+  if (priorResult.error) throw priorResult.error;
+
+  return mergeEffectiveProductionGoals({
+    date,
+    exactGoals: exactResult.data || [],
+    priorGoals: priorResult.data || [],
+  });
 }
 
 export async function createProductionGoal(payload) {
@@ -347,22 +433,22 @@ export async function getCellsGoalsSummary(dateStr) {
   const [cellsRes, machinesRes, goalsRes] = await Promise.all([
     supabase.from('cells').select('id, name, active'),
     supabase.from('production_machines').select('id, active'),
-    supabase.from('production_daily_goals').select('id, cell_name').eq('date', date)
+    getEffectiveProductionGoals(date)
   ]);
 
   if (cellsRes.error) throw cellsRes.error;
   if (machinesRes.error) throw machinesRes.error;
-  if (goalsRes.error) throw goalsRes.error;
 
   const totalCells = cellsRes.data?.length || 0;
   const activeCells = cellsRes.data?.filter(c => c.active !== false).length || 0;
   const totalMachines = machinesRes.data?.length || 0;
-  const activeGoals = goalsRes.data?.length || 0;
+  const activeGoals = goalsRes.length;
+  const inheritedGoals = goalsRes.filter((goal) => goal.is_inherited).length;
 
   // Células ativas que não têm meta configurada para a data
-  const cellsWithGoal = new Set((goalsRes.data || []).map(g => g.cell_name));
+  const cellsWithGoal = new Set(goalsRes.map((goal) => normalizeGoalKeyPart(goal.cell_name)));
   const cellsWithoutGoal = (cellsRes.data || [])
-    .filter(c => c.active !== false && !cellsWithGoal.has(c.name))
+    .filter((cell) => cell.active !== false && !cellsWithGoal.has(normalizeGoalKeyPart(cell.name)))
     .length;
 
   return {
@@ -370,6 +456,7 @@ export async function getCellsGoalsSummary(dateStr) {
     activeCells,
     totalMachines,
     activeGoals,
+    inheritedGoals,
     cellsWithoutGoal
   };
 }

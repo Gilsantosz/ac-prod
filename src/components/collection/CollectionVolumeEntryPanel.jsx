@@ -1,6 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Boxes, CheckCircle2, Loader2, PackageCheck, ShieldAlert } from 'lucide-react';
+import {
+  ArrowUp,
+  Boxes,
+  CheckCircle2,
+  Loader2,
+  PackageCheck,
+  ShieldAlert,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,9 +40,11 @@ export default function CollectionVolumeEntryPanel({
   shift,
   operator,
   disabled = false,
+  disabledReason = '',
   onSuccess,
 }) {
   const queryClient = useQueryClient();
+  const quantityInputRef = useRef(null);
   const [selectedBatchId, setSelectedBatchId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [notes, setNotes] = useState('');
@@ -76,6 +85,30 @@ export default function CollectionVolumeEntryPanel({
     setSelectedBatchId('');
     setQuantity('');
   }, [cellName]);
+
+  useEffect(() => {
+    if (!selectedBatchId || disabled) return;
+    quantityInputRef.current?.focus();
+  }, [disabled, selectedBatchId]);
+
+  const numericObservationWithoutQuantity = useMemo(() => (
+    quantity === '' && /^\s*\d+\s*$/.test(notes)
+  ), [notes, quantity]);
+
+  const quantityHelp = useMemo(() => {
+    if (!selectedLot) return 'Primeiro selecione o Lote Geral ativo.';
+    if (disabled) return disabledReason || 'A baixa por volume está temporariamente bloqueada.';
+    if (quantity === '') return `Digite a quantidade produzida entre 1 e ${remaining}.`;
+
+    const parsed = Number(quantity);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      return 'Informe uma quantidade inteira maior que zero.';
+    }
+    if (parsed > remaining) {
+      return `A quantidade não pode ultrapassar o saldo de ${remaining}.`;
+    }
+    return `${parsed} peça(s) serão contabilizadas em ${cellName}.`;
+  }, [cellName, disabled, disabledReason, quantity, remaining, selectedLot]);
 
   const canSubmit = useMemo(() => {
     const parsed = Number(quantity);
@@ -178,12 +211,28 @@ export default function CollectionVolumeEntryPanel({
         </div>
       </div>
 
+      {disabled && (
+        <div
+          className="rounded-xl border border-amber-400 bg-amber-50 p-3 text-xs font-bold text-amber-900"
+          role="alert"
+        >
+          {disabledReason || 'A baixa por volume está bloqueada enquanto houver uma parada operacional ativa.'}
+        </div>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-[1.4fr_0.8fr]">
         <div className="space-y-1.5">
           <Label htmlFor="collection-volume-lot" className="text-xs font-bold">
             Lote Geral ativo <span className="text-rose-600">*</span>
           </Label>
-          <Select value={selectedBatchId} onValueChange={setSelectedBatchId}>
+          <Select
+            value={selectedBatchId}
+            onValueChange={(value) => {
+              setSelectedBatchId(value);
+              setQuantity('');
+            }}
+            disabled={submitting || disabled}
+          >
             <SelectTrigger id="collection-volume-lot" className="h-11 rounded-xl bg-background">
               <SelectValue placeholder={loadingLots ? 'Carregando lotes...' : 'Selecione obrigatoriamente o lote'} />
             </SelectTrigger>
@@ -207,12 +256,30 @@ export default function CollectionVolumeEntryPanel({
           )}
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="collection-volume-quantity" className="text-xs font-bold">
-            Volume produzido <span className="text-rose-600">*</span>
-          </Label>
+        <div className="space-y-2">
+          <div className="flex items-end justify-between gap-2">
+            <Label htmlFor="collection-volume-quantity" className="text-sm font-black text-blue-950 dark:text-blue-100">
+              Digite o volume produzido <span className="text-rose-600">*</span>
+            </Label>
+            {selectedLot && remaining > 0 && !disabled && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setQuantity(String(remaining));
+                  quantityInputRef.current?.focus();
+                }}
+                className="h-8 rounded-lg border-blue-500/50 px-2.5 text-[11px] font-extrabold text-blue-700"
+              >
+                Usar saldo {remaining}
+              </Button>
+            )}
+          </div>
           <Input
+            ref={quantityInputRef}
             id="collection-volume-quantity"
+            data-testid="collection-volume-quantity"
             type="number"
             inputMode="numeric"
             min="1"
@@ -220,10 +287,19 @@ export default function CollectionVolumeEntryPanel({
             step="1"
             value={quantity}
             onChange={(event) => setQuantity(event.target.value)}
-            placeholder={selectedLot ? `Máximo ${remaining}` : 'Selecione o lote'}
+            placeholder={selectedLot ? `Digite de 1 a ${remaining}` : 'Selecione o lote'}
             disabled={!selectedLot || submitting || disabled}
-            className="h-11 rounded-xl bg-background text-base font-extrabold"
+            aria-describedby="collection-volume-quantity-help"
+            className="h-14 rounded-xl border-2 border-blue-600 bg-white px-4 text-xl font-black text-slate-950 shadow-sm placeholder:text-sm placeholder:font-bold focus-visible:ring-2 focus-visible:ring-blue-500 dark:bg-slate-950 dark:text-white"
           />
+          <p
+            id="collection-volume-quantity-help"
+            className={`text-[11px] font-bold ${
+              quantity !== '' && !canSubmit ? 'text-rose-600' : 'text-blue-700 dark:text-blue-300'
+            }`}
+          >
+            {quantityHelp}
+          </p>
         </div>
       </div>
 
@@ -246,16 +322,41 @@ export default function CollectionVolumeEntryPanel({
 
       <div className="space-y-1.5">
         <Label htmlFor="collection-volume-notes" className="text-xs font-bold">
-          Observação (opcional)
+          Observação em texto (opcional)
         </Label>
         <Input
           id="collection-volume-notes"
           value={notes}
           onChange={(event) => setNotes(event.target.value)}
-          placeholder="Ex.: contagem física do fechamento do turno"
+          placeholder="Não digite a quantidade aqui. Ex.: fechamento do turno"
+          disabled={!selectedLot || submitting || disabled}
           className="h-10 rounded-xl bg-background"
         />
       </div>
+
+      {numericObservationWithoutQuantity && selectedLot && !disabled && (
+        <div
+          className="flex flex-col gap-3 rounded-xl border-2 border-rose-400 bg-rose-50 p-3 text-sm text-rose-950 sm:flex-row sm:items-center sm:justify-between"
+          role="alert"
+        >
+          <p className="font-bold">
+            O número {notes.trim()} foi digitado em Observação. A quantidade deve ficar em Volume produzido.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setQuantity(notes.trim());
+              setNotes('');
+              quantityInputRef.current?.focus();
+            }}
+            className="shrink-0 border-rose-500 bg-white font-extrabold text-rose-700 hover:bg-rose-100"
+          >
+            <ArrowUp className="mr-2 h-4 w-4" />
+            Mover para volume
+          </Button>
+        </div>
+      )}
 
       <Button
         type="submit"
@@ -279,6 +380,13 @@ export default function CollectionVolumeEntryPanel({
           </>
         )}
       </Button>
+      {!canSubmit && !submitting && (
+        <p className="text-center text-[11px] font-bold text-muted-foreground">
+          {disabled
+            ? 'Finalize a parada ativa para liberar a contabilização.'
+            : 'O botão será liberado após selecionar o lote e preencher corretamente o volume produzido.'}
+        </p>
+      )}
     </form>
   );
 }

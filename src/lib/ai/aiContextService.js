@@ -153,30 +153,55 @@ export async function fetchAiContext(rawFilters = {}, user) {
     .order('created_at', { ascending: false })
     .limit(2000);
   let goalsQuery = supabase.from('production_daily_goals').select('*').limit(5000);
+  let qualityQuery = supabase
+    .from('quality_nonconformities')
+    .select('id,nc_code,defect_code,defect_name,quantity,severity,disposition,status,lot_id,lot_code,order_number,customer_name,cell_id,cell_name,stage_name,operator_name,six_m_category,detected_at,opened_at,deadline,closed_at,created_at')
+    .order('created_at', { ascending: false })
+    .limit(5000);
+  let qualityActionsQuery = supabase
+    .from('quality_actions')
+    .select('id,nonconformity_id,action_type,what,why,where_location,when_deadline,who_owner_name,how,status,efficacy_verified,created_at,updated_at')
+    .order('created_at', { ascending: false })
+    .limit(5000);
 
   if (filters.startDate && filters.endDate) {
     entriesQuery = entriesQuery.gte('date', filters.startDate).lte('date', filters.endDate);
     occurrencesQuery = occurrencesQuery.gte('date', filters.startDate).lte('date', filters.endDate);
     goalsQuery = goalsQuery.gte('date', filters.startDate).lte('date', filters.endDate);
+    qualityQuery = qualityQuery
+      .gte('created_at', `${filters.startDate}T00:00:00`)
+      .lte('created_at', `${filters.endDate}T23:59:59.999`);
   }
   if (filters.cells.length) {
     entriesQuery = entriesQuery.in('cell', filters.cells);
     occurrencesQuery = occurrencesQuery.in('cell', filters.cells);
+    qualityQuery = qualityQuery.in('cell_name', filters.cells);
   }
   if (filters.lots.length) {
     entriesQuery = entriesQuery.in('lot_code', filters.lots);
     occurrencesQuery = occurrencesQuery.in('lot_code', filters.lots);
     lotsQuery = lotsQuery.in('lot_code', filters.lots);
+    qualityQuery = qualityQuery.in('lot_code', filters.lots);
   } else if (lotContext.batchId) {
     lotsQuery = lotsQuery.eq('pcp_import_batch_id', lotContext.batchId);
   }
 
-  const [entriesResult, occurrencesResult, lotsResult, cellsResult, goalsResult] = await Promise.all([
+  const [
+    entriesResult,
+    occurrencesResult,
+    lotsResult,
+    cellsResult,
+    goalsResult,
+    qualityResult,
+    qualityActionsResult,
+  ] = await Promise.all([
     runQuery('Produção', entriesQuery),
     runQuery('Ocorrências', occurrencesQuery, true),
     runQuery('Lotes', lotsQuery, true),
     runQuery('Células', supabase.from('cells').select('id, name, active').eq('active', true).order('name'), true),
     runQuery('Metas', goalsQuery, true),
+    runQuery('Não conformidades', qualityQuery, true),
+    runQuery('Ações da qualidade', qualityActionsQuery, true),
   ]);
 
   let entries = filterEntries(entriesResult.rows, filters);
@@ -194,7 +219,25 @@ export async function fetchAiContext(rawFilters = {}, user) {
   const goals = goalsResult.rows
     .map((goal) => ({ ...goal, cell: goal.cell || goal.cell_name }))
     .filter((goal) => !filters.cells.length || filters.cells.includes(goal.cell));
-  const warnings = [occurrencesResult, lotsResult, cellsResult, goalsResult]
+  const qualityNonconformities = qualityResult.rows.filter((item) => {
+    if (filters.lots.length && !filters.lots.some((lot) => includesText(item.lot_code, lot))) return false;
+    if (filters.stage && !includesText(item.stage_name, filters.stage)) return false;
+    if (filters.order && !includesText(item.order_number, filters.order)) return false;
+    if (filters.client && !includesText(item.customer_name, filters.client)) return false;
+    return true;
+  });
+  const qualityIds = new Set(qualityNonconformities.map((item) => item.id));
+  const qualityActions = qualityIds.size === 0
+    ? []
+    : qualityActionsResult.rows.filter((action) => qualityIds.has(action.nonconformity_id));
+  const warnings = [
+    occurrencesResult,
+    lotsResult,
+    cellsResult,
+    goalsResult,
+    qualityResult,
+    qualityActionsResult,
+  ]
     .map((result) => result.warning)
     .filter(Boolean);
 
@@ -206,11 +249,15 @@ export async function fetchAiContext(rawFilters = {}, user) {
     lotContext,
     cells: cellsResult.rows,
     goals,
+    qualityNonconformities,
+    qualityActions,
     warnings,
     sources: [
       'production_entries',
       ...(occurrencesResult.warning ? [] : ['occurrences']),
       ...(lotsResult.warning ? [] : ['production_lots', 'production_orders']),
+      ...(qualityResult.warning ? [] : ['quality_nonconformities']),
+      ...(qualityActionsResult.warning ? [] : ['quality_actions']),
       ...(lotContext.batchId ? ['promob_import_batches', 'get_general_lot_tracking'] : []),
     ],
     generatedAt: new Date().toISOString(),

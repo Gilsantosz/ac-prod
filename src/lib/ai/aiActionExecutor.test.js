@@ -130,4 +130,42 @@ describe('aiActionExecutor', () => {
     expect(result.content).toContain('Lote geral PCP: **15587**');
     expect(result.actions[0].path).toBe('/integridade-lote?generalLot=15587&clientLot=143345');
   });
+
+  it('detalha cada etapa e distingue baixa rastreável de baixa por volume', async () => {
+    canExecuteAiAction.mockReturnValue(true);
+    resolveAiLotContext.mockResolvedValue({
+      matchedAs: 'client',
+      batchId: 'batch-1',
+      generalLotCode: '26072640',
+      clientLotCode: '940004',
+      clientLotCodes: ['940004'],
+      clientLot: {
+        id: 'lot-1',
+        lot_code: '940004',
+        progress_percent: 64,
+        integrity_percent: 90,
+        bottleneck_stage: 'Marcenaria',
+        stages: [
+          { stage_order: 1, stage_label: 'Corte', required_pieces: 10, effective_completed_pieces: 10, traceable_completed_pieces: 10, progress_percent: 100 },
+          { stage_order: 2, stage_label: 'Furação', required_pieces: 10, effective_completed_pieces: 10, traceable_completed_pieces: 10, progress_percent: 100 },
+          { stage_order: 3, stage_label: 'Embalagem', required_pieces: 10, effective_completed_pieces: 10, traceable_completed_pieces: 1, manual_quantity: 9, progress_percent: 100, traceable_collection_required: false },
+        ],
+      },
+      generalLot: null,
+      links: {
+        integrity: '/integridade-lote?generalLot=26072640&clientLot=940004',
+        tracking: '/acompanhamento-lotes?generalLot=26072640&clientLot=940004',
+      },
+    });
+
+    const result = await executeAiAction({
+      action: 'search_production',
+      rawPrompt: 'mostre todas as etapas do lote 940004',
+      filters: { lotCode: '940004' },
+    }, { user: { id: 'u1', role: 'admin' } });
+
+    expect(result.content).toContain('Furação: 10/10');
+    expect(result.content).toContain('1 rastreável(is) + 9 por volume');
+    expect(result.content).toContain('Gargalo atual: **Marcenaria**');
+  });
 });
