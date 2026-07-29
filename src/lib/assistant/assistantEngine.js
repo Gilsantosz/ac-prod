@@ -1,3 +1,5 @@
+import { appRoutes, canUserViewRoute, getRouteAccess, routeGroups } from '@/config/appRoutes';
+
 const STAGES = [
   ['imported', 'Importado'],
   ['released', 'Liberado'],
@@ -42,24 +44,62 @@ const EVENT_LABELS = {
   note: 'observação',
 };
 
-export const NAVIGATION_TOPICS = [
-  { path: '/painel', label: 'Painéis', description: 'indicadores gerais, produtividade e alertas', keywords: ['painel', 'dashboard', 'indicador', 'produtividade', 'inicio'], permission: 'view_dashboards' },
-  { path: '/entrada', label: 'Entrada de Produção', description: 'registrar produção, refugo e horas trabalhadas', keywords: ['entrada', 'lancar producao', 'registrar producao', 'registro producao', 'apontar producao', 'apontamento'], permission: 'register_production' },
-  { path: '/resumo-diario', label: 'Resumo Diário', description: 'consultar o fechamento diário por célula e turno', keywords: ['resumo', 'fechamento diario', 'producao do dia'], permission: 'view_dashboards' },
-  { path: '/oee', label: 'OEE', description: 'acompanhar disponibilidade, performance e qualidade', keywords: ['oee', 'disponibilidade', 'performance', 'qualidade'], permission: 'view_dashboards' },
-  { path: '/celulas-metas', label: 'Células e Metas', description: 'configurar células, turnos e metas produtivas', keywords: ['celula', 'meta', 'turno', 'configurar meta'], permission: 'manage_cells' },
-  { path: '/usuarios?tab=operators', label: 'Operadores', description: 'consultar e gerenciar operadores dentro de Usuários', keywords: ['operador', 'colaborador da producao'], permission: 'manage_operators' },
-  { path: '/rastreabilidade', label: 'Rastreabilidade', description: 'localizar lotes e acompanhar rota, embalagem e expedição', keywords: ['rastreabilidade', 'lote', 'rota', 'marcenaria', 'embalagem', 'expedicao'] },
-  { path: '/integracoes/promob', label: 'Integração Promob', description: 'importar pedidos e acompanhar sincronizações do Promob', keywords: ['promob', 'xml', 'integracao', 'sincronizacao'] },
-  { path: '/ocorrencias', label: 'Ocorrências', description: 'registrar e analisar paradas, falhas e motivos', keywords: ['ocorrencia', 'parada', 'falha', 'gargalo'], permission: 'manage_occurrences' },
-  { path: '/gamificacao', label: 'Gamificação', description: 'consultar ranking e desempenho das equipes', keywords: ['gamificacao', 'ranking', 'premiacao'], permission: 'view_dashboards' },
-  { path: '/relatorios', label: 'Relatórios', description: 'analisar e exportar relatórios industriais', keywords: ['relatorio', 'exportar', 'pdf', 'excel', 'csv'], permission: 'view_reports' },
-  { path: '/ia-operacional', label: 'IA Operacional', description: 'consultar o Copilot Industrial, gerar, enviar e agendar relatórios', keywords: ['ia operacional', 'copilot', 'relatorio por email', 'agendar relatorio'], permission: 'view_reports' },
-  { path: '/automacoes', label: 'Automações', description: 'configurar regras e alertas automáticos', keywords: ['automacao', 'alerta automatico', 'regra'], permission: 'manage_automations' },
-  { path: '/usuarios', label: 'Usuários', description: 'gerenciar usuários, permissões e relatórios automáticos', keywords: ['usuario', 'permissao', 'acesso'], adminOnly: true },
-  { path: '/logs-sistema', label: 'Logs do Sistema', description: 'consultar o histórico de alterações e auditoria', keywords: ['log', 'auditoria', 'alteracao'], adminOnly: true },
-  { path: '/downloads-backups?tab=drive', label: 'Backups & Drive', description: 'gerenciar arquivos, cópias de segurança e arquivamento no Google Drive', keywords: ['download', 'backup', 'copia de seguranca', 'google drive', 'drive', 'arquivar'], adminOnly: true },
-];
+const ROUTE_KEYWORDS = Object.freeze({
+  '/': ['painel', 'dashboard', 'inicio', 'indicadores gerais'],
+  '/coleta': ['entrada de producao', 'bipagem', 'scanner', 'codigo de barras', 'coletar peca', 'apontamento'],
+  '/rastreabilidade': ['rastrear peca', 'timeline', 'historico da peca', 'kanban'],
+  '/integridade-lote': ['integridade', 'fechar lote', 'gargalo do lote'],
+  '/acompanhamento-lotes': ['previsao do lote', 'andamento do lote', 'etapas do lote'],
+  '/pcp': ['promob', 'xml', 'csv', 'integracao'],
+  '/baixa-manual': ['baixa por volume', 'producao manual', 'volume produzido'],
+  '/alertas-mes': ['alerta', 'gargalo', 'atraso', 'peca parada'],
+  '/reposicao': ['reposicao', 'reposicoes', 'peca de reposicao'],
+  '/resumo-diario': ['fechamento diario', 'producao do dia'],
+  '/oee': ['disponibilidade', 'performance', 'eficiencia de equipamento'],
+  '/ocorrencias': ['parada de linha', 'parada de maquina', 'falha', 'refugo', 'retrabalho'],
+  '/qualidade': ['nao conformidade', 'defeito', 'pareto', 'fpy', '5w2h', 'acao corretiva'],
+  '/ia-operacional': ['copilot', 'chat ia', 'analise preditiva', 'sugestao'],
+  '/automacoes': ['email automatico', 'relatorio agendado', 'gatilho', 'regra'],
+  '/usuarios': ['destinatario', 'permissao', 'gestor', 'email cadastrado'],
+  '/celulas-metas': ['meta produtiva', 'maquina', 'posto', 'turno'],
+});
+
+function topicKeywords(route) {
+  const pathWords = String(route.path || '')
+    .split(/[/?=&_-]+/)
+    .filter((word) => word.length >= 3);
+  const aliases = (route.aliases || []).flatMap((alias) =>
+    String(alias).split(/[/?=&_-]+/).filter((word) => word.length >= 3)
+  );
+  const group = routeGroups[route.group] || route.group || '';
+  return [...new Set([
+    route.label,
+    route.description,
+    group,
+    ...pathWords,
+    ...aliases,
+    ...(ROUTE_KEYWORDS[route.path] || []),
+  ].filter(Boolean))];
+}
+
+/**
+ * Catálogo do assistente derivado da mesma fonte usada pelo roteador e menu.
+ * Ao adicionar uma página em appRoutes, o chat passa a reconhecê-la sem manter
+ * uma segunda lista manual e sujeita a ficar desatualizada.
+ */
+export const NAVIGATION_TOPICS = appRoutes.map((route) => {
+  const access = getRouteAccess(route.path);
+  return {
+    path: route.path,
+    label: route.label,
+    description: route.description,
+    group: route.group,
+    keywords: topicKeywords(route),
+    permission: access.viewPermission,
+    legacyPermission: access.legacyViewPermission || access.editPermission,
+    adminOnly: access.adminOnly === true,
+  };
+});
 
 export function normalizeText(value = '') {
   return String(value)
@@ -72,10 +112,7 @@ export function normalizeText(value = '') {
 }
 
 export function canAccessTopic(topic, user) {
-  if (user?.role === 'admin') return true;
-  if (topic.adminOnly) return false;
-  if (!topic.permission) return true;
-  return !!user?.permissions?.[topic.permission];
+  return canUserViewRoute(user, topic.path);
 }
 
 export function findNavigationTopic(question, user) {

@@ -14,6 +14,16 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+function escapeHtml(value: unknown) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[char] || char));
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -240,6 +250,7 @@ Deno.serve(async (req) => {
         const reportTypes = schedule.report_types || [schedule.report_type || 'daily_production'];
         let combinedHtmlBody = '';
         const attachments: any[] = [];
+        const attachmentWarnings: string[] = [];
 
         // Carregar células se OEE for selecionado
         let cellsData: any[] = [];
@@ -264,29 +275,44 @@ Deno.serve(async (req) => {
           // Gerar anexos
           if (['pdf', 'xlsx', 'csv'].includes(schedule.format)) {
             const filenameBase = `${safeFilename(schedule.name)}_${type}`;
-            if (schedule.format === 'pdf') {
-              const pdfBytes = await generateReportPdf(type, reportData, schedule);
-              attachments.push({
-                filename: `${filenameBase}.pdf`,
-                content: Buffer.from(pdfBytes).toString('base64'),
-                contentType: 'application/pdf'
-              });
-            } else if (schedule.format === 'xlsx') {
-              const excelContent = generateReportExcelHtml(type, reportData, schedule);
-              attachments.push({
-                filename: `${filenameBase}.xls`,
-                content: Buffer.from(excelContent, 'utf8').toString('base64'),
-                contentType: 'application/vnd.ms-excel'
-              });
-            } else if (schedule.format === 'csv') {
-              const csvContent = generateReportCsv(type, reportData, schedule);
-              attachments.push({
-                filename: `${filenameBase}.csv`,
-                content: Buffer.from(csvContent, 'utf8').toString('base64'),
-                contentType: 'text/csv'
-              });
+            try {
+              if (schedule.format === 'pdf') {
+                const pdfBytes = await generateReportPdf(type, reportData, schedule);
+                attachments.push({
+                  filename: `${filenameBase}.pdf`,
+                  content: Buffer.from(pdfBytes).toString('base64'),
+                  contentType: 'application/pdf'
+                });
+              } else if (schedule.format === 'xlsx') {
+                const excelContent = generateReportExcelHtml(type, reportData, schedule);
+                attachments.push({
+                  filename: `${filenameBase}.xls`,
+                  content: Buffer.from(excelContent, 'utf8').toString('base64'),
+                  contentType: 'application/vnd.ms-excel'
+                });
+              } else if (schedule.format === 'csv') {
+                const csvContent = generateReportCsv(type, reportData, schedule);
+                attachments.push({
+                  filename: `${filenameBase}.csv`,
+                  content: Buffer.from(csvContent, 'utf8').toString('base64'),
+                  contentType: 'text/csv'
+                });
+              }
+            } catch (attachmentError: any) {
+              const warning = `${REPORT_TYPE_LABELS[type] || type}: anexo ${schedule.format} indisponível (${attachmentError?.message || 'erro de geração'})`;
+              attachmentWarnings.push(warning);
+              console.error(`[MES Scheduler] ${warning}`);
             }
           }
+        }
+
+        if (attachmentWarnings.length) {
+          combinedHtmlBody += `
+            <div style="padding:12px;border:1px solid #f59e0b;background:#fffbeb;color:#92400e;border-radius:8px;font-family:sans-serif;">
+              O relatório foi entregue no corpo do e-mail. Alguns anexos não puderam ser gerados nesta execução:
+              ${attachmentWarnings.map((warning) => `<div>• ${escapeHtml(warning)}</div>`).join('')}
+            </div>
+          `;
         }
 
         // Template de e-mail completo
@@ -347,13 +373,19 @@ Deno.serve(async (req) => {
         }
 
         // 4. Atualizar o status da Run
-        const runStatus = totalFailed === 0 ? 'sent' : totalSuccess === 0 ? 'failed' : 'partial';
+        const runStatus = totalSuccess === 0
+          ? 'failed'
+          : (totalFailed > 0 || attachmentWarnings.length > 0 ? 'partial' : 'sent');
+        const runError = [
+          totalFailed > 0 ? `${totalFailed} envios falharam.` : '',
+          ...attachmentWarnings,
+        ].filter(Boolean).join(' ');
         await supabase
           .from('report_schedule_runs')
           .update({
             status: runStatus,
             finished_at: new Date().toISOString(),
-            last_error: totalFailed > 0 ? `${totalFailed} envios falharam.` : null
+            last_error: runError || null
           })
           .eq('id', runId);
 
@@ -363,12 +395,12 @@ Deno.serve(async (req) => {
           await supabase
             .from('report_schedules')
             .update({
-              last_sent_at: new Date().toISOString(),
+              last_sent_at: totalSuccess > 0 ? new Date().toISOString() : schedule.last_sent_at,
               next_run_at: nextRun.toISOString(),
-              last_success_at: runStatus === 'sent' ? new Date().toISOString() : schedule.last_success_at,
+              last_success_at: totalSuccess > 0 ? new Date().toISOString() : schedule.last_success_at,
               last_failure_at: runStatus === 'failed' ? new Date().toISOString() : schedule.last_failure_at,
               consecutive_failures: runStatus === 'failed' ? (schedule.consecutive_failures || 0) + 1 : 0,
-              last_error: totalFailed > 0 ? `${totalFailed} envios falharam.` : null,
+              last_error: runError || null,
               paused_reason: null,
               updated_at: new Date().toISOString()
             })

@@ -21,9 +21,15 @@ test('reconhece os atalhos de insights e sugestões produtivas', () => {
 });
 
 test('indica somente telas permitidas ao usuário', () => {
-  const operator = { role: 'operator', permissions: { register_production: true } };
-  expect(findNavigationTopic('onde registro produção?', operator)?.path).toBe('/entrada');
+  const operator = { role: 'operator', permissions: { traceability_collect: true } };
+  expect(findNavigationTopic('onde faço a bipagem da produção?', operator)?.path).toBe('/coleta');
   expect(findNavigationTopic('quero gerenciar usuários', operator)).toBeNull();
+});
+
+test('reconhece páginas novas pelo catálogo central do sistema', () => {
+  const manager = { role: 'manager', permissions: { view_quality: true, view_replacements: true } };
+  expect(findNavigationTopic('abra a página de não conformidade e Pareto', manager)?.path).toBe('/qualidade');
+  expect(findNavigationTopic('onde acompanho as reposições?', manager)?.path).toBe('/reposicao');
 });
 
 test('resume rota, embalagem, expedição e encerramento de um lote', () => {

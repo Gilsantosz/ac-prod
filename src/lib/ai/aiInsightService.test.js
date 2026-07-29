@@ -36,5 +36,50 @@ describe('aiInsightService', () => {
     expect(analysis.insights[0].title).toBe('Sem dados no período');
     expect(answer).toContain('Não encontrei dados produtivos');
   });
-});
 
+  it('faz análise de qualidade com Pareto, ações vencidas e recomendação', () => {
+    const context = {
+      entries: [{ date: '2026-07-28', produced: 100, target: 100, scrap: 5, cell: 'Corte' }],
+      occurrences: [],
+      lots: [],
+      qualityNonconformities: [
+        { created_at: '2026-07-27', defect_name: 'Erro de medida', quantity: 2, status: 'open', severity: 'high', cell_name: 'Corte' },
+        { created_at: '2026-07-28', defect_name: 'Erro de medida', quantity: 1, status: 'closed', severity: 'medium', cell_name: 'Corte' },
+      ],
+      qualityActions: [
+        { status: 'open', when_deadline: '2026-01-01T00:00:00Z' },
+      ],
+      filters: { startDate: '2026-07-27', endDate: '2026-07-28' },
+      warnings: [],
+    };
+    const analysis = analyzeProductionContext(context);
+    const answer = formatInsightAnswer(context, analysis, { focus: 'quality' });
+
+    expect(analysis.kpis.openNonconformities).toBe(1);
+    expect(analysis.kpis.overdueQualityActions).toBe(1);
+    expect(analysis.quality.topDefects[0]).toEqual({ label: 'Erro de medida', quantity: 3 });
+    expect(answer).toContain('Pareto principal');
+    expect(answer).toContain('Ações sugeridas');
+  });
+
+  it('rotula projeções como estimativa e informa confiança', () => {
+    const context = {
+      entries: [
+        { date: '2026-07-20', produced: 100, target: 100, scrap: 1 },
+        { date: '2026-07-28', produced: 70, target: 100, scrap: 5 },
+      ],
+      occurrences: [],
+      lots: [],
+      qualityNonconformities: [],
+      qualityActions: [],
+      filters: { startDate: '2026-07-20', endDate: '2026-07-28' },
+      warnings: [],
+    };
+    const analysis = analyzeProductionContext(context);
+    const answer = formatInsightAnswer(context, analysis, { focus: 'predictive' });
+
+    expect(analysis.prediction.risk).toBe('elevado');
+    expect(answer).toContain('estimativa operacional');
+    expect(answer).toContain('confiança');
+  });
+});

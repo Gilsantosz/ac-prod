@@ -706,6 +706,9 @@ export default function TraceabilityCollection({ embedded = false }) {
           shift={shift}
           operator={operator}
           disabled={Boolean(activeDowntime)}
+          disabledReason={activeDowntime
+            ? `Parada ativa: ${activeDowntime.reason || 'Parada operacional'}. Encerre a parada antes de contabilizar o volume.`
+            : ''}
           onSuccess={(result) => {
             recordSessionActivity();
             refreshData();

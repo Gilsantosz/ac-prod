@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabaseClient';
+import { appRoutes, canUserViewRoute, getRouteAccess } from '@/config/appRoutes';
 
-const BUILT_IN_CAPABILITIES = Object.freeze([
+const DOMAIN_CAPABILITIES = Object.freeze([
   {
     code: 'lot_tracking',
     label: 'Rastrear lote geral e lote de cliente',
@@ -22,6 +23,27 @@ const BUILT_IN_CAPABILITIES = Object.freeze([
     routes: ['/usuarios', '/ia-operacional'],
     permissions: ['manage_automations', 'ai_operations'],
   },
+  {
+    code: 'quality_intelligence',
+    label: 'Analisar não conformidades, Pareto, FPY e ações corretivas',
+    actions: ['ask_insight', 'navigate'],
+    routes: ['/qualidade', '/ocorrencias', '/ia-operacional'],
+    permissions: ['view_quality', 'manage_quality', 'ai_operations'],
+  },
+  {
+    code: 'downtime_intelligence',
+    label: 'Analisar paradas de linha, gargalos, causas e tendências',
+    actions: ['ask_insight', 'navigate'],
+    routes: ['/ocorrencias', '/alertas-mes', '/oee', '/ia-operacional'],
+    permissions: ['view_occurrences', 'view_mes_alerts', 'view_oee', 'ai_operations'],
+  },
+  {
+    code: 'predictive_analysis',
+    label: 'Projetar riscos produtivos e de qualidade com evidências do período',
+    actions: ['ask_insight'],
+    routes: ['/ia-operacional', '/qualidade', '/acompanhamento-lotes'],
+    permissions: ['view_ai', 'ai_operations', 'view_reports'],
+  },
 ]);
 
 function hasPermission(user, names = []) {
@@ -31,9 +53,20 @@ function hasPermission(user, names = []) {
 }
 
 function fallbackCapabilities(user) {
-  return BUILT_IN_CAPABILITIES.filter((capability) =>
-    hasPermission(user, capability.permissions)
-  );
+  const pageCapabilities = appRoutes
+    .filter((route) => canUserViewRoute(user, route.path))
+    .map((route) => ({
+      code: `page:${route.path === '/' ? 'dashboard' : route.path.slice(1).replaceAll('/', ':')}`,
+      label: `Reconhecer e orientar sobre ${route.label}`,
+      actions: ['navigate', 'ask_insight'],
+      routes: [route.path],
+      permissions: [getRouteAccess(route.path).viewPermission].filter(Boolean),
+    }));
+
+  return [
+    ...DOMAIN_CAPABILITIES.filter((capability) => hasPermission(user, capability.permissions)),
+    ...pageCapabilities,
+  ];
 }
 
 export async function listAiCapabilities(user) {
@@ -41,7 +74,10 @@ export async function listAiCapabilities(user) {
     const { data, error } = await supabase.rpc('get_ai_capability_context');
     if (error) throw error;
     const capabilities = Array.isArray(data) ? data : (data?.capabilities || []);
-    return capabilities.length ? capabilities : fallbackCapabilities(user);
+    const merged = new Map(
+      [...fallbackCapabilities(user), ...capabilities].map((capability) => [capability.code, capability])
+    );
+    return [...merged.values()];
   } catch {
     return fallbackCapabilities(user);
   }
@@ -83,4 +119,3 @@ export async function recordAiActionRun({
     // Auditoria dedicada é aditiva; ai_system_logs permanece como fallback.
   }
 }
-

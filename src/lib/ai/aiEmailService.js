@@ -262,8 +262,22 @@ export async function deleteReportRecipient(id) {
 }
 
 export async function listEmailLogs(limit = 100) {
-  const { data, error } = await supabase.from('report_email_logs').select('*').order('created_at', { ascending: false }).limit(limit);
-  if (!error) return { data: data || [], warning: '' };
+  const { data, error } = await supabase
+    .from('report_delivery_history')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (!error) {
+    return {
+      data: (data || []).map((entry) => ({
+        ...entry,
+        subject: entry.report_job_id
+          ? '[Leo Flow] Relatório solicitado pela IA'
+          : '[Leo Flow] Relatório agendado',
+      })),
+      warning: '',
+    };
+  }
   if (isAiSchemaUnavailable(error)) return { data: [], warning: 'Os envios serão auditados após publicar a migração 013.' };
   throw error;
 }
