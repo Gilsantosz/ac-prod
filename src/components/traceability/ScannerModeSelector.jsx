@@ -1,15 +1,16 @@
-import { Barcode, Keyboard, ScanLine, AlertTriangle, Maximize2 } from 'lucide-react';
+import { Barcode, Boxes, Keyboard, ScanLine, AlertTriangle, Maximize2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const MODES = [
   { value: 'scanner', label: 'Scanner físico', icon: Barcode },
   { value: 'camera', label: 'Câmera do celular', icon: ScanLine },
-  { value: 'manual', label: 'Manual', icon: Keyboard },
+  { value: 'manual', label: 'Código individual', icon: Keyboard },
+  { value: 'volume', label: 'Baixa por volume', icon: Boxes },
 ];
 
 export default function ScannerModeSelector({ value, onChange, onOpenDowntime, onToggleKiosk }) {
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-5 gap-2" role="radiogroup" aria-label="Modo de leitura">
+    <div className="grid grid-cols-2 lg:grid-cols-6 gap-2" role="radiogroup" aria-label="Modo de leitura">
       {MODES.map(({ value: mode, label, icon: Icon }) => (
         <button
           key={mode}

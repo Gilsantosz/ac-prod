@@ -18,6 +18,7 @@ export default function TraceabilityScannerPanel({
   onOpenDowntime,
   onToggleKiosk,
   activeDowntime,
+  volumeEntry,
 }) {
   const [value, setValue] = useState('');
   const inputRef = useRef(null);
@@ -147,7 +148,9 @@ export default function TraceabilityScannerPanel({
             </div>
           )}
 
-          {mode === 'camera' ? (
+          {mode === 'volume' ? (
+            volumeEntry
+          ) : mode === 'camera' ? (
             contextReady
               ? <MobileCameraScanner active onDetected={submitCamera} onManual={() => onModeChange('manual')} feedback={feedback} />
               : null

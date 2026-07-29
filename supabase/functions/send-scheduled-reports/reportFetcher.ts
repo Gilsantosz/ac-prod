@@ -14,6 +14,50 @@ function getSaoPauloDateString(offsetDays = 0) {
   return formatter.format(d);
 }
 
+function normalizeGoalKey(goal: any) {
+  const normalize = (value: unknown) => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+  return [
+    normalize(goal.cell_name || goal.cell),
+    String(goal.shift || '').trim(),
+    String(goal.metric_unit || goal.unit || 'pieces').trim().toLowerCase(),
+  ].join('||');
+}
+
+function dateRange(fromDate: string, toDate: string) {
+  const dates: string[] = [];
+  const cursor = new Date(`${fromDate}T12:00:00Z`);
+  const end = new Date(`${toDate}T12:00:00Z`);
+  while (cursor <= end && dates.length < 3700) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+function materializeEffectiveGoals(priorGoals: any[], rangeGoals: any[], fromDate: string, toDate: string) {
+  const latest = new Map<string, any>();
+  [...priorGoals].reverse().forEach((goal) => latest.set(normalizeGoalKey(goal), goal));
+  const exactByDate = new Map<string, any[]>();
+  rangeGoals.forEach((goal) => {
+    const list = exactByDate.get(goal.date) || [];
+    list.push(goal);
+    exactByDate.set(goal.date, list);
+  });
+
+  return dateRange(fromDate, toDate).flatMap((date) => {
+    (exactByDate.get(date) || []).forEach((goal) => latest.set(normalizeGoalKey(goal), goal));
+    return [...latest.values()].map((goal) => ({
+      ...goal,
+      date,
+      inherited_from_date: goal.date === date ? null : goal.date,
+    }));
+  });
+}
+
 export async function fetchReportDataForType(supabase: any, type: string, schedule: any) {
   const today = getSaoPauloDateString(0);
   const yesterday = getSaoPauloDateString(-1);
@@ -129,14 +173,23 @@ export async function fetchReportDataForType(supabase: any, type: string, schedu
       occurrencesQuery = applyProductionFilters(occurrencesQuery, 'cell');
     }
 
-    const [entriesResult, goalsResult, occurrencesResult] = await Promise.all([
+    const [entriesResult, goalsResult, occurrencesResult, priorGoalsResult] = await Promise.all([
       entriesQuery,
       goalsQuery,
       occurrencesQuery || Promise.resolve({ data: [], error: null }),
+      fromDate && !hasEntityScope
+        ? supabase
+          .from('production_daily_goals')
+          .select('*')
+          .lt('date', fromDate)
+          .order('date', { ascending: false })
+          .limit(1000)
+        : Promise.resolve({ data: [], error: null }),
     ]);
     if (entriesResult.error) throw entriesResult.error;
     if (goalsResult.error) throw goalsResult.error;
     if (occurrencesResult.error) throw occurrencesResult.error;
+    if (priorGoalsResult.error) throw priorGoalsResult.error;
     const occurrenceKeys = new Set((occurrencesResult.data || [])
       .filter((item: any) => (
         !requestedLots.length || requestedLots.some((lot) => includesText(item.lot_code, lot))
@@ -149,11 +202,20 @@ export async function fetchReportDataForType(supabase: any, type: string, schedu
         || occurrenceKeys.has(`${entry.date}|${entry.shift}|${entry.cell}`)
       )
     ));
+    const effectiveGoals = !hasEntityScope && fromDate && toDate
+      ? materializeEffectiveGoals(
+        priorGoalsResult.data || [],
+        goalsResult.data || [],
+        fromDate,
+        toDate,
+      )
+      : (goalsResult.data || []);
+
     return {
       entries,
       // Metas de toda a célula não são comparáveis a um recorte por lote,
       // cliente, produto ou operador; nesse caso, não exibimos uma meta enganosa.
-      goals: hasEntityScope ? [] : (goalsResult.data || []),
+      goals: hasEntityScope ? [] : effectiveGoals,
       fromDate,
       toDate,
     };

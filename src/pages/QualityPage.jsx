@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import {
   ShieldAlert, BarChart3,
   Download, RefreshCw, Layers,
-  PieChart as PieIcon, Activity
+  PieChart as PieIcon, Activity, Target, ClipboardList,
+  CheckCircle2, AlertOctagon, Factory, TrendingDown, Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,6 +30,24 @@ const SIX_M_COLORS = {
   'Meio ambiente': '#10b981'
 };
 
+function QualityKpiCard({ icon: Icon, label, value, helper, tone }) {
+  return (
+    <div className="group relative overflow-hidden rounded-2xl border border-border/60 bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+      <div className={`absolute inset-x-0 top-0 h-1 ${tone}`} />
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground">{label}</p>
+          <p className="mt-2 text-3xl font-black tracking-tight text-foreground">{value}</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">{helper}</p>
+        </div>
+        <div className="rounded-xl bg-secondary/60 p-2.5 text-muted-foreground transition-colors group-hover:text-foreground">
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function QualityPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('pareto'); // 'pareto' | 'ncs' | 'spc' | 'catalog'
@@ -39,10 +58,19 @@ export default function QualityPage() {
     admin: user?.role === 'admin'
   };
 
-  const { data: metrics = {}, isLoading, refetch } = useQuery({
+  const {
+    data: metrics = {},
+    error: metricsError,
+    isError: metricsIsError,
+    isFetching,
+    isLoading,
+    refetch,
+  } = useQuery({
     queryKey: ['quality-metrics'],
     queryFn: () => getQualityDashboardMetrics(),
-    refetchInterval: 20000
+    refetchInterval: 20_000,
+    staleTime: 10_000,
+    retry: 1,
   });
 
   const handleExportCSV = async () => {
@@ -57,7 +85,7 @@ export default function QualityPage() {
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="p-4 md:p-6 space-y-6 max-w-[1600px] mx-auto">
       {/* Cabeçalho */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -85,40 +113,83 @@ export default function QualityPage() {
             variant="outline"
             size="sm"
             onClick={() => refetch()}
+            disabled={isFetching}
             className="h-10 rounded-xl border-border/60 text-xs font-bold flex items-center gap-1.5"
           >
-            <RefreshCw className="w-4 h-4" />
-            Atualizar
+            <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
+            {isFetching ? 'Atualizando...' : 'Atualizar'}
           </Button>
         </div>
       </div>
 
+      {metricsIsError && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-rose-500/30 bg-rose-500/[0.04] p-5">
+          <div className="flex items-start gap-3">
+            <AlertOctagon className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
+            <div>
+              <p className="text-sm font-extrabold text-foreground">Falha ao atualizar os indicadores de Qualidade</p>
+              <p className="mt-1 text-xs text-muted-foreground">{metricsError?.message || 'Não foi possível consultar os dados.'}</p>
+            </div>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={() => refetch()} className="rounded-xl gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Tentar novamente
+          </Button>
+        </div>
+      )}
+
       {/* Cards Principais de Indicadores */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-card border border-border/60 rounded-2xl p-4 space-y-1 shadow-sm">
-          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">First Pass Yield (FPY)</p>
-          <p className="text-3xl font-black text-emerald-600 dark:text-emerald-400">{metrics.fpy || 100}%</p>
-          <p className="text-[11px] text-muted-foreground">Aprovação de 1ª Passagem</p>
+      {isLoading ? (
+        <div className="flex items-center justify-center gap-2 rounded-2xl border border-border/60 bg-card py-10 text-sm text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          Consolidando indicadores de Qualidade...
         </div>
-
-        <div className="bg-card border border-border/60 rounded-2xl p-4 space-y-1 shadow-sm">
-          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Taxa de Reprovação</p>
-          <p className="text-3xl font-black text-rose-600 dark:text-rose-400">{metrics.rejectionRate || 0}%</p>
-          <p className="text-[11px] text-muted-foreground">Refugos / Leituras totais</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">
+          <QualityKpiCard
+            icon={Target}
+            label="First Pass Yield"
+            value={`${metrics.fpy ?? 100}%`}
+            helper="Aprovadas na primeira passagem"
+            tone="bg-emerald-500"
+          />
+          <QualityKpiCard
+            icon={TrendingDown}
+            label="Taxa de reprovação"
+            value={`${metrics.rejectionRate ?? 0}%`}
+            helper={`${metrics.rejectedReadings ?? 0} leituras reprovadas`}
+            tone="bg-rose-500"
+          />
+          <QualityKpiCard
+            icon={ShieldAlert}
+            label="NCs abertas"
+            value={(metrics.openNCs ?? 0).toLocaleString('pt-BR')}
+            helper="Exigem contenção ou plano de ação"
+            tone="bg-amber-500"
+          />
+          <QualityKpiCard
+            icon={ClipboardList}
+            label="Defeitos registrados"
+            value={(metrics.totalDefects ?? 0).toLocaleString('pt-BR')}
+            helper={`${metrics.totalNCs ?? 0} não conformidade(s)`}
+            tone="bg-violet-500"
+          />
+          <QualityKpiCard
+            icon={CheckCircle2}
+            label="Taxa de encerramento"
+            value={`${metrics.closureRate ?? 100}%`}
+            helper={`${metrics.closedNCs ?? 0} NC(s) encerrada(s)`}
+            tone="bg-sky-500"
+          />
+          <QualityKpiCard
+            icon={AlertOctagon}
+            label="Críticas em aberto"
+            value={(metrics.criticalNCs ?? 0).toLocaleString('pt-BR')}
+            helper={`Principal defeito: ${metrics.topDefect || '—'}`}
+            tone="bg-red-600"
+          />
         </div>
-
-        <div className="bg-card border border-border/60 rounded-2xl p-4 space-y-1 shadow-sm">
-          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Não Conformidades Abertas</p>
-          <p className="text-3xl font-black text-amber-600 dark:text-amber-400">{metrics.openNCs || 0}</p>
-          <p className="text-[11px] text-muted-foreground">Requerem tratativa / 5W2H</p>
-        </div>
-
-        <div className="bg-card border border-border/60 rounded-2xl p-4 space-y-1 shadow-sm">
-          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">NCs Encerradas</p>
-          <p className="text-3xl font-black text-foreground">{metrics.closedNCs || 0}</p>
-          <p className="text-[11px] text-muted-foreground">Concluídas com sucesso</p>
-        </div>
-      </div>
+      )}
 
       {/* Navegação por Abas */}
       <div className="flex p-1 bg-secondary/50 rounded-2xl border border-border/40 text-xs font-bold overflow-x-auto">
@@ -217,7 +288,7 @@ export default function QualityPage() {
             </div>
 
             <div className="h-64 w-full flex items-center justify-center">
-              {metrics.sixMData && metrics.sixMData.length > 0 ? (
+              {metrics.sixMData && metrics.sixMData.some((item) => item.value > 0) ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -240,6 +311,65 @@ export default function QualityPage() {
               ) : (
                 <p className="text-xs text-muted-foreground">Sem dados suficientes.</p>
               )}
+            </div>
+          </div>
+
+          <div className="lg:col-span-3 grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="bg-card border border-border/60 rounded-2xl p-5 space-y-4 shadow-sm">
+              <div>
+                <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-sky-500" />
+                  Tendência diária da Qualidade
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Reprovações registradas e taxa diária sobre leituras produtivas válidas.
+                </p>
+              </div>
+              <div className="h-64">
+                {metrics.pChartData?.length ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={metrics.pChartData} margin={{ top: 10, right: 10, left: -20, bottom: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
+                      <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                      <YAxis yAxisId="quantity" tick={{ fontSize: 10 }} allowDecimals={false} />
+                      <YAxis yAxisId="rate" orientation="right" domain={[0, 100]} tick={{ fontSize: 10 }} />
+                      <Tooltip contentStyle={{ borderRadius: '12px', fontSize: '12px' }} />
+                      <Legend wrapperStyle={{ fontSize: '11px' }} />
+                      <Bar yAxisId="quantity" dataKey="rejected" name="Reprovadas" fill="#ef4444" radius={[5, 5, 0, 0]} />
+                      <Line yAxisId="rate" type="monotone" dataKey="rejectionRate" name="Taxa de reprovação (%)" stroke="#0ea5e9" strokeWidth={3} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-muted-foreground">Sem histórico diário suficiente.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-card border border-border/60 rounded-2xl p-5 space-y-4 shadow-sm">
+              <div>
+                <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                  <Factory className="w-5 h-5 text-violet-500" />
+                  Defeitos por célula produtiva
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Quantidade não conforme atribuída ao ponto de detecção.
+                </p>
+              </div>
+              <div className="h-64">
+                {metrics.byCellData?.length ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart layout="vertical" data={metrics.byCellData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
+                      <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
+                      <YAxis type="category" dataKey="cell" width={90} tick={{ fontSize: 10 }} />
+                      <Tooltip contentStyle={{ borderRadius: '12px', fontSize: '12px' }} />
+                      <Bar dataKey="defects" name="Defeitos" fill="#8b5cf6" radius={[0, 6, 6, 0]} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-muted-foreground">Sem defeitos vinculados às células.</div>
+                )}
+              </div>
             </div>
           </div>
         </div>

@@ -3,10 +3,19 @@ import { clearPersistedAuthSession, persistAuthSession, restoreAuthSession, supa
 import { base44 } from '@/lib/localDb';
 import { navTo } from '@/lib/navigation';
 import { getDefaultPermissions } from '@/config/appRoutes';
+import { clearOperatorSession } from '@/lib/operatorSessionService';
+import {
+  clearSessionActivity,
+  getLastSessionActivity,
+  isSessionInactive,
+  recordSessionActivity,
+  SESSION_ACTIVITY_STORAGE_KEY,
+  SESSION_INACTIVITY_MS,
+} from '@/lib/sessionActivity';
 
 const AuthContext = createContext();
 const AUTH_STEP_TIMEOUT_MS = 3000;
-const AUTH_INIT_TIMEOUT_MS = 5000;
+const AUTH_INIT_TIMEOUT_MS = 12000;
 
 const withTimeout = (promise, timeoutMs, fallback) => Promise.race([
   promise,
@@ -103,13 +112,31 @@ export const AuthProvider = ({ children }) => {
 
   const rejectUnauthorizedSession = useCallback(async (error) => {
     clearPersistedAuthSession();
+    clearSessionActivity();
     setUser(null);
     setIsAuthenticated(false);
     setAuthError({
       type: isAccessDeniedError(error) ? 'user_not_registered' : 'auth_required',
       message: error?.message || 'Não foi possível validar o acesso.',
     });
-    await withTimeout(supabase.auth.signOut(), AUTH_STEP_TIMEOUT_MS, null);
+    await withTimeout(clearOperatorSession(), AUTH_STEP_TIMEOUT_MS, null);
+    await withTimeout(supabase.auth.signOut({ scope: 'local' }), AUTH_STEP_TIMEOUT_MS, null);
+  }, []);
+
+  const expireInactiveSession = useCallback(async ({ redirect = true } = {}) => {
+    clearPersistedAuthSession();
+    clearSessionActivity();
+    setUser(null);
+    setIsAuthenticated(false);
+    setAuthChecked(true);
+    setAuthError({
+      type: 'inactivity_logout',
+      message: 'Sessão encerrada após 30 minutos sem atividade. Digite suas credenciais para continuar.',
+    });
+
+    await withTimeout(clearOperatorSession(), AUTH_STEP_TIMEOUT_MS, null);
+    await withTimeout(supabase.auth.signOut({ scope: 'local' }), AUTH_STEP_TIMEOUT_MS, null);
+    if (redirect) redirectTo('/login');
   }, []);
 
   // ─── Inicialização do estado de autenticação ─────────────────────────────────
@@ -123,7 +150,8 @@ export const AuthProvider = ({ children }) => {
     const initFailSafe = setTimeout(() => {
       if (!isMounted) return;
       initTimedOut = true;
-      clearPersistedAuthSession();
+      // Não apaga a sessão persistida em uma oscilação de rede. O próximo
+      // carregamento poderá restaurá-la sem solicitar novamente as credenciais.
       setUser(null);
       setIsAuthenticated(false);
       setIsLoadingAuth(false);
@@ -132,6 +160,11 @@ export const AuthProvider = ({ children }) => {
 
     const initAuth = async () => {
       try {
+        if (isSessionInactive()) {
+          await expireInactiveSession({ redirect: false });
+          return;
+        }
+
         // getSession() lê do localStorage. Se houver token expirado, tenta refresh
         // via rede (pode demorar). Limitamos a 4 segundos para evitar spinner eterno.
         const sessionResult = await withTimeout(
@@ -158,6 +191,7 @@ export const AuthProvider = ({ children }) => {
             try {
               const profile = await fetchProfile(user);
               if (!isMounted || initTimedOut) return;
+              recordSessionActivity();
               setUser(profile);
               setIsAuthenticated(true);
               setAuthError(null);
@@ -210,6 +244,7 @@ export const AuthProvider = ({ children }) => {
             const profile = await fetchProfile(session.user);
             if (!isMounted) return;
             persistAuthSession(session);
+            recordSessionActivity();
             setUser(profile);
             setIsAuthenticated(true);
             setAuthError(null);
@@ -219,6 +254,7 @@ export const AuthProvider = ({ children }) => {
           }
         } else if (event === 'SIGNED_OUT') {
           clearPersistedAuthSession();
+          clearSessionActivity();
           setUser(null);
           setIsAuthenticated(false);
         } else if (event === 'USER_UPDATED' && session?.user) {
@@ -238,81 +274,95 @@ export const AuthProvider = ({ children }) => {
       authEventTimers.forEach((timer) => clearTimeout(timer));
       subscription.unsubscribe();
     };
-  }, [fetchProfile, rejectUnauthorizedSession]);
+  }, [expireInactiveSession, fetchProfile, rejectUnauthorizedSession]);
 
-  // ─── Detector de Hibernação, Modo Descanso e Bloqueio de Tela ─────────────
+  // ─── Inatividade real: 30 minutos sem interação com o sistema ──────────────
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    let lastTick = Date.now();
-    let lastHiddenTime = null;
-    let wasFrozen = false;
+    let logoutStarted = false;
+    let lastActivityWrite = getLastSessionActivity() || 0;
+    const activityWriteThrottleMs = 5000;
 
-    const performSleepLogout = async (reason) => {
-      console.warn(`[Leo Flow] Sessão encerrada por segurança (${reason}): O sistema detectou descanso/hibernação.`);
-      clearPersistedAuthSession();
-      setUser(null);
-      setIsAuthenticated(false);
-      setAuthError({
-        type: 'sleep_logout',
-        message: 'O computador entrou em modo de descanso ou hibernação. Por segurança, digite suas credenciais novamente.',
-      });
-      try {
-        await supabase.auth.signOut();
-      } catch { /* noop */ }
-      redirectTo('/login');
+    const performIdleLogout = () => {
+      if (logoutStarted) return;
+      logoutStarted = true;
+      expireInactiveSession();
     };
 
-    // Monitor 1: Heartbeat de 1s que detecta interrupção da CPU (Hibernação/Sleep)
-    const heartbeatInterval = setInterval(() => {
+    const checkInactivity = () => {
+      if (isSessionInactive()) {
+        performIdleLogout();
+        return true;
+      }
+      return false;
+    };
+
+    const markActivity = () => {
+      if (logoutStarted || document.visibilityState !== 'visible') return;
       const now = Date.now();
-      const delta = now - lastTick;
-      lastTick = now;
+      if (now - lastActivityWrite < activityWriteThrottleMs) return;
+      lastActivityWrite = recordSessionActivity(now) || lastActivityWrite;
+    };
 
-      // Se o tick de 1000ms levou mais de 4000ms, o SO dormiu ou hibernou
-      if (delta > 4000) {
-        performSleepLogout('system_sleep_delta');
-      }
-    }, 1000);
-
-    // Monitor 2: Mudança de visibilidade / Ocultação / Bloqueio de tela
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        lastHiddenTime = Date.now();
-      } else if (document.visibilityState === 'visible') {
-        if (wasFrozen) {
-          wasFrozen = false;
-          performSleepLogout('page_resume_from_freeze');
-          return;
-        }
-
-        if (lastHiddenTime && Date.now() - lastHiddenTime > 10000) {
-          lastHiddenTime = null;
-          performSleepLogout('idle_screen_rest');
-        }
+      if (document.visibilityState !== 'visible') return;
+      if (!checkInactivity()) {
+        // Voltar à página é atividade. Fechar o PWA, ocultar a aba ou suspender
+        // o computador não encerra a sessão antes dos 30 minutos.
+        lastActivityWrite = recordSessionActivity() || lastActivityWrite;
       }
     };
 
-    // Monitor 3: Evento Page Lifecycle Freeze (antes do descanso profundo)
-    const handleFreeze = () => {
-      wasFrozen = true;
-      clearPersistedAuthSession();
+    const handleStorage = (event) => {
+      if (event.key === SESSION_ACTIVITY_STORAGE_KEY && checkInactivity()) {
+        performIdleLogout();
+      }
     };
 
+    const activityEvents = [
+      'pointerdown',
+      'pointermove',
+      'keydown',
+      'touchstart',
+      'wheel',
+      'scroll',
+    ];
+
+    lastActivityWrite = recordSessionActivity() || lastActivityWrite;
+    activityEvents.forEach((eventName) => {
+      document.addEventListener(eventName, markActivity, { passive: true, capture: true });
+    });
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('freeze', handleFreeze);
+    window.addEventListener('focus', handleVisibilityChange);
+    window.addEventListener('popstate', markActivity);
+    window.addEventListener('hashchange', markActivity);
+    window.addEventListener('storage', handleStorage);
+
+    const inactivityInterval = setInterval(checkInactivity, 15_000);
 
     return () => {
-      clearInterval(heartbeatInterval);
+      clearInterval(inactivityInterval);
+      activityEvents.forEach((eventName) => {
+        document.removeEventListener(eventName, markActivity, { capture: true });
+      });
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('freeze', handleFreeze);
+      window.removeEventListener('focus', handleVisibilityChange);
+      window.removeEventListener('popstate', markActivity);
+      window.removeEventListener('hashchange', markActivity);
+      window.removeEventListener('storage', handleStorage);
     };
-  }, [isAuthenticated]);
+  }, [expireInactiveSession, isAuthenticated]);
 
   // ─── checkUserAuth — compatibilidade com ProtectedRoute ──────────────────────
   const checkUserAuth = useCallback(async () => {
     setIsLoadingAuth(true);
     try {
+      if (isSessionInactive()) {
+        await expireInactiveSession();
+        return;
+      }
+
       const sessionResult = await withTimeout(
         supabase.auth.getSession(),
         AUTH_STEP_TIMEOUT_MS,
@@ -328,6 +378,7 @@ export const AuthProvider = ({ children }) => {
         if (user) {
           try {
             const profile = await fetchProfile(user);
+            recordSessionActivity();
             setUser(profile);
             setIsAuthenticated(true);
             setAuthError(null);
@@ -355,7 +406,7 @@ export const AuthProvider = ({ children }) => {
       setIsLoadingAuth(false);
       setAuthChecked(true);
     }
-  }, [fetchProfile, rejectUnauthorizedSession]);
+  }, [expireInactiveSession, fetchProfile, rejectUnauthorizedSession]);
 
   // ─── Login ────────────────────────────────────────────────────────────────────
   const login = async (email, password) => {
@@ -368,6 +419,7 @@ export const AuthProvider = ({ children }) => {
         null,
       );
       if (!profile) throw new Error('O servidor demorou para responder. Tente novamente.');
+      recordSessionActivity();
       setUser(profile);
       setIsAuthenticated(true);
       setAuthChecked(true);
@@ -409,7 +461,9 @@ export const AuthProvider = ({ children }) => {
     setAuthChecked(true);
     try {
       clearPersistedAuthSession();
-      await supabase.auth.signOut();
+      clearSessionActivity();
+      await withTimeout(clearOperatorSession(), AUTH_STEP_TIMEOUT_MS, null);
+      await supabase.auth.signOut({ scope: 'local' });
     } catch { /* silencioso — sessão local já foi limpa */ }
     if (shouldRedirect) {
       redirectTo('/login');
@@ -430,6 +484,7 @@ export const AuthProvider = ({ children }) => {
       logout,
       navigateToLogin,
       checkUserAuth,
+      sessionInactivityMs: SESSION_INACTIVITY_MS,
     }}>
       {children}
     </AuthContext.Provider>

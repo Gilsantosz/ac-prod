@@ -35,7 +35,14 @@ jobs:
               PROJECT_REF="uozuzdfvnufsjsonswag"
             fi
             supabase db push --project-ref "$PROJECT_REF"
-            supabase functions deploy send-report-email --project-ref "$PROJECT_REF"
+            for function_name in \
+              send-report-email \
+              send-scheduled-reports \
+              sendDailyClosure \
+              schedule-report-job
+            do
+              supabase functions deploy "$function_name" --project-ref "$PROJECT_REF"
+            done
           else
             echo "Aviso: Segredos Supabase (SUPABASE_ACCESS_TOKEN e SUPABASE_DB_PASSWORD) nao configurados no GitHub. Pulando migracao automatica."
           fi

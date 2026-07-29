@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
-import { Search, Filter, CheckCircle2, Plus, ChevronDown, ChevronUp, FileText
+import { useDeferredValue, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Search, Filter, CheckCircle2, Plus, ChevronDown, ChevronUp, FileText,
+  AlertTriangle, Loader2, RefreshCw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,12 +22,12 @@ import {
 import { toast } from 'sonner';
 
 export default function NonconformitiesListTab({ userPermissions = {} }) {
-  const [ncs, setNcs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState('all');
   const [dispositionFilter, setDispositionFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [expandedNcId, setExpandedNcId] = useState(null);
+  const deferredSearch = useDeferredValue(search.trim());
 
   // Modal 5W2H
   const [actionModal, setActionModal] = useState(null);
@@ -38,26 +40,35 @@ export default function NonconformitiesListTab({ userPermissions = {} }) {
     action_type: 'corrective'
   });
 
-  const loadNCs = async () => {
-    try {
-      setLoading(true);
-      const data = await getNonconformities({
+  const {
+    data: ncResult,
+    error: ncError,
+    isError,
+    isLoading,
+    isFetching,
+    refetch,
+  } = useQuery({
+    queryKey: ['quality-nonconformities', statusFilter, dispositionFilter, deferredSearch],
+    queryFn: () => getNonconformities({
         status: statusFilter !== 'all' ? statusFilter : null,
         disposition: dispositionFilter !== 'all' ? dispositionFilter : null,
-        search: search.trim() || null
-      });
-      setNcs(data.nonconformities || []);
-    } catch (error) {
-      console.error('Erro ao carregar NCs:', error);
-      toast.error('Falha ao carregar Não Conformidades.');
-    } finally {
-      setLoading(false);
-    }
-  };
+        search: deferredSearch || null
+      }),
+    staleTime: 10_000,
+    retry: 1,
+    refetchInterval: 20_000,
+    placeholderData: (previousData) => previousData,
+  });
 
-  useEffect(() => {
-    loadNCs();
-  }, [statusFilter, dispositionFilter, search]);
+  const ncs = ncResult?.nonconformities || [];
+  const totalNcs = ncResult?.count || 0;
+
+  const refreshQualityData = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['quality-nonconformities'] }),
+      queryClient.invalidateQueries({ queryKey: ['quality-metrics'] }),
+    ]);
+  };
 
   const handleCloseNc = async (nc) => {
     const notes = prompt(`Motivo ou observações do encerramento da NC ${nc.nc_code}:`);
@@ -66,7 +77,7 @@ export default function NonconformitiesListTab({ userPermissions = {} }) {
     try {
       await closeNonconformity(nc.id, { notes });
       toast.success(`Não Conformidade ${nc.nc_code} encerrada com sucesso!`);
-      loadNCs();
+      await refreshQualityData();
     } catch (error) {
       console.error('Erro ao encerrar NC:', error);
       toast.error(error.message || 'Falha ao encerrar NC.');
@@ -92,7 +103,7 @@ export default function NonconformitiesListTab({ userPermissions = {} }) {
       });
       toast.success('Plano de Ação 5W2H adicionado com sucesso!');
       setActionModal(null);
-      loadNCs();
+      await refreshQualityData();
     } catch (error) {
       console.error('Erro ao salvar plano de ação:', error);
       toast.error(error.message || 'Falha ao salvar plano de ação.');
@@ -140,13 +151,48 @@ export default function NonconformitiesListTab({ userPermissions = {} }) {
               <option value="use_as_is">Uso Como Está</option>
               <option value="hold">Quarentena</option>
             </select>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="h-9 rounded-xl gap-1.5 text-xs font-bold"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+              Atualizar
+            </Button>
           </div>
+        </div>
+        <div className="flex items-center justify-between border-t border-border/40 pt-3 text-[11px] text-muted-foreground">
+          <span>{totalNcs.toLocaleString('pt-BR')} não conformidade(s) encontrada(s)</span>
+          <span>Atualização automática a cada 20 segundos</span>
         </div>
       </div>
 
       {/* Lista de Não Conformidades */}
-      {loading ? (
-        <div className="py-8 text-center text-xs text-muted-foreground">Carregando Não Conformidades...</div>
+      {isLoading ? (
+        <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          Carregando Não Conformidades...
+        </div>
+      ) : isError ? (
+        <div className="rounded-2xl border border-rose-500/30 bg-rose-500/[0.04] p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
+              <div>
+                <p className="text-sm font-extrabold text-foreground">Não foi possível carregar as Não Conformidades</p>
+                <p className="mt-1 text-xs text-muted-foreground">{ncError?.message || 'Falha ao consultar os dados de Qualidade.'}</p>
+              </div>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={() => refetch()} className="rounded-xl gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Tentar novamente
+            </Button>
+          </div>
+        </div>
       ) : ncs.length === 0 ? (
         <div className="bg-card border border-border/60 rounded-2xl p-12 text-center text-xs text-muted-foreground">
           Nenhuma Não Conformidade encontrada para os filtros selecionados.
@@ -172,7 +218,9 @@ export default function NonconformitiesListTab({ userPermissions = {} }) {
                   </div>
 
                   <div className="flex items-center gap-2 text-xs">
-                    <span className="text-muted-foreground">Detectado em: {new Date(nc.detected_at).toLocaleDateString('pt-BR')}</span>
+                    <span className="text-muted-foreground">
+                      Detectado em: {new Date(nc.detected_at || nc.created_at).toLocaleString('pt-BR')}
+                    </span>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -205,7 +253,7 @@ export default function NonconformitiesListTab({ userPermissions = {} }) {
                 </div>
 
                 {/* Planos de Ação 5W2H Existentes */}
-                {nc.actions && nc.actions.length > 0 && (
+                {isExpanded && nc.actions && nc.actions.length > 0 && (
                   <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-3 space-y-2 text-xs">
                     <p className="font-bold text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
                       <FileText className="w-3.5 h-3.5" />
@@ -222,7 +270,7 @@ export default function NonconformitiesListTab({ userPermissions = {} }) {
                 )}
 
                 {/* Expansão e Ações */}
-                <div className="flex items-center justify-between pt-2 border-t border-border/40 text-xs">
+                {isExpanded && <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-border/40 text-xs">
                   <p className="text-muted-foreground text-[11px]">
                     {nc.notes ? `Obs: ${nc.notes}` : ''}
                   </p>
@@ -256,7 +304,7 @@ export default function NonconformitiesListTab({ userPermissions = {} }) {
                       </Button>
                     )}
                   </div>
-                </div>
+                </div>}
               </div>
             );
           })}

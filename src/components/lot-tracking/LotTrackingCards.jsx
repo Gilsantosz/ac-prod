@@ -23,12 +23,15 @@ export function StageProgressGrid({ stages = [], compact = false }) {
   const toneByStage = {
     cut: 'bg-emerald-500',
     edge: 'bg-sky-500',
+    drill: 'bg-cyan-500',
     cnc: 'bg-violet-500',
     joinery: 'bg-amber-500',
+    separation: 'bg-orange-500',
+    packaging: 'bg-fuchsia-500',
   };
 
   return (
-    <div className={`grid gap-3 ${compact ? 'grid-cols-2 xl:grid-cols-4' : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-4'}`}>
+    <div className={`grid gap-3 ${compact ? 'grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7' : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7'}`}>
       {stages.map((stage) => (
         <div key={stage.stage_code} className="rounded-xl border border-border/60 bg-background/70 p-3 space-y-2">
           <div className="flex items-center justify-between gap-2">
@@ -38,6 +41,18 @@ export function StageProgressGrid({ stages = [], compact = false }) {
             </span>
           </div>
           <ProgressBar value={stage.progress_percent} tone={toneByStage[stage.stage_code]} />
+          {stage.traceable_collection_required === false && (
+            <div className="flex flex-wrap gap-1">
+              <Badge variant="outline" className="text-[8px] border-blue-500/25 bg-blue-500/10 text-blue-700">
+                Coleta opcional
+              </Badge>
+              {Number(stage.manual_quantity || 0) > 0 && (
+                <Badge variant="outline" className="text-[8px] border-amber-500/25 bg-amber-500/10 text-amber-700">
+                  {Number(stage.manual_quantity).toLocaleString('pt-BR')} manual
+                </Badge>
+              )}
+            </div>
+          )}
           {!compact && (
             <div className="flex items-center justify-between text-[10px] text-muted-foreground">
               <span>{Number(stage.progress_percent || 0).toFixed(1)}%</span>
@@ -46,6 +61,68 @@ export function StageProgressGrid({ stages = [], compact = false }) {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+export function ProductionRouteFlow({ stages = [] }) {
+  const orderedStages = [...stages].sort((a, b) =>
+    Number(a.stage_order || 0) - Number(b.stage_order || 0)
+  );
+
+  if (!orderedStages.length) return null;
+
+  return (
+    <div className="rounded-2xl border border-border/60 bg-secondary/15 p-4">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div>
+          <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Fluxo da rota</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            A rota permanece visível mesmo quando a coleta física da etapa está opcional.
+          </p>
+        </div>
+        <Badge variant="outline" className="text-[9px] shrink-0">
+          {orderedStages.filter((stage) => Number(stage.required_pieces || 0) > 0).length} etapas do lote
+        </Badge>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-y-2">
+        {orderedStages.map((stage, index) => {
+          const required = Number(stage.required_pieces || 0);
+          const completed = Number(stage.completed_pieces || 0);
+          const isComplete = required > 0 && completed >= required;
+          const isOptional = stage.traceable_collection_required === false;
+          const manualQuantity = Number(stage.manual_quantity || 0);
+
+          return (
+            <div key={stage.stage_code} className="flex items-center">
+              <div className={`rounded-xl border px-3 py-2 min-w-[108px] ${
+                isComplete
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+                  : isOptional
+                    ? 'border-blue-500/30 bg-blue-500/[0.07] text-blue-800 dark:text-blue-300'
+                    : required > 0
+                      ? 'border-border bg-card text-foreground'
+                      : 'border-border/40 bg-secondary/20 text-muted-foreground'
+              }`}>
+                <p className="text-xs font-extrabold whitespace-nowrap">{stage.stage_label}</p>
+                <p className="text-[9px] mt-0.5 whitespace-nowrap">
+                  {isOptional
+                    ? manualQuantity > 0
+                      ? `${manualQuantity.toLocaleString('pt-BR')} pçs informadas`
+                      : 'coleta opcional'
+                    : required > 0
+                      ? `${completed}/${required} coletadas`
+                      : 'não exigida'}
+                </p>
+              </div>
+              {index < orderedStages.length - 1 && (
+                <ChevronRight className="w-4 h-4 mx-1 text-muted-foreground/60 shrink-0" />
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -98,8 +175,21 @@ export function GeneralLotSummaryCard({ lot, selected = false, onSelect }) {
   );
 }
 
-export function ClientLotHierarchy({ clientLots = [], selectedLotId, onSelect, renderDetailPanel }) {
+export function ClientLotHierarchy({
+  clientLots = [],
+  selectedLotId,
+  selectedLotIds = [],
+  onSelect,
+  renderDetailPanel,
+}) {
   const grouped = groupClientLotsByCustomer(clientLots);
+  const expandedIds = new Set(
+    selectedLotIds.length > 0
+      ? selectedLotIds
+      : selectedLotId
+        ? [selectedLotId]
+        : []
+  );
 
   if (!clientLots.length) {
     return (
@@ -125,7 +215,7 @@ export function ClientLotHierarchy({ clientLots = [], selectedLotId, onSelect, r
 
           <div className="divide-y divide-border/50">
             {lots.map((lot) => {
-              const selected = selectedLotId === lot.lot_id;
+              const selected = expandedIds.has(lot.lot_id);
               const status = getForecastStatusMeta(lot.forecast_status);
               const problems = Number(lot.blocked_pieces || 0) + Number(lot.rework_pieces || 0) + Number(lot.replacement_pieces || 0);
               const balance = calculateLotBalance(lot);
@@ -194,4 +284,3 @@ export function ClientLotHierarchy({ clientLots = [], selectedLotId, onSelect, r
     </div>
   );
 }
-

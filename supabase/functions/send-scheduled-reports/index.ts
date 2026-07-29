@@ -135,6 +135,13 @@ Deno.serve(async (req) => {
 
       try {
         console.log(`[MES Scheduler] Iniciando processamento: ${schedule.name} (Run ID: ${runId})`);
+        await supabase
+          .from('report_schedules')
+          .update({
+            last_attempt_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', schedule.id);
 
         // 1. Resolver todos os e-mails e contatos destinatários
         const recipientsList: Array<{ email: string; name: string; profile_id?: string }> = [];
@@ -184,6 +191,16 @@ Deno.serve(async (req) => {
           }
         }
 
+        // C. Endereços extras configurados explicitamente no agendamento
+        if (Array.isArray(schedule.extra_emails)) {
+          schedule.extra_emails
+            .map((email: unknown) => String(email || '').trim().toLowerCase())
+            .filter((email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+            .forEach((email: string) => {
+              recipientsList.push({ email, name: email });
+            });
+        }
+
         // Remover duplicados por e-mail
         const uniqueRecipientsMap = new Map<string, typeof recipientsList[0]>();
         recipientsList.forEach(r => uniqueRecipientsMap.set(r.email, r));
@@ -191,10 +208,31 @@ Deno.serve(async (req) => {
 
         if (finalRecipients.length === 0) {
           console.log(`[MES Scheduler] Nenhum destinatário resolvido para ${schedule.name}. Ignorando.`);
+          const errorMessage = 'Nenhum destinatário válido resolvido.';
+          const nextRun = calculateNextRun(schedule.frequency, schedule.time_local);
           await supabase
             .from('report_schedule_runs')
-            .update({ status: 'skipped', last_error: 'Nenhum destinatário válido resolvido.', finished_at: new Date().toISOString() })
+            .update({ status: 'skipped', last_error: errorMessage, finished_at: new Date().toISOString() })
             .eq('id', runId);
+          if (!schedule.test_mode) {
+            await supabase
+              .from('report_schedules')
+              .update({
+                next_run_at: nextRun.toISOString(),
+                last_failure_at: new Date().toISOString(),
+                last_error: errorMessage,
+                consecutive_failures: (schedule.consecutive_failures || 0) + 1,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', schedule.id);
+          }
+          results.push({
+            scheduleId: schedule.id,
+            name: schedule.name,
+            status: 'skipped',
+            success: false,
+            error: errorMessage,
+          });
           continue;
         }
 
@@ -330,6 +368,8 @@ Deno.serve(async (req) => {
               last_success_at: runStatus === 'sent' ? new Date().toISOString() : schedule.last_success_at,
               last_failure_at: runStatus === 'failed' ? new Date().toISOString() : schedule.last_failure_at,
               consecutive_failures: runStatus === 'failed' ? (schedule.consecutive_failures || 0) + 1 : 0,
+              last_error: totalFailed > 0 ? `${totalFailed} envios falharam.` : null,
+              paused_reason: null,
               updated_at: new Date().toISOString()
             })
             .eq('id', schedule.id);
@@ -360,6 +400,20 @@ Deno.serve(async (req) => {
             last_error: err.message
           })
           .eq('id', runId);
+
+        if (!schedule.test_mode) {
+          const nextRun = calculateNextRun(schedule.frequency, schedule.time_local);
+          await supabase
+            .from('report_schedules')
+            .update({
+              next_run_at: nextRun.toISOString(),
+              last_failure_at: new Date().toISOString(),
+              last_error: err.message,
+              consecutive_failures: (schedule.consecutive_failures || 0) + 1,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', schedule.id);
+        }
 
         results.push({ scheduleId: schedule.id, name: schedule.name, success: false, error: err.message });
       }

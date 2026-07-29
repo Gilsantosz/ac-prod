@@ -9,8 +9,37 @@ import { supabase } from '@/lib/supabaseClient';
 
 const SESSION_KEY = 'acprod_operator_session';
 
-// Fallback em memória quando sessionStorage está bloqueado
+// Fallback em memória quando o armazenamento do navegador está bloqueado.
 let _memorySession = null;
+
+function storeOperatorSession(session) {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    sessionStorage.removeItem(SESSION_KEY);
+    _memorySession = null;
+  } catch (_) {
+    _memorySession = session;
+  }
+}
+
+function readStoredOperatorSession() {
+  try {
+    let raw = localStorage.getItem(SESSION_KEY);
+
+    // Migra a sessão da versão anterior para que a atualização não obrigue
+    // o operador a entrar novamente enquanto a sessão ainda for válida.
+    if (!raw) {
+      raw = sessionStorage.getItem(SESSION_KEY);
+      if (raw) {
+        localStorage.setItem(SESSION_KEY, raw);
+        sessionStorage.removeItem(SESSION_KEY);
+      }
+    }
+    return raw;
+  } catch (_) {
+    return null;
+  }
+}
 
 /**
  * Obtém ou gera um ID de dispositivo persistente para fins de auditoria e rate limit.
@@ -77,11 +106,7 @@ export async function loginOperator(loginName, registration) {
     logged_at: new Date().toISOString()
   };
 
-  try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  } catch (_) {
-    _memorySession = session;
-  }
+  storeOperatorSession(session);
 
   notifySessionChange();
   return session;
@@ -117,11 +142,7 @@ export async function setOperatorSessionContext(cellId, machineId = null, statio
     selected_station_name: stationName
   };
 
-  try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(updatedSession));
-  } catch (_) {
-    _memorySession = updatedSession;
-  }
+  storeOperatorSession(updatedSession);
 
   notifySessionChange();
   return updatedSession;
@@ -148,11 +169,7 @@ export async function heartbeatOperatorSession() {
       ...session,
       expires_at: Date.now() + 8 * 60 * 60 * 1000 // Renova mais 8h localmente
     };
-    try {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(renewed));
-    } catch (_) {
-      _memorySession = renewed;
-    }
+    storeOperatorSession(renewed);
   } else {
     // Sessão expirada/revogada no banco
     clearOperatorSession();
@@ -167,10 +184,11 @@ export function getOperatorSession() {
   if (_memorySession) { _memorySession = null; notifySessionChange(); return null; }
 
   try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
+    const raw = readStoredOperatorSession();
     if (!raw) return null;
     const session = JSON.parse(raw);
     if (!session?.expires_at || session.expires_at < Date.now()) {
+      localStorage.removeItem(SESSION_KEY);
       sessionStorage.removeItem(SESSION_KEY);
       notifySessionChange();
       return null;
@@ -200,6 +218,7 @@ export async function clearOperatorSession() {
     }
   }
 
+  try { localStorage.removeItem(SESSION_KEY); } catch (_) { /* ignore */ }
   try { sessionStorage.removeItem(SESSION_KEY); } catch (_) { /* ignore */ }
   _memorySession = null;
   notifySessionChange();
