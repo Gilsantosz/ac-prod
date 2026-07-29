@@ -1042,7 +1042,7 @@ export default function CellsAndGoals() {
                               className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl"
                               onClick={() => {
                                 if (confirm(`Deseja realmente excluir a meta da célula "${g.cell_name || g.area_name}" (${g.shift})?`)) {
-                                  mutationDeleteGoal.mutate(g.id);
+                                  mutationDeleteGoal.mutate(g);
                                 }
                               }}
                               title="Remover Meta"

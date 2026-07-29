@@ -415,11 +415,37 @@ export async function updateProductionGoal(id, payload) {
   return data;
 }
 
-export async function deleteProductionGoal(id) {
+export async function deleteProductionGoal(target) {
+  if (typeof target === 'object' && target !== null) {
+    const { id, cell_name, area_name, shift, metric_unit } = target;
+    const cell = cell_name || area_name;
+
+    if (id) {
+      const { error: idErr } = await supabase
+        .from('production_daily_goals')
+        .delete()
+        .eq('id', id);
+      if (idErr) throw idErr;
+    }
+
+    if (cell && shift && metric_unit) {
+      const { error: keyErr } = await supabase
+        .from('production_daily_goals')
+        .delete()
+        .ilike('cell_name', cell)
+        .ilike('shift', shift)
+        .ilike('metric_unit', metric_unit);
+      if (keyErr && !/does not exist/i.test(keyErr.message || '')) {
+        console.warn('Aviso ao remover metas vinculadas:', keyErr.message);
+      }
+    }
+    return true;
+  }
+
   const { error } = await supabase
     .from('production_daily_goals')
     .delete()
-    .eq('id', id);
+    .eq('id', target);
   if (error) throw error;
   return true;
 }
