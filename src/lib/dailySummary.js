@@ -108,12 +108,38 @@ function entryContext(entry) {
   return { metric, cell, area, shift };
 }
 
-export function buildDailySummaryByCellShift(entries = [], goals = []) {
+export function buildDailySummaryByCellShift(entries = [], goals = [], options = {}) {
   const map = new Map();
 
   goals.forEach((goal) => {
     const bucket = goalToBucket(goal);
     map.set(key(bucket.cell, bucket.metric_unit, bucket.shift), bucket);
+  });
+
+  const configuredCells = (options.activeCells || [])
+    .map((cell) => typeof cell === 'string' ? cell : cell?.name)
+    .filter(Boolean);
+  const configuredShifts = options.shifts?.length ? options.shifts : SHIFTS;
+
+  configuredCells.forEach((cell) => {
+    const goalUnits = [...new Set(
+      goals
+        .filter((goal) => (goal.cell_name || goal.cell) === cell)
+        .map((goal) => normalizeUnit(goal.metric_unit || goal.unit))
+        .filter(Boolean),
+    )];
+    const units = goalUnits.length
+      ? goalUnits
+      : [getProductionMetricRule({ cell }).unit];
+
+    configuredShifts.forEach((shift) => {
+      units.forEach((unit) => {
+        const bucketKey = key(cell, unit, shift);
+        if (!map.has(bucketKey)) {
+          map.set(bucketKey, emptyBucket({ shift, cell, area: cell, unit }));
+        }
+      });
+    });
   });
 
   entries.forEach((entry) => {
@@ -133,9 +159,9 @@ export function buildDailySummaryByCellShift(entries = [], goals = []) {
   return [...map.values()].map(finalizeBucket);
 }
 
-export function buildDailySummaryByUnit(entries = [], goals = []) {
+export function buildDailySummaryByUnit(entries = [], goals = [], options = {}) {
   const byUnit = new Map();
-  const cells = buildDailySummaryByCellShift(entries, goals);
+  const cells = buildDailySummaryByCellShift(entries, goals, options);
 
   cells.forEach((row) => {
     const unit = row.metric_unit;
@@ -154,9 +180,9 @@ export function buildDailySummaryByUnit(entries = [], goals = []) {
     .sort((a, b) => a.unitLabel.localeCompare(b.unitLabel));
 }
 
-export function buildDailySummaryMatrix(entries = [], goals = []) {
+export function buildDailySummaryMatrix(entries = [], goals = [], options = {}) {
   const grouped = new Map();
-  const shiftRows = buildDailySummaryByCellShift(entries, goals);
+  const shiftRows = buildDailySummaryByCellShift(entries, goals, options);
   const shifts = [...new Set([...SHIFTS, ...shiftRows.map((row) => row.shift).filter(Boolean)])];
 
   shiftRows.forEach((row) => {
@@ -223,10 +249,10 @@ function buildCompatRows(matrix, field) {
 }
 
 // Resumo total + granular por célula e por turno.
-export function buildDailySummary(entries = [], goals = []) {
+export function buildDailySummary(entries = [], goals = [], options = {}) {
   const total = acc(entries);
-  const matrixByCell = buildDailySummaryMatrix(entries, goals);
-  const totalsByUnit = buildDailySummaryByUnit(entries, goals);
+  const matrixByCell = buildDailySummaryMatrix(entries, goals, options);
+  const totalsByUnit = buildDailySummaryByUnit(entries, goals, options);
 
   const byCell = buildCompatRows(matrixByCell, 'cell');
   const byShift = buildCompatRows(matrixByCell, 'shift');
@@ -235,7 +261,7 @@ export function buildDailySummary(entries = [], goals = []) {
     total,
     byCell,
     byShift,
-    byCellShift: buildDailySummaryByCellShift(entries, goals),
+    byCellShift: buildDailySummaryByCellShift(entries, goals, options),
     totalsByUnit,
     matrixByCell,
     shifts: [...new Set([...SHIFTS, ...byShift.map((row) => row.shift)])],

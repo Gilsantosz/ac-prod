@@ -37,7 +37,11 @@
     <!-- ─── Auto-limpeza de Service Worker desatualizado ─────────────── -->
     <script>
       // Versão atual do manifest — incrementar a cada mudança de manifest
-      var MANIFEST_VERSION = '1.4.0-standalone-wco';
+      // Incrementado após a correção da rastreabilidade por rota para invalidar instalações PWA
+      // que ainda estejam executando o shell antigo. A limpeza abaixo afeta
+      // apenas Service Workers e Cache Storage; IndexedDB/localStorage e a
+      // fila durável de coletas permanecem preservados.
+      var MANIFEST_VERSION = '1.4.2-route-tracking';
       var storedVersion = localStorage.getItem('lf_manifest_version');
       if (storedVersion !== MANIFEST_VERSION) {
         localStorage.setItem('lf_manifest_version', MANIFEST_VERSION);

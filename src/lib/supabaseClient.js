@@ -22,33 +22,36 @@ const inMemoryAuthStorage = new Map();
 const createBrowserAuthStorage = () => {
   if (typeof window === 'undefined') return undefined;
 
-  // Limpa preventivamente chaves antigas do localStorage para evitar persistência entre fechamentos do PWA
-  try {
-    window.localStorage?.removeItem(AUTH_STORAGE_KEY);
-    window.localStorage?.removeItem(FALLBACK_SESSION_KEY);
-    window.localStorage?.removeItem('ac-prod-auth');
-    window.localStorage?.removeItem('ac-prod-auth-fallback');
-  } catch { /* noop */ }
-
   return {
     getItem: (key) => {
       try {
-        const stored = window.sessionStorage?.getItem(key);
+        const stored = window.localStorage?.getItem(key);
         if (stored) return stored;
       } catch { /* fallback em memória */ }
+
+      // Migra silenciosamente a sessão da versão anterior, que usava
+      // sessionStorage e era perdida ao fechar o navegador/PWA.
+      try {
+        const legacyTabSession = window.sessionStorage?.getItem(key);
+        if (legacyTabSession) {
+          window.localStorage?.setItem(key, legacyTabSession);
+          window.sessionStorage?.removeItem(key);
+          return legacyTabSession;
+        }
+      } catch { /* fallback em memória */ }
+
       return inMemoryAuthStorage.get(key) || null;
     },
     setItem: (key, value) => {
       let persisted = false;
       try {
-        window.sessionStorage?.setItem(key, value);
+        window.localStorage?.setItem(key, value);
         persisted = true;
       } catch { /* fallback em memória abaixo */ }
       if (!persisted) {
         inMemoryAuthStorage.set(key, value);
       }
-      // Remove do localStorage para impedir persistência entre fechamentos/reaberturas do PWA
-      try { window.localStorage?.removeItem(key); } catch { /* noop */ }
+      try { window.sessionStorage?.removeItem(key); } catch { /* noop */ }
     },
     removeItem: (key) => {
       try { window.sessionStorage?.removeItem(key); } catch { /* noop */ }
@@ -122,6 +125,10 @@ export const clearPersistedAuthSession = () => {
     window.localStorage?.removeItem(FALLBACK_SESSION_KEY);
     window.localStorage?.removeItem('ac-prod-auth');
     window.localStorage?.removeItem('ac-prod-auth-fallback');
+    window.sessionStorage?.removeItem(AUTH_STORAGE_KEY);
+    window.sessionStorage?.removeItem(FALLBACK_SESSION_KEY);
+    window.sessionStorage?.removeItem('ac-prod-auth');
+    window.sessionStorage?.removeItem('ac-prod-auth-fallback');
   } catch { /* noop */ }
   authStorage?.removeItem(AUTH_STORAGE_KEY);
   authStorage?.removeItem(FALLBACK_SESSION_KEY);

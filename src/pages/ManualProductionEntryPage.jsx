@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
-  Edit3, Save, CheckCircle2, RefreshCw, Hash, User, FileText, Info, Building2,
-  PackagePlus, Layers, ShieldCheck, Check
+  Edit3, CheckCircle2, RefreshCw, Hash, User, FileText, Info, Building2,
+  Layers, ShieldCheck, Check
 } from 'lucide-react';
 import PageHeader from '@/components/ui/PageHeader';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
@@ -11,53 +11,39 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/lib/AuthContext';
 import { useOperatorSession } from '@/hooks/useOperatorSession';
 import { getOperatorAllowedCells } from '@/lib/operatorCellRules';
 import {
   registerManualQuantitativeEntry,
-  registerGeneralLot,
   listManualEntries,
   fetchAvailableGeneralLots
 } from '@/lib/manualProductionService';
+import {
+  canonicalProductionStage,
+  fetchProductionStagePolicies,
+} from '@/lib/productionStagePolicyService';
 
 const SHIFTS = ['1º Turno', '2º Turno', '3º Turno'];
-const UNITS = [
-  { value: 'pecas', label: 'Peças (un)' },
-  { value: 'metros', label: 'Metros lineares (m)' },
-  { value: 'm2', label: 'Metro quadrado (m²)' },
-  { value: 'chapas', label: 'Chapas / Painéis' },
-  { value: 'ambientes', label: 'Ambientes' },
-];
 
 export default function ManualProductionEntryPage() {
   const { user } = useAuth();
   const { session: operatorSession } = useOperatorSession();
 
-  const [activeTab, setActiveTab] = useState('baixa'); // 'baixa' | 'cadastro'
   const [activeCells, setActiveCells] = useState([]);
   const [availableLots, setAvailableLots] = useState([]);
   const [recentEntries, setRecentEntries] = useState([]);
 
   // Form State — Baixa Manual
+  const [selectedBatchId, setSelectedBatchId] = useState('');
   const [generalLotCode, setGeneralLotCode] = useState('');
   const [selectedCell, setSelectedCell] = useState('');
   const [shift, setShift] = useState(SHIFTS[0]);
   const [operatorName, setOperatorName] = useState(user?.name || operatorSession?.name || 'Operador Manual');
   const [quantity, setQuantity] = useState('');
-  const [unitOfMeasure, setUnitOfMeasure] = useState('pecas');
   const [notes, setNotes] = useState('');
-  const [cascadeAllCells, setCascadeAllCells] = useState(true);
   const [submittingBaixa, setSubmittingBaixa] = useState(false);
-
-  // Form State — Cadastro de Lote Geral
-  const [newLotCode, setNewLotCode] = useState('');
-  const [newCustomerName, setNewCustomerName] = useState('');
-  const [newTotalParts, setNewTotalParts] = useState('');
-  const [newLotNotes, setNewLotNotes] = useState('');
-  const [submittingCadastro, setSubmittingCadastro] = useState(false);
 
   // Filtro de busca na tabela
   const [searchTerm, setSearchTerm] = useState('');
@@ -70,14 +56,22 @@ export default function ManualProductionEntryPage() {
       // 1. Células autorizadas para o operador/usuário
       const { data: cellsData } = await supabase.from('cells').select('id, name, type, active').eq('active', true).order('name');
       const allowedCellsObj = getOperatorAllowedCells({ user, opSession: operatorSession, allCells: cellsData || [] });
-      const cells = allowedCellsObj.map(c => c.name);
+      const policies = await fetchProductionStagePolicies();
+      const manualStages = new Set(
+        policies
+          .filter((policy) => policy.manual_quantity_allowed)
+          .map((policy) => policy.stage_code),
+      );
+      const cells = allowedCellsObj
+        .map(c => c.name)
+        .filter((name) => manualStages.has(canonicalProductionStage(name)));
       setActiveCells(cells);
       if (cells.length > 0 && (!selectedCell || !cells.includes(selectedCell))) {
         setSelectedCell(cells[0]);
       }
 
       // 2. Lotes disponíveis
-      const lots = await fetchAvailableGeneralLots(50);
+      const lots = await fetchAvailableGeneralLots(50, { cellName: selectedCell || cells[0] });
       setAvailableLots(lots);
 
       // 3. Entradas recentes do dia
@@ -103,49 +97,54 @@ export default function ManualProductionEntryPage() {
     }
   }, [user, operatorSession, operatorName]);
 
+  const selectedLot = availableLots.find((lot) => lot.batchId === selectedBatchId) || null;
+  const remainingQuantity = Number(selectedLot?.stageProgress?.remaining_pieces) || 0;
+
   // Handler: Submeter Baixa Manual
   const handleBaixaSubmit = async (e) => {
     e.preventDefault();
     const cleanLot = String(generalLotCode).trim().toUpperCase();
-    const numQty = Math.max(1, Number(quantity) || 0);
+    const numQty = Number(quantity);
 
-    if (!cleanLot) {
-      toast.error('Informe ou selecione um Lote Geral.');
+    if (!cleanLot || !selectedBatchId) {
+      toast.error('Selecione obrigatoriamente um Lote Geral ativo.');
       return;
     }
     if (!selectedCell) {
       toast.error('Selecione a célula produtiva.');
       return;
     }
-    if (numQty <= 0) {
-      toast.error('A quantidade produzida deve ser maior que zero.');
+    if (!Number.isInteger(numQty) || numQty <= 0) {
+      toast.error('A quantidade produzida deve ser um número inteiro maior que zero.');
       return;
     }
 
     setSubmittingBaixa(true);
     try {
-      const isEmbalagem = String(selectedCell).toLowerCase() === 'embalagem';
-      const shouldCascade = cascadeAllCells || isEmbalagem;
       const result = await registerManualQuantitativeEntry({
+        pcp_import_batch_id: selectedBatchId,
         general_lot_code: cleanLot,
         cell_name: selectedCell,
         shift,
         operator: operatorName,
         quantity: numQty,
-        unit_of_measure: unitOfMeasure,
-        cascade_all_cells: shouldCascade,
+        unit_of_measure: 'pecas',
         notes,
         date: new Date().toISOString().slice(0, 10),
       });
 
       if (result.success) {
-        if (result.cascade) {
-          toast.success(`Baixa automática em cascata registrada nas 4 células (Corte, Bordo, Usinagem, Embalagem)!`, {
-            description: `Lote ${cleanLot}: +${numQty} ${unitOfMeasure} atualizados nos KPIs e Metas diárias.`,
+        if (result.batch_completed) {
+          toast.success(`Lote Geral ${cleanLot} encerrado com sucesso.`, {
+            description: 'Todas as etapas obrigatórias foram contabilizadas.',
+          });
+        } else if (result.stage_completed) {
+          toast.success(`${selectedCell} concluída para o Lote ${cleanLot}.`, {
+            description: 'KPIs, gráficos e fechamento produtivo foram atualizados.',
           });
         } else {
-          toast.success(`Baixa manual de ${numQty} ${unitOfMeasure} registrada no Lote ${cleanLot}!`, {
-            description: `Célula: ${selectedCell} | Turno: ${shift} (KPIs atualizados)`,
+          toast.success(`Volume de ${numQty} peças registrado no Lote ${cleanLot}.`, {
+            description: `Saldo da etapa: ${result.remaining_after} peça(s).`,
           });
         }
 
@@ -157,47 +156,6 @@ export default function ManualProductionEntryPage() {
       toast.error(`Falha ao registrar baixa manual: ${err.message}`);
     } finally {
       setSubmittingBaixa(false);
-    }
-  };
-
-  // Handler: Submeter Cadastro de Lote Geral
-  const handleCadastroSubmit = async (e) => {
-    e.preventDefault();
-    const cleanCode = String(newLotCode).trim().toUpperCase();
-    const totalPartsNum = Math.max(1, Number(newTotalParts) || 1);
-
-    if (!cleanCode) {
-      toast.error('Informe o Código do Lote Geral.');
-      return;
-    }
-
-    setSubmittingCadastro(true);
-    try {
-      const result = await registerGeneralLot({
-        general_lot_code: cleanCode,
-        customer_name: newCustomerName,
-        total_parts: totalPartsNum,
-        notes: newLotNotes,
-      });
-
-      if (result.success) {
-        toast.success(`Lote Geral ${cleanCode} cadastrado com sucesso!`, {
-          description: `Total de ${totalPartsNum} peças planejadas no PCP/MES.`,
-        });
-
-        // Atualiza formulário e direciona para a aba de baixa já com o lote selecionado
-        setGeneralLotCode(cleanCode);
-        setNewLotCode('');
-        setNewCustomerName('');
-        setNewTotalParts('');
-        setNewLotNotes('');
-        await loadData();
-        setActiveTab('baixa');
-      }
-    } catch (err) {
-      toast.error(`Erro ao cadastrar Lote Geral: ${err.message}`);
-    } finally {
-      setSubmittingCadastro(false);
     }
   };
 
@@ -215,8 +173,8 @@ export default function ManualProductionEntryPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
       <PageHeader
-        title="Entradas e Baixas Manuais de Produção"
-        subtitle="Cadastro de Lotes Gerais e Lançamentos/Baixas manuais quantitativas com atualização direta nos KPIs da fábrica"
+        title="Baixas Manuais de Produção"
+        subtitle="Baixas quantitativas vinculadas obrigatoriamente a Lotes Gerais ativos, com atualização direta dos KPIs"
         icon={Edit3}
       />
 
@@ -268,25 +226,12 @@ export default function ManualProductionEntryPage() {
         </div>
       </div>
 
-      {/* Abas Principais: Baixa Manual vs Cadastro de Lote */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="bg-card border border-border/60 p-1 rounded-2xl grid grid-cols-2 max-w-md">
-          <TabsTrigger value="baixa" className="rounded-xl text-xs font-bold gap-2 py-2.5">
-            <Edit3 className="w-4 h-4 text-emerald-500" /> Dar Baixa Manual na Produção
-          </TabsTrigger>
-          <TabsTrigger value="cadastro" className="rounded-xl text-xs font-bold gap-2 py-2.5">
-            <PackagePlus className="w-4 h-4 text-amber-500" /> Cadastrar Novo Lote Geral PCP
-          </TabsTrigger>
-        </TabsList>
-
-        {/* ── 1. Formulário de Baixa Manual ───────────────────────────────── */}
-        <TabsContent value="baixa" className="outline-none space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <Card className="lg:col-span-2 border-border/60 shadow-sm rounded-2xl">
               <CardHeader className="border-b border-border/40 pb-4">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base font-bold text-foreground flex items-center gap-2">
-                    <Edit3 className="w-4 h-4 text-emerald-500" /> Baixa Manual de Produção por Célula / Cascata
+                    <Edit3 className="w-4 h-4 text-emerald-500" /> Baixa de Produção por Volume
                   </CardTitle>
                   <Badge variant="outline" className="bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-300 font-bold gap-1 text-[11px]">
                     ⚡ Atualiza KPIs das Células
@@ -304,32 +249,25 @@ export default function ManualProductionEntryPage() {
                     <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
                       <Hash className="w-3.5 h-3.5 text-primary" /> Código do Lote Geral / PCP
                     </Label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <Input
-                        value={generalLotCode}
-                        onChange={(e) => setGeneralLotCode(e.target.value.toUpperCase())}
-                        placeholder="Ex: 14537 ou LOT-2026-001"
-                        className="rounded-xl h-10 uppercase text-xs font-bold bg-background/60"
-                        required
-                      />
-                      {availableLots.length > 0 && (
-                        <Select
-                          value={generalLotCode}
-                          onValueChange={(val) => setGeneralLotCode(val)}
-                        >
-                          <SelectTrigger className="rounded-xl h-10 text-xs font-medium bg-background/60">
-                            <SelectValue placeholder="Ou escolha um lote existente..." />
-                          </SelectTrigger>
-                          <SelectContent className="rounded-xl max-h-56">
-                            {availableLots.map((lot) => (
-                              <SelectItem key={lot.code} value={lot.code}>
-                                {lot.code}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </div>
+                    <Select
+                      value={selectedBatchId}
+                      onValueChange={(batchId) => {
+                        const lot = availableLots.find((item) => item.batchId === batchId);
+                        setSelectedBatchId(batchId);
+                        setGeneralLotCode(lot?.code || '');
+                      }}
+                    >
+                      <SelectTrigger className="rounded-xl h-10 text-xs font-medium bg-background/60">
+                        <SelectValue placeholder="Selecione obrigatoriamente um lote ativo..." />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl max-h-56">
+                        {availableLots.map((lot) => (
+                          <SelectItem key={lot.batchId} value={lot.batchId}>
+                            Lote {lot.code} · saldo {Number(lot.stageProgress?.remaining_pieces || 0)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   {/* Célula Produtiva e Turno */}
@@ -338,7 +276,15 @@ export default function ManualProductionEntryPage() {
                       <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
                         <Building2 className="w-3.5 h-3.5 text-[#2d9c4a]" /> Célula Produtiva Alvo
                       </Label>
-                      <Select value={selectedCell} onValueChange={setSelectedCell}>
+                      <Select
+                        value={selectedCell}
+                        onValueChange={(value) => {
+                          setSelectedCell(value);
+                          setSelectedBatchId('');
+                          setGeneralLotCode('');
+                          setQuantity('');
+                        }}
+                      >
                         <SelectTrigger className="rounded-xl h-10 text-xs font-semibold bg-background/60">
                           <SelectValue placeholder="Selecione a célula" />
                         </SelectTrigger>
@@ -370,29 +316,20 @@ export default function ManualProductionEntryPage() {
                   {/* Quantidade e Unidade de Medida */}
                   <div className="space-y-1.5">
                     <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Quantidade Produzida & Unidade
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Volume produzido em peças
                     </Label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <Input
-                        type="number"
-                        min="1"
-                        value={quantity}
-                        onChange={(e) => setQuantity(e.target.value)}
-                        placeholder="Ex: 2000"
-                        className="rounded-xl h-10 text-xs font-extrabold bg-emerald-500/5 border-emerald-500/30"
-                        required
-                      />
-                      <Select value={unitOfMeasure} onValueChange={setUnitOfMeasure}>
-                        <SelectTrigger className="rounded-xl h-10 text-xs font-medium bg-background/60">
-                          <SelectValue placeholder="Unidade de medida" />
-                        </SelectTrigger>
-                        <SelectContent className="rounded-xl">
-                          {UNITS.map((u) => (
-                            <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    <Input
+                      type="number"
+                      min="1"
+                      max={remainingQuantity || undefined}
+                      step="1"
+                      value={quantity}
+                      onChange={(e) => setQuantity(e.target.value)}
+                      placeholder={selectedLot ? `Máximo ${remainingQuantity}` : 'Selecione o lote'}
+                      disabled={!selectedLot}
+                      className="rounded-xl h-10 text-xs font-extrabold bg-emerald-500/5 border-emerald-500/30"
+                      required
+                    />
                   </div>
 
                   {/* Operador e Observações */}
@@ -422,24 +359,22 @@ export default function ManualProductionEntryPage() {
                     </div>
                   </div>
 
-                  {/* Opção de Baixa Automática em Cascata */}
+                  {/* Regra de rastreabilidade */}
                   <div className="pt-2">
-                    <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-foreground bg-amber-500/10 p-3.5 rounded-xl border border-amber-500/30 select-none">
-                      <input
-                        type="checkbox"
-                        checked={cascadeAllCells || String(selectedCell).toLowerCase() === 'embalagem'}
-                        onChange={(e) => setCascadeAllCells(e.target.checked)}
-                        className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500"
-                      />
-                      <span>⚡ Propagar baixa automática nas 4 células (Corte, Bordo, Usinagem e Embalagem) para atualização imediata das metas diárias</span>
-                    </label>
+                    <div className="flex items-start gap-3 text-xs text-blue-900 dark:text-blue-200 bg-blue-500/10 p-3.5 rounded-xl border border-blue-500/30">
+                      <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                      <span>
+                        A baixa será contabilizada somente em <strong>{selectedCell || 'esta célula'}</strong>.
+                        Ela atualiza KPIs e fechamento, mas não cria códigos ou leituras individuais.
+                      </span>
+                    </div>
                   </div>
 
                   {/* Botão de Envio */}
                   <div className="pt-3">
                     <Button
                       type="submit"
-                      disabled={submittingBaixa}
+                      disabled={submittingBaixa || !selectedLot}
                       className="w-full h-11 bg-[#1A2238] hover:bg-[#111728] text-white font-extrabold rounded-xl shadow-md gap-2 text-sm"
                     >
                       <Check className="w-4 h-4" />
@@ -455,118 +390,26 @@ export default function ManualProductionEntryPage() {
               <Card className="border-amber-500/30 bg-amber-500/5 shadow-sm rounded-2xl">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-xs font-extrabold text-amber-700 dark:text-amber-300 flex items-center gap-2">
-                    <Info className="w-4 h-4 text-amber-600" /> Regra Validada de Baixa em Cascata
+                    <Info className="w-4 h-4 text-amber-600" /> Contabilidade protegida por lote e etapa
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="text-xs text-amber-900/80 dark:text-amber-200/80 space-y-2 leading-relaxed">
                   <p>
-                    Ao digitar o <strong>Lote Geral (ex: 14537)</strong> e a <strong>Quantidade (ex: 2000 peças)</strong> com a opção de cascata ativa, o sistema efetua a baixa automática e simultânea nas 4 células:
+                    O Lote Geral deve estar ativo e ser escolhido na lista. O sistema limita a baixa ao saldo da etapa:
                   </p>
                   <div className="grid grid-cols-2 gap-1.5 pt-1 text-[11px] font-bold">
-                    <div className="bg-background/80 p-2 rounded-lg border border-amber-500/20 text-center">1. Corte</div>
-                    <div className="bg-background/80 p-2 rounded-lg border border-amber-500/20 text-center">2. Bordo</div>
-                    <div className="bg-background/80 p-2 rounded-lg border border-amber-500/20 text-center">3. Usinagem</div>
-                    <div className="bg-background/80 p-2 rounded-lg border border-amber-500/20 text-center">4. Embalagem</div>
+                    <div className="bg-background/80 p-2 rounded-lg border border-amber-500/20 text-center">Previsto</div>
+                    <div className="bg-background/80 p-2 rounded-lg border border-amber-500/20 text-center">Já coletado</div>
+                    <div className="bg-background/80 p-2 rounded-lg border border-amber-500/20 text-center">Volume manual</div>
+                    <div className="bg-background/80 p-2 rounded-lg border border-amber-500/20 text-center">Saldo restante</div>
                   </div>
                   <p className="text-[11px] pt-1 font-semibold text-amber-800 dark:text-amber-300">
-                    Todas as 4 células recebem a pontuação do volume produzido nos relatórios e metas do turno.
+                    Quando o saldo de todas as etapas obrigatórias chegar a zero, o lote é encerrado.
                   </p>
                 </CardContent>
               </Card>
             </div>
-          </div>
-        </TabsContent>
-
-        {/* ── 2. Formulário de Cadastro de Lote Geral ──────────────────────── */}
-        <TabsContent value="cadastro" className="outline-none space-y-6">
-          <Card className="max-w-3xl border-border/60 shadow-sm rounded-2xl">
-            <CardHeader className="border-b border-border/40 pb-4">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base font-bold text-foreground flex items-center gap-2">
-                  <PackagePlus className="w-4.5 h-4.5 text-amber-500" /> Cadastrar Novo Lote Geral PCP
-                </CardTitle>
-                <Badge variant="outline" className="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 font-bold text-[11px]">
-                  📦 Entrada de Ordem / Lote
-                </Badge>
-              </div>
-              <CardDescription className="text-xs text-muted-foreground mt-1">
-                Cadastre o código do Lote Geral e a quantidade total planejada no sistema antes de efetuar as baixas por célula.
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent className="pt-5">
-              <form onSubmit={handleCadastroSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                      <Hash className="w-3.5 h-3.5 text-primary" /> Código do Lote Geral / PCP
-                    </Label>
-                    <Input
-                      value={newLotCode}
-                      onChange={(e) => setNewLotCode(e.target.value.toUpperCase())}
-                      placeholder="Ex: 14537 ou LOT-2026-002"
-                      className="rounded-xl h-10 uppercase text-xs font-extrabold bg-background/60"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-blue-500" /> Cliente / Projeto (Opcional)
-                    </Label>
-                    <Input
-                      value={newCustomerName}
-                      onChange={(e) => setNewCustomerName(e.target.value)}
-                      placeholder="Ex: Cozinha Residencial Dona Maria"
-                      className="rounded-xl h-10 text-xs font-medium bg-background/60"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Total de Peças Planejadas
-                    </Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      value={newTotalParts}
-                      onChange={(e) => setNewTotalParts(e.target.value)}
-                      placeholder="Ex: 2000"
-                      className="rounded-xl h-10 text-xs font-bold bg-background/60"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                      <FileText className="w-3.5 h-3.5 text-muted-foreground" /> Observações do Lote
-                    </Label>
-                    <Input
-                      value={newLotNotes}
-                      onChange={(e) => setNewLotNotes(e.target.value)}
-                      placeholder="Descrição ou nota sobre o lote"
-                      className="rounded-xl h-10 text-xs font-medium bg-background/60"
-                    />
-                  </div>
-                </div>
-
-                <div className="pt-3">
-                  <Button
-                    type="submit"
-                    disabled={submittingCadastro}
-                    className="w-full sm:w-auto px-6 h-11 bg-[#2d9c4a] hover:bg-[#23803c] text-white font-extrabold rounded-xl shadow-md gap-2 text-sm"
-                  >
-                    <Save className="w-4 h-4" />
-                    {submittingCadastro ? 'Cadastrando Lote...' : 'Cadastrar Lote Geral no PCP'}
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      </div>
 
       {/* ── Tabela de Histórico Unificado do Dia ──────────────────────── */}
       <Card className="border-border/60 shadow-sm rounded-2xl overflow-hidden">

@@ -18,7 +18,11 @@ import PageHeader from '@/components/ui/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { GeneralLotSummaryCard, StageProgressGrid } from '@/components/lot-tracking/LotTrackingCards';
+import {
+  GeneralLotSummaryCard,
+  ProductionRouteFlow,
+  StageProgressGrid,
+} from '@/components/lot-tracking/LotTrackingCards';
 import {
   fetchGeneralLotTracking,
   formatDuration,
@@ -108,13 +112,25 @@ export default function LotTrackingDashboard() {
   }), { pieces: 0, ready: 0, attention: 0 }), [generalLots]);
 
   const allClientLots = useMemo(() => {
-    return generalLots.flatMap((generalLot) =>
-      (generalLot.client_lots || []).map((cl) => ({
+    const clientLotsById = new Map();
+    const lotsWithDetails = selectedLot
+      ? [
+          ...generalLots.filter((generalLot) => generalLot.batch_id !== selectedLot.batch_id),
+          selectedLot,
+        ]
+      : generalLots;
+
+    lotsWithDetails.forEach((generalLot) => {
+      (generalLot.client_lots || []).forEach((cl) => {
+        clientLotsById.set(cl.lot_id, {
         ...cl,
         general_lot_code: generalLot.general_lot_code,
-      }))
-    );
-  }, [generalLots]);
+        });
+      });
+    });
+
+    return Array.from(clientLotsById.values());
+  }, [generalLots, selectedLot]);
 
   const advancedLots = useMemo(() => {
     return allClientLots
@@ -122,15 +138,17 @@ export default function LotTrackingDashboard() {
         const stages = lot.stages || [];
         const cutStage = stages.find((s) => s.stage_code === 'cut');
         const edgeStage = stages.find((s) => s.stage_code === 'edge');
+        const drillStage = stages.find((s) => s.stage_code === 'drill');
         const cncStage = stages.find((s) => s.stage_code === 'cnc');
         const joineryStage = stages.find((s) => s.stage_code === 'joinery');
 
         const cutCompleted = !cutStage || cutStage.remaining_pieces === 0;
         const edgeCompleted = !edgeStage || edgeStage.remaining_pieces === 0;
+        const drillCompleted = !drillStage || drillStage.remaining_pieces === 0;
         const cncCompleted = !cncStage || cncStage.remaining_pieces === 0;
         const joineryPending = joineryStage && joineryStage.required_pieces > 0 && joineryStage.remaining_pieces > 0;
 
-        return cutCompleted && edgeCompleted && cncCompleted && joineryPending;
+        return cutCompleted && edgeCompleted && drillCompleted && cncCompleted && joineryPending;
       })
       .sort((a, b) => {
         const aJoinery = a.stages.find((s) => s.stage_code === 'joinery');
@@ -172,7 +190,7 @@ export default function LotTrackingDashboard() {
           <div>
             <p className="text-sm font-extrabold text-foreground">O prazo mostrado termina antes da embalagem</p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              A previsão considera Corte, Borda, Usinagem e Marcenaria. Quando todas as etapas exigidas terminarem, o lote aparece como <strong className="text-foreground">pronto para separação</strong>. A Marcenaria possui ritmo próprio e aprende separadamente com as baixas manuais e futuras coletas.
+              A previsão considera Corte, Borda, Furação, Usinagem CNC e Marcenaria. Quando todas as etapas exigidas terminarem, o lote aparece como <strong className="text-foreground">pronto para separação</strong>. A Marcenaria possui ritmo próprio e aprende separadamente com as baixas manuais e futuras coletas.
             </p>
           </div>
         </div>
@@ -241,7 +259,7 @@ export default function LotTrackingDashboard() {
                   Lotes na Fase Final (Apenas Marcenaria Pendente)
                 </h2>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Lotes com Corte, Borda e Usinagem concluídos, aguardando finalização das peças de Marcenaria.
+                  Lotes com Corte, Borda, Furação e Usinagem CNC concluídos, aguardando finalização das peças de Marcenaria.
                 </p>
               </div>
 
@@ -332,6 +350,7 @@ export default function LotTrackingDashboard() {
                     </div>
                   </div>
 
+                  <ProductionRouteFlow stages={selectedLot.stages} />
                   <StageProgressGrid stages={selectedLot.stages} />
 
                   <div className="overflow-x-auto rounded-xl border border-border/60">

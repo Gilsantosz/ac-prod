@@ -27,9 +27,11 @@ import TraceabilityKpiCards from '@/components/traceability/TraceabilityKpiCards
 import ActiveDowntimeBanner from '@/components/collection/ActiveDowntimeBanner';
 import DowntimeDialog from '@/components/collection/DowntimeDialog';
 import CollectionFullscreenKiosk from '@/components/collection/CollectionFullscreenKiosk';
+import CollectionVolumeEntryPanel from '@/components/collection/CollectionVolumeEntryPanel';
 import CollectionErrorBoundary from '@/components/ui/CollectionErrorBoundary';
 import { getActiveDowntime } from '@/lib/downtimeService';
 import { invalidateAllMesQueries } from '@/config/queryKeys';
+import { recordSessionActivity } from '@/lib/sessionActivity';
 import {
   getPieceTraceability,
   rejectPieceFromCollection,
@@ -448,6 +450,10 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   // ─── Handler principal de leitura — enfileira e processa ────────────────────
   const handleRead = useCallback(async (payload) => {
+    // Leitores RFID e alguns coletores integrados não disparam eventos de
+    // teclado/pointer no navegador; a tentativa de coleta é atividade real.
+    recordSessionActivity();
+
     if (activeDowntime) {
       const result = { success: false, status: 'blocked', message: 'Coleta bloqueada! Há uma parada ativa na célula/máquina.' };
       updateFeedback(result);
@@ -694,6 +700,26 @@ export default function TraceabilityCollection({ embedded = false }) {
       onOpenDowntime={() => setDowntimeDialogOpen(true)}
       onToggleKiosk={() => setKioskOpen(true)}
       activeDowntime={activeDowntime}
+      volumeEntry={(
+        <CollectionVolumeEntryPanel
+          cellName={cellName}
+          shift={shift}
+          operator={operator}
+          disabled={Boolean(activeDowntime)}
+          onSuccess={(result) => {
+            recordSessionActivity();
+            refreshData();
+            updateFeedback({
+              success: true,
+              status: 'manual_volume',
+              alert_level: 'blue',
+              message: result.batch_completed
+                ? `Lote Geral ${result.general_lot_code} concluído por contabilização de volume.`
+                : `${result.quantity} peça(s) contabilizada(s) em ${result.cell_name}. Saldo da etapa: ${result.remaining_after}.`,
+            });
+          }}
+        />
+      )}
       readerContext={currentGeneralLot?.general_lot_code ? (
         <div
           data-testid="collection-lot-banner"
@@ -725,7 +751,20 @@ export default function TraceabilityCollection({ embedded = false }) {
         </div>
       ) : null}
     />
-  ), [mode, handleRead, feedback, cellName, shift, operator, machine, currentGeneralLot, currentClientLotCode, activeDowntime]);
+  ), [
+    mode,
+    handleRead,
+    feedback,
+    cellName,
+    shift,
+    operator,
+    machine,
+    currentGeneralLot,
+    currentClientLotCode,
+    activeDowntime,
+    refreshData,
+    updateFeedback,
+  ]);
 
   const isCellLocked = !!(opSession && opSession.cells?.length <= 1);
 

@@ -129,7 +129,17 @@ export default function DailySummary() {
     [goals, selectedShifts, selectedCells]
   );
 
-  const summary = useMemo(() => buildDailySummary(filtered, filteredGoals), [filtered, filteredGoals]);
+  const summaryCells = useMemo(
+    () => (selectedCells.length > 0 ? selectedCells : activeCells.map((cell) => cell.name)),
+    [selectedCells, activeCells],
+  );
+  const summary = useMemo(
+    () => buildDailySummary(filtered, filteredGoals, {
+      activeCells: summaryCells,
+      shifts: selectedShifts,
+    }),
+    [filtered, filteredGoals, summaryCells, selectedShifts],
+  );
 
   const evolutionData = useMemo(() => {
     return Array.from({ length: 7 }, (_, index) => {
@@ -144,7 +154,10 @@ export default function DailySummary() {
         && selectedShifts.includes(goal.shift)
         && (selectedCells.length === 0 || selectedCells.includes(goal.cell_name || goal.cell))
       );
-      const daySummary = buildDailySummary(dayEntries, dayGoals);
+      const daySummary = buildDailySummary(dayEntries, dayGoals, {
+        activeCells: summaryCells,
+        shifts: selectedShifts,
+      });
       const target = daySummary.totalsByUnit.reduce((sum, row) => sum + (Number(row.target) || 0), 0);
       const realized = daySummary.totalsByUnit.reduce((sum, row) => sum + (Number(row.realized) || 0), 0);
       const [, month, dayOfMonth] = day.split('-');
@@ -156,7 +169,7 @@ export default function DailySummary() {
         realized,
       };
     });
-  }, [date, historyEntries, historyGoals, selectedShifts, selectedCells]);
+  }, [date, historyEntries, historyGoals, selectedShifts, selectedCells, summaryCells]);
 
   const formattedDateString = useMemo(() => {
     const parts = date.split('-');

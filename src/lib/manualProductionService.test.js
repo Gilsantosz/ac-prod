@@ -25,26 +25,53 @@ describe('manualProductionService', () => {
       data: {
         success: true,
         general_lot_code: '15587',
-        target_cells: ['Corte'],
+        batch_id: 'batch-15587',
+        stage_code: 'packaging',
+        remaining_after: 28,
       },
       error: null,
     });
 
     const result = await registerManualQuantitativeEntry({
+      pcp_import_batch_id: 'batch-15587',
       general_lot_code: '15587',
-      cell_name: 'Corte',
+      cell_name: 'Embalagem',
       quantity: 12,
     });
 
     expect(result).toMatchObject({
       success: true,
       general_lot_code: '15587',
+      pcp_import_batch_id: 'batch-15587',
       quantity: 12,
-      target_cells: ['Corte'],
+      cascade: false,
+      is_untraceable: true,
     });
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      'register_untraceable_stage_quantity',
+      expect.objectContaining({
+        p_payload: expect.objectContaining({
+          pcp_import_batch_id: 'batch-15587',
+          general_lot_code: '15587',
+          cell_name: 'Embalagem',
+          quantity: 12,
+        }),
+      }),
+    );
     expect(mocks.from).not.toHaveBeenCalled();
     expect(mocks.getUser).not.toHaveBeenCalled();
+  });
+
+  it('exige o lote geral ativo com identificador do lote importado', async () => {
+    await expect(registerManualQuantitativeEntry({
+      general_lot_code: '14999',
+      cell_name: 'Embalagem',
+      quantity: 1,
+    })).rejects.toThrow('Selecione um Lote Geral ativo');
+
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.from).not.toHaveBeenCalled();
   });
 
   it('não recorre ao CRUD legado quando a RPC rejeita a operação', async () => {
@@ -54,7 +81,9 @@ describe('manualProductionService', () => {
     });
 
     await expect(registerManualQuantitativeEntry({
+      pcp_import_batch_id: 'batch-14999',
       general_lot_code: '14999',
+      cell_name: 'Separação',
       quantity: 1,
     })).rejects.toThrow('Lote Geral não encontrado.');
 

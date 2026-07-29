@@ -76,4 +76,29 @@ describe('buildDailySummary', () => {
     ]));
     expect(pieces.realized).toBe(4973);
   });
+
+  it('mantém todas as células produtivas visíveis mesmo sem lançamento ou meta no dia', () => {
+    const summary = buildDailySummary(
+      [entry('Fura', '1º Turno', 29, { metric_unit: 'pieces', realized_quantity: 29 })],
+      [goal('Bordo', '1º Turno', 'meters', 3000)],
+      {
+        activeCells: ['Bordo', 'Fura', 'Separação', 'Embalagem'],
+        shifts: ['1º Turno', '2º Turno'],
+      },
+    );
+
+    expect(summary.matrixByCell.map((row) => row.cell)).toEqual([
+      'Bordo',
+      'Embalagem',
+      'Fura',
+      'Separação',
+    ]);
+    expect(summary.matrixByCell.find((row) => row.cell === 'Fura')?.total.realized).toBe(29);
+    expect(summary.matrixByCell.find((row) => row.cell === 'Separação')?.total.realized).toBe(0);
+    expect(summary.matrixByCell.find((row) => row.cell === 'Separação')?.shiftLabels).toEqual([
+      '1º Turno',
+      '2º Turno',
+      '3º Turno',
+    ]);
+  });
 });

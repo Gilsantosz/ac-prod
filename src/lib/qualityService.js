@@ -146,18 +146,7 @@ export async function getNonconformities({
 } = {}) {
   let query = supabase
     .from('quality_nonconformities')
-    .select(`
-      *,
-      defect:defect_id (
-        id, code, name, category, six_m_category
-      ),
-      piece:piece_id (
-        id, piece_name, piece_code, piece_uid, current_stage, status
-      ),
-      actions:quality_actions (
-        id, action_type, what, status, efficacy_verified
-      )
-    `, { count: 'exact' });
+    .select('*', { count: 'exact' });
 
   if (status && status !== 'all') {
     query = query.eq('status', status);
@@ -185,7 +174,7 @@ export async function getNonconformities({
     query = query.or(`nc_code.ilike.%${term}%,defect_name.ilike.%${term}%,lot_code.ilike.%${term}%,order_number.ilike.%${term}%,customer_name.ilike.%${term}%`);
   }
 
-  query = query.order('detected_at', { ascending: false })
+  query = query.order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
 
   const { data, error, count } = await query;
@@ -194,8 +183,35 @@ export async function getNonconformities({
     throw error;
   }
 
+  const nonconformities = (data || []).map((nc) => ({
+    ...nc,
+    detected_at: nc.detected_at || nc.created_at,
+    actions: [],
+  }));
+
+  if (nonconformities.length > 0) {
+    const ncIds = nonconformities.map((nc) => nc.id);
+    const { data: actions, error: actionsError } = await supabase
+      .from('quality_actions')
+      .select('id, nonconformity_id, action_type, what, status, efficacy_verified, when_deadline, who_owner_name')
+      .in('nonconformity_id', ncIds)
+      .order('created_at', { ascending: false });
+
+    if (!actionsError) {
+      const actionsByNc = (actions || []).reduce((grouped, action) => {
+        if (!grouped[action.nonconformity_id]) grouped[action.nonconformity_id] = [];
+        grouped[action.nonconformity_id].push(action);
+        return grouped;
+      }, {});
+
+      nonconformities.forEach((nc) => {
+        nc.actions = actionsByNc[nc.id] || [];
+      });
+    }
+  }
+
   return {
-    nonconformities: data || [],
+    nonconformities,
     count: count || 0
   };
 }
@@ -283,31 +299,56 @@ export async function saveQualityAction(action) {
   return result;
 }
 
+const OPEN_NC_STATUSES = new Set(['open', 'contained', 'analysis', 'action_plan', 'verification']);
+const TERMINAL_QUALITY_STATUSES = new Set(['approved', 'rejected']);
+
+function toPositiveQuantity(value) {
+  const quantity = Number(value);
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+}
+
+function qualityEventDate(row) {
+  return row?.detected_at || row?.created_at || null;
+}
+
 /**
- * Dashboard & Estatísticas de Qualidade: Retorna KPIs, Pareto, FPY e Cartas SPC.
+ * Consolida os dados de Qualidade sem misturar leituras bloqueadas/duplicadas
+ * com as aprovações e reprovações produtivas.
  */
-export async function getQualityDashboardMetrics({ cellId = null, dateFrom = null, dateTo = null } = {}) {
-  let ncQuery = supabase
-    .from('quality_nonconformities')
-    .select('*');
+export function calculateQualityDashboardMetrics({
+  nonconformities = [],
+  readings = [],
+  defectCatalog = [],
+} = {}) {
+  const defectById = new Map(defectCatalog.map((defect) => [defect.id, defect]));
+  const ncList = nonconformities.map((nc) => {
+    const catalogDefect = defectById.get(nc.defect_id);
+    return {
+      ...nc,
+      detected_at: qualityEventDate(nc),
+      defect_name: nc.defect_name || catalogDefect?.name || 'Outros',
+      six_m_category: catalogDefect?.six_m_category || nc.six_m_category || 'Método',
+      quantity: toPositiveQuantity(nc.quantity),
+    };
+  });
 
-  if (cellId) ncQuery = ncQuery.eq('cell_id', cellId);
-  if (dateFrom) ncQuery = ncQuery.gte('detected_at', dateFrom);
-  if (dateTo) ncQuery = ncQuery.lte('detected_at', dateTo);
+  const terminalReadings = readings
+    .filter((reading) => TERMINAL_QUALITY_STATUSES.has(reading.status))
+    .map((reading) => ({ ...reading, quantity: toPositiveQuantity(reading.quantity) }));
 
-  const { data: ncs, error: ncError } = await ncQuery;
-  if (ncError) throw ncError;
-
-  const ncList = ncs || [];
   const totalNCs = ncList.length;
-  const openNCs = ncList.filter(nc => ['open', 'contained', 'analysis', 'action_plan', 'verification'].includes(nc.status)).length;
+  const totalDefects = ncList.reduce((sum, nc) => sum + nc.quantity, 0);
+  const openNCs = ncList.filter((nc) => OPEN_NC_STATUSES.has(nc.status)).length;
   const closedNCs = ncList.filter(nc => nc.status === 'closed').length;
+  const criticalNCs = ncList.filter((nc) =>
+    OPEN_NC_STATUSES.has(nc.status) && ['high', 'critical'].includes(nc.severity)
+  ).length;
+  const closureRate = totalNCs > 0 ? (closedNCs / totalNCs) * 100 : 100;
 
   // 1. ANÁLISE DE PARETO DE DEFEITOS (com percentual acumulado)
   const defectCounts = {};
   ncList.forEach(nc => {
-    const defect = nc.defect_name || 'Outros';
-    defectCounts[defect] = (defectCounts[defect] || 0) + (nc.quantity || 1);
+    defectCounts[nc.defect_name] = (defectCounts[nc.defect_name] || 0) + nc.quantity;
   });
 
   const sortedDefects = Object.entries(defectCounts)
@@ -329,56 +370,85 @@ export async function getQualityDashboardMetrics({ cellId = null, dateFrom = nul
     };
   });
 
-  // 2. FPY (First Pass Yield) E TAXA DE REPROVAÇÃO
-  // Buscar leituras totais aprovadas vs reprovadas no período
-  let readingsQuery = supabase
-    .from('production_stage_readings')
-    .select('status, quantity');
+  // 2. FPY: considera apenas a primeira leitura terminal de cada peça/etapa.
+  const orderedReadings = [...terminalReadings].sort((a, b) =>
+    String(a.created_at || '').localeCompare(String(b.created_at || ''))
+  );
+  const firstPassReadings = [];
+  const seenPieceStages = new Set();
 
-  if (dateFrom) readingsQuery = readingsQuery.gte('created_at', dateFrom);
-  if (dateTo) readingsQuery = readingsQuery.lte('created_at', dateTo);
+  orderedReadings.forEach((reading, index) => {
+    const traceableKey = reading.piece_id
+      ? `${reading.piece_id}:${reading.step_name || reading.cell_name || 'etapa'}`
+      : `volume:${reading.id || index}`;
+    if (seenPieceStages.has(traceableKey)) return;
+    seenPieceStages.add(traceableKey);
+    firstPassReadings.push(reading);
+  });
 
-  const { data: readings } = await readingsQuery;
-  const totalReadings = (readings || []).reduce((sum, r) => sum + (Number(r.quantity) || 1), 0);
-  const approvedReadings = (readings || []).filter(r => r.status === 'approved').reduce((sum, r) => sum + (Number(r.quantity) || 1), 0);
-  const rejectedReadings = (readings || []).filter(r => r.status === 'rejected').reduce((sum, r) => sum + (Number(r.quantity) || 1), 0);
+  const firstPassTotal = firstPassReadings.reduce((sum, reading) => sum + reading.quantity, 0);
+  const firstPassApproved = firstPassReadings
+    .filter((reading) => reading.status === 'approved')
+    .reduce((sum, reading) => sum + reading.quantity, 0);
+  const approvedReadings = terminalReadings
+    .filter((reading) => reading.status === 'approved')
+    .reduce((sum, reading) => sum + reading.quantity, 0);
+  const rejectedReadings = terminalReadings
+    .filter((reading) => reading.status === 'rejected')
+    .reduce((sum, reading) => sum + reading.quantity, 0);
+  const totalReadings = approvedReadings + rejectedReadings;
 
-  const fpy = totalReadings > 0 ? (approvedReadings / totalReadings) * 100 : 100;
+  const fpy = firstPassTotal > 0 ? (firstPassApproved / firstPassTotal) * 100 : 100;
   const rejectionRate = totalReadings > 0 ? (rejectedReadings / totalReadings) * 100 : 0;
 
   // 3. DEFEITOS POR CATEGORIA 6M
-  const sixMCounts = {
-    'Máquina': 0, 'Método': 0, 'Material': 0, 'Mão de obra': 0, 'Medição': 0, 'Meio ambiente': 0
-  };
+  const sixMCounts = Object.fromEntries(SIX_M_CATEGORIES.map((category) => [category, 0]));
   ncList.forEach(nc => {
-    // Tenta associar se houver
-    sixMCounts['Método'] = (sixMCounts['Método'] || 0) + 1;
+    const category = SIX_M_CATEGORIES.includes(nc.six_m_category) ? nc.six_m_category : 'Método';
+    sixMCounts[category] += nc.quantity;
   });
 
-  const sixMData = Object.entries(sixMCounts).map(([name, value]) => ({ name, value }));
+  const sixMData = Object.entries(sixMCounts)
+    .map(([name, value]) => ({ name, value }))
+    .filter((item) => item.value > 0);
 
-  // 4. CONTROLE ESTATÍSTICO (CARTA p - Proporção de Não Conformes)
-  // Agrupamento diário
+  // 4. CONTROLE ESTATÍSTICO com amostra diária real.
   const dailyMap = {};
-  ncList.forEach(nc => {
-    const day = nc.detected_at ? nc.detected_at.substring(0, 10) : 'N/A';
+  terminalReadings.forEach((reading) => {
+    const day = reading.created_at ? reading.created_at.substring(0, 10) : null;
+    if (!day) return;
     if (!dailyMap[day]) {
-      dailyMap[day] = { day, defects: 0, nonconformingUnits: 0 };
+      dailyMap[day] = { day, approved: 0, rejected: 0, defects: 0, nonconformities: 0 };
     }
-    dailyMap[day].defects += (nc.quantity || 1);
-    dailyMap[day].nonconformingUnits += 1;
+    dailyMap[day][reading.status] += reading.quantity;
   });
 
+  ncList.forEach(nc => {
+    const day = nc.detected_at ? nc.detected_at.substring(0, 10) : null;
+    if (!day) return;
+    if (!dailyMap[day]) {
+      dailyMap[day] = { day, approved: 0, rejected: 0, defects: 0, nonconformities: 0 };
+    }
+    dailyMap[day].defects += nc.quantity;
+    dailyMap[day].nonconformities += 1;
+  });
+
+  const pBar = totalReadings > 0 ? rejectedReadings / totalReadings : 0;
   const pChartData = Object.values(dailyMap).sort((a, b) => a.day.localeCompare(b.day)).map(d => {
-    const sampleSize = 100; // Tamanho de amostra diário base
-    const p = d.nonconformingUnits / sampleSize;
-    const u = d.defects / sampleSize;
-    const pBar = 0.05; // Média histórica de rejeição (5%)
-    const uclP = Math.min(1, pBar + 3 * Math.sqrt((pBar * (1 - pBar)) / sampleSize));
-    const lclP = Math.max(0, pBar - 3 * Math.sqrt((pBar * (1 - pBar)) / sampleSize));
+    const sampleSize = d.approved + d.rejected;
+    const p = sampleSize > 0 ? d.rejected / sampleSize : 0;
+    const u = sampleSize > 0 ? d.defects / sampleSize : 0;
+    const sigma = sampleSize > 0 ? Math.sqrt((pBar * (1 - pBar)) / sampleSize) : 0;
+    const uclP = Math.min(1, pBar + 3 * sigma);
+    const lclP = Math.max(0, pBar - 3 * sigma);
 
     return {
       date: d.day,
+      approved: d.approved,
+      rejected: d.rejected,
+      nonconformities: d.nonconformities,
+      sampleSize,
+      rejectionRate: Number((p * 100).toFixed(1)),
       p: Number(p.toFixed(3)),
       u: Number(u.toFixed(3)),
       pBar: Number(pBar.toFixed(3)),
@@ -387,16 +457,71 @@ export async function getQualityDashboardMetrics({ cellId = null, dateFrom = nul
     };
   });
 
+  const cellCounts = {};
+  ncList.forEach((nc) => {
+    const cell = nc.cell_name || nc.stage_name || 'Não informada';
+    cellCounts[cell] = (cellCounts[cell] || 0) + nc.quantity;
+  });
+  const byCellData = Object.entries(cellCounts)
+    .map(([cell, defects]) => ({ cell, defects }))
+    .sort((a, b) => b.defects - a.defects);
+
   return {
     totalNCs,
+    totalDefects,
     openNCs,
     closedNCs,
+    criticalNCs,
+    closureRate: Number(closureRate.toFixed(1)),
     fpy: Number(fpy.toFixed(1)),
     rejectionRate: Number(rejectionRate.toFixed(1)),
+    approvedReadings,
+    rejectedReadings,
+    topDefect: paretoData[0]?.defect || 'Sem ocorrências',
     paretoData,
     sixMData,
-    pChartData
+    pChartData,
+    byCellData,
   };
+}
+
+/**
+ * Dashboard & Estatísticas de Qualidade: Retorna KPIs, Pareto, FPY e Cartas SPC.
+ */
+export async function getQualityDashboardMetrics({ cellId = null, dateFrom = null, dateTo = null } = {}) {
+  let ncQuery = supabase.from('quality_nonconformities').select('*');
+  let readingsQuery = supabase
+    .from('production_stage_readings')
+    .select('id, piece_id, step_name, cell_name, status, quantity, created_at')
+    .in('status', ['approved', 'rejected']);
+
+  if (cellId) ncQuery = ncQuery.eq('cell_id', cellId);
+  if (dateFrom) {
+    ncQuery = ncQuery.gte('created_at', dateFrom);
+    readingsQuery = readingsQuery.gte('created_at', dateFrom);
+  }
+  if (dateTo) {
+    ncQuery = ncQuery.lte('created_at', dateTo);
+    readingsQuery = readingsQuery.lte('created_at', dateTo);
+  }
+
+  const [ncResult, readingsResult, defectsResult] = await Promise.all([
+    ncQuery,
+    readingsQuery,
+    supabase
+      .from('quality_defect_catalog')
+      .select('id, name, six_m_category'),
+  ]);
+
+  if (ncResult.error) throw ncResult.error;
+  if (readingsResult.error) throw readingsResult.error;
+  if (defectsResult.error) throw defectsResult.error;
+
+  return calculateQualityDashboardMetrics({
+    nonconformities: ncResult.data || [],
+    readings: readingsResult.data || [],
+    defectCatalog: defectsResult.data || [],
+  });
 }
 
 /**

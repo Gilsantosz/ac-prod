@@ -56,6 +56,7 @@ const TABLE_TO_QUERY_KEYS = {
     ['oeeStats'],
     ['downtimeStats'],
     ['pcp-batches'],
+    ['quality-metrics'],
   ],
   production_orders: [
     ['production-orders'],
@@ -138,6 +139,19 @@ const TABLE_TO_QUERY_KEYS = {
   quality_occurrences: [
     ['quality-defects'],
     ['quality-occurrences'],
+  ],
+  quality_nonconformities: [
+    ['quality-metrics'],
+    ['quality-nonconformities'],
+    ['replacement-orders'],
+  ],
+  quality_actions: [
+    ['quality-metrics'],
+    ['quality-nonconformities'],
+  ],
+  quality_defect_catalog: [
+    ['quality-metrics'],
+    ['quality-defects'],
   ],
 };
 

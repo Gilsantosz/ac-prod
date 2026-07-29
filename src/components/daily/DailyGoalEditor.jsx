@@ -54,6 +54,7 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
   const [saving, setSaving] = useState(false);
   const [loadingGoal, setLoadingGoal] = useState(false);
   const [existingGoalId, setExistingGoalId] = useState(null);
+  const [inheritedGoalDate, setInheritedGoalDate] = useState(null);
 
   // Permissão de alteração: APENAS perfis de Supervisor, Gestor (manager) ou Admin
   const userRole = String(user?.role || '').toLowerCase();
@@ -71,6 +72,7 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
     setCapacity('');
     setTarget('');
     setExistingGoalId(null);
+    setInheritedGoalDate(null);
   }, [cellName, inferred.unit]);
 
   /* ── Auto-fill ao mudar data / turno / célula ──────────── */
@@ -83,9 +85,11 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
       const { data: rows, error } = await supabase
         .from('production_daily_goals')
         .select('*')
-        .eq('date', date)
+        .lte('date', date)
         .ilike('shift', shift)
         .ilike('cell_name', finalCell)
+        .order('date', { ascending: false })
+        .order('updated_at', { ascending: false })
         .limit(1);
 
       if (error && !/does not exist/i.test(error.message)) throw error;
@@ -93,12 +97,15 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
       const data = rows && rows.length > 0 ? rows[0] : null;
 
       if (data) {
-        setExistingGoalId(data.id);
+        const isExactDate = data.date === date;
+        setExistingGoalId(isExactDate ? data.id : null);
+        setInheritedGoalDate(isExactDate ? null : data.date);
         setUnit(data.metric_unit || inferred.unit);
         setCapacity(data.capacity != null ? String(data.capacity) : '');
         setTarget(data.target != null ? String(data.target) : '');
       } else {
         setExistingGoalId(null);
+        setInheritedGoalDate(null);
         setCapacity('');
         setTarget('');
       }
@@ -277,6 +284,12 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
           {!loadingGoal && canEditGoals && isEditing && (
             <span className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-800/60">
               <CheckCircle2 className="w-3.5 h-3.5" /> Meta cadastrada — editando
+            </span>
+          )}
+
+          {!loadingGoal && canEditGoals && !isEditing && inheritedGoalDate && (
+            <span className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 font-semibold bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 rounded-full border border-blue-200 dark:border-blue-800/60">
+              Meta herdada de {inheritedGoalDate.split('-').reverse().join('/')} — salve para personalizar o dia
             </span>
           )}
         </div>
