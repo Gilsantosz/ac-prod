@@ -112,7 +112,13 @@ class LotDetailErrorBoundary extends Component {
 export function buildEffectiveLotIntegrity({ clientLot, lotPieces = [], integrityData = null }) {
   if (!clientLot?.lot_id) return null;
 
-  const totalPieces = Number(clientLot.total_pieces || lotPieces.length || integrityData?.total_pieces || 0);
+  const originalPieces = lotPieces.filter((piece) => !piece.is_replacement);
+  const totalPieces = Number(
+    clientLot.total_pieces
+    || integrityData?.total_pieces
+    || originalPieces.length
+    || 0
+  );
   const stages = clientLot.stages?.length
     ? [...clientLot.stages].sort((a, b) => Number(a.stage_order || 0) - Number(b.stage_order || 0))
     : FALLBACK_STAGE_CATALOG.map((stage) => ({
@@ -142,19 +148,24 @@ export function buildEffectiveLotIntegrity({ clientLot, lotPieces = [], integrit
     ).length;
   }
 
-  const blockedPieces = lotPieces.length > 0
-    ? lotPieces.filter((piece) => piece.is_blocked || piece.status === 'blocked').length
-    : Number(clientLot.blocked_pieces || 0);
-  const reworkPieces = lotPieces.length > 0
-    ? lotPieces.filter((piece) => piece.rework_status && piece.rework_status !== 'none').length
-    : Number(clientLot.rework_pieces || 0);
-  const replacementPieces = lotPieces.length > 0
-    ? lotPieces.filter((piece) => piece.replacement_status && piece.replacement_status !== 'none').length
-    : Number(clientLot.replacement_pieces || 0);
-  const pendingPieces = Math.max(
-    0,
-    totalPieces - approvedPieces - blockedPieces - reworkPieces - replacementPieces
-  );
+  const blockedPieces = integrityData?.blocked_pieces != null
+    ? Number(integrityData.blocked_pieces)
+    : originalPieces.filter((piece) => piece.is_blocked || piece.status === 'blocked').length;
+  const reworkPieces = integrityData?.rework_pieces != null
+    ? Number(integrityData.rework_pieces)
+    : originalPieces.filter((piece) =>
+        ['pending', 'in_progress'].includes(piece.rework_status)
+        || ['rework', 'rework_pending', 'rework_in_progress'].includes(piece.status)
+      ).length;
+  const replacementPieces = integrityData?.replacement_pieces != null
+    ? Number(integrityData.replacement_pieces)
+    : originalPieces.filter((piece) =>
+        ['requested', 'under_review', 'approved', 'released', 'in_production']
+          .includes(piece.replacement_status)
+      ).length;
+  const pendingPieces = integrityData?.pending_pieces != null
+    ? Number(integrityData.pending_pieces)
+    : Math.max(0, totalPieces - approvedPieces);
 
   const sumRequired = activeStages.reduce(
     (total, stage) => total + Number(stage.required_pieces || 0),
@@ -196,7 +207,8 @@ export function buildEffectiveLotIntegrity({ clientLot, lotPieces = [], integrit
       && approvedPieces === totalPieces
       && blockedPieces === 0
       && reworkPieces === 0
-      && replacementPieces === 0,
+      && replacementPieces === 0
+      && integrityData?.has_open_replacements !== true,
     stages,
   };
 }
@@ -239,7 +251,7 @@ function LotIntegrityPanelData({ lot, children }) {
       const { data, error } = await runLotDetailQuery(
         supabase
           .from('production_pieces')
-          .select('id, piece_uid, status, current_stage, is_blocked, rework_status, replacement_status')
+          .select('id, piece_uid, status, current_stage, is_blocked, rework_status, replacement_status, is_replacement, original_piece_id')
           .eq('lot_id', lotId)
           .neq('status', 'cancelled'),
         'as peças'
