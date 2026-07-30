@@ -16,6 +16,7 @@ import {
 } from '@/lib/replacementLabelService';
 import { generateCode128Svg } from '@/lib/barcodeGenerator';
 import { generateReplacementPdfReport } from '@/lib/reports/replacementPdfReportService';
+import { formatPieceFullContext } from '@/lib/pieceFormat';
 
 const REPRINT_REASONS = [
   'Etiqueta danificada no manuseio',
@@ -56,10 +57,12 @@ export default function ReplacementLabelPreviewModal({
   // Código de rastreio oficial da reposição
   const traceCode = replPiece.traceability_code || replPiece.piece_uid || buildReplacementTraceCode(origPiece, (printHistory.length || 0) + 1);
 
-  // Lotes e Descrição
+  // Lotes
   const generalLot = order?.lot_code || origPiece.general_lot_code || origPiece.lot_code || '26072640';
   const customerLot = order?.order_number || origPiece.order_number || origPiece.customer_lot_code || '940002';
-  const productDescription = origPiece.piece_name || origPiece.description || order?.notes || order?.defect_name || origPiece.piece_code || 'TRAVESSA 952,5 × 80 × 15 MM — BRANCO TX';
+
+  // CONTEXTO COMPLETO PROMOB (Linha 1: Peça/Rota/Medidas | Linha 2: Matéria-Prima/Chapa/Fita)
+  const fullContext = formatPieceFullContext(origPiece);
 
   const isCancelled = order?.status === 'cancelled';
   const currentViaNumber = (printHistory.length || 0) + 1;
@@ -75,13 +78,13 @@ export default function ReplacementLabelPreviewModal({
     }
   }, [open, order?.id]);
 
-  // Gerar SVG do Código de Barras Code 128
+  // Gerar SVG do Código de Barras Code 128 (Compacto para abrir espaço para o contexto completo)
   const barcodeSvg = generateCode128Svg(traceCode, {
-    height: 34,
-    barWidth: 1.8,
-    quietZone: 6,
+    height: 28,
+    barWidth: 1.7,
+    quietZone: 4,
     showText: true,
-    fontSize: 10
+    fontSize: 9
   });
 
   const handlePrintClick = () => {
@@ -152,7 +155,7 @@ export default function ReplacementLabelPreviewModal({
             </DialogTitle>
           </div>
           <DialogDescription className="text-xs text-muted-foreground mt-1">
-            Pré-visualização técnica oficial da etiqueta de chão de fábrica com Code 128 e rastreabilidade Promob.
+            Pré-visualização técnica oficial da etiqueta de chão de fábrica com contexto completo Promob e Code 128.
           </DialogDescription>
         </DialogHeader>
 
@@ -222,31 +225,30 @@ export default function ReplacementLabelPreviewModal({
             </div>
           )}
 
-          {/* ÁREA DE PRÉ-VISUALIZAÇÃO DA ETIQUETA 100 x 50 mm */}
+          {/* ÁREA DE PRÉ-VISUALIZAÇÃO DA ETIQUETA 100 x 50 mm COM CONTEXTO PROMOB COMPLETO */}
           <div className="flex flex-col items-center justify-center p-4 bg-slate-100 dark:bg-slate-900 rounded-2xl border border-border/60">
             <p className="text-[11px] font-bold text-muted-foreground mb-3 uppercase tracking-wider">
               Proporção Real em Tela (100 mm × 50 mm)
             </p>
 
-            {/* ETIQUETA PADRÃO EXACT PROMOB / AC.PROD */}
             <div
               ref={printAreaRef}
               id="thermal-label-printable-area"
-              className="relative w-[380px] h-[190px] bg-white text-black p-3 border-2 border-black rounded-none flex flex-col justify-between select-none overflow-hidden shadow-md"
-              style={{ fontFamily: 'Consolas, Monaco, monospace, sans-serif' }}
+              className="relative w-[380px] h-[190px] bg-white text-black p-2.5 border-2 border-black rounded-none flex flex-col justify-between select-none overflow-hidden shadow-md"
+              style={{ fontFamily: 'Arial, sans-serif' }}
             >
               {/* LINHA 1 — REPOSIÇÃO E VIA */}
-              <div className="flex items-center justify-between border-b border-black pb-1">
-                <span className="text-sm font-black tracking-widest uppercase">REPOSIÇÃO</span>
-                <span className="text-sm font-black tracking-wider uppercase">{viaLabel}</span>
+              <div className="flex items-center justify-between border-b border-black pb-0.5">
+                <span className="text-xs font-black tracking-widest uppercase">REPOSIÇÃO</span>
+                <span className="text-xs font-black tracking-wider uppercase">{viaLabel}</span>
               </div>
 
-              {/* LINHA 2 — NÚMERO DE RASTREIO E VALOR */}
-              <div className="mt-1">
-                <div className="text-[8.5px] font-bold uppercase tracking-wider text-slate-800">
+              {/* LINHA 2 — NÚMERO DE RASTREIO */}
+              <div className="mt-0.5">
+                <div className="text-[7.5px] font-bold uppercase tracking-wider text-slate-700">
                   NÚMERO DE RASTREIO
                 </div>
-                <div className="text-xs font-extrabold tracking-widest text-black">
+                <div className="text-[11px] font-black tracking-wider text-black">
                   {traceCode}
                 </div>
               </div>
@@ -260,27 +262,32 @@ export default function ReplacementLabelPreviewModal({
               </div>
 
               {/* LINHA 4 — LOTES GERAL E CLIENTE */}
-              <div className="grid grid-cols-2 gap-2 border-t border-b border-black py-1 text-[9.5px]">
+              <div className="grid grid-cols-2 gap-2 border-t border-b border-black py-0.5 text-[9px]">
                 <div>
-                  <div className="text-[7.5px] font-bold text-slate-700 uppercase">LOTE GERAL</div>
-                  <div className="font-extrabold text-xs truncate">{generalLot}</div>
+                  <div className="text-[7px] font-bold text-slate-700 uppercase">LOTE GERAL</div>
+                  <div className="font-black text-[10px] truncate">{generalLot}</div>
                 </div>
                 <div>
-                  <div className="text-[7.5px] font-bold text-slate-700 uppercase">LOTE DO CLIENTE</div>
-                  <div className="font-extrabold text-xs truncate">{customerLot}</div>
+                  <div className="text-[7px] font-bold text-slate-700 uppercase">LOTE DO CLIENTE</div>
+                  <div className="font-black text-[10px] truncate">{customerLot}</div>
                 </div>
               </div>
 
-              {/* LINHA 5 — DESCRIÇÃO DO PRODUTO */}
-              <div className="mt-0.5">
-                <div className="text-[7.5px] font-bold text-slate-700 uppercase">DESCRIÇÃO DO PRODUTO</div>
-                <div className="text-[9.5px] font-extrabold leading-tight uppercase line-clamp-2">
-                  {productDescription}
+              {/* LINHA 5 — DESCRIÇÃO COMPLETA DO PRODUTO PROMOB (LINHA 1 & LINHA 2) */}
+              <div className="my-0.5 space-y-0.5">
+                <div className="text-[7px] font-bold text-slate-700 uppercase">DESCRIÇÃO DO PRODUTO</div>
+                {/* Linha 1: Nome, Rota, Peça e Medidas Principais */}
+                <div className="text-[8.5px] font-black leading-tight uppercase line-clamp-1 text-black">
+                  {fullContext.header}
+                </div>
+                {/* Linha 2: Matéria-Prima, Chapa, Fita e Dimensões Brutas */}
+                <div className="text-[7.5px] font-bold leading-none uppercase line-clamp-1 text-slate-600">
+                  {fullContext.details}
                 </div>
               </div>
 
               {/* LINHA 6 — RODAPÉ COMPLETO */}
-              <div className="border-t border-black pt-1 text-[8px] font-extrabold text-black flex items-center justify-between">
+              <div className="border-t border-black pt-0.5 text-[7.5px] font-black text-black flex items-center justify-between">
                 <span>{order.replacement_code || 'REP-20260730-7006'}</span>
                 <span>DESTINO: {order.destination_cell_name || 'CORTE'}</span>
                 <span>{orderDateFormatted}</span>
@@ -415,7 +422,7 @@ export default function ReplacementLabelPreviewModal({
             width: 100mm !important;
             height: 50mm !important;
             margin: 0 !important;
-            padding: 3mm 4mm !important;
+            padding: 2.5mm 3.5mm !important;
             box-sizing: border-box !important;
             border: 1px solid black !important;
             background: white !important;

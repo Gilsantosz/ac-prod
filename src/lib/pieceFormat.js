@@ -86,3 +86,51 @@ export function formatPieceOrientingHeader(piece, route = []) {
 
   return parts.join(' - ');
 }
+
+/**
+ * Retorna todo o contexto orientativo da peça para etiquetas e relatórios PDF:
+ * Linha 1 (Cabeçalho): Peça + Rota + Descrição + Medidas + Cor
+ * Linha 2 (Subdetalhes): Matéria-prima + Chapa + Fita + Dimensões Físicas
+ *
+ * @param {Object} piece Objeto da peça
+ * @param {Array} route Rota produtiva (opcional)
+ * @returns {Object} { header: string, details: string }
+ */
+export function formatPieceFullContext(piece, route = []) {
+  if (!piece) {
+    return {
+      header: 'PEÇA DE REPOSIÇÃO - CORTE - PROMOB',
+      details: 'MDF BRANCO TX 15MM'
+    };
+  }
+
+  const header = formatPieceOrientingHeader(piece, route);
+
+  // 1. Matéria Prima / Chapa
+  const mat = (piece.material || piece.sheet_material || 'MDF BRANCO ARTICO TX 2F').trim().toUpperCase();
+
+  // 2. Dimensões da chapa / matéria prima bruta
+  const rawSheet = piece.sheet_dimensions || piece.raw_sheet || (piece.sheet_width && piece.sheet_length ? `${piece.sheet_width}X${piece.sheet_length}X${piece.thickness || 15}MM` : null);
+
+  // 3. Fita de Borda / Espessura
+  const edgeTape = piece.edge_tape_info || piece.edge_tape || '0';
+  const thickness = `${piece.thickness || piece.thickness_mm || 15}mm`;
+
+  // 4. Largura x Comprimento
+  const w = piece.width || piece.width_mm || '';
+  const l = piece.length || piece.length_mm || '';
+  const dimsStr = (w && l) ? `${w}x${l}mm` : '';
+
+  const detailParts = [mat];
+  if (rawSheet && !mat.includes(rawSheet)) detailParts.push(rawSheet);
+  if (edgeTape) detailParts.push(edgeTape);
+  if (thickness) detailParts.push(thickness);
+  if (dimsStr) detailParts.push(dimsStr);
+
+  const details = detailParts.filter(Boolean).join(' • ');
+
+  return {
+    header,
+    details
+  };
+}
