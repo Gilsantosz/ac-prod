@@ -89,12 +89,13 @@ export async function generateReplacementPdfReport({
     const fields = [
       ['Solicitação:', order.replacement_code || 'N/A', 'Status Atual:', REPLACEMENT_STATUS_LABELS[order.status]?.label || order.status],
       ['Prioridade:', REPLACEMENT_PRIORITY_LABELS[order.priority]?.label || order.priority, 'Data Solicitação:', order.created_at ? format(new Date(order.created_at), 'dd/MM/yyyy HH:mm') : 'N/A'],
+      ['Descrição do Produto:', orig.piece_name || orig.description || formatPieceOrientingHeader(orig), 'Material / Cor:', `${orig.material || 'MDF'} — ${orig.color || 'Padrão'}`],
       ['Motivo / Defeito:', order.defect_name || order.reason || 'N/A', 'Célula de Origem:', order.origin_cell_name || 'N/A'],
       ['Etapa Reprovada:', formatStageName(order.rejection_stage), 'Próxima Célula:', formatStageName(order.destination_cell_name || 'Corte')],
       ['Lote Geral:', order.lot_code || orig.general_lot_code || 'N/A', 'Lote Cliente / Pedido:', order.order_number || orig.order_number || 'N/A'],
       ['Cliente:', order.customer_name || orig.customer_name || 'N/A', 'Ambiente / Módulo:', order.environment_name || orig.environment_name || 'N/A'],
       ['Código Peça Original:', orig.piece_code || 'N/A', 'Rastreio Substituta:', repl.traceability_code || repl.piece_uid || `${orig.piece_code || '0000'}-REP-R01`],
-      ['Material / Cor:', `${orig.material || 'MDF'} — ${orig.color || 'Padrão'}`, 'Dimensões (C x L x E):', `${orig.length || 0} x ${orig.width || 0} x ${orig.thickness || 18} mm`]
+      ['Dimensões (C x L x E):', `${orig.length || 0} x ${orig.width || 0} x ${orig.thickness || 18} mm`, 'Rota Reposição:', order.route_steps ? order.route_steps.join(' ➔ ') : 'Corte']
     ];
 
     doc.setFontSize(7.5);
@@ -109,14 +110,14 @@ export async function generateReplacementPdfReport({
       doc.text(f1, margin + 2, currentY + 4.5);
       doc.setFont(undefined, 'normal');
       doc.setTextColor(15, 23, 42);
-      doc.text(String(v1), margin + 42, currentY + 4.5);
+      doc.text(String(v1).slice(0, 45), margin + 42, currentY + 4.5);
 
       doc.setFont(undefined, 'bold');
       doc.setTextColor(71, 85, 105);
       doc.text(f2, pageWidth / 2 + 2, currentY + 4.5);
       doc.setFont(undefined, 'normal');
       doc.setTextColor(15, 23, 42);
-      doc.text(String(v2), pageWidth / 2 + 42, currentY + 4.5);
+      doc.text(String(v2).slice(0, 45), pageWidth / 2 + 42, currentY + 4.5);
 
       currentY += 6.5;
     });
@@ -140,7 +141,7 @@ export async function generateReplacementPdfReport({
       { step: '6', title: 'Solicitação de Reposição', desc: `Gerada ordem de reposição ${order.replacement_code}`, date: order.created_at },
       { step: '7', title: 'Aprovação da Reposição', desc: order.approved_at ? `Aprovada por ${order.approver_name || 'Gestor MES'}` : 'Aguardando Aprovação', date: order.approved_at },
       { step: '8', title: 'Criação da Peça Substituta', desc: `Instância física substituta vinculada com Rastreio: ${repl.traceability_code || 'REP-R01'}`, date: order.approved_at || order.created_at },
-      { step: '9', title: 'Emissão da Etiqueta Térmica', desc: 'Impressão da 1ª via de etiqueta 100 x 50 mm Promob', date: order.approved_at },
+      { step: '9', title: 'Emissão da Etiqueta Térmica', desc: 'Impressão da etiqueta 100 x 50 mm Promob', date: order.approved_at },
       { step: '10', title: 'Entrada na Rota Produtiva', desc: 'Reinício de produção na célula de Corte', date: order.approved_at },
       { step: '11', title: 'Passagens pelas Células', desc: 'Acompanhamento de bips via coletor industrial', date: null },
       { step: '12', title: 'Conclusão da Reposição', desc: order.status === 'completed' ? 'Finalizada na Expedição' : 'Em andamento no chão de fábrica', date: order.completed_at },
@@ -189,7 +190,7 @@ export async function generateReplacementPdfReport({
 
   } else {
     // ==========================================
-    // SEÇÃO CONSOLIDADA: TABELA COMPLETA
+    // SEÇÃO CONSOLIDADA: TABELA COMPLETA COM DESCRIÇÃO DO PRODUTO
     // ==========================================
     const totalCount = targetOrders.length;
     const requestedCount = targetOrders.filter(o => o.status === 'requested').length;
@@ -209,22 +210,35 @@ export async function generateReplacementPdfReport({
 
     currentY += 16;
 
-    // Tabela Consolidada (Cabeçalho)
+    // Tabela Consolidada (Cabeçalho com Descrição do Produto)
     doc.setFillColor(15, 23, 42);
     doc.rect(margin, currentY, pageWidth - margin * 2, 6, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(7);
     doc.setFont(undefined, 'bold');
 
-    const colX = [margin + 2, margin + 28, margin + 48, margin + 78, margin + 118, margin + 148, margin + 188, pageWidth - margin - 35];
+    // Posições X das Colunas no documento Landscape (297 mm total, 269 mm útil)
+    const colX = [
+      margin + 2,      // 0: Código Rep (24mm)
+      margin + 26,     // 1: Status (18mm)
+      margin + 44,     // 2: Data (14mm)
+      margin + 58,     // 3: Cód. Peça (20mm)
+      margin + 78,     // 4: DESCRIÇÃO DO PRODUTO (70mm)
+      margin + 148,    // 5: Rastreio Substituta (26mm)
+      margin + 174,    // 6: Lote / Cliente (32mm)
+      margin + 206,    // 7: Defeito (28mm)
+      margin + 234     // 8: Origem ➔ Destino (35mm)
+    ];
+
     doc.text('Código Rep.', colX[0], currentY + 4.5);
     doc.text('Status', colX[1], currentY + 4.5);
     doc.text('Data', colX[2], currentY + 4.5);
-    doc.text('Peça Original', colX[3], currentY + 4.5);
-    doc.text('Rastreio Substituta', colX[4], currentY + 4.5);
-    doc.text('Lote Geral / Cliente', colX[5], currentY + 4.5);
-    doc.text('Motivo / Defeito', colX[6], currentY + 4.5);
-    doc.text('Origem ➔ Destino', colX[7], currentY + 4.5);
+    doc.text('Cód. Peça', colX[3], currentY + 4.5);
+    doc.text('Descrição do Produto (Promob)', colX[4], currentY + 4.5);
+    doc.text('Rastreio Substituta', colX[5], currentY + 4.5);
+    doc.text('Lote / Cliente', colX[6], currentY + 4.5);
+    doc.text('Motivo / Defeito', colX[7], currentY + 4.5);
+    doc.text('Origem ➔ Destino', colX[8], currentY + 4.5);
 
     currentY += 6;
 
@@ -237,27 +251,37 @@ export async function generateReplacementPdfReport({
 
       const orig = o.original_piece || {};
       const repl = o.replacement_piece || {};
+      const productDesc = orig.piece_name || orig.description || formatPieceOrientingHeader(orig);
 
       doc.setFillColor(idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 252);
-      doc.rect(margin, currentY, pageWidth - margin * 2, 5.5, 'F');
+      doc.rect(margin, currentY, pageWidth - margin * 2, 6, 'F');
       doc.setDrawColor(241, 245, 249);
-      doc.line(margin, currentY + 5.5, pageWidth - margin, currentY + 5.5);
+      doc.line(margin, currentY + 6, pageWidth - margin, currentY + 6);
 
       doc.setFont(undefined, 'bold');
       doc.setTextColor(15, 23, 42);
-      doc.text(o.replacement_code || 'N/A', colX[0], currentY + 4);
+      doc.text(o.replacement_code || 'N/A', colX[0], currentY + 4.2);
 
       doc.setFont(undefined, 'normal');
       doc.setTextColor(71, 85, 105);
-      doc.text(REPLACEMENT_STATUS_LABELS[o.status]?.label || o.status, colX[1], currentY + 4);
-      doc.text(o.created_at ? format(new Date(o.created_at), 'dd/MM/yy') : '—', colX[2], currentY + 4);
-      doc.text((orig.piece_code || orig.piece_name || 'N/A').slice(0, 16), colX[3], currentY + 4);
-      doc.text((repl.traceability_code || `${orig.piece_code || '0000'}-REP-R01`).slice(0, 16), colX[4], currentY + 4);
-      doc.text(`${o.lot_code || orig.general_lot_code || '—'} / ${o.order_number || orig.order_number || '—'}`.slice(0, 22), colX[5], currentY + 4);
-      doc.text((o.defect_name || o.reason || '—').slice(0, 20), colX[6], currentY + 4);
-      doc.text(`${o.origin_cell_name || 'Origem'} ➔ ${formatStageName(o.destination_cell_name || 'Corte')}`, colX[7], currentY + 4);
+      doc.text(REPLACEMENT_STATUS_LABELS[o.status]?.label || o.status, colX[1], currentY + 4.2);
+      doc.text(o.created_at ? format(new Date(o.created_at), 'dd/MM/yy') : '—', colX[2], currentY + 4.2);
+      doc.text((orig.piece_code || 'N/A').slice(0, 12), colX[3], currentY + 4.2);
 
-      currentY += 5.5;
+      // EXIBIÇÃO DA DESCRIÇÃO DO PRODUTO COMPLETA
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(15, 23, 42);
+      const formattedProductDesc = productDesc.length > 58 ? productDesc.slice(0, 55) + '...' : productDesc;
+      doc.text(formattedProductDesc, colX[4], currentY + 4.2);
+
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(71, 85, 105);
+      doc.text((repl.traceability_code || `${orig.piece_code || '0000'}-REP-R01`).slice(0, 16), colX[5], currentY + 4.2);
+      doc.text(`${o.lot_code || orig.general_lot_code || '—'} / ${o.order_number || orig.order_number || '—'}`.slice(0, 20), colX[6], currentY + 4.2);
+      doc.text((o.defect_name || o.reason || '—').slice(0, 18), colX[7], currentY + 4.2);
+      doc.text(`${o.origin_cell_name || 'Origem'} ➔ ${formatStageName(o.destination_cell_name || 'Corte')}`, colX[8], currentY + 4.2);
+
+      currentY += 6;
     });
   }
 

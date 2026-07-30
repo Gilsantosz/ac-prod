@@ -87,8 +87,8 @@ export default function ReplacementPage() {
 
   // Ordens selecionadas
   const selectedOrdersList = filteredOrders.filter(o => selectedIds.includes(o.id));
-  const approvedSelectedCount = selectedOrdersList.filter(o => ['approved', 'released', 'in_production', 'completed'].includes(o.status)).length;
-  const pendingSelectedCount = selectedOrdersList.length - approvedSelectedCount;
+  const validSelectedCount = selectedOrdersList.filter(o => o.status !== 'cancelled').length;
+  const cancelledSelectedCount = selectedOrdersList.length - validSelectedCount;
 
   const handleRefresh = () => {
     invalidateAllMesQueries(queryClient);
@@ -426,7 +426,7 @@ export default function ReplacementPage() {
             <strong>{selectedIds.length}</strong> reposições selecionadas
             {selectedIds.length > 0 && (
               <span className="text-[11px] ml-1 font-normal">
-                ({approvedSelectedCount} aprovadas e {pendingSelectedCount} aguardando aprovação)
+                ({validSelectedCount} prontas para impressão{cancelledSelectedCount > 0 ? `, ${cancelledSelectedCount} canceladas` : ''})
               </span>
             )}
           </span>
@@ -449,7 +449,7 @@ export default function ReplacementPage() {
               className="h-8 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white flex items-center gap-1.5 shadow"
             >
               <Printer className="w-3.5 h-3.5" />
-              Imprimir Etiquetas ({approvedSelectedCount})
+              Imprimir Etiquetas ({validSelectedCount})
             </Button>
           </div>
         )}

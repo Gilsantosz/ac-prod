@@ -24,17 +24,16 @@ export function buildReplacementTraceCode(originalPiece, sequence = 1) {
 }
 
 /**
- * Executa as validações obrigatórias de segurança para liberação de impressão da etiqueta de produção.
+ * Executa as validações obrigatórias para liberação de impressão da etiqueta de reposição.
  */
 export function validateReplacementLabelData(order, originalPiece = null, replacementPiece = null) {
   const issues = [];
   const orig = originalPiece || order?.original_piece || {};
   const repl = replacementPiece || order?.replacement_piece || {};
 
-  // 1. Validação de Status (Somente Aprovadas / Liberadas / Em Produção / Concluídas)
-  const allowedStatuses = ['approved', 'released', 'in_production', 'completed'];
-  if (!order || !order.status || !allowedStatuses.includes(order.status)) {
-    issues.push(`Reposição com status '${order?.status || 'desconhecido'}' não liberada para produção. Exige aprovação prévia.`);
+  // 1. Validação de Status (Bloqueia APENAS se estiver cancelada)
+  if (!order || order.status === 'cancelled') {
+    issues.push('Etiqueta bloqueada. A ordem de reposição foi CANCELADA.');
   }
 
   // 2. Número de Rastreio
@@ -56,14 +55,9 @@ export function validateReplacementLabelData(order, originalPiece = null, replac
   }
 
   // 5. Descrição do Produto
-  const description = orig.piece_name || orig.description || order?.notes || order?.defect_name;
+  const description = orig.piece_name || orig.description || order?.notes || order?.defect_name || orig.piece_code;
   if (!description || String(description).trim() === '') {
     issues.push('Descrição do produto / peça não vinculada.');
-  }
-
-  // 6. Vínculo com Peça Substituta
-  if (order.status === 'approved' && !order.replacement_piece_id && !repl.id) {
-    // Nota: Peça substituta é criada na aprovação ou liberação
   }
 
   return {

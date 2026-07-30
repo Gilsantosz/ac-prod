@@ -19,21 +19,21 @@ export default function ReplacementBatchPrintModal({
   const [progress, setProgress] = useState({ current: 0, total: 0 });
 
   const totalCount = selectedOrders.length;
-  const approvedOrders = selectedOrders.filter(o => ['approved', 'released', 'in_production', 'completed'].includes(o.status));
-  const blockedOrders = selectedOrders.filter(o => ['requested', 'under_review', 'cancelled'].includes(o.status));
+  const validOrders = selectedOrders.filter(o => o.status !== 'cancelled');
+  const blockedOrders = selectedOrders.filter(o => o.status === 'cancelled');
 
   const handleBatchPrint = async () => {
-    if (approvedOrders.length === 0) {
-      toast.error('Nenhuma das reposições selecionadas está liberada para produção.');
+    if (validOrders.length === 0) {
+      toast.error('Nenhuma das reposições selecionadas está válida para impressão.');
       return;
     }
 
     setIsProcessing(true);
-    setProgress({ current: 0, total: approvedOrders.length });
+    setProgress({ current: 0, total: validOrders.length });
 
     let successCount = 0;
-    for (let i = 0; i < approvedOrders.length; i++) {
-      const order = approvedOrders[i];
+    for (let i = 0; i < validOrders.length; i++) {
+      const order = validOrders[i];
       try {
         await recordReplacementLabelPrint({
           replacementOrderId: order.id,
@@ -44,7 +44,7 @@ export default function ReplacementBatchPrintModal({
       } catch (err) {
         console.error(`Erro ao registrar impressão em lote para ${order.replacement_code}:`, err);
       }
-      setProgress({ current: i + 1, total: approvedOrders.length });
+      setProgress({ current: i + 1, total: validOrders.length });
     }
 
     setIsProcessing(false);
@@ -94,11 +94,11 @@ export default function ReplacementBatchPrintModal({
             </div>
             <div className="bg-emerald-500/10 p-3 rounded-2xl border border-emerald-500/20">
               <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Prontas p/ Impressão</span>
-              <p className="text-xl font-black text-emerald-600 dark:text-emerald-400">{approvedOrders.length}</p>
+              <p className="text-xl font-black text-emerald-600 dark:text-emerald-400">{validOrders.length}</p>
             </div>
-            <div className="bg-amber-500/10 p-3 rounded-2xl border border-amber-500/20">
-              <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase">Bloqueadas (S/ Aprovação)</span>
-              <p className="text-xl font-black text-amber-600 dark:text-amber-400">{blockedOrders.length}</p>
+            <div className="bg-rose-500/10 p-3 rounded-2xl border border-rose-500/20">
+              <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase">Canceladas (Bloqueadas)</span>
+              <p className="text-xl font-black text-rose-600 dark:text-rose-400">{blockedOrders.length}</p>
             </div>
           </div>
 
@@ -125,10 +125,10 @@ export default function ReplacementBatchPrintModal({
             <div className="bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 p-3 rounded-2xl text-xs space-y-1">
               <div className="font-extrabold flex items-center gap-1.5">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
-                Aviso de Registros Bloqueados ({blockedOrders.length})
+                Aviso de Registros Cancelados ({blockedOrders.length})
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Reposições aguardando aprovação não terão etiquetas válidas impressas. Elas podem ser exportadas apenas no relatório PDF.
+                Reposições canceladas não terão etiquetas impressas. Elas podem ser exportadas apenas no relatório PDF para fins de auditoria.
               </p>
             </div>
           )}
@@ -156,12 +156,12 @@ export default function ReplacementBatchPrintModal({
             </Button>
             <Button
               size="sm"
-              disabled={approvedOrders.length === 0 || isProcessing}
+              disabled={validOrders.length === 0 || isProcessing}
               onClick={handleBatchPrint}
               className="w-1/2 sm:w-auto h-10 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white flex items-center justify-center gap-1.5"
             >
               <Printer className="w-4 h-4" />
-              Imprimir {approvedOrders.length} Etiquetas
+              Imprimir {validOrders.length} Etiquetas
             </Button>
           </div>
         </DialogFooter>

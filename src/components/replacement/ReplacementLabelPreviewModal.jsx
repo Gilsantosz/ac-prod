@@ -49,19 +49,18 @@ export default function ReplacementLabelPreviewModal({
   const origPiece = order?.original_piece || {};
   const replPiece = order?.replacement_piece || {};
 
-  // Validação de Dados e Liberação de Impressão
+  // Validação de Dados para Liberação de Impressão (Permite impressão em solicitações recém-criadas)
   const validation = validateReplacementLabelData(order, origPiece, replPiece);
 
   // Código de rastreio oficial da reposição
   const traceCode = replPiece.traceability_code || replPiece.piece_uid || buildReplacementTraceCode(origPiece, (printHistory.length || 0) + 1);
-  const origCode = origPiece.promob_barcode || origPiece.piece_code || '00000000';
 
   // Lotes e Descrição
   const generalLot = order?.lot_code || origPiece.general_lot_code || origPiece.lot_code || '26072640';
   const customerLot = order?.order_number || origPiece.order_number || origPiece.customer_lot_code || '940002';
-  const productDescription = origPiece.piece_name || origPiece.description || order?.defect_name || 'TRAVESSA 952,5 × 80 × 15 MM — BRANCO TX';
+  const productDescription = origPiece.piece_name || origPiece.description || order?.notes || order?.defect_name || origPiece.piece_code || 'TRAVESSA 952,5 × 80 × 15 MM — BRANCO TX';
 
-  const isApproved = ['approved', 'released', 'in_production', 'completed'].includes(order?.status);
+  const isCancelled = order?.status === 'cancelled';
   const currentViaNumber = (printHistory.length || 0) + 1;
   const viaLabel = currentViaNumber === 1 ? '1ª VIA' : `${currentViaNumber}ª VIA`;
 
@@ -81,8 +80,8 @@ export default function ReplacementLabelPreviewModal({
   });
 
   const handlePrintClick = () => {
-    if (!isApproved || !validation.isValid) {
-      toast.error('Etiqueta não liberada para impressão válida em ambiente produtivo.');
+    if (isCancelled || !validation.isValid) {
+      toast.error('Etiqueta cancelada ou com pendências cadastrais.');
       return;
     }
 
@@ -203,7 +202,7 @@ export default function ReplacementLabelPreviewModal({
             <div className="bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-400 p-3.5 rounded-2xl text-xs space-y-1.5">
               <div className="font-extrabold flex items-center gap-1.5">
                 <Lock className="w-4 h-4" />
-                Etiqueta Não Liberada para Produção
+                Etiqueta Não Liberada
               </div>
               <ul className="list-disc list-inside space-y-0.5 text-[11px]">
                 {validation.issues.map((issue, idx) => (
@@ -214,7 +213,7 @@ export default function ReplacementLabelPreviewModal({
           ) : (
             <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 p-2.5 rounded-2xl text-xs flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>Etiqueta aprovada para impressão no chão de fábrica. <strong>Via Atual: {viaLabel}</strong></span>
+              <span>Etiqueta pronta para identificação imediata da peça. <strong>Via: {viaLabel}</strong></span>
             </div>
           )}
 
@@ -230,15 +229,6 @@ export default function ReplacementLabelPreviewModal({
               className="relative w-[380px] h-[190px] bg-white text-black p-2.5 border-2 border-black rounded-sm shadow-md flex flex-col justify-between select-none overflow-hidden"
               style={{ fontFamily: 'Arial, sans-serif' }}
             >
-              {/* Marca D'água para Reposições Não Liberadas */}
-              {!isApproved && (
-                <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 pointer-events-none rotate-[-15deg]">
-                  <span className="text-rose-600 border-4 border-rose-600 font-black text-xs px-3 py-1 uppercase tracking-widest text-center shadow-lg">
-                    NÃO LIBERADA PARA PRODUÇÃO
-                  </span>
-                </div>
-              )}
-
               {/* ÁREA 1 — CABEÇALHO */}
               <div className="flex items-center justify-between border-b border-black pb-1">
                 <span className="text-base font-black tracking-widest">REPOSIÇÃO</span>
@@ -312,7 +302,7 @@ export default function ReplacementLabelPreviewModal({
             </Button>
             <Button
               size="sm"
-              disabled={!isApproved || !validation.isValid || isPrinting}
+              disabled={isCancelled || !validation.isValid || isPrinting}
               onClick={handlePrintClick}
               className="w-1/2 sm:w-auto h-10 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white flex items-center justify-center gap-1.5 shadow-md"
             >
