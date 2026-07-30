@@ -3,6 +3,14 @@
  */
 
 /**
+ * Clean & Deduplicate helper
+ */
+function cleanSegment(str) {
+  if (!str) return '';
+  return String(str).trim().toUpperCase();
+}
+
+/**
  * Retorna o cabeçalho orientativo completo e padronizado da peça para exibição em modais e painéis de rastreabilidade.
  * Exemplo de retorno:
  * "PEÇA TESTE 38 - CORTE + BORDA + USINAGEM + MARCENARIA - PTA INF ESQ 2D MARANELLO TOPO PRETO ABSOLUTO - 672X18X346.5 - 672X346.5X1"
@@ -14,7 +22,7 @@
 export function formatPieceOrientingHeader(piece, route = []) {
   if (!piece) return '';
 
-  const name = (piece.piece_name || piece.name || piece.piece_code || piece.piece_uid || 'PEÇA').trim().toUpperCase();
+  const name = cleanSegment(piece.piece_name || piece.name || piece.piece_code || piece.piece_uid || 'PEÇA');
 
   // 1. Rota formatada com +
   let routeStr = '';
@@ -40,18 +48,19 @@ export function formatPieceOrientingHeader(piece, route = []) {
     routeStr = String(piece.route_text || piece.route).replace(/->/g, '+').toUpperCase();
   }
 
-  // 2. Descrição / Módulo / Ambiente / Cor / Material
-  const descParts = [
-    piece.description,
-    piece.module_name,
-    piece.environment || piece.environment_name,
-    piece.color,
-    piece.material
-  ]
-    .filter(Boolean)
-    .map((s) => String(s).trim().toUpperCase());
+  // 2. Descrição / Módulo / Ambiente / Cor
+  const rawDesc = cleanSegment(piece.description);
+  const rawModule = cleanSegment(piece.module_name);
+  const rawEnv = cleanSegment(piece.environment || piece.environment_name);
+  const rawColor = cleanSegment(piece.color);
 
-  // Remover duplicatas
+  // Evitar duplicar se a descrição já contiver a rota ou o nome
+  const descParts = [];
+  if (rawDesc && !rawDesc.includes(name)) descParts.push(rawDesc);
+  if (rawModule && !rawDesc.includes(rawModule)) descParts.push(rawModule);
+  if (rawEnv && !rawDesc.includes(rawEnv)) descParts.push(rawEnv);
+  if (rawColor && !rawDesc.includes(rawColor)) descParts.push(rawColor);
+
   const uniqueDesc = Array.from(new Set(descParts)).join(' ');
 
   // 3. Medidas físicas finais (Largura x Espessura x Comprimento/Altura)
@@ -107,7 +116,7 @@ export function formatPieceFullContext(piece, route = []) {
   const header = formatPieceOrientingHeader(piece, route);
 
   // 1. Matéria Prima / Chapa
-  const mat = (piece.material || piece.sheet_material || 'MDF BRANCO ARTICO TX 2F').trim().toUpperCase();
+  const mat = cleanSegment(piece.material || piece.sheet_material || 'MDF BRANCO ARTICO TX 2F');
 
   // 2. Dimensões da chapa / matéria prima bruta
   const rawSheet = piece.sheet_dimensions || piece.raw_sheet || (piece.sheet_width && piece.sheet_length ? `${piece.sheet_width}X${piece.sheet_length}X${piece.thickness || 15}MM` : null);
@@ -118,14 +127,14 @@ export function formatPieceFullContext(piece, route = []) {
 
   // 4. Largura x Comprimento
   const w = piece.width || piece.width_mm || '';
-  const l = piece.length || piece.length_mm || '';
+  const l = piece.length || piece.length_mm || piece.height || '';
   const dimsStr = (w && l) ? `${w}x${l}mm` : '';
 
   const detailParts = [mat];
   if (rawSheet && !mat.includes(rawSheet)) detailParts.push(rawSheet);
   if (edgeTape) detailParts.push(edgeTape);
   if (thickness) detailParts.push(thickness);
-  if (dimsStr) detailParts.push(dimsStr);
+  if (dimsStr && !header.includes(dimsStr)) detailParts.push(dimsStr);
 
   const details = detailParts.filter(Boolean).join(' • ');
 

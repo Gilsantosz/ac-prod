@@ -218,7 +218,7 @@ export async function generateReplacementPdfReport({
 
   } else {
     // ==========================================
-    // SEÇÃO CONSOLIDADA: TABELA COMPLETA COM LARGURAS RÍGIDAS E MULTILINHA
+    // SEÇÃO CONSOLIDADA: LARGURAS RÍGIDAS & RENDERIZAÇÃO MULTILINHA DINÂMICA
     // ==========================================
     const totalCount = targetOrders.length;
     const requestedCount = targetOrders.filter(o => o.status === 'requested').length;
@@ -247,7 +247,7 @@ export async function generateReplacementPdfReport({
       { name: 'Código Rep.', width: 26 },         // Col 0: 26mm
       { name: 'Status', width: 18 },              // Col 1: 18mm
       { name: 'Data', width: 14 },                // Col 2: 14mm
-      { name: 'Descrição da Peça & Contexto Promob', width: 85 }, // Col 3: 85mm (AMPLO ESPAÇO DUPLO)
+      { name: 'Descrição da Peça & Contexto Promob', width: 85 }, // Col 3: 85mm
       { name: 'Rastreio Substituta', width: 32 },  // Col 4: 32mm
       { name: 'Lote / Cliente', width: 34 },       // Col 5: 34mm
       { name: 'Defeito', width: 30 },             // Col 6: 30mm
@@ -274,17 +274,33 @@ export async function generateReplacementPdfReport({
 
     currentY += 7;
 
-    // Linhas da Tabela (Cada linha possui 10mm de altura para acomodar com folga as 2 linhas de contexto Promob)
-    doc.setFontSize(6.5);
-
     targetOrders.forEach((o, idx) => {
-      const rowHeight = 10;
+      const orig = o.original_piece || {};
+      const repl = o.replacement_piece || {};
+      const fullContext = formatPieceFullContext(orig);
 
+      const maxTextW = columns[3].width - 3; // 82mm
+
+      // Quebrar o cabeçalho em linhas dinâmicas (máximo 2 linhas)
+      doc.setFont(undefined, 'bold');
+      doc.setFontSize(6.5);
+      const headerLines = doc.splitTextToSize(sanitizePdfText(fullContext.header), maxTextW).slice(0, 2);
+
+      // Quebrar os subdetalhes em linha dinâmica (máximo 1 linha)
+      doc.setFont(undefined, 'normal');
+      doc.setFontSize(6);
+      const detailLines = doc.splitTextToSize(sanitizePdfText(fullContext.details), maxTextW).slice(0, 1);
+
+      // Altura da linha calculada dinamicamente com base no total de linhas de texto
+      const totalTextLines = headerLines.length + detailLines.length;
+      const rowHeight = Math.max(11, 3.5 + totalTextLines * 3.6);
+
+      // Quebra de página segura se a linha ultrapassar o limite inferior
       if (currentY + rowHeight > pageHeight - 15) {
         doc.addPage();
         currentY = 15;
 
-        // Repetir Cabeçalho na Nova Página
+        // Repetir Cabeçalho da Tabela
         doc.setFillColor(15, 23, 42);
         doc.rect(margin, currentY, pageWidth - margin * 2, 7, 'F');
         doc.setTextColor(255, 255, 255);
@@ -294,59 +310,70 @@ export async function generateReplacementPdfReport({
           doc.text(col.name, col.x + 1.5, currentY + 4.8, { maxWidth: col.width - 2 });
         });
         currentY += 7;
-        doc.setFontSize(6.5);
       }
 
-      const orig = o.original_piece || {};
-      const repl = o.replacement_piece || {};
-      const fullContext = formatPieceFullContext(orig);
-
-      // Fundo Zebrado
+      // Fundo Zebrado da Linha
       doc.setFillColor(idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 252);
       doc.rect(margin, currentY, pageWidth - margin * 2, rowHeight, 'F');
       doc.setDrawColor(226, 232, 240);
       doc.line(margin, currentY + rowHeight, pageWidth - margin, currentY + rowHeight);
 
+      // Posição Y centralizada para colunas de linha única
+      const centerY = currentY + (rowHeight / 2) + 1.2;
+
       // Coluna 0: Código Rep.
       doc.setFont(undefined, 'bold');
+      doc.setFontSize(6.5);
       doc.setTextColor(15, 23, 42);
-      doc.text(o.replacement_code || 'N/A', columns[0].x + 1.5, currentY + 4.2, { maxWidth: columns[0].width - 2 });
+      doc.text(o.replacement_code || 'N/A', columns[0].x + 1.5, centerY, { maxWidth: columns[0].width - 2 });
 
       // Coluna 1: Status
       doc.setFont(undefined, 'normal');
       doc.setTextColor(71, 85, 105);
-      doc.text(REPLACEMENT_STATUS_LABELS[o.status]?.label || o.status, columns[1].x + 1.5, currentY + 4.2, { maxWidth: columns[1].width - 2 });
+      doc.text(REPLACEMENT_STATUS_LABELS[o.status]?.label || o.status, columns[1].x + 1.5, centerY, { maxWidth: columns[1].width - 2 });
 
       // Coluna 2: Data
-      doc.text(o.created_at ? format(new Date(o.created_at), 'dd/MM/yy') : '—', columns[2].x + 1.5, currentY + 4.2, { maxWidth: columns[2].width - 2 });
+      doc.text(o.created_at ? format(new Date(o.created_at), 'dd/MM/yy') : '—', columns[2].x + 1.5, centerY, { maxWidth: columns[2].width - 2 });
 
-      // Coluna 3: DESCRIÇÃO DA PEÇA & CONTEXTO PROMOB COMPLETO (LINHA 1 E LINHA 2)
+      // Coluna 3: CONTEXTO PROMOB RENDERIZADO LINHA A LINHA (SEM SOBREPOSIÇÃO)
+      let curTextY = currentY + 3.8;
       doc.setFont(undefined, 'bold');
+      doc.setFontSize(6.5);
       doc.setTextColor(15, 23, 42);
-      doc.text(sanitizePdfText(fullContext.header), columns[3].x + 1.5, currentY + 3.8, { maxWidth: columns[3].width - 3 });
+
+      headerLines.forEach((hLine) => {
+        doc.text(hLine, columns[3].x + 1.5, curTextY, { maxWidth: maxTextW });
+        curTextY += 3.6;
+      });
 
       doc.setFont(undefined, 'normal');
+      doc.setFontSize(6);
       doc.setTextColor(100, 116, 139);
-      doc.text(sanitizePdfText(fullContext.details), columns[3].x + 1.5, currentY + 7.8, { maxWidth: columns[3].width - 3 });
+
+      detailLines.forEach((dLine) => {
+        doc.text(dLine, columns[3].x + 1.5, curTextY + 0.2, { maxWidth: maxTextW });
+        curTextY += 3.4;
+      });
 
       // Coluna 4: Rastreio Substituta
       doc.setFont(undefined, 'bold');
+      doc.setFontSize(6.5);
       doc.setTextColor(15, 23, 42);
       const traceCode = repl.traceability_code || repl.piece_uid || `${orig.piece_code || '0000'}-REP-R01`;
-      doc.text(sanitizePdfText(traceCode), columns[4].x + 1.5, currentY + 5.2, { maxWidth: columns[4].width - 2 });
+      doc.text(sanitizePdfText(traceCode), columns[4].x + 1.5, centerY, { maxWidth: columns[4].width - 2 });
 
       // Coluna 5: Lote / Cliente
       doc.setFont(undefined, 'normal');
       doc.setTextColor(71, 85, 105);
       const lotCustomer = `${o.lot_code || orig.general_lot_code || '—'} / ${o.order_number || orig.order_number || '—'}`;
-      doc.text(sanitizePdfText(lotCustomer), columns[5].x + 1.5, currentY + 5.2, { maxWidth: columns[5].width - 2 });
+      doc.text(sanitizePdfText(lotCustomer), columns[5].x + 1.5, centerY, { maxWidth: columns[5].width - 2 });
 
       // Coluna 6: Motivo / Defeito
-      doc.text(sanitizePdfText(o.defect_name || o.reason || '—'), columns[6].x + 1.5, currentY + 5.2, { maxWidth: columns[6].width - 2 });
+      doc.text(sanitizePdfText(o.defect_name || o.reason || '—'), columns[6].x + 1.5, centerY, { maxWidth: columns[6].width - 2 });
 
       // Coluna 7: Origem -> Destino
       const routeText = `${o.origin_cell_name || 'Origem'} -> ${formatStageName(o.destination_cell_name || 'Corte')}`;
-      doc.text(sanitizePdfText(routeText), columns[7].x + 1.5, currentY + 5.2, { maxWidth: columns[7].width - 2 });
+      doc.text(sanitizePdfText(routeText), columns[7].x + 1.5, centerY, { maxWidth: columns[7].width - 2 });
 
       currentY += rowHeight;
     });
