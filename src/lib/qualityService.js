@@ -482,13 +482,33 @@ export function calculateQualityDashboardMetrics({
     sixMData,
     pChartData,
     byCellData,
+    rawNCs: ncList
   };
 }
 
 /**
  * Dashboard & Estatísticas de Qualidade: Retorna KPIs, Pareto, FPY e Cartas SPC.
  */
-export async function getQualityDashboardMetrics({ cellId = null, dateFrom = null, dateTo = null } = {}) {
+export async function getQualityDashboardMetrics({ cellId = null, dateFrom = null, dateTo = null, period = null } = {}) {
+  let effectiveDateFrom = dateFrom;
+  let effectiveDateTo = dateTo;
+
+  if (period && !dateFrom) {
+    const now = new Date();
+    if (period === 'today') {
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      effectiveDateFrom = todayStart.toISOString();
+    } else if (period === '7d') {
+      effectiveDateFrom = new Date(Date.now() - 7 * 86400 * 1000).toISOString();
+    } else if (period === '30d') {
+      effectiveDateFrom = new Date(Date.now() - 30 * 86400 * 1000).toISOString();
+    } else if (period === 'month') {
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      effectiveDateFrom = startOfMonth.toISOString();
+    }
+  }
+
   let ncQuery = supabase.from('quality_nonconformities').select('*');
   let readingsQuery = supabase
     .from('production_stage_readings')
@@ -496,13 +516,13 @@ export async function getQualityDashboardMetrics({ cellId = null, dateFrom = nul
     .in('status', ['approved', 'rejected']);
 
   if (cellId) ncQuery = ncQuery.eq('cell_id', cellId);
-  if (dateFrom) {
-    ncQuery = ncQuery.gte('created_at', dateFrom);
-    readingsQuery = readingsQuery.gte('created_at', dateFrom);
+  if (effectiveDateFrom) {
+    ncQuery = ncQuery.gte('created_at', effectiveDateFrom);
+    readingsQuery = readingsQuery.gte('created_at', effectiveDateFrom);
   }
-  if (dateTo) {
-    ncQuery = ncQuery.lte('created_at', dateTo);
-    readingsQuery = readingsQuery.lte('created_at', dateTo);
+  if (effectiveDateTo) {
+    ncQuery = ncQuery.lte('created_at', effectiveDateTo);
+    readingsQuery = readingsQuery.lte('created_at', effectiveDateTo);
   }
 
   const [ncResult, readingsResult, defectsResult] = await Promise.all([
