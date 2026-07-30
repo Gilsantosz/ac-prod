@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
 import {
   validateReplacementLabelData,
   recordReplacementLabelPrint,
@@ -49,7 +50,7 @@ export default function ReplacementLabelPreviewModal({
   const origPiece = order?.original_piece || {};
   const replPiece = order?.replacement_piece || {};
 
-  // Validação de Dados para Liberação de Impressão (Permite impressão em solicitações recém-criadas)
+  // Validação de Dados para Liberação de Impressão
   const validation = validateReplacementLabelData(order, origPiece, replPiece);
 
   // Código de rastreio oficial da reposição
@@ -64,6 +65,10 @@ export default function ReplacementLabelPreviewModal({
   const currentViaNumber = (printHistory.length || 0) + 1;
   const viaLabel = currentViaNumber === 1 ? '1ª VIA' : `${currentViaNumber}ª VIA`;
 
+  const orderDateFormatted = order?.created_at
+    ? format(new Date(order.created_at), 'dd/MM/yyyy')
+    : format(new Date(), 'dd/MM/yyyy');
+
   useEffect(() => {
     if (open && order?.id) {
       getReplacementLabelPrintHistory(order.id).then(setPrintHistory);
@@ -72,9 +77,9 @@ export default function ReplacementLabelPreviewModal({
 
   // Gerar SVG do Código de Barras Code 128
   const barcodeSvg = generateCode128Svg(traceCode, {
-    height: 38,
+    height: 34,
     barWidth: 1.8,
-    quietZone: 8,
+    quietZone: 6,
     showText: true,
     fontSize: 10
   });
@@ -223,58 +228,62 @@ export default function ReplacementLabelPreviewModal({
               Proporção Real em Tela (100 mm × 50 mm)
             </p>
 
+            {/* ETIQUETA PADRÃO EXACT PROMOB / AC.PROD */}
             <div
               ref={printAreaRef}
               id="thermal-label-printable-area"
-              className="relative w-[380px] h-[190px] bg-white text-black p-2.5 border-2 border-black rounded-sm shadow-md flex flex-col justify-between select-none overflow-hidden"
-              style={{ fontFamily: 'Arial, sans-serif' }}
+              className="relative w-[380px] h-[190px] bg-white text-black p-3 border-2 border-black rounded-none flex flex-col justify-between select-none overflow-hidden shadow-md"
+              style={{ fontFamily: 'Consolas, Monaco, monospace, sans-serif' }}
             >
-              {/* ÁREA 1 — CABEÇALHO */}
+              {/* LINHA 1 — REPOSIÇÃO E VIA */}
               <div className="flex items-center justify-between border-b border-black pb-1">
-                <span className="text-base font-black tracking-widest">REPOSIÇÃO</span>
-                <span className="text-[10px] font-bold bg-black text-white px-1.5 py-0.5 rounded-sm">
-                  {viaLabel}
-                </span>
+                <span className="text-sm font-black tracking-widest uppercase">REPOSIÇÃO</span>
+                <span className="text-sm font-black tracking-wider uppercase">{viaLabel}</span>
               </div>
 
-              {/* ÁREA 2 — NÚMERO DE RASTREIO E CÓDIGO DE BARRAS */}
-              <div className="flex flex-col items-center my-1 text-center">
-                <div className="text-[9px] font-bold uppercase tracking-wider text-slate-700">
-                  NÚMERO DE RASTREIO DA PEÇA
+              {/* LINHA 2 — NÚMERO DE RASTREIO E VALOR */}
+              <div className="mt-1">
+                <div className="text-[8.5px] font-bold uppercase tracking-wider text-slate-800">
+                  NÚMERO DE RASTREIO
                 </div>
-                <div className="text-xs font-black tracking-wider text-black my-0.5">
+                <div className="text-xs font-extrabold tracking-widest text-black">
                   {traceCode}
                 </div>
+              </div>
 
-                {/* Código de barras vetorial SVG Code 128 */}
+              {/* LINHA 3 — CÓDIGO DE BARRAS CODE 128 */}
+              <div className="flex flex-col items-center justify-center my-0.5">
                 <div
-                  className="w-full flex justify-center overflow-hidden my-0.5"
+                  className="w-full flex justify-center overflow-hidden"
                   dangerouslySetInnerHTML={{ __html: barcodeSvg }}
                 />
               </div>
 
-              {/* ÁREA 3 — LOTES */}
-              <div className="grid grid-cols-2 gap-1 border-t border-b border-black py-1 text-[10px]">
+              {/* LINHA 4 — LOTES GERAL E CLIENTE */}
+              <div className="grid grid-cols-2 gap-2 border-t border-b border-black py-1 text-[9.5px]">
                 <div>
-                  <div className="text-[8px] font-bold text-slate-600 uppercase">LOTE GERAL</div>
-                  <div className="font-black truncate">{generalLot}</div>
+                  <div className="text-[7.5px] font-bold text-slate-700 uppercase">LOTE GERAL</div>
+                  <div className="font-extrabold text-xs truncate">{generalLot}</div>
                 </div>
                 <div>
-                  <div className="text-[8px] font-bold text-slate-600 uppercase">LOTE DO CLIENTE</div>
-                  <div className="font-black truncate">{customerLot}</div>
+                  <div className="text-[7.5px] font-bold text-slate-700 uppercase">LOTE DO CLIENTE</div>
+                  <div className="font-extrabold text-xs truncate">{customerLot}</div>
                 </div>
               </div>
 
-              {/* ÁREA 4 — DESCRIÇÃO DO PRODUTO & DESTINO */}
-              <div className="mt-1 space-y-0.5">
-                <div className="text-[8px] font-bold text-slate-600 uppercase">DESCRIÇÃO DO PRODUTO</div>
-                <div className="text-[9px] font-bold leading-snug line-clamp-2 uppercase">
+              {/* LINHA 5 — DESCRIÇÃO DO PRODUTO */}
+              <div className="mt-0.5">
+                <div className="text-[7.5px] font-bold text-slate-700 uppercase">DESCRIÇÃO DO PRODUTO</div>
+                <div className="text-[9.5px] font-extrabold leading-tight uppercase line-clamp-2">
                   {productDescription}
                 </div>
-                <div className="flex items-center justify-between text-[7.5px] font-semibold text-slate-700 pt-0.5">
-                  <span>SOLICITAÇÃO: {order.replacement_code}</span>
-                  <span className="font-bold">DESTINO: {order.destination_cell_name || 'CORTE'}</span>
-                </div>
+              </div>
+
+              {/* LINHA 6 — RODAPÉ COMPLETO */}
+              <div className="border-t border-black pt-1 text-[8px] font-extrabold text-black flex items-center justify-between">
+                <span>{order.replacement_code || 'REP-20260730-7006'}</span>
+                <span>DESTINO: {order.destination_cell_name || 'CORTE'}</span>
+                <span>{orderDateFormatted}</span>
               </div>
             </div>
           </div>
@@ -376,28 +385,41 @@ export default function ReplacementLabelPreviewModal({
         </Dialog>
       )}
 
-      {/* CSS ESPECÍFICO DE IMPRESSÃO TÉRMICA MONOCROMÁTICA */}
+      {/* CSS ESPECÍFICO DE IMPRESSÃO TÉRMICA MONOCROMÁTICA ISOLADA */}
       <style>{`
         @media print {
+          @page {
+            size: 100mm 50mm;
+            margin: 0;
+          }
+          html, body {
+            width: 100mm !important;
+            height: 50mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+            color: black !important;
+            overflow: hidden !important;
+          }
           body * {
             visibility: hidden !important;
           }
-          #thermal-label-printable-area, #thermal-label-printable-area * {
+          #thermal-label-printable-area,
+          #thermal-label-printable-area * {
             visibility: visible !important;
           }
           #thermal-label-printable-area {
-            position: absolute !important;
+            position: fixed !important;
             left: 0 !important;
             top: 0 !important;
             width: 100mm !important;
             height: 50mm !important;
             margin: 0 !important;
-            border: none !important;
-            box-shadow: none !important;
-          }
-          @page {
-            size: 100mm 50mm;
-            margin: 0;
+            padding: 3mm 4mm !important;
+            box-sizing: border-box !important;
+            border: 1px solid black !important;
+            background: white !important;
+            z-index: 999999 !important;
           }
         }
       `}</style>
