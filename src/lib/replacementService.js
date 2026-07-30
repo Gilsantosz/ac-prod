@@ -554,6 +554,43 @@ export async function getReplacementKpis() {
 }
 
 /**
+ * Hidrata a ordem com a linha do tempo física das peças original e substituta.
+ * O relatório usa os apontamentos reais; não cria eventos sintéticos.
+ */
+export async function getReplacementReportOrder(order) {
+  if (!order?.id) throw new Error('Ordem de reposição inválida para o relatório.');
+
+  const pieceIds = [
+    order.original_piece?.id || order.original_piece_id,
+    order.replacement_piece?.id || order.replacement_piece_id,
+  ].filter(Boolean);
+
+  if (pieceIds.length === 0) {
+    throw new Error('A ordem não possui peça rastreável vinculada.');
+  }
+
+  const { data, error } = await supabase
+    .from('production_stage_readings')
+    .select(`
+      id, piece_id, tag_value, step_name, cell_name, station_name,
+      machine_name, operator, operator_name_snapshot, shift, status,
+      event_type, entry_type, traceability_type, notes, created_at
+    `)
+    .in('piece_id', pieceIds)
+    .order('created_at', { ascending: true })
+    .limit(1000);
+
+  if (error) {
+    throw new Error(`Não foi possível carregar a rastreabilidade do relatório: ${error.message}`);
+  }
+
+  return {
+    ...order,
+    traceability_readings: data || [],
+  };
+}
+
+/**
  * RPC: Solicita reposição para uma peça original.
  */
 export async function requestReplacement({ originalPieceId, reason, priority = 'high', notes = '' }) {
