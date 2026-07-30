@@ -9,6 +9,7 @@ import { Loader2, Save, Zap } from 'lucide-react';
 import { format } from 'date-fns';
 import { useCells } from '@/hooks/useCells';
 import { useAuth } from '@/lib/AuthContext';
+import { toTotalMinutes } from '@/lib/durationFormat';
 
 const REASONS = [
   'Falta de Material',
@@ -35,7 +36,8 @@ function buildInitialState(user) {
     shift: getCurrentShift(),
     cell: user?.cell || '',
     reason: 'Falta de Material',
-    downtime: '',
+    downtimeHours: '',
+    downtimeMinutes: '',
     operator: user?.role !== 'admin' ? (user?.name || '') : '',
     notes: '',
   };
@@ -71,7 +73,11 @@ export default function OccurrenceForm({ onSubmit, saving }) {
   // ─── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
-    await onSubmit({ ...data, downtime: Number(data.downtime) || 0 });
+    const totalMinutes = toTotalMinutes(data.downtimeHours, data.downtimeMinutes);
+    await onSubmit({
+      ...data,
+      downtime: totalMinutes,
+    });
 
     // Preservar contexto para o próximo lançamento
     setData((prev) => ({
@@ -133,7 +139,7 @@ export default function OccurrenceForm({ onSubmit, saving }) {
           </div>
         </div>
 
-        {/* Linha 2: Célula e Parada */}
+        {/* Linha 2: Célula e Tempo de Parada (Horas e Minutos) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label className="flex items-center gap-1.5 h-5">
@@ -155,16 +161,43 @@ export default function OccurrenceForm({ onSubmit, saving }) {
 
           <div className="space-y-2">
             <Label className="flex items-center gap-1.5 h-5">
-              <span>Parada (min)</span>
+              <span>Tempo de Parada</span>
             </Label>
-            <Input
-              type="number"
-              value={data.downtime}
-              onChange={(e) => set('downtime', e.target.value)}
-              placeholder="0"
-              required
-              className="ring-1 ring-destructive/30 focus:ring-destructive"
-            />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label htmlFor="downtime-hours" className="text-[10px] text-muted-foreground">Horas</Label>
+                <Input
+                  id="downtime-hours"
+                  type="number"
+                  min="0"
+                  value={data.downtimeHours}
+                  onChange={(e) => set('downtimeHours', e.target.value)}
+                  placeholder="0h"
+                  className="ring-1 ring-destructive/30 focus:ring-destructive"
+                />
+              </div>
+              <div>
+                <Label htmlFor="downtime-minutes" className="text-[10px] text-muted-foreground">Minutos (0-59)</Label>
+                <Input
+                  id="downtime-minutes"
+                  type="number"
+                  min="0"
+                  max="59"
+                  value={data.downtimeMinutes}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '') {
+                      set('downtimeMinutes', '');
+                    } else {
+                      const num = Math.min(59, Math.max(0, parseInt(val, 10) || 0));
+                      set('downtimeMinutes', num);
+                    }
+                  }}
+                  placeholder="0min"
+                  className="ring-1 ring-destructive/30 focus:ring-destructive"
+                />
+              </div>
+            </div>
           </div>
         </div>
 

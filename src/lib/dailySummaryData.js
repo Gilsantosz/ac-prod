@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
-import { normalizeProductionName } from '@/lib/productionStagePolicyService';
+import { getCanonicalCellKey } from '@/lib/productionStagePolicyService';
 
 const PAGE_SIZE = 1000;
 
@@ -59,7 +59,7 @@ export async function fetchProductionGoalsRange(fromDate, toDate = fromDate) {
     }
 
     const keyForGoal = (goal) => [
-      normalizeProductionName(goal.cell_name || goal.cell),
+      getCanonicalCellKey(goal.cell_name || goal.cell),
       String(goal.shift || '').trim(),
       String(goal.metric_unit || goal.unit || 'pieces').trim().toLowerCase(),
     ].join('||');

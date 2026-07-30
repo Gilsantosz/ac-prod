@@ -101,4 +101,25 @@ describe('buildDailySummary', () => {
       '3º Turno',
     ]);
   });
+
+  it('agrupa Fura, Furação, Furacao e Furadeira na mesma célula e une meta com produção', () => {
+    const goals = [
+      goal('Furação', '1º Turno', 'pieces', 1000, 1000),
+    ];
+    const entries = [
+      entry('Fura', '1º Turno', 300, { metric_unit: 'pieces', realized_quantity: 300 }),
+      entry('Furacao', '1º Turno', 250, { metric_unit: 'pieces', realized_quantity: 250 }),
+      entry('Furadeira', '1º Turno', 200, { metric_unit: 'pieces', realized_quantity: 200 }),
+    ];
+
+    const summary = buildDailySummary(entries, goals, {
+      activeCells: ['Furação'],
+      shifts: ['1º Turno'],
+    });
+
+    const row = summary.matrixByCell.find((r) => r.cell === 'Furação' || r.cell === 'Fura');
+    expect(row).toBeDefined();
+    expect(row.shifts['1º Turno'].target).toBe(1000);
+    expect(row.shifts['1º Turno'].realized).toBe(750);
+  });
 });

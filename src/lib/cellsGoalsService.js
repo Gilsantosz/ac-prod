@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
+import { getCanonicalCellKey } from '@/lib/productionStagePolicyService';
 
 /**
  * Service de gerenciamento de Células, Máquinas/Postos e Metas.
@@ -19,6 +20,7 @@ export async function getCells() {
     const sh = row.shift_hours || {};
     return {
       ...row,
+      name: String(row.name || '').trim().replace(/\s+/g, ' '),
       hoursShift1: Number(sh.shift1 ?? 8),
       hoursShift2: Number(sh.shift2 ?? 8),
       hoursShift3: Number(sh.shift3 ?? 8),
@@ -38,6 +40,7 @@ export async function getActiveCells() {
     const sh = row.shift_hours || {};
     return {
       ...row,
+      name: String(row.name || '').trim().replace(/\s+/g, ' '),
       hoursShift1: Number(sh.shift1 ?? 8),
       hoursShift2: Number(sh.shift2 ?? 8),
       hoursShift3: Number(sh.shift3 ?? 8),
@@ -46,8 +49,9 @@ export async function getActiveCells() {
 }
 
 export async function createCell(payload) {
+  const normalizedName = String(payload.name || '').trim().replace(/\s+/g, ' ');
   const dbPayload = {
-    name: payload.name,
+    name: normalizedName,
     description: payload.description ?? '',
     notes: payload.notes ?? '',
     active: payload.active !== false,
@@ -79,7 +83,7 @@ export async function updateCell(id, payload) {
   const currentShiftHours = current?.shift_hours || {};
   const dbPayload = {};
 
-  if ('name' in payload) dbPayload.name = payload.name;
+  if ('name' in payload) dbPayload.name = String(payload.name || '').trim().replace(/\s+/g, ' ');
   if ('description' in payload) dbPayload.description = payload.description ?? '';
   if ('notes' in payload) dbPayload.notes = payload.notes ?? '';
   if ('active' in payload) dbPayload.active = payload.active !== false;
@@ -279,7 +283,7 @@ function normalizeGoalKeyPart(value) {
 
 function productionGoalKey(goal) {
   return [
-    normalizeGoalKeyPart(goal.cell_name || goal.area_name),
+    getCanonicalCellKey(goal.cell_name || goal.area_name),
     normalizeGoalKeyPart(goal.shift),
     normalizeGoalKeyPart(goal.metric_unit),
   ].join('||');

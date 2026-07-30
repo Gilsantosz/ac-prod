@@ -1,13 +1,14 @@
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { drawBrandedPdfFooter, drawBrandedPdfHeader } from '@/lib/reportBranding';
+import { formatDuration } from '@/lib/durationFormat';
 
 // Exigências da Tabela de Ocorrências
 const COLS = [
   { key: 'shift', label: 'Turno' },
   { key: 'cell', label: 'Célula' },
   { key: 'reason', label: 'Motivo' },
-  { key: 'downtime', label: 'Minutos' },
+  { key: 'downtime', label: 'Tempo Parado' },
   { key: 'operator', label: 'Operador' },
 ];
 
@@ -28,13 +29,14 @@ export async function exportOccurrencesPdf(occurrences, dateStr, filterCell, fil
   const cellLabel = filterCell === 'all' ? 'Todas as células' : filterCell;
   const shiftLabel = filterShift === 'all' ? 'Todos os turnos' : filterShift;
   const totalDowntime = filtered.reduce((s, o) => s + (Number(o.downtime) || 0), 0);
+  const formattedTotalDowntime = formatDuration(totalDowntime);
 
   let y = await drawBrandedPdfHeader(doc, {
     title: 'Relatorio Diario de Ocorrencias e Gargalos',
     subtitle: `Data: ${niceDate} | Celula: ${cellLabel} | Turno: ${shiftLabel}`,
     summary: [
       { label: 'Total de paradas', value: filtered.length },
-      { label: 'Tempo total parado', value: `${totalDowntime} min` },
+      { label: 'Tempo total parado', value: formattedTotalDowntime },
     ],
   });
 
@@ -42,7 +44,7 @@ export async function exportOccurrencesPdf(occurrences, dateStr, filterCell, fil
   doc.setTextColor(20);
   doc.setFontSize(11);
   doc.text(
-    `Total de paradas: ${filtered.length}   ·   Tempo total parado: ${totalDowntime} min`,
+    `Total de paradas: ${filtered.length}   ·   Tempo total parado: ${formattedTotalDowntime}`,
     margin, y
   );
   y += 10;
@@ -77,7 +79,7 @@ export async function exportOccurrencesPdf(occurrences, dateStr, filterCell, fil
   doc.setFontSize(8);
   
   // Posições X das colunas
-  const xs = [14, 40, 70, 140, 160];
+  const xs = [14, 40, 70, 135, 165];
   
   doc.rect(margin, y - 5, 182, 7, 'F');
   COLS.forEach((c, i) => doc.text(c.label, xs[i], y));
@@ -109,7 +111,7 @@ export async function exportOccurrencesPdf(occurrences, dateStr, filterCell, fil
       doc.text(String(o.shift || '-'), xs[0], y);
       doc.text(String(o.cell || '-'), xs[1], y);
       doc.text(String(o.reason || '-').slice(0, 35), xs[2], y);
-      doc.text(`${o.downtime || 0} min`, xs[3], y);
+      doc.text(formatDuration(o.downtime), xs[3], y);
       doc.text(String(o.operator || '-').slice(0, 20), xs[4], y);
       y += 6;
     });

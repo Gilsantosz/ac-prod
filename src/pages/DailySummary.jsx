@@ -18,6 +18,8 @@ import {
 import { buildDailySummary } from '@/lib/dailySummary';
 import { fetchProductionEntriesRange, fetchProductionGoalsRange } from '@/lib/dailySummaryData';
 import { useCells } from '@/hooks/useCells';
+import { useProductionRealtimeSync } from '@/hooks/useProductionRealtimeSync';
+import { getCanonicalCellKey } from '@/lib/productionStagePolicyService';
 import SummaryKpis from '@/components/daily/SummaryKpis';
 import SummaryTable from '@/components/daily/SummaryTable';
 import DailyProductionMatrix from '@/components/daily/DailyProductionMatrix';
@@ -26,20 +28,32 @@ import DailySummaryCharts from '@/components/daily/DailySummaryCharts';
 import ExportDailyButton from '@/components/daily/ExportDailyButton';
 import CloseShiftButton from '@/components/daily/CloseShiftButton';
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
-const daysBefore = (date, amount) => {
-  const value = new Date(`${date}T12:00:00`);
+function getLocalDateStr(dateObj = new Date()) {
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function daysBefore(dateStr, amount) {
+  const parts = String(dateStr || '').split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return dateStr;
+  const value = new Date(parts[0], parts[1] - 1, parts[2]);
   value.setDate(value.getDate() - amount);
-  return value.toISOString().slice(0, 10);
-};
+  return getLocalDateStr(value);
+}
 
 export default function DailySummary() {
   const { user } = useAuth();
-  const [date, setDate] = useState(todayStr());
+  const [date, setDate] = useState(() => getLocalDateStr());
   const [selectedShifts, setSelectedShifts] = useState(['1º Turno', '2º Turno', '3º Turno']);
   const [selectedCells, setSelectedCells] = useState([]);
   const { activeCells } = useCells();
 
+  // Ativa sincronização em tempo real via Supabase Realtime
+  useProductionRealtimeSync({ enabled: true });
+
+  // 1. Snapshot produtivo do dia atual (Carregamento prioritário na abertura)
   const {
     data: entries = [],
     dataUpdatedAt: entriesUpdatedAt,
@@ -50,8 +64,9 @@ export default function DailySummary() {
     queryKey: ['production', date],
     queryFn: () => fetchProductionEntriesRange(date),
     initialData: [],
-    staleTime: 15_000,
-    refetchInterval: 60_000,
+    staleTime: 10_000,
+    refetchOnMount: 'always',
+    refetchInterval: 30_000, // Fallback a cada 30 segundos
   });
 
   const {
@@ -64,11 +79,15 @@ export default function DailySummary() {
     queryKey: ['productionDailyGoals', date],
     queryFn: () => fetchProductionGoalsRange(date),
     initialData: [],
-    staleTime: 15_000,
-    refetchInterval: 60_000,
+    staleTime: 10_000,
+    refetchOnMount: 'always',
+    refetchInterval: 30_000, // Fallback a cada 30 segundos
   });
 
+  // 2. Histórico de 7 dias (Carregado SOMENTE depois que os dados principais forem obtidos)
+  const isMainDataLoaded = !isFetchingEntries && !isFetchingGoals;
   const historyStart = useMemo(() => daysBefore(date, 6), [date]);
+
   const {
     data: historyEntries = [],
     dataUpdatedAt: historyUpdatedAt,
@@ -79,6 +98,7 @@ export default function DailySummary() {
     queryKey: ['daily-summary-history', historyStart, date],
     queryFn: () => fetchProductionEntriesRange(historyStart, date),
     initialData: [],
+    enabled: isMainDataLoaded,
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
@@ -90,6 +110,7 @@ export default function DailySummary() {
     queryKey: ['daily-summary-history-goals', historyStart, date],
     queryFn: () => fetchProductionGoalsRange(historyStart, date),
     initialData: [],
+    enabled: isMainDataLoaded,
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
@@ -119,14 +140,25 @@ export default function DailySummary() {
     return selectedCells.join(', ');
   }, [selectedCells, activeCells]);
 
+  const canonicalSelectedCells = useMemo(
+    () => new Set(selectedCells.map((c) => getCanonicalCellKey(c))),
+    [selectedCells]
+  );
+
   const filtered = useMemo(
-    () => entries.filter((e) => selectedShifts.includes(e.shift) && (selectedCells.length === 0 || selectedCells.includes(e.cell))),
-    [entries, selectedShifts, selectedCells]
+    () => entries.filter((e) =>
+      selectedShifts.includes(e.shift) &&
+      (canonicalSelectedCells.size === 0 || canonicalSelectedCells.has(getCanonicalCellKey(e.cell)))
+    ),
+    [entries, selectedShifts, canonicalSelectedCells]
   );
 
   const filteredGoals = useMemo(
-    () => goals.filter((goal) => selectedShifts.includes(goal.shift) && (selectedCells.length === 0 || selectedCells.includes(goal.cell_name || goal.cell))),
-    [goals, selectedShifts, selectedCells]
+    () => goals.filter((goal) =>
+      selectedShifts.includes(goal.shift) &&
+      (canonicalSelectedCells.size === 0 || canonicalSelectedCells.has(getCanonicalCellKey(goal.cell_name || goal.cell)))
+    ),
+    [goals, selectedShifts, canonicalSelectedCells]
   );
 
   const summaryCells = useMemo(
@@ -147,12 +179,12 @@ export default function DailySummary() {
       const dayEntries = historyEntries.filter((entry) =>
         entry.date === day
         && selectedShifts.includes(entry.shift)
-        && (selectedCells.length === 0 || selectedCells.includes(entry.cell))
+        && (canonicalSelectedCells.size === 0 || canonicalSelectedCells.has(getCanonicalCellKey(entry.cell)))
       );
       const dayGoals = historyGoals.filter((goal) =>
         goal.date === day
         && selectedShifts.includes(goal.shift)
-        && (selectedCells.length === 0 || selectedCells.includes(goal.cell_name || goal.cell))
+        && (canonicalSelectedCells.size === 0 || canonicalSelectedCells.has(getCanonicalCellKey(goal.cell_name || goal.cell)))
       );
       const daySummary = buildDailySummary(dayEntries, dayGoals, {
         activeCells: summaryCells,
@@ -169,7 +201,7 @@ export default function DailySummary() {
         realized,
       };
     });
-  }, [date, historyEntries, historyGoals, selectedShifts, selectedCells, summaryCells]);
+  }, [date, historyEntries, historyGoals, selectedShifts, canonicalSelectedCells, summaryCells]);
 
   const formattedDateString = useMemo(() => {
     const parts = date.split('-');
