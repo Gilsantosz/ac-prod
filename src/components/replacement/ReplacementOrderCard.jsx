@@ -2,10 +2,19 @@ import React, { useState, Fragment } from 'react';
 import { Link } from 'react-router-dom';
 import {
   RotateCcw, CheckCircle2, Play, Clock,
-  ChevronDown, ChevronUp, Box, ShieldAlert, ArrowRight, GitCommit, Layers
+  ChevronDown, ChevronUp, Box, ShieldAlert, ArrowRight, GitCommit, Layers,
+  Printer, FileText, Download, History
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
 import { REPLACEMENT_STATUS_LABELS, REPLACEMENT_PRIORITY_LABELS, formatStageName } from '@/lib/replacementService';
 
 export default function ReplacementOrderCard({
@@ -14,7 +23,12 @@ export default function ReplacementOrderCard({
   onRelease,
   onComplete,
   onCancel,
-  userPermissions = {}
+  userPermissions = {},
+  isSelected = false,
+  onToggleSelect = () => {},
+  onOpenLabelModal = () => {},
+  onOpenPdfReport = () => {},
+  onOpenHistoryModal = () => {}
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -63,10 +77,15 @@ export default function ReplacementOrderCard({
   );
 
   return (
-    <div className="bg-card border border-border/80 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all space-y-3">
+    <div className={`bg-card border ${isSelected ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-border/80'} rounded-2xl p-4 shadow-sm hover:shadow-md transition-all space-y-3`}>
       {/* Cabeçalho */}
       <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-border/40">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={onToggleSelect}
+            className="w-4 h-4 rounded-md border-border text-amber-500 focus:ring-amber-500"
+          />
           <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold">
             <RotateCcw className="w-4 h-4" />
           </div>
@@ -267,6 +286,50 @@ export default function ReplacementOrderCard({
             </Link>
           </Button>
         )}
+
+        {/* Novo Botão Imprimir com DropdownMenu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 text-xs font-bold border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 rounded-xl flex items-center gap-1.5 shadow-sm"
+            >
+              <Printer className="w-3.5 h-3.5 text-amber-500" />
+              Imprimir
+              <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56 rounded-2xl p-1.5 border-border shadow-xl text-xs">
+            <DropdownMenuItem onClick={() => onOpenPdfReport(order)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2">
+              <FileText className="w-4 h-4 text-blue-500" />
+              <span>Visualizar relatório</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onOpenPdfReport(order)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2">
+              <Download className="w-4 h-4 text-emerald-500" />
+              <span>Baixar relatório PDF</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onOpenLabelModal(order)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2">
+              <Printer className="w-4 h-4 text-amber-500" />
+              <span>Visualizar etiqueta</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onOpenLabelModal(order)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2 font-bold text-foreground">
+              <Printer className="w-4 h-4 text-amber-500" />
+              <span>Imprimir etiqueta</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onOpenLabelModal(order)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2">
+              <RotateCcw className="w-4 h-4 text-indigo-500" />
+              <span>Reimprimir etiqueta</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onOpenHistoryModal(order)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2 text-muted-foreground">
+              <History className="w-4 h-4 text-slate-500" />
+              <span>Consultar histórico de impressão</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         {canApprove && (
           <Button
             type="button"

@@ -2,10 +2,18 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { invalidateAllMesQueries } from '@/config/queryKeys';
 import {
-  RotateCcw, Filter, Search, CheckCircle2, RefreshCw
+  RotateCcw, Filter, Search, CheckCircle2, RefreshCw, Printer, FileText, Download,
+  History, Settings, CheckSquare, Square
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
 import {
   getReplacementKpis,
   releaseReplacement,
@@ -13,9 +21,14 @@ import {
   cancelReplacement
 } from '@/lib/replacementService';
 import { getCanonicalReplacementOrders } from '@/lib/replacementCanonicalService';
+import { generateReplacementPdfReport } from '@/lib/reports/replacementPdfReportService';
 import { useAuth } from '@/lib/AuthContext';
 import ReplacementOrderCard from '@/components/replacement/ReplacementOrderCard';
 import ReplacementApproveModal from '@/components/replacement/ReplacementApproveModal';
+import ReplacementLabelPreviewModal from '@/components/replacement/ReplacementLabelPreviewModal';
+import ReplacementBatchPrintModal from '@/components/replacement/ReplacementBatchPrintModal';
+import ReplacementHistoryModal from '@/components/replacement/ReplacementHistoryModal';
+import LabelTemplateConfigModal from '@/components/replacement/LabelTemplateConfigModal';
 import { toast } from 'sonner';
 
 export default function ReplacementPage() {
@@ -26,7 +39,16 @@ export default function ReplacementPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [search, setSearch] = useState('');
+  
+  // Modais
   const [approveOrderId, setApproveOrderId] = useState(null);
+  const [labelModalOrder, setLabelModalOrder] = useState(null);
+  const [showBatchModal, setShowBatchModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+
+  // Seleção Múltipla
+  const [selectedIds, setSelectedIds] = useState([]);
 
   // Permissões
   const userPermissions = {
@@ -49,7 +71,7 @@ export default function ReplacementPage() {
       status: statusFilter !== 'all' ? statusFilter : null,
       priority: priorityFilter !== 'all' ? priorityFilter : null,
       search: search.trim() || null,
-      limit: 50
+      limit: 100
     }),
     refetchInterval: 10000
   });
@@ -63,11 +85,30 @@ export default function ReplacementPage() {
     }
   });
 
+  // Ordens selecionadas
+  const selectedOrdersList = filteredOrders.filter(o => selectedIds.includes(o.id));
+  const approvedSelectedCount = selectedOrdersList.filter(o => ['approved', 'released', 'in_production', 'completed'].includes(o.status)).length;
+  const pendingSelectedCount = selectedOrdersList.length - approvedSelectedCount;
+
   const handleRefresh = () => {
     invalidateAllMesQueries(queryClient);
     refetchKpis();
     refetchOrders();
     toast.info('Dados de reposição atualizados.');
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedIds.length === filteredOrders.length && filteredOrders.length > 0) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredOrders.map(o => o.id));
+    }
+  };
+
+  const handleToggleSelect = (id) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
   };
 
   const handleRelease = async (order) => {
@@ -103,6 +144,56 @@ export default function ReplacementPage() {
     }
   };
 
+  // Exportação em PDF por Filtro
+  const handleExportFilteredPdf = async () => {
+    try {
+      await generateReplacementPdfReport({
+        orders: filteredOrders,
+        filters: { status: statusFilter, priority: priorityFilter, search },
+        reportType: 'filtered',
+        userName: user?.name || 'Operador MES'
+      });
+      toast.success('Relatório PDF das reposições filtradas gerado com sucesso.');
+    } catch (err) {
+      console.error('Erro ao gerar relatório PDF filtrado:', err);
+      toast.error('Falha ao exportar relatório PDF.');
+    }
+  };
+
+  // Exportação em PDF dos Selecionados
+  const handleExportSelectedPdf = async () => {
+    if (selectedOrdersList.length === 0) {
+      toast.error('Selecione ao menos uma ordem de reposição para exportar.');
+      return;
+    }
+    try {
+      await generateReplacementPdfReport({
+        orders: selectedOrdersList,
+        reportType: 'selected',
+        userName: user?.name || 'Operador MES'
+      });
+      toast.success('Relatório PDF das reposições selecionadas gerado com sucesso.');
+    } catch (err) {
+      console.error('Erro ao gerar relatório PDF selecionados:', err);
+      toast.error('Falha ao exportar relatório PDF.');
+    }
+  };
+
+  // Exportação de PDF Individual
+  const handleOpenSinglePdfReport = async (order) => {
+    try {
+      await generateReplacementPdfReport({
+        singleOrder: order,
+        reportType: 'individual',
+        userName: user?.name || 'Operador MES'
+      });
+      toast.success(`Relatório PDF da reposição ${order.replacement_code} gerado.`);
+    } catch (err) {
+      console.error('Erro ao gerar relatório individual:', err);
+      toast.error('Falha ao gerar relatório PDF.');
+    }
+  };
+
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
       {/* Cabeçalho */}
@@ -113,11 +204,78 @@ export default function ReplacementPage() {
             Módulo de Reposição MES
           </h1>
           <p className="text-xs md:text-sm text-muted-foreground mt-1">
-            Gestão transacional de peças reprovadas, ordens de reposição e rastreabilidade até a conclusão.
+            Gestão transacional de peças reprovadas, ordens de reposição, emissão de etiquetas e relatórios PDF.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Novo Botão Principal Imprimir / Exportar */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="sm"
+                className="h-10 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-md"
+              >
+                <Printer className="w-4 h-4" />
+                Imprimir / Exportar
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64 rounded-2xl p-1.5 border-border shadow-xl text-xs">
+              <DropdownMenuItem onClick={handleExportFilteredPdf} className="cursor-pointer rounded-xl flex items-center gap-2 py-2">
+                <FileText className="w-4 h-4 text-blue-500" />
+                <span>Relatório PDF das reposições filtradas</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={selectedOrdersList.length === 0}
+                onClick={handleExportSelectedPdf}
+                className="cursor-pointer rounded-xl flex items-center gap-2 py-2"
+              >
+                <FileText className="w-4 h-4 text-emerald-500" />
+                <span>Relatório PDF das reposições selecionadas</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  if (filteredOrders.length > 0) handleOpenSinglePdfReport(filteredOrders[0]);
+                }}
+                className="cursor-pointer rounded-xl flex items-center gap-2 py-2"
+              >
+                <Download className="w-4 h-4 text-indigo-500" />
+                <span>Relatório individual</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={selectedOrdersList.length === 0}
+                onClick={() => setShowBatchModal(true)}
+                className="cursor-pointer rounded-xl flex items-center gap-2 py-2 font-bold text-foreground"
+              >
+                <Printer className="w-4 h-4 text-amber-500" />
+                <span>Imprimir etiquetas selecionadas</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowBatchModal(true)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2">
+                <Printer className="w-4 h-4 text-amber-500" />
+                <span>Imprimir etiquetas por lote</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  if (filteredOrders.length > 0) setLabelModalOrder(filteredOrders[0]);
+                }}
+                className="cursor-pointer rounded-xl flex items-center gap-2 py-2"
+              >
+                <Printer className="w-4 h-4 text-slate-500" />
+                <span>Imprimir etiqueta individual</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setShowHistoryModal(true)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2">
+                <History className="w-4 h-4 text-purple-500" />
+                <span>Histórico de impressões e exportações</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowConfigModal(true)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2 text-muted-foreground">
+                <Settings className="w-4 h-4 text-slate-500" />
+                <span>Configurar modelos de etiqueta</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <Button
             variant="outline"
             size="sm"
@@ -245,6 +403,58 @@ export default function ReplacementPage() {
         </div>
       </div>
 
+      {/* BARRA DE SELEÇÃO EM LOTE */}
+      <div className="bg-secondary/40 border border-border/60 rounded-2xl p-3.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleToggleSelectAll}
+            className="h-8 text-xs font-bold flex items-center gap-1.5"
+          >
+            {selectedIds.length === filteredOrders.length && filteredOrders.length > 0 ? (
+              <CheckSquare className="w-4 h-4 text-amber-500" />
+            ) : (
+              <Square className="w-4 h-4 text-muted-foreground" />
+            )}
+            {selectedIds.length === filteredOrders.length && filteredOrders.length > 0
+              ? 'Limpar seleção'
+              : 'Selecionar todos os visíveis'}
+          </Button>
+
+          <span className="text-muted-foreground font-semibold">
+            <strong>{selectedIds.length}</strong> reposições selecionadas
+            {selectedIds.length > 0 && (
+              <span className="text-[11px] ml-1 font-normal">
+                ({approvedSelectedCount} aprovadas e {pendingSelectedCount} aguardando aprovação)
+              </span>
+            )}
+          </span>
+        </div>
+
+        {selectedIds.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportSelectedPdf}
+              className="h-8 rounded-xl text-xs font-bold border-border/60 flex items-center gap-1.5"
+            >
+              <FileText className="w-3.5 h-3.5 text-blue-500" />
+              Exportar Selecionados (PDF)
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setShowBatchModal(true)}
+              className="h-8 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white flex items-center gap-1.5 shadow"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              Imprimir Etiquetas ({approvedSelectedCount})
+            </Button>
+          </div>
+        )}
+      </div>
+
       {/* Lista de Ordens de Reposição */}
       {isLoading ? (
         <div className="py-12 text-center space-y-3">
@@ -272,6 +482,11 @@ export default function ReplacementPage() {
               onComplete={handleComplete}
               onCancel={handleCancel}
               userPermissions={userPermissions}
+              isSelected={selectedIds.includes(order.id)}
+              onToggleSelect={() => handleToggleSelect(order.id)}
+              onOpenLabelModal={(ord) => setLabelModalOrder(ord)}
+              onOpenPdfReport={handleOpenSinglePdfReport}
+              onOpenHistoryModal={() => setShowHistoryModal(true)}
             />
           ))}
         </div>
@@ -284,6 +499,44 @@ export default function ReplacementPage() {
           onOpenChange={(open) => !open && setApproveOrderId(null)}
           orderId={approveOrderId}
           onApproved={handleRefresh}
+        />
+      )}
+
+      {/* Modal de Pré-visualização de Etiqueta Térmica */}
+      {labelModalOrder && (
+        <ReplacementLabelPreviewModal
+          open={!!labelModalOrder}
+          onOpenChange={(open) => !open && setLabelModalOrder(null)}
+          order={labelModalOrder}
+          userPermissions={userPermissions}
+          onPrinted={handleRefresh}
+        />
+      )}
+
+      {/* Modal de Impressão e Exportação em Lote */}
+      {showBatchModal && (
+        <ReplacementBatchPrintModal
+          open={showBatchModal}
+          onOpenChange={setShowBatchModal}
+          selectedOrders={selectedOrdersList.length > 0 ? selectedOrdersList : filteredOrders}
+          userPermissions={userPermissions}
+          onBatchComplete={handleRefresh}
+        />
+      )}
+
+      {/* Modal de Histórico de Impressões e Exportações */}
+      {showHistoryModal && (
+        <ReplacementHistoryModal
+          open={showHistoryModal}
+          onOpenChange={setShowHistoryModal}
+        />
+      )}
+
+      {/* Modal de Configuração de Modelos de Etiqueta */}
+      {showConfigModal && (
+        <LabelTemplateConfigModal
+          open={showConfigModal}
+          onOpenChange={setShowConfigModal}
         />
       )}
     </div>
