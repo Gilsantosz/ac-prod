@@ -1,6 +1,6 @@
 /**
  * AC.Prod MES — Serviço Profissional de Relatórios PDF de Reposição Industrial
- * Suporte a Relatórios Consolidados, Filtrados, Selecionados e Individuais com Rastreabilidade de 13 Passos.
+ * Layout Responsivo, Sem Sobreposição de Texto, com Medidas e Rastreabilidade Completa.
  */
 
 import { jsPDF } from 'jspdf';
@@ -18,6 +18,30 @@ export function generateReportCode() {
   const dateStr = format(new Date(), 'yyyyMMdd');
   const randomHex = Math.floor(Math.random() * 899999 + 100000);
   return `RPR-${dateStr}-${randomHex}`;
+}
+
+/**
+ * Formata as dimensões da peça em mm de maneira legível (Ex: 952.5 × 80 × 15 mm)
+ */
+function formatDimensions(orig) {
+  if (!orig) return '';
+  const l = orig.length || orig.comprimento || 0;
+  const w = orig.width || orig.largura || 0;
+  const t = orig.thickness || orig.espessura || 18;
+  if (!l && !w) return '';
+  return `${l} × ${w} × ${t} mm`;
+}
+
+/**
+ * Sanitiza o texto eliminando caracteres unicode não suportados pelo jsPDF (como setas ➔)
+ */
+function sanitizePdfText(str) {
+  if (!str) return '—';
+  return String(str)
+    .replace(/➔/g, '->')
+    .replace(/➜/g, '->')
+    .replace(/➝/g, '->')
+    .replace(/—/g, '-');
 }
 
 /**
@@ -43,7 +67,7 @@ export async function generateReplacementPdfReport({
 
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 14;
+  const margin = 10;
 
   // 1. Cabeçalho com marca oficial Leo Flow / Leo Madeiras
   let currentY = await drawBrandedPdfHeader(doc, {
@@ -59,12 +83,17 @@ export async function generateReplacementPdfReport({
   currentY += 4;
 
   if (isIndividual && singleOrder) {
+    // ==========================================
+    // SEÇÃO INDIVIDUAL: DETALHAMENTO & LINHA DO TEMPO
+    // ==========================================
     const order = singleOrder;
     const orig = order.original_piece || {};
     const repl = order.replacement_piece || {};
 
-    // Banner da Orientação Técnica Promob
-    const orientingHeader = formatPieceOrientingHeader(orig);
+    const dimsStr = formatDimensions(orig);
+    const orientingHeader = sanitizePdfText(formatPieceOrientingHeader(orig));
+
+    // Banner de Orientação Técnica Promob
     doc.setFillColor(239, 246, 255);
     doc.setDrawColor(191, 219, 254);
     doc.roundedRect(margin, currentY, pageWidth - margin * 2, 14, 2, 2, 'FD');
@@ -89,13 +118,13 @@ export async function generateReplacementPdfReport({
     const fields = [
       ['Solicitação:', order.replacement_code || 'N/A', 'Status Atual:', REPLACEMENT_STATUS_LABELS[order.status]?.label || order.status],
       ['Prioridade:', REPLACEMENT_PRIORITY_LABELS[order.priority]?.label || order.priority, 'Data Solicitação:', order.created_at ? format(new Date(order.created_at), 'dd/MM/yyyy HH:mm') : 'N/A'],
-      ['Descrição do Produto:', orig.piece_name || orig.description || formatPieceOrientingHeader(orig), 'Material / Cor:', `${orig.material || 'MDF'} — ${orig.color || 'Padrão'}`],
-      ['Motivo / Defeito:', order.defect_name || order.reason || 'N/A', 'Célula de Origem:', order.origin_cell_name || 'N/A'],
-      ['Etapa Reprovada:', formatStageName(order.rejection_stage), 'Próxima Célula:', formatStageName(order.destination_cell_name || 'Corte')],
-      ['Lote Geral:', order.lot_code || orig.general_lot_code || 'N/A', 'Lote Cliente / Pedido:', order.order_number || orig.order_number || 'N/A'],
-      ['Cliente:', order.customer_name || orig.customer_name || 'N/A', 'Ambiente / Módulo:', order.environment_name || orig.environment_name || 'N/A'],
+      ['Descrição do Produto:', orig.piece_name || orig.description || 'N/A', 'Medidas (C x L x E):', dimsStr || 'N/A'],
+      ['Material / Cor:', `${orig.material || 'MDF'} - ${orig.color || 'Padrão'}`, 'Motivo / Defeito:', order.defect_name || order.reason || 'N/A'],
+      ['Célula de Origem:', order.origin_cell_name || 'N/A', 'Próxima Célula:', formatStageName(order.destination_cell_name || 'Corte')],
+      ['Etapa Reprovada:', formatStageName(order.rejection_stage), 'Lote Geral:', order.lot_code || orig.general_lot_code || 'N/A'],
+      ['Lote Cliente / Pedido:', order.order_number || orig.order_number || 'N/A', 'Cliente:', order.customer_name || orig.customer_name || 'N/A'],
       ['Código Peça Original:', orig.piece_code || 'N/A', 'Rastreio Substituta:', repl.traceability_code || repl.piece_uid || `${orig.piece_code || '0000'}-REP-R01`],
-      ['Dimensões (C x L x E):', `${orig.length || 0} x ${orig.width || 0} x ${orig.thickness || 18} mm`, 'Rota Reposição:', order.route_steps ? order.route_steps.join(' ➔ ') : 'Corte']
+      ['Ambiente / Módulo:', order.environment_name || orig.environment_name || 'N/A', 'Rota Reposição:', order.route_steps ? sanitizePdfText(order.route_steps.join(' -> ')) : 'Corte']
     ];
 
     doc.setFontSize(7.5);
@@ -105,26 +134,30 @@ export async function generateReplacementPdfReport({
       doc.setDrawColor(226, 232, 240);
       doc.line(margin, currentY + 6, pageWidth - margin, currentY + 6);
 
-      doc.setFont(undefined, 'bold');
-      doc.setTextColor(71, 85, 105);
-      doc.text(f1, margin + 2, currentY + 4.5);
-      doc.setFont(undefined, 'normal');
-      doc.setTextColor(15, 23, 42);
-      doc.text(String(v1).slice(0, 45), margin + 42, currentY + 4.5);
+      const colHalf = (pageWidth - margin * 2) / 2;
 
+      // Coluna 1
       doc.setFont(undefined, 'bold');
       doc.setTextColor(71, 85, 105);
-      doc.text(f2, pageWidth / 2 + 2, currentY + 4.5);
+      doc.text(f1, margin + 2, currentY + 4.2);
       doc.setFont(undefined, 'normal');
       doc.setTextColor(15, 23, 42);
-      doc.text(String(v2).slice(0, 45), pageWidth / 2 + 42, currentY + 4.5);
+      doc.text(sanitizePdfText(v1), margin + 40, currentY + 4.2, { maxWidth: colHalf - 42 });
+
+      // Coluna 2
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(71, 85, 105);
+      doc.text(f2, margin + colHalf + 2, currentY + 4.2);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(15, 23, 42);
+      doc.text(sanitizePdfText(v2), margin + colHalf + 40, currentY + 4.2, { maxWidth: colHalf - 42 });
 
       currentY += 6.5;
     });
 
     currentY += 6;
 
-    // Linha do Tempo de 13 Etapas da Rastreabilidade
+    // Linha do Tempo de Rastreabilidade (13 Etapas)
     doc.setFontSize(9);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(15, 23, 42);
@@ -180,8 +213,7 @@ export async function generateReplacementPdfReport({
 
       doc.setFont(undefined, 'normal');
       doc.setTextColor(71, 85, 105);
-      const shortDesc = s.desc.length > 55 ? s.desc.slice(0, 52) + '...' : s.desc;
-      doc.text(shortDesc, margin + 65, currentY + 4);
+      doc.text(sanitizePdfText(s.desc), margin + 65, currentY + 4, { maxWidth: pageWidth - margin * 2 - 105 });
 
       doc.text(s.date ? format(new Date(s.date), 'dd/MM/yy HH:mm') : '—', pageWidth - margin - 35, currentY + 4);
 
@@ -190,7 +222,7 @@ export async function generateReplacementPdfReport({
 
   } else {
     // ==========================================
-    // SEÇÃO CONSOLIDADA: TABELA COMPLETA COM DESCRIÇÃO DO PRODUTO
+    // SEÇÃO CONSOLIDADA: TABELA COMPLETA COM LARGURAS RÍGIDAS E MULTILINHA
     // ==========================================
     const totalCount = targetOrders.length;
     const requestedCount = targetOrders.filter(o => o.status === 'requested').length;
@@ -201,87 +233,129 @@ export async function generateReplacementPdfReport({
     // Resumo de KPIs em caixa destacada
     doc.setFillColor(248, 250, 252);
     doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(margin, currentY, pageWidth - margin * 2, 12, 2, 2, 'FD');
+    doc.roundedRect(margin, currentY, pageWidth - margin * 2, 11, 2, 2, 'FD');
 
     doc.setFontSize(8);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(15, 23, 42);
-    doc.text(`Total: ${totalCount}  |  Solicitadas: ${requestedCount}  |  Aprovadas: ${approvedCount}  |  Em Produção: ${inProdCount}  |  Concluídas: ${completedCount}`, margin + 4, currentY + 7.5);
+    doc.text(
+      `Total: ${totalCount}  |  Solicitadas: ${requestedCount}  |  Aprovadas: ${approvedCount}  |  Em Produção: ${inProdCount}  |  Concluídas: ${completedCount}`,
+      margin + 4,
+      currentY + 7
+    );
 
-    currentY += 16;
+    currentY += 15;
 
-    // Tabela Consolidada (Cabeçalho com Descrição do Produto)
+    // Definição das colunas com larguras estritas (Printable width em A4 Landscape = 277mm)
+    // Margem: 10mm. Largura útil total = 277mm
+    const columns = [
+      { name: 'Código Rep.', width: 26 },         // Col 0: 26mm (x: 10)
+      { name: 'Status', width: 18 },              // Col 1: 18mm (x: 36)
+      { name: 'Data', width: 14 },                // Col 2: 14mm (x: 54)
+      { name: 'Descrição do Produto & Medidas', width: 85 }, // Col 3: 85mm (x: 68) -> ESPAÇO AMPLO!
+      { name: 'Rastreio Substituta', width: 32 },  // Col 4: 32mm (x: 153)
+      { name: 'Lote / Cliente', width: 34 },       // Col 5: 34mm (x: 185)
+      { name: 'Defeito', width: 30 },             // Col 6: 30mm (x: 219)
+      { name: 'Origem -> Destino', width: 28 }     // Col 7: 28mm (x: 249)
+    ];
+
+    // Calcular posições X
+    let currentX = margin;
+    columns.forEach(col => {
+      col.x = currentX;
+      currentX += col.width;
+    });
+
+    // Cabeçalho da Tabela
     doc.setFillColor(15, 23, 42);
-    doc.rect(margin, currentY, pageWidth - margin * 2, 6, 'F');
+    doc.rect(margin, currentY, pageWidth - margin * 2, 7, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(7);
     doc.setFont(undefined, 'bold');
 
-    // Posições X das Colunas no documento Landscape (297 mm total, 269 mm útil)
-    const colX = [
-      margin + 2,      // 0: Código Rep (24mm)
-      margin + 26,     // 1: Status (18mm)
-      margin + 44,     // 2: Data (14mm)
-      margin + 58,     // 3: Cód. Peça (20mm)
-      margin + 78,     // 4: DESCRIÇÃO DO PRODUTO (70mm)
-      margin + 148,    // 5: Rastreio Substituta (26mm)
-      margin + 174,    // 6: Lote / Cliente (32mm)
-      margin + 206,    // 7: Defeito (28mm)
-      margin + 234     // 8: Origem ➔ Destino (35mm)
-    ];
+    columns.forEach(col => {
+      doc.text(col.name, col.x + 1.5, currentY + 4.8, { maxWidth: col.width - 2 });
+    });
 
-    doc.text('Código Rep.', colX[0], currentY + 4.5);
-    doc.text('Status', colX[1], currentY + 4.5);
-    doc.text('Data', colX[2], currentY + 4.5);
-    doc.text('Cód. Peça', colX[3], currentY + 4.5);
-    doc.text('Descrição do Produto (Promob)', colX[4], currentY + 4.5);
-    doc.text('Rastreio Substituta', colX[5], currentY + 4.5);
-    doc.text('Lote / Cliente', colX[6], currentY + 4.5);
-    doc.text('Motivo / Defeito', colX[7], currentY + 4.5);
-    doc.text('Origem ➔ Destino', colX[8], currentY + 4.5);
+    currentY += 7;
 
-    currentY += 6;
-
+    // Linhas da Tabela (Cada linha possui 9mm de altura para acomodar 2 linhas de texto na descrição do produto)
     doc.setFontSize(6.5);
+
     targetOrders.forEach((o, idx) => {
-      if (currentY > pageHeight - 20) {
+      const rowHeight = 9.5;
+
+      if (currentY + rowHeight > pageHeight - 15) {
         doc.addPage();
-        currentY = 20;
+        currentY = 15;
+
+        // Repetir Cabeçalho na Nova Página
+        doc.setFillColor(15, 23, 42);
+        doc.rect(margin, currentY, pageWidth - margin * 2, 7, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(7);
+        doc.setFont(undefined, 'bold');
+        columns.forEach(col => {
+          doc.text(col.name, col.x + 1.5, currentY + 4.8, { maxWidth: col.width - 2 });
+        });
+        currentY += 7;
+        doc.setFontSize(6.5);
       }
 
       const orig = o.original_piece || {};
       const repl = o.replacement_piece || {};
-      const productDesc = orig.piece_name || orig.description || formatPieceOrientingHeader(orig);
+      const dims = formatDimensions(orig);
+      const pieceName = orig.piece_name || orig.description || orig.piece_code || 'Peça Reposta';
 
+      // Fundo Zebrado
       doc.setFillColor(idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 252);
-      doc.rect(margin, currentY, pageWidth - margin * 2, 6, 'F');
-      doc.setDrawColor(241, 245, 249);
-      doc.line(margin, currentY + 6, pageWidth - margin, currentY + 6);
+      doc.rect(margin, currentY, pageWidth - margin * 2, rowHeight, 'F');
+      doc.setDrawColor(226, 232, 240);
+      doc.line(margin, currentY + rowHeight, pageWidth - margin, currentY + rowHeight);
 
+      // Coluna 0: Código Rep.
       doc.setFont(undefined, 'bold');
       doc.setTextColor(15, 23, 42);
-      doc.text(o.replacement_code || 'N/A', colX[0], currentY + 4.2);
+      doc.text(o.replacement_code || 'N/A', columns[0].x + 1.5, currentY + 4, { maxWidth: columns[0].width - 2 });
 
+      // Coluna 1: Status
       doc.setFont(undefined, 'normal');
       doc.setTextColor(71, 85, 105);
-      doc.text(REPLACEMENT_STATUS_LABELS[o.status]?.label || o.status, colX[1], currentY + 4.2);
-      doc.text(o.created_at ? format(new Date(o.created_at), 'dd/MM/yy') : '—', colX[2], currentY + 4.2);
-      doc.text((orig.piece_code || 'N/A').slice(0, 12), colX[3], currentY + 4.2);
+      doc.text(REPLACEMENT_STATUS_LABELS[o.status]?.label || o.status, columns[1].x + 1.5, currentY + 4, { maxWidth: columns[1].width - 2 });
 
-      // EXIBIÇÃO DA DESCRIÇÃO DO PRODUTO COMPLETA
+      // Coluna 2: Data
+      doc.text(o.created_at ? format(new Date(o.created_at), 'dd/MM/yy') : '—', columns[2].x + 1.5, currentY + 4, { maxWidth: columns[2].width - 2 });
+
+      // Coluna 3: DESCRIÇÃO DO PRODUTO & MEDIDAS (2 Linhas completas, sem sobreposição)
       doc.setFont(undefined, 'bold');
       doc.setTextColor(15, 23, 42);
-      const formattedProductDesc = productDesc.length > 58 ? productDesc.slice(0, 55) + '...' : productDesc;
-      doc.text(formattedProductDesc, colX[4], currentY + 4.2);
+      doc.text(sanitizePdfText(pieceName), columns[3].x + 1.5, currentY + 3.8, { maxWidth: columns[3].width - 3 });
 
       doc.setFont(undefined, 'normal');
-      doc.setTextColor(71, 85, 105);
-      doc.text((repl.traceability_code || `${orig.piece_code || '0000'}-REP-R01`).slice(0, 16), colX[5], currentY + 4.2);
-      doc.text(`${o.lot_code || orig.general_lot_code || '—'} / ${o.order_number || orig.order_number || '—'}`.slice(0, 20), colX[6], currentY + 4.2);
-      doc.text((o.defect_name || o.reason || '—').slice(0, 18), colX[7], currentY + 4.2);
-      doc.text(`${o.origin_cell_name || 'Origem'} ➔ ${formatStageName(o.destination_cell_name || 'Corte')}`, colX[8], currentY + 4.2);
+      doc.setTextColor(100, 116, 139);
+      const subInfo = [dims, orig.material || 'MDF', orig.color || ''].filter(Boolean).join(' - ');
+      doc.text(sanitizePdfText(subInfo || 'Medidas não especificadas'), columns[3].x + 1.5, currentY + 7.5, { maxWidth: columns[3].width - 3 });
 
-      currentY += 6;
+      // Coluna 4: Rastreio Substituta
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(15, 23, 42);
+      const traceCode = repl.traceability_code || repl.piece_uid || `${orig.piece_code || '0000'}-REP-R01`;
+      doc.text(sanitizePdfText(traceCode), columns[4].x + 1.5, currentY + 5, { maxWidth: columns[4].width - 2 });
+
+      // Coluna 5: Lote / Cliente
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(71, 85, 105);
+      const lotCustomer = `${o.lot_code || orig.general_lot_code || '—'} / ${o.order_number || orig.order_number || '—'}`;
+      doc.text(sanitizePdfText(lotCustomer), columns[5].x + 1.5, currentY + 5, { maxWidth: columns[5].width - 2 });
+
+      // Coluna 6: Motivo / Defeito
+      doc.text(sanitizePdfText(o.defect_name || o.reason || '—'), columns[6].x + 1.5, currentY + 5, { maxWidth: columns[6].width - 2 });
+
+      // Coluna 7: Origem -> Destino
+      const routeText = `${o.origin_cell_name || 'Origem'} -> ${formatStageName(o.destination_cell_name || 'Corte')}`;
+      doc.text(sanitizePdfText(routeText), columns[7].x + 1.5, currentY + 5, { maxWidth: columns[7].width - 2 });
+
+      currentY += rowHeight;
     });
   }
 
