@@ -1,7 +1,8 @@
 import { useDeferredValue, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, Filter, CheckCircle2, Plus, ChevronDown, ChevronUp, FileText,
-  AlertTriangle, Loader2, RefreshCw
+  AlertTriangle, Loader2, RefreshCw, Layers
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -276,6 +277,19 @@ export default function NonconformitiesListTab({ userPermissions = {} }) {
                   </p>
 
                   <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      asChild
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs font-bold rounded-xl flex items-center gap-1.5 border-border/60"
+                    >
+                      <Link to={`/coleta?code=${encodeURIComponent(nc.piece_uid || nc.piece_code || nc.piece_id || nc.nc_code)}`}>
+                        <Layers className="w-3.5 h-3.5 text-[#2d9c4a]" />
+                        Rastreabilidade
+                      </Link>
+                    </Button>
+
                     {userPermissions.manage_quality && (
                       <Button
                         type="button"

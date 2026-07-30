@@ -1,7 +1,8 @@
 import React, { useState, Fragment } from 'react';
+import { Link } from 'react-router-dom';
 import {
   RotateCcw, CheckCircle2, Play, Clock,
-  ChevronDown, ChevronUp, Box, ShieldAlert, ArrowRight, GitCommit
+  ChevronDown, ChevronUp, Box, ShieldAlert, ArrowRight, GitCommit, Layers
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -252,6 +253,20 @@ export default function ReplacementOrderCard({
 
       {/* Ações da Ordem conforme perfil */}
       <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-border/40">
+        {originalPieceUid && (
+          <Button
+            type="button"
+            asChild
+            variant="outline"
+            size="sm"
+            className="h-9 text-xs font-bold border-border/60 hover:bg-secondary/40 text-foreground rounded-xl flex items-center gap-1.5"
+          >
+            <Link to={`/coleta?code=${encodeURIComponent(originalPieceUid)}`}>
+              <Layers className="w-3.5 h-3.5 text-[#2d9c4a]" />
+              Rastreabilidade
+            </Link>
+          </Button>
+        )}
         {canApprove && (
           <Button
             type="button"

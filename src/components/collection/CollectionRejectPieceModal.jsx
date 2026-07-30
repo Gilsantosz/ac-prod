@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { getDefectCatalog } from '@/lib/qualityService';
+import { formatPieceOrientingHeader } from '@/lib/pieceFormat';
 
 const FALLBACK_REASONS = [
   { id: '1', name: 'MDF riscado', six_m_category: 'Material' },
@@ -84,10 +85,13 @@ export default function CollectionRejectPieceModal({
         </DialogHeader>
 
         {piece && (
-          <div className="bg-secondary/40 p-3 rounded-xl border border-border/40 text-xs space-y-1">
+          <div className="bg-secondary/40 p-3 rounded-xl border border-border/40 text-xs space-y-1.5">
             <p className="font-bold text-foreground font-mono">UID: {piece.piece_uid || piece.traceability_code}</p>
             <p className="text-muted-foreground">Nome: <span className="text-foreground font-semibold">{piece.piece_name || 'N/A'}</span></p>
             <p className="text-muted-foreground">Lote: <span className="text-foreground font-semibold">{piece.lot_code || 'LOTE-N/A'}</span></p>
+            <div className="bg-[#00522d]/10 border border-[#00522d]/30 p-2 rounded-lg text-[11px] font-mono font-bold text-foreground mt-1">
+              {formatPieceOrientingHeader(piece)}
+            </div>
           </div>
         )}
 
