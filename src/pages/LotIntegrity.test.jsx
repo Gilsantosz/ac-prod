@@ -129,4 +129,54 @@ describe('buildEffectiveLotIntegrity', () => {
       'packaging',
     ]);
   });
+
+  it('subtrai a peça aprovada enquanto a reposição estiver aberta sem contar a substituta em dobro', () => {
+    const result = buildEffectiveLotIntegrity({
+      clientLot: {
+        lot_id: 'lot-replacement',
+        total_pieces: 40,
+        stages: [
+          {
+            stage_code: 'cut',
+            stage_label: 'Corte',
+            stage_order: 1,
+            required_pieces: 40,
+            completed_pieces: 39,
+            replacement_pending_pieces: 1,
+            remaining_pieces: 1,
+            traceable_collection_required: true,
+          },
+        ],
+      },
+      lotPieces: [
+        {
+          id: 'original',
+          status: 'rejected',
+          replacement_status: 'requested',
+          is_replacement: false,
+        },
+        {
+          id: 'substitute',
+          status: 'in_progress',
+          is_replacement: true,
+          original_piece_id: 'original',
+        },
+      ],
+      integrityData: {
+        total_pieces: 40,
+        approved_pieces: 39,
+        pending_pieces: 1,
+        replacement_pieces: 1,
+        blocked_pieces: 0,
+        rework_pieces: 0,
+        has_open_replacements: true,
+      },
+    });
+
+    expect(result.total_pieces).toBe(40);
+    expect(result.approved_pieces).toBe(39);
+    expect(result.pending_pieces).toBe(1);
+    expect(result.replacement_pieces).toBe(1);
+    expect(result.can_close).toBe(false);
+  });
 });

@@ -1,9 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   REPLACEMENT_STATUS_LABELS,
   REPLACEMENT_PRIORITY_LABELS,
-  enrichReplacementOrderData
+  enrichReplacementOrderData,
+  getReplacementReportOrder,
 } from '../replacementService';
+import { supabase } from '@/lib/supabaseClient';
 
 describe('replacementService', () => {
   it('deve possuir todos os rótulos e estilos para a máquina de estados técnica', () => {
@@ -52,4 +54,27 @@ describe('replacementService', () => {
     expect(order.order_number).toBe('143352');
   });
 
+  it('deve carregar a rastreabilidade física da original e da substituta para o PDF', async () => {
+    const readings = [
+      { id: 'read-1', piece_id: 'piece-1', step_name: 'cut', status: 'approved' },
+      { id: 'read-2', piece_id: 'piece-2', step_name: 'edge', status: 'approved' },
+    ];
+    const limit = vi.fn().mockResolvedValue({ data: readings, error: null });
+    const order = vi.fn(() => ({ limit }));
+    const inFilter = vi.fn(() => ({ order }));
+    const select = vi.fn(() => ({ in: inFilter }));
+    const from = vi.spyOn(supabase, 'from').mockReturnValue({ select });
+
+    const result = await getReplacementReportOrder({
+      id: 'replacement-1',
+      original_piece_id: 'piece-1',
+      replacement_piece_id: 'piece-2',
+      original_piece: { id: 'piece-1' },
+      replacement_piece: { id: 'piece-2' },
+    });
+
+    expect(from).toHaveBeenCalledWith('production_stage_readings');
+    expect(inFilter).toHaveBeenCalledWith('piece_id', ['piece-1', 'piece-2']);
+    expect(result.traceability_readings).toEqual(readings);
+  });
 });
