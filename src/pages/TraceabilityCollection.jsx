@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { RadioTower, ScanLine } from 'lucide-react';
 import { toast } from 'sonner';
@@ -108,6 +109,16 @@ export default function TraceabilityCollection({ embedded = false }) {
   const queryClient = useQueryClient();
   const [mode, setMode] = useState('scanner');
   
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlPieceCode = searchParams.get('code') || searchParams.get('piece') || searchParams.get('q') || searchParams.get('openTraceability');
+
+  useEffect(() => {
+    if (urlPieceCode) {
+      setTraceabilityCodeForDrawer(urlPieceCode);
+      setTraceabilityOpen(true);
+    }
+  }, [urlPieceCode]);
+
   // Estados para as duas colunas operacionais da célula
   const [selectedPiece, setSelectedPiece] = useState(null);
   const [selectedPieceEvents, setSelectedPieceEvents] = useState([]);

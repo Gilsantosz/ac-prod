@@ -1,7 +1,8 @@
-import { Layers, User, Clock, RefreshCw, AlertOctagon, HelpCircle } from 'lucide-react';
+import { Layers, User, Clock, RefreshCw, AlertOctagon, HelpCircle, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { formatPieceOrientingHeader } from '@/lib/pieceFormat';
 import PieceProductionFlow from './PieceProductionFlow';
 
 export default function CollectionPieceDetailPanel({
@@ -90,6 +91,19 @@ export default function CollectionPieceDetailPanel({
         >
           <RefreshCw className="w-3.5 h-3.5" />
         </Button>
+      </div>
+
+      {/* Orientação Técnica Completa da Peça */}
+      <div className="bg-[#00522d]/10 dark:bg-[#00522d]/25 border border-[#00522d]/30 p-3 rounded-xl text-xs font-mono font-bold text-foreground leading-relaxed flex items-start gap-2 shadow-xs">
+        <Tag className="w-4 h-4 text-[#2d9c4a] shrink-0 mt-0.5" />
+        <div>
+          <span className="text-[10px] uppercase tracking-wider font-extrabold text-[#2d9c4a] block mb-0.5 font-sans">
+            Orientação Técnica da Peça
+          </span>
+          <p className="text-[11px] font-extrabold text-foreground leading-snug">
+            {formatPieceOrientingHeader(piece)}
+          </p>
+        </div>
       </div>
 
       {/* 2. Informações Básicas de Rastreabilidade */}

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabaseClient';
+import { formatPieceOrientingHeader } from '@/lib/pieceFormat';
 import {
   Dialog,
   DialogContent,
@@ -979,7 +980,7 @@ export default function OperationalAlertsPanel() {
             <div className="space-y-4 py-2 text-foreground">
               {/* Seção 1: Dados da Peça */}
               {alertDetails.piece && (
-                <div className="bg-slate-50 dark:bg-slate-900/40 border border-border/40 rounded-xl p-3.5 space-y-1">
+                <div className="bg-slate-50 dark:bg-slate-900/40 border border-border/40 rounded-xl p-3.5 space-y-2">
                   <h4 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Peça / Kit</h4>
                   <div className="flex items-start justify-between gap-2">
                     <div>
@@ -991,6 +992,10 @@ export default function OperationalAlertsPanel() {
                         {alertDetails.piece.material}
                       </Badge>
                     )}
+                  </div>
+                  {/* Banner Orientativo Completo */}
+                  <div className="bg-emerald-500/10 border border-emerald-500/30 p-2.5 rounded-lg text-[11px] font-mono font-bold text-emerald-800 dark:text-emerald-300 leading-snug">
+                    {formatPieceOrientingHeader(alertDetails.piece)}
                   </div>
                 </div>
               )}
@@ -1070,11 +1075,11 @@ export default function OperationalAlertsPanel() {
             {alertDetails?.piece?.piece_uid && (
               <Button
                 asChild
-                variant="outline"
-                className="gap-1.5 text-xs h-9"
+                variant="default"
+                className="gap-1.5 text-xs h-9 bg-[#00522d] hover:bg-[#004022] text-white font-bold rounded-xl"
               >
-                <Link to={`/rastreabilidade?tab=search&q=${alertDetails.piece.piece_uid}`}>
-                  <Search className="w-3.5 h-3.5 text-muted-foreground" /> Rastreabilidade Completa
+                <Link to={`/coleta?code=${encodeURIComponent(alertDetails.piece.piece_uid)}`}>
+                  <Search className="w-3.5 h-3.5 text-white" /> Rastreabilidade Completa
                 </Link>
               </Button>
             )}

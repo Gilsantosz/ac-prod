@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { User, Layers, RefreshCw, AlertTriangle, AlertOctagon, Copy, ClipboardCheck } from 'lucide-react';
+import { User, Layers, RefreshCw, AlertTriangle, AlertOctagon, Copy, ClipboardCheck, Tag } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { getPieceTraceability } from '@/lib/collectionService';
+import { formatPieceOrientingHeader } from '@/lib/pieceFormat';
 import PieceProductionFlow from './PieceProductionFlow';
 
 export default function CollectionPieceTraceabilityDrawer({
@@ -95,6 +96,21 @@ export default function CollectionPieceTraceabilityDrawer({
         {/* Conteúdo Principal */}
         {!loading && !error && data && (
           <div className="space-y-6 my-4 text-xs">
+
+            {/* Identificação & Orientação Técnica Completa da Peça */}
+            <div className="bg-[#00522d]/10 dark:bg-[#00522d]/25 border border-[#00522d]/30 p-3.5 rounded-xl text-xs text-foreground leading-relaxed flex items-start justify-between gap-3 shadow-xs">
+              <div className="flex items-start gap-2.5">
+                <Tag className="w-4 h-4 text-[#2d9c4a] shrink-0 mt-0.5" />
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider font-extrabold text-[#2d9c4a] block mb-0.5">
+                    Identificação & Orientação Técnica da Peça
+                  </span>
+                  <p className="font-mono text-xs text-foreground font-extrabold select-all leading-snug">
+                    {formatPieceOrientingHeader(data.piece, data.route)}
+                  </p>
+                </div>
+              </div>
+            </div>
             
             {/* Info Box */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-xl bg-secondary/35 border border-border/40">
