@@ -280,7 +280,7 @@ export default function ReplacementOrderCard({
             size="sm"
             className="h-9 text-xs font-bold border-border/60 hover:bg-secondary/40 text-foreground rounded-xl flex items-center gap-1.5"
           >
-            <Link to={`/coleta?code=${encodeURIComponent(originalPieceUid)}`}>
+            <Link to={`/rastreabilidade?tab=kanban`}>
               <Layers className="w-3.5 h-3.5 text-[#2d9c4a]" />
               Rastreabilidade
             </Link>
