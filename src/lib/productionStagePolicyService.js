@@ -14,10 +14,44 @@ const STAGE_ALIASES = Object.freeze({
 export function normalizeProductionName(value) {
   return String(value || '')
     .trim()
-    .toLocaleLowerCase('pt-BR')
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '');
+}
+
+export function getCanonicalCellKey(value) {
+  const normalized = normalizeProductionName(value);
+  if (!normalized) return '';
+
+  const cellAliasMap = {
+    fura: 'furacao',
+    furacao: 'furacao',
+    furadeira: 'furacao',
+    drill: 'furacao',
+    drilling: 'furacao',
+    corte: 'corte',
+    cut: 'corte',
+    cutting: 'corte',
+    borda: 'borda',
+    bordo: 'borda',
+    edge: 'borda',
+    edging: 'borda',
+    cnc: 'cnc',
+    usinagem: 'cnc',
+    usinagemcnc: 'cnc',
+    marcenaria: 'marcenaria',
+    joinery: 'marcenaria',
+    separacao: 'separacao',
+    separation: 'separacao',
+    embalagem: 'embalagem',
+    packaging: 'embalagem',
+    expedicao: 'expedicao',
+    shipping: 'expedicao',
+  };
+
+  return cellAliasMap[normalized] || normalized;
 }
 
 export function canonicalProductionStage(value) {

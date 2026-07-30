@@ -33,7 +33,6 @@ import {
   createWorkstation,
   updateWorkstation,
   deleteWorkstation,
-  getProductionGoals,
   getEffectiveProductionGoals,
   updateProductionGoal,
   deleteProductionGoal,
@@ -44,6 +43,7 @@ import {
   getUnitLabel,
   normalizeProductionUnit,
 } from '@/lib/productionUnitRules';
+import { getCanonicalCellKey } from '@/lib/productionStagePolicyService';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -421,7 +421,8 @@ export default function CellsAndGoals() {
     const machineQuery = machineSearch.trim().toLowerCase();
 
     return cells.filter(c => {
-      const cellMachines = machines.filter(m => m.cell_name === c.name);
+      const canonicalCell = getCanonicalCellKey(c.name);
+      const cellMachines = machines.filter(m => getCanonicalCellKey(m.cell_name) === canonicalCell);
       const matchesCellSearch = !cellQuery ||
         c.name.toLowerCase().includes(cellQuery) ||
         (c.description || '').toLowerCase().includes(cellQuery) ||
@@ -445,15 +446,15 @@ export default function CellsAndGoals() {
       const matchesSearch = m.name.toLowerCase().includes(machineSearch.toLowerCase()) ||
         (m.station_name || '').toLowerCase().includes(machineSearch.toLowerCase());
       
-      const matchesCell = machineCellFilter === 'all' || m.cell_name === machineCellFilter;
+      const matchesCell = machineCellFilter === 'all' || getCanonicalCellKey(m.cell_name) === getCanonicalCellKey(machineCellFilter);
 
       return matchesSearch && matchesCell;
     });
   }, [machines, machineSearch, machineCellFilter]);
 
   const orphanMachines = useMemo(() => {
-    const cellNames = new Set(cells.map((c) => c.name));
-    return machines.filter((machine) => machine.cell_name && !cellNames.has(machine.cell_name));
+    const cellKeys = new Set(cells.map((c) => getCanonicalCellKey(c.name)));
+    return machines.filter((machine) => machine.cell_name && !cellKeys.has(getCanonicalCellKey(machine.cell_name)));
   }, [cells, machines]);
 
   // Vínculos de operários por célula
@@ -468,10 +469,18 @@ export default function CellsAndGoals() {
       const assignedCells = Array.isArray(op.cells) ? op.cells : [];
       if (assignedCells.length > 0) {
         assignedCells.forEach(cellName => {
-          if (map[cellName]) map[cellName].push(op);
+          const canonicalName = getCanonicalCellKey(cellName);
+          const matchedCell = activeCells.find(c => getCanonicalCellKey(c.name) === canonicalName);
+          const targetKey = matchedCell ? matchedCell.name : cellName;
+          if (!map[targetKey]) map[targetKey] = [];
+          map[targetKey].push(op);
         });
-      } else if (op.primary_cell && map[op.primary_cell]) {
-        map[op.primary_cell].push(op);
+      } else if (op.primary_cell) {
+        const canonicalName = getCanonicalCellKey(op.primary_cell);
+        const matchedCell = activeCells.find(c => getCanonicalCellKey(c.name) === canonicalName);
+        const targetKey = matchedCell ? matchedCell.name : op.primary_cell;
+        if (!map[targetKey]) map[targetKey] = [];
+        map[targetKey].push(op);
       } else {
         map['Outros'].push(op);
       }

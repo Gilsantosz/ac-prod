@@ -6,6 +6,7 @@ import {
   normalizeProductionQuantity as normalizeQuantityByUnit,
   normalizeProductionUnit as normalizeUnit,
 } from '@/lib/productionUnitRules';
+import { getCanonicalCellKey } from '@/lib/productionStagePolicyService';
 
 function acc(list) {
   const produced = list.reduce((a, e) => a + (Number(e.produced ?? e.realized_quantity) || 0), 0);
@@ -113,7 +114,8 @@ export function buildDailySummaryByCellShift(entries = [], goals = [], options =
 
   goals.forEach((goal) => {
     const bucket = goalToBucket(goal);
-    map.set(key(bucket.cell, bucket.metric_unit, bucket.shift), bucket);
+    const canonicalCell = getCanonicalCellKey(bucket.cell);
+    map.set(key(canonicalCell, bucket.metric_unit, bucket.shift), bucket);
   });
 
   const configuredCells = (options.activeCells || [])
@@ -122,9 +124,10 @@ export function buildDailySummaryByCellShift(entries = [], goals = [], options =
   const configuredShifts = options.shifts?.length ? options.shifts : SHIFTS;
 
   configuredCells.forEach((cell) => {
+    const canonicalCell = getCanonicalCellKey(cell);
     const goalUnits = [...new Set(
       goals
-        .filter((goal) => (goal.cell_name || goal.cell) === cell)
+        .filter((goal) => getCanonicalCellKey(goal.cell_name || goal.cell) === canonicalCell)
         .map((goal) => normalizeUnit(goal.metric_unit || goal.unit))
         .filter(Boolean),
     )];
@@ -134,7 +137,7 @@ export function buildDailySummaryByCellShift(entries = [], goals = [], options =
 
     configuredShifts.forEach((shift) => {
       units.forEach((unit) => {
-        const bucketKey = key(cell, unit, shift);
+        const bucketKey = key(canonicalCell, unit, shift);
         if (!map.has(bucketKey)) {
           map.set(bucketKey, emptyBucket({ shift, cell, area: cell, unit }));
         }
@@ -144,7 +147,8 @@ export function buildDailySummaryByCellShift(entries = [], goals = [], options =
 
   entries.forEach((entry) => {
     const { metric, cell, area, shift } = entryContext(entry);
-    const bucketKey = key(cell, metric.metric_unit, shift);
+    const canonicalCell = getCanonicalCellKey(cell);
+    const bucketKey = key(canonicalCell, metric.metric_unit, shift);
     const bucket = map.get(bucketKey) || emptyBucket({
       shift,
       cell,

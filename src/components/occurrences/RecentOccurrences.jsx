@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Trash2, Clock } from 'lucide-react';
+import { formatDuration } from '@/lib/durationFormat';
 
 export default function RecentOccurrences({ occurrences, onDelete }) {
   const { user } = useAuth();
@@ -53,7 +54,7 @@ export default function RecentOccurrences({ occurrences, onDelete }) {
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <span className="flex items-center gap-1 text-sm font-semibold tabular-nums">
-                    <Clock className="w-3.5 h-3.5 text-muted-foreground" /> {o.downtime} min
+                    <Clock className="w-3.5 h-3.5 text-muted-foreground" /> {formatDuration(o.downtime)}
                   </span>
                   <Button
                     variant="ghost"

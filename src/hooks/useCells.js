@@ -10,10 +10,12 @@ const HOURS_KEY = { '1º Turno': 'hoursShift1', '2º Turno': 'hoursShift2', '3º
 // para que todo o sistema reflita o cadastro de células e horas por turno.
 export function useCells() {
   const { user } = useAuth();
-  const { data: cells = [], isLoading } = useQuery({
+  const { data: cells = [], isLoading, refetch } = useQuery({
     queryKey: ['cells'],
     queryFn: getCells,
     initialData: [],
+    refetchOnMount: 'always',
+    refetchOnReconnect: true,
   });
 
   const scopedCells = useMemo(() => {

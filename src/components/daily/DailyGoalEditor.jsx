@@ -17,6 +17,7 @@ import {
   getUnitLabel,
   normalizeProductionUnit,
 } from '@/lib/productionUnitRules';
+import { getCanonicalCellKey } from '@/lib/productionStagePolicyService';
 
 const SHIFTS = ['1º Turno', '2º Turno', '3º Turno'];
 const UNITS = [
@@ -87,14 +88,14 @@ export default function DailyGoalEditor({ date, activeCells = [], onSaved }) {
         .select('*')
         .lte('date', date)
         .ilike('shift', shift)
-        .ilike('cell_name', finalCell)
         .order('date', { ascending: false })
         .order('updated_at', { ascending: false })
-        .limit(1);
+        .limit(50);
 
       if (error && !/does not exist/i.test(error.message)) throw error;
 
-      const data = rows && rows.length > 0 ? rows[0] : null;
+      const canonicalTarget = getCanonicalCellKey(finalCell);
+      const data = (rows || []).find((r) => getCanonicalCellKey(r.cell_name || r.area_name) === canonicalTarget) || null;
 
       if (data) {
         const isExactDate = data.date === date;

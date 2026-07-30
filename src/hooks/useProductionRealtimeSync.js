@@ -5,6 +5,23 @@ import { supabase } from '@/lib/supabaseClient';
 // Somente tabelas que realmente precisam refletir movimentações produtivas em tempo real.
 // Cadastros, alertas, perfis, automações e históricos administrativos usam consultas sob demanda.
 const TABLE_TO_QUERY_KEYS = {
+  cells: [
+    ['cells'],
+    ['cells-admin-list'],
+    ['cells-goals-summary'],
+    ['cellKpis'],
+    ['productionDailyGoals'],
+    ['production-effective-goals'],
+    ['dailyGoals'],
+    ['daily-summary-history-goals'],
+  ],
+  production_machines: [
+    ['machines-admin-list'],
+    ['production-machines-admin'],
+    ['production-machines'],
+    ['cells-goals-summary'],
+    ['cellKpis'],
+  ],
   production_entries: [
     ['production'],
     ['productionEntries'],
