@@ -620,8 +620,28 @@ export async function rejectPieceFromCollection({
 }) {
   if (!pieceId && !traceabilityCode) throw new Error('ID ou código da peça é obrigatório.');
 
+  let targetPieceId = pieceId || null;
+
+  // Se pieceId não for informado e tivermos um código de rastreamento, busca o ID da peça no banco
+  if (!targetPieceId && traceabilityCode) {
+    try {
+      const { data } = await supabase
+        .from('production_pieces')
+        .select('id')
+        .or(`piece_uid.eq.${traceabilityCode},traceability_code.eq.${traceabilityCode},piece_code.eq.${traceabilityCode}`)
+        .limit(1)
+        .maybeSingle();
+
+      if (data?.id) {
+        targetPieceId = data.id;
+      }
+    } catch (err) {
+      console.warn('Pré-resolução do código da peça para reprovação:', err);
+    }
+  }
+
   const rpcPayload = {
-    piece_id: pieceId || null,
+    piece_id: targetPieceId,
     traceability_code: traceabilityCode,
     reason,
     notes,

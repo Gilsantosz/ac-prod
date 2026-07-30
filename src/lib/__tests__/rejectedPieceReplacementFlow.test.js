@@ -115,4 +115,42 @@ describe('rejectedPieceReplacementFlow', () => {
 
     vi.restoreAllMocks();
   });
+
+  it('deve resolver o piece_id canônico a partir do traceabilityCode quando o pieceId não for informado', async () => {
+    vi.spyOn(supabase, 'from').mockImplementation((table) => {
+      if (table === 'production_pieces') {
+        return {
+          select: () => ({
+            or: () => ({
+              limit: () => ({
+                maybeSingle: async () => ({ data: { id: 'real-piece-uuid-999' } })
+              })
+            })
+          })
+        };
+      }
+      return {};
+    });
+
+    const rpcSpy = vi.spyOn(supabase, 'rpc').mockResolvedValue({
+      data: { success: true, nonconformity_id: 'nc-999' },
+      error: null
+    });
+
+    await rejectPieceFromCollection({
+      traceabilityCode: '09950037',
+      pieceId: null,
+      reason: 'Defeito no acabamento',
+      operatorName: 'Ederson'
+    });
+
+    expect(rpcSpy).toHaveBeenCalledWith('register_quality_rejection', {
+      p_payload: expect.objectContaining({
+        piece_id: 'real-piece-uuid-999',
+        traceability_code: '09950037'
+      })
+    });
+
+    vi.restoreAllMocks();
+  });
 });

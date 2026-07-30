@@ -573,8 +573,12 @@ export default function TraceabilityCollection({ embedded = false }) {
         ? pieceToReject
         : (pieceToReject.piece_uid || pieceToReject.traceability_code || pieceToReject.piece_code || pieceToReject.tag_value || pieceToReject.raw_value || pieceToReject.id || pieceToReject.piece_id);
 
+      const resolvedPieceId = typeof pieceToReject === 'string'
+        ? null
+        : (pieceToReject.piece_id || pieceToReject.id);
+
       const result = await rejectPieceFromCollection({
-        pieceId: pieceToReject.id || pieceToReject.piece_id,
+        pieceId: resolvedPieceId,
         traceabilityCode: code,
         reason: formData.reason,
         notes: formData.notes,
@@ -593,7 +597,7 @@ export default function TraceabilityCollection({ embedded = false }) {
         clientEventId: pieceToReject.rejection_client_event_id,
       });
 
-      const canonical = await getPieceTraceability(result?.piece_id || pieceToReject.id || code);
+      const canonical = await getPieceTraceability(result?.piece_id || pieceToReject.piece_id || pieceToReject.id || code);
       setSelectedPieceEvents(canonical.readings || []);
       setSelectedPiece((previous) => mergeCanonicalPiece(previous || pieceToReject, canonical));
 
@@ -617,7 +621,7 @@ export default function TraceabilityCollection({ embedded = false }) {
     
     try {
       const res = await requestPieceReplacement({
-        pieceId: piece.id,
+        pieceId: piece.piece_id || piece.id,
         reason: reason.trim(),
         notes: `Solicitado via painel de coleta pelo operador ${operator}`
       });
