@@ -232,17 +232,22 @@ export default function ReplacementOrderCard({
             {(() => {
               const isOrderCompleted = order.status === 'completed' || order.replacement_completed === true;
 
-              const rawCompletedList = [
-                ...(order.replacement_piece?.completed_steps || []),
-                ...(order.original_piece?.completed_steps || []),
-                ...(order.completed_steps || [])
-              ].map(s => formatStageName(s));
+              // CORRECAO: para pecas de reposicao, a trilha reinicia do zero no Corte
+              // Usar APENAS completed_steps da peca de reposicao — nao herdar da peca original
+              // A peca original tem status 'replaced' e sua trilha e historica, nao da reposicao
+              const rawCompletedList = isOrderCompleted
+                ? (order.route_steps || []).map(s => formatStageName(s))  // toda rota concluida
+                : [
+                    ...(order.replacement_piece?.completed_steps || []),
+                    ...(order.completed_steps || [])
+                    // NAO incluir order.original_piece?.completed_steps aqui!
+                  ].map(s => formatStageName(s));
 
               // Identificar a etapa mais avançada que foi concluída na rota
               let highestCompletedIndex = -1;
               (order.route_steps || []).forEach((step, index) => {
                 const formatted = formatStageName(step);
-                if (isOrderCompleted || rawCompletedList.some(cs => cs.toLowerCase() === formatted.toLowerCase())) {
+                if (rawCompletedList.some(cs => cs.toLowerCase() === formatted.toLowerCase())) {
                   highestCompletedIndex = Math.max(highestCompletedIndex, index);
                 }
               });
@@ -255,7 +260,7 @@ export default function ReplacementOrderCard({
               return order.route_steps.map((step, idx) => {
                 const formattedStep = formatStageName(step);
 
-                // Uma etapa é concluída se a ordem está marcada como concluída, ou se está explicitamente na lista, ou se é anterior/igual à etapa mais avançada concluída
+                // Uma etapa e concluida se a ordem esta marcada como concluida, ou esta explicitamente na lista, ou e anterior/igual a etapa mais avancada concluida
                 const isCompleted = isOrderCompleted || idx <= highestCompletedIndex || rawCompletedList.some(cs => cs.toLowerCase() === formattedStep.toLowerCase());
 
                 const isCurrent = !isCompleted && nextPendingStepInRoute && nextPendingStepInRoute.toLowerCase() === formattedStep.toLowerCase();
