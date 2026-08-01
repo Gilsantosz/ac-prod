@@ -990,35 +990,62 @@ export async function forceCompleteReplacement(orderId, { reason }) {
 }
 
 /**
- * Busca postos de trabalho / máquinas habilitados para reposição.
+ * Busca postos de trabalho / máquinas habilitados para reposição filtrando pelas células autorizadas do usuário.
  */
-export async function getEnabledWorkstations(cellId = null) {
+export async function getEnabledWorkstations(userAllowedCells = null, userRole = null) {
   let query = supabase
     .from('production_machines')
     .select('*')
     .eq('active', true);
 
-  if (cellId) {
-    // Buscar nome da célula se fornecido UUID
-    const { data: cellData } = await supabase
-      .from('cells')
-      .select('name')
-      .eq('id', cellId)
-      .single();
-
-    if (cellData?.name) {
-      query = query.ilike('cell_name', `%${cellData.name}%`);
-    }
-  }
-
   const { data, error } = await query.order('name', { ascending: true });
   if (error) {
     console.error('Erro ao buscar postos de trabalho:', error);
-    return [];
   }
 
-  return (data || []).filter(m => m.allows_replacement !== false);
+  let list = (data || []).filter(m => m.allows_replacement !== false);
+
+  // Extrair lista de células autorizadas
+  let allowedNames = [];
+  if (Array.isArray(userAllowedCells)) {
+    allowedNames = userAllowedCells.map(c => String(c).trim()).filter(Boolean);
+  } else if (typeof userAllowedCells === 'string' && userAllowedCells.trim()) {
+    allowedNames = [userAllowedCells.trim()];
+  }
+
+  // Se o papel não for admin estrito e existirem células autorizadas no perfil do usuário:
+  if (userRole !== 'admin' && allowedNames.length > 0) {
+    const allowedLower = allowedNames.map(n => n.toLowerCase());
+    list = list.filter(m => {
+      const machineCell = String(m.cell_name || m.name || '').trim().toLowerCase();
+      return allowedLower.some(allowed => machineCell.includes(allowed) || allowed.includes(machineCell));
+    });
+  }
+
+  // Garantir que todas as células permitidas do usuário que não tenham máquinas específicas no banco
+  // sejam adicionadas à lista para que o operador consiga selecionar qualquer uma das suas células autorizadas
+  if (allowedNames.length > 0) {
+    const existingCellNames = new Set(list.map(m => String(m.cell_name || m.name || '').trim().toLowerCase()));
+    
+    allowedNames.forEach(cellName => {
+      const clean = cellName.toLowerCase();
+      const hasMatch = Array.from(existingCellNames).some(ext => ext.includes(clean) || clean.includes(ext));
+      if (!hasMatch) {
+        list.push({
+          id: `cell-${cellName}`,
+          name: `${cellName}`,
+          cell_name: cellName,
+          active: true,
+          allows_replacement: true,
+          is_virtual: true
+        });
+      }
+    });
+  }
+
+  return list;
 }
+
 
 /**
  * Busca autorizações ativas de um operador em postos de trabalho.

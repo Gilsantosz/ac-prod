@@ -122,15 +122,26 @@ export default function ReplacementCollectionPanel({ onCollectionSuccess, onOpen
     return () => clearInterval(interval);
   }, []);
 
-  // Carregar Postos Habilitados
+  // Extrair células permitidas do perfil do usuário logado
+  const userAllowedCells = user?.managed_cells?.length
+    ? user.managed_cells
+    : user?.access_scope?.cells?.length
+      ? user.access_scope.cells
+      : user?.cell
+        ? [user.cell]
+        : [];
+
+  const userAllowedCellsKey = userAllowedCells.join(',');
+
+  // Carregar Postos Habilitados conforme células autorizadas do usuário
   useEffect(() => {
     async function loadWorkstations() {
       try {
-        const list = await getEnabledWorkstations();
+        const list = await getEnabledWorkstations(userAllowedCells, user?.role);
         setWorkstations(list);
         if (list.length === 1) {
           setSelectedWorkstationId(list[0].id);
-        } else if (list.length > 0 && !selectedWorkstationId) {
+        } else if (list.length > 0 && (!selectedWorkstationId || !list.some(w => w.id === selectedWorkstationId))) {
           setSelectedWorkstationId(list[0].id);
         }
       } catch (err) {
@@ -138,7 +149,8 @@ export default function ReplacementCollectionPanel({ onCollectionSuccess, onOpen
       }
     }
     loadWorkstations();
-  }, []);
+  }, [userAllowedCellsKey, user?.role]);
+
 
   // Verificar autorizações do operador no posto selecionado
   useEffect(() => {
