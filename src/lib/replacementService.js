@@ -709,6 +709,9 @@ export async function cancelReplacement(orderId, { reason = '' } = {}) {
   return data;
 }
 
+// Helper para validar UUIDs v4/v1 antes de consultas ao Postgres
+const isValidUuid = (val) => typeof val === 'string' && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(val);
+
 // Helper para verificar se um ID é virtual (gerado para células sem máquina cadastrada)
 const isVirtualId = (val) => typeof val === 'string' && (val.startsWith('cell-') || val.startsWith('virtual-'));
 
@@ -923,10 +926,13 @@ export async function collectReplacementStageJsFallback({
   const isFinalStage = remainingSteps.length === 0;
   const newNextStage = remainingSteps[0] || null;
 
+  const lotId = targetPiece.lot_id || order.original_piece?.lot_id || '00000000-0000-0000-0000-000000000000';
+  const lotItemId = targetPiece.lot_item_id || order.original_piece?.lot_item_id || null;
 
   await supabase.from('production_stage_readings').insert({
-    piece_id: targetPiece.id || order.original_piece_id,
-    item_id: targetPiece.id || order.original_piece_id,
+    lot_id: lotId,
+    piece_id: targetPiece.id || order.original_piece_id || null,
+    item_id: lotItemId,
     tag_value: barcode,
     step_name: currentWorkstationStage,
     cell_name: cellName,
@@ -934,12 +940,14 @@ export async function collectReplacementStageJsFallback({
     machine_id: isValidUuid(workstationId) ? workstationId : null,
     machine_name: workstationName,
     operator: 'Operador MES',
+    operator_name_snapshot: 'Operador MES',
     shift: shift || '1',
     status: 'approved',
-    event_type: 'replacement_stage_reading',
-    client_event_id: clientEventId,
+    event_type: 'approved_scan',
+    client_event_id: clientEventId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : null),
     notes: `Baixa de reposição na célula ${cellName} (${order.replacement_code || 'REPOSIÇÃO'})`
   });
+
 
   // 5. Atualizar Estado da Peça Substituta, Peça Original e Ordem
   if (targetPiece.id) {
