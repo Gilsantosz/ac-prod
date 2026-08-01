@@ -28,6 +28,19 @@ const REPRINT_REASONS = [
   'Outro motivo (especificar abaixo)'
 ];
 
+function waitForPrintableLayout() {
+  return new Promise((resolve) => {
+    if (typeof window.requestAnimationFrame !== 'function') {
+      setTimeout(resolve, 0);
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(resolve);
+    });
+  });
+}
+
 export default function ReplacementLabelPreviewModal({
   open,
   onOpenChange,
@@ -112,11 +125,12 @@ export default function ReplacementLabelPreviewModal({
       });
 
       toast.success(`Etiqueta de reposição enviada para impressão (${viaLabel}).`);
-      
-      // Disparar impressão do navegador
-      setTimeout(() => {
-        window.print();
-      }, 300);
+
+      // O modal e seu CSS de 100 x 50 mm precisam permanecer montados enquanto
+      // o navegador prepara a pre-visualizacao. Fechar antes de window.print()
+      // fazia o Chrome imprimir a pagina inteira do Leo Flow.
+      await waitForPrintableLayout();
+      window.print();
 
       onPrinted();
       onOpenChange(false);
@@ -426,6 +440,10 @@ export default function ReplacementLabelPreviewModal({
             box-sizing: border-box !important;
             border: 1px solid black !important;
             background: white !important;
+            box-shadow: none !important;
+            transform: none !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
             z-index: 999999 !important;
           }
         }
