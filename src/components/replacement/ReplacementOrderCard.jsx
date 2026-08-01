@@ -230,20 +230,34 @@ export default function ReplacementOrderCard({
 
           <div className="flex flex-wrap items-center gap-1.5 pt-1">
             {(() => {
-              const completedSteps = [
+              const isOrderCompleted = order.status === 'completed' || order.replacement_completed === true;
+
+              const rawCompletedList = [
                 ...(order.replacement_piece?.completed_steps || []),
                 ...(order.original_piece?.completed_steps || []),
                 ...(order.completed_steps || [])
               ].map(s => formatStageName(s));
 
-              // Primeira etapa da rota que ainda não foi concluída
-              const nextPendingStepInRoute = (order.route_steps || [])
+              // Identificar a etapa mais avançada que foi concluída na rota
+              let highestCompletedIndex = -1;
+              (order.route_steps || []).forEach((step, index) => {
+                const formatted = formatStageName(step);
+                if (isOrderCompleted || rawCompletedList.some(cs => cs.toLowerCase() === formatted.toLowerCase())) {
+                  highestCompletedIndex = Math.max(highestCompletedIndex, index);
+                }
+              });
+
+              // Primeira etapa pendente após a mais avançada concluída
+              const nextPendingStepInRoute = isOrderCompleted ? null : (order.route_steps || [])
                 .map(s => formatStageName(s))
-                .find(stepName => !completedSteps.some(cs => cs.toLowerCase() === stepName.toLowerCase()));
+                .find((_, index) => index > highestCompletedIndex);
 
               return order.route_steps.map((step, idx) => {
                 const formattedStep = formatStageName(step);
-                const isCompleted = completedSteps.some(cs => cs.toLowerCase() === formattedStep.toLowerCase());
+
+                // Uma etapa é concluída se a ordem está marcada como concluída, ou se está explicitamente na lista, ou se é anterior/igual à etapa mais avançada concluída
+                const isCompleted = isOrderCompleted || idx <= highestCompletedIndex || rawCompletedList.some(cs => cs.toLowerCase() === formattedStep.toLowerCase());
+
                 const isCurrent = !isCompleted && nextPendingStepInRoute && nextPendingStepInRoute.toLowerCase() === formattedStep.toLowerCase();
 
                 let badgeStyle = 'bg-slate-500/10 text-slate-500 border-slate-500/20';
@@ -275,6 +289,7 @@ export default function ReplacementOrderCard({
                 );
               });
             })()}
+
           </div>
         </div>
       )}
