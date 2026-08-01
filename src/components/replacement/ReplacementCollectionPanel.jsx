@@ -80,9 +80,11 @@ export default function ReplacementCollectionPanel({ onCollectionSuccess, onOpen
     };
   });
 
-  // Postos Habilitados
+  // Postos Habilitados & Persistência de Seleção
   const [workstations, setWorkstations] = useState([]);
-  const [selectedWorkstationId, setSelectedWorkstationId] = useState('');
+  const [selectedWorkstationId, setSelectedWorkstationId] = useState(() => {
+    return localStorage.getItem('MES_REPLACEMENT_SELECTED_WORKSTATION_ID') || '';
+  });
   const [isWorkstationAuthorized, setIsWorkstationAuthorized] = useState(true);
 
   // Leitura e Estado
@@ -92,11 +94,19 @@ export default function ReplacementCollectionPanel({ onCollectionSuccess, onOpen
   const [recentScans, setRecentScans] = useState([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
-  // Modal Trocar Operador
+  // Modais de Seleção e Troca
+  const [showCellSelectModal, setShowCellSelectModal] = useState(false);
   const [showSwitchOpModal, setShowSwitchOpModal] = useState(false);
   const [opLoginInput, setOpLoginInput] = useState('');
   const [opPasswordInput, setOpPasswordInput] = useState('');
   const [switchOpError, setSwitchOpError] = useState(null);
+
+  const handleSelectWorkstation = (wsId) => {
+    setSelectedWorkstationId(wsId);
+    if (wsId) {
+      localStorage.setItem('MES_REPLACEMENT_SELECTED_WORKSTATION_ID', wsId);
+    }
+  };
 
   // Monitorar Conectividade
   useEffect(() => {
@@ -110,17 +120,26 @@ export default function ReplacementCollectionPanel({ onCollectionSuccess, onOpen
     };
   }, []);
 
-  // Manter Foco Automático no Input do Leitor
+  // Manter Foco Automático no Input do Leitor (Quando nenhum modal estiver aberto)
   useEffect(() => {
     const focusInput = () => {
-      if (inputRef.current && document.activeElement !== inputRef.current) {
+      if (!showCellSelectModal && !showSwitchOpModal && inputRef.current && document.activeElement !== inputRef.current) {
         inputRef.current.focus();
       }
     };
     focusInput();
     const interval = setInterval(focusInput, 3000);
     return () => clearInterval(interval);
-  }, []);
+  }, [showCellSelectModal, showSwitchOpModal]);
+
+  // Re-focar no leitor ótico imediatamente após fechar qualquer modal
+  useEffect(() => {
+    if (!showCellSelectModal && !showSwitchOpModal) {
+      setTimeout(() => {
+        if (inputRef.current) inputRef.current.focus();
+      }, 100);
+    }
+  }, [showCellSelectModal, showSwitchOpModal]);
 
   // Extrair células permitidas do perfil do usuário logado
   const userAllowedCells = user?.managed_cells?.length
@@ -139,10 +158,14 @@ export default function ReplacementCollectionPanel({ onCollectionSuccess, onOpen
       try {
         const list = await getEnabledWorkstations(userAllowedCells, user?.role);
         setWorkstations(list);
-        if (list.length === 1) {
-          setSelectedWorkstationId(list[0].id);
+
+        const savedId = localStorage.getItem('MES_REPLACEMENT_SELECTED_WORKSTATION_ID');
+        if (savedId && list.some(w => w.id === savedId)) {
+          setSelectedWorkstationId(savedId);
+        } else if (list.length === 1) {
+          handleSelectWorkstation(list[0].id);
         } else if (list.length > 0 && (!selectedWorkstationId || !list.some(w => w.id === selectedWorkstationId))) {
-          setSelectedWorkstationId(list[0].id);
+          handleSelectWorkstation(list[0].id);
         }
       } catch (err) {
         console.error('Erro ao carregar postos de trabalho:', err);
@@ -150,6 +173,7 @@ export default function ReplacementCollectionPanel({ onCollectionSuccess, onOpen
     }
     loadWorkstations();
   }, [userAllowedCellsKey, user?.role]);
+
 
 
   // Verificar autorizações do operador no posto selecionado
@@ -334,22 +358,26 @@ export default function ReplacementCollectionPanel({ onCollectionSuccess, onOpen
             {isOnline ? 'Online' : 'Offline (Fila Activada)'}
           </Badge>
 
-          {/* Seleção do Posto Habilitado */}
+          {/* Seleção de Célula / Posto Habilitado */}
           <div className="flex items-center gap-1.5 bg-muted/50 p-1 rounded-xl border border-border">
-            <Sliders className="w-4 h-4 text-muted-foreground ml-2" />
-            <select
-              value={selectedWorkstationId}
-              onChange={(e) => setSelectedWorkstationId(e.target.value)}
-              className="bg-transparent text-xs font-semibold text-foreground focus:outline-none pr-2 py-1 cursor-pointer"
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowCellSelectModal(true)}
+              className="h-8 px-2.5 text-xs font-bold text-foreground hover:bg-secondary/60 flex items-center gap-2 rounded-lg"
+              title="Clique para abrir a seleção de células autorizadas"
             >
-              {workstations.length === 0 && <option value="">Nenhum Posto Habilitado</option>}
-              {workstations.map(w => (
-                <option key={w.id} value={w.id}>
-                  {w.name} ({w.cell_name})
-                </option>
-              ))}
-            </select>
+              <Sliders className="w-3.5 h-3.5 text-amber-500" />
+              <span>
+                {workstations.find(w => w.id === selectedWorkstationId)?.name || 'Selecionar Célula'}
+              </span>
+              <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-amber-500/10 text-amber-600 font-mono">
+                {workstations.find(w => w.id === selectedWorkstationId)?.cell_name || 'Célula'}
+              </Badge>
+            </Button>
           </div>
+
 
           {/* Botão Trocar Operador */}
           <Button
@@ -509,6 +537,79 @@ export default function ReplacementCollectionPanel({ onCollectionSuccess, onOpen
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Seleção da Célula / Posto de Trabalho */}
+      <Dialog open={showCellSelectModal} onOpenChange={setShowCellSelectModal}>
+        <DialogContent className="max-w-xl rounded-3xl p-6 bg-card border-border shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-black text-foreground flex items-center gap-2">
+              <Sliders className="w-5 h-5 text-amber-500" />
+              Selecionar Célula / Posto de Trabalho
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground mt-1">
+              Escolha a célula onde a baixa da reposição será executada. O modal permanece aberto durante a navegação e a seleção é salva de forma permanente.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4 space-y-3">
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+              Células & Postos Autorizados ({workstations.length})
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[320px] overflow-y-auto pr-1">
+              {workstations.map((ws) => {
+                const isSelected = ws.id === selectedWorkstationId;
+                return (
+                  <button
+                    key={ws.id}
+                    type="button"
+                    onClick={() => handleSelectWorkstation(ws.id)}
+                    className={`p-3.5 rounded-2xl border text-left transition-all flex items-center justify-between gap-3 ${
+                      isSelected
+                        ? 'border-amber-500 bg-amber-500/10 text-foreground ring-2 ring-amber-500/30'
+                        : 'border-border/60 bg-secondary/20 hover:border-amber-500/50 hover:bg-secondary/40'
+                    }`}
+                  >
+                    <div>
+                      <p className="text-xs font-black text-foreground flex items-center gap-1.5">
+                        <span>{ws.name}</span>
+                      </p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Célula: <strong>{ws.cell_name || ws.name}</strong>
+                      </p>
+                    </div>
+
+                    {isSelected && (
+                      <Badge className="bg-amber-500 text-white font-bold text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
+                        <CheckCircle2 className="w-3 h-3" /> Célula Ativa
+                      </Badge>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <DialogFooter className="border-t border-border/40 pt-4 flex flex-col sm:flex-row gap-2 justify-between">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowCellSelectModal(false)}
+              className="rounded-xl text-xs font-bold"
+            >
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setShowCellSelectModal(false)}
+              className="rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white flex items-center gap-1.5 shadow-md shadow-amber-500/20"
+            >
+              <CheckCircle2 className="w-4 h-4" /> Confirmar & Voltar à Coleta
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
