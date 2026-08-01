@@ -202,9 +202,9 @@ export default function ReplacementCollectionPanel({ onCollectionSuccess, onOpen
   const selectedWorkstation = workstations.find(w => w.id === selectedWorkstationId);
 
   // Processar leitura de código de barras
-  const handleScanSubmit = async (e) => {
-    e?.preventDefault();
-    const code = barcodeInput.trim();
+  const handleScanSubmit = async (e = null, codeOverride = null) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const code = (codeOverride !== null ? codeOverride : barcodeInput).trim();
     if (!code || isProcessing) return;
 
     if (!isWorkstationAuthorized) {
@@ -299,6 +299,40 @@ export default function ReplacementCollectionPanel({ onCollectionSuccess, onOpen
       }, 50);
     }
   };
+
+  // Submissão automática imediata ao bipar no leitor óptico
+  useEffect(() => {
+    const trimmed = barcodeInput.trim();
+    if (!trimmed || isProcessing) return;
+
+    // 1. Processamento instantâneo caso contenha quebra de linha (\n ou \r) enviada pelo leitor
+    if (trimmed.includes('\n') || trimmed.includes('\r')) {
+      const cleanCode = trimmed.replace(/[\r\n]/g, '').trim();
+      if (cleanCode) {
+        handleScanSubmit(null, cleanCode);
+      }
+      return;
+    }
+
+    // 2. Reconhecimento automático de padrão de código de barras (8+ dígitos ou prefixos como REP-, PÇA-, LOTE-)
+    const isBarcodePattern = /^\d{6,}$/.test(trimmed) || /^(REP|PÇA|PCA|LOTE|ORD|TAG|SUB|ITM|OP)-.+/i.test(trimmed);
+
+    if (isBarcodePattern) {
+      const timer = setTimeout(() => {
+        handleScanSubmit(null, trimmed);
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+
+    // 3. Debounce de segurança para qualquer código longo (6+ chars) caso o leitor não envie Enter
+    if (trimmed.length >= 6) {
+      const fallbackTimer = setTimeout(() => {
+        handleScanSubmit(null, trimmed);
+      }, 300);
+      return () => clearTimeout(fallbackTimer);
+    }
+  }, [barcodeInput, isProcessing]);
+
 
   // Troca de Operador
   const handleSwitchOperator = async (e) => {
@@ -427,11 +461,17 @@ export default function ReplacementCollectionPanel({ onCollectionSuccess, onOpen
           <Input
             ref={inputRef}
             type="text"
-            placeholder="Aguardando código de barras da peça substituta... (Leitor óptico ativo)"
+            placeholder="Aguardando bipagem... (Leitor óptico ativo — Entrada Automática)"
             value={barcodeInput}
             onChange={(e) => setBarcodeInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleScanSubmit(e);
+              }
+            }}
             disabled={isProcessing}
-            className="h-14 pl-11 pr-28 text-sm md:text-base font-mono font-bold rounded-2xl border-2 border-amber-500/40 focus:border-amber-500 shadow-inner bg-background"
+            className="h-14 pl-11 pr-32 text-sm md:text-base font-mono font-bold rounded-2xl border-2 border-amber-500/40 focus:border-amber-500 shadow-inner bg-background"
           />
           <Button
             type="submit"
@@ -440,6 +480,7 @@ export default function ReplacementCollectionPanel({ onCollectionSuccess, onOpen
           >
             {isProcessing ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Baixar Célula'}
           </Button>
+
         </div>
       </form>
 
