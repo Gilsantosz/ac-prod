@@ -24,12 +24,24 @@ export function generateReportCode() {
  * Sanitiza o texto eliminando caracteres unicode não suportados pelo jsPDF (como setas ➔)
  */
 function sanitizePdfText(str) {
-  if (!str) return '—';
+  if (!str) return '-';
   return String(str)
     .replace(/➔/g, '->')
     .replace(/➜/g, '->')
     .replace(/➝/g, '->')
     .replace(/—/g, '-');
+}
+
+function splitPdfLines(doc, value, maxWidth, maxLines = Number.POSITIVE_INFINITY) {
+  return doc
+    .splitTextToSize(sanitizePdfText(value), maxWidth)
+    .slice(0, maxLines);
+}
+
+function drawPdfLines(doc, lines, x, startY, lineHeight, options = {}) {
+  lines.forEach((line, index) => {
+    doc.text(line, x, startY + (index * lineHeight), options);
+  });
 }
 
 /**
@@ -40,7 +52,8 @@ export async function generateReplacementPdfReport({
   filters = {},
   reportType = 'filtered', // 'individual' | 'selected' | 'filtered' | 'batch_lot'
   singleOrder = null,
-  userName = 'Operador MES'
+  userName = 'Operador MES',
+  download = true
 }) {
   const isIndividual = reportType === 'individual' || !!singleOrder;
   const targetOrders = isIndividual ? [singleOrder] : orders;
@@ -82,10 +95,22 @@ export async function generateReplacementPdfReport({
     const orientingHeader = sanitizePdfText(fullContext.header);
     const subContext = sanitizePdfText(fullContext.details);
 
-    // Banner de Orientação Técnica Promob
+    // Banner de Orientacao Tecnica Promob com altura calculada pelo conteudo.
+    // O jsPDF quebra textos longos, mas nao aumenta caixas automaticamente.
+    const bannerTextWidth = pageWidth - margin * 2 - 8;
+    doc.setFontSize(7.5);
+    doc.setFont(undefined, 'bold');
+    const orientingLines = splitPdfLines(doc, orientingHeader, bannerTextWidth, 3);
+    doc.setFontSize(7);
+    doc.setFont(undefined, 'normal');
+    const subContextLines = splitPdfLines(doc, subContext, bannerTextWidth, 2);
+    const bannerHeight = 9
+      + (orientingLines.length * 3.2)
+      + (subContextLines.length * 3);
+
     doc.setFillColor(239, 246, 255);
     doc.setDrawColor(191, 219, 254);
-    doc.roundedRect(margin, currentY, pageWidth - margin * 2, 16, 2, 2, 'FD');
+    doc.roundedRect(margin, currentY, pageWidth - margin * 2, bannerHeight, 2, 2, 'FD');
 
     doc.setTextColor(30, 58, 138);
     doc.setFontSize(8);
@@ -95,14 +120,20 @@ export async function generateReplacementPdfReport({
     doc.setFontSize(7.5);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(15, 23, 42);
-    doc.text(orientingHeader, margin + 4, currentY + 9, { maxWidth: pageWidth - margin * 2 - 8 });
+    const orientingStartY = currentY + 8.5;
+    drawPdfLines(doc, orientingLines, margin + 4, orientingStartY, 3.2, {
+      maxWidth: bannerTextWidth,
+    });
 
     doc.setFontSize(7);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(71, 85, 105);
-    doc.text(subContext, margin + 4, currentY + 13.5, { maxWidth: pageWidth - margin * 2 - 8 });
+    const subContextStartY = orientingStartY + (orientingLines.length * 3.2) + 0.8;
+    drawPdfLines(doc, subContextLines, margin + 4, subContextStartY, 3, {
+      maxWidth: bannerTextWidth,
+    });
 
-    currentY += 20;
+    currentY += bannerHeight + 4;
 
     // Tabela de Detalhes Técnicos
     doc.setFontSize(9);
@@ -125,30 +156,52 @@ export async function generateReplacementPdfReport({
 
     doc.setFontSize(7.5);
     fields.forEach(([f1, v1, f2, v2]) => {
-      doc.setFillColor(248, 250, 252);
-      doc.rect(margin, currentY, pageWidth - margin * 2, 6, 'F');
-      doc.setDrawColor(226, 232, 240);
-      doc.line(margin, currentY + 6, pageWidth - margin, currentY + 6);
-
       const colHalf = (pageWidth - margin * 2) / 2;
+      const cellTextWidth = colHalf - 6;
+
+      doc.setFontSize(7);
+      doc.setFont(undefined, 'normal');
+      const value1Lines = splitPdfLines(doc, v1, cellTextWidth, 4);
+      const value2Lines = splitPdfLines(doc, v2, cellTextWidth, 4);
+      const valueLineCount = Math.max(value1Lines.length, value2Lines.length, 1);
+      const rowHeight = Math.max(9.5, 7.2 + (valueLineCount * 3.1));
+
+      if (currentY + rowHeight > pageHeight - 18) {
+        doc.addPage();
+        currentY = 16;
+      }
+
+      doc.setFillColor(248, 250, 252);
+      doc.rect(margin, currentY, pageWidth - margin * 2, rowHeight, 'F');
+      doc.setDrawColor(226, 232, 240);
+      doc.line(margin, currentY + rowHeight, pageWidth - margin, currentY + rowHeight);
+      doc.line(margin + colHalf, currentY, margin + colHalf, currentY + rowHeight);
 
       // Coluna 1
       doc.setFont(undefined, 'bold');
+      doc.setFontSize(6.7);
       doc.setTextColor(71, 85, 105);
-      doc.text(f1, margin + 2, currentY + 4.2);
+      doc.text(f1, margin + 2, currentY + 3.5);
       doc.setFont(undefined, 'normal');
+      doc.setFontSize(7);
       doc.setTextColor(15, 23, 42);
-      doc.text(sanitizePdfText(v1), margin + 40, currentY + 4.2, { maxWidth: colHalf - 42 });
+      drawPdfLines(doc, value1Lines, margin + 2, currentY + 7, 3.1, {
+        maxWidth: cellTextWidth,
+      });
 
       // Coluna 2
       doc.setFont(undefined, 'bold');
+      doc.setFontSize(6.7);
       doc.setTextColor(71, 85, 105);
-      doc.text(f2, margin + colHalf + 2, currentY + 4.2);
+      doc.text(f2, margin + colHalf + 2, currentY + 3.5);
       doc.setFont(undefined, 'normal');
+      doc.setFontSize(7);
       doc.setTextColor(15, 23, 42);
-      doc.text(sanitizePdfText(v2), margin + colHalf + 40, currentY + 4.2, { maxWidth: colHalf - 42 });
+      drawPdfLines(doc, value2Lines, margin + colHalf + 2, currentY + 7, 3.1, {
+        maxWidth: cellTextWidth,
+      });
 
-      currentY += 6.5;
+      currentY += rowHeight;
     });
 
     currentY += 6;
@@ -177,43 +230,61 @@ export async function generateReplacementPdfReport({
       { step: '13', title: 'Vinculação Final', desc: 'Peça substituta consolidada com a peça original no lote', date: order.completed_at }
     ];
 
-    // Cabeçalho da Linha do Tempo
-    doc.setFillColor(15, 23, 42);
-    doc.rect(margin, currentY, pageWidth - margin * 2, 6, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(7.5);
-    doc.setFont(undefined, 'bold');
-    doc.text('#', margin + 2, currentY + 4.5);
-    doc.text('Etapa do Ciclo de Vida', margin + 10, currentY + 4.5);
-    doc.text('Detalhamento Técnico / Auditoria', margin + 65, currentY + 4.5);
-    doc.text('Data & Hora', pageWidth - margin - 35, currentY + 4.5);
+    const drawTimelineHeader = () => {
+      doc.setFillColor(15, 23, 42);
+      doc.rect(margin, currentY, pageWidth - margin * 2, 6, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(7.5);
+      doc.setFont(undefined, 'bold');
+      doc.text('#', margin + 2, currentY + 4.5);
+      doc.text('Etapa do Ciclo de Vida', margin + 10, currentY + 4.5);
+      doc.text('Detalhamento Técnico / Auditoria', margin + 65, currentY + 4.5);
+      doc.text('Data & Hora', pageWidth - margin - 35, currentY + 4.5);
+      currentY += 6;
+    };
 
-    currentY += 6;
+    drawTimelineHeader();
 
     doc.setFontSize(7);
     timelineSteps.forEach((s, idx) => {
-      if (currentY > pageHeight - 20) {
+      doc.setFontSize(7);
+      doc.setFont(undefined, 'bold');
+      const titleLines = splitPdfLines(doc, s.title, 52, 2);
+      doc.setFont(undefined, 'normal');
+      const descriptionLines = splitPdfLines(
+        doc,
+        s.desc,
+        pageWidth - margin * 2 - 107,
+        3,
+      );
+      const timelineLineCount = Math.max(titleLines.length, descriptionLines.length, 1);
+      const timelineRowHeight = Math.max(6, 2.6 + (timelineLineCount * 3));
+
+      if (currentY + timelineRowHeight > pageHeight - 18) {
         doc.addPage();
-        currentY = 20;
+        currentY = 16;
+        drawTimelineHeader();
       }
       doc.setFillColor(idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 252);
-      doc.rect(margin, currentY, pageWidth - margin * 2, 5.5, 'F');
+      doc.rect(margin, currentY, pageWidth - margin * 2, timelineRowHeight, 'F');
       doc.setDrawColor(241, 245, 249);
-      doc.line(margin, currentY + 5.5, pageWidth - margin, currentY + 5.5);
+      doc.line(margin, currentY + timelineRowHeight, pageWidth - margin, currentY + timelineRowHeight);
 
       doc.setFont(undefined, 'bold');
       doc.setTextColor(2, 132, 199);
-      doc.text(s.step, margin + 2, currentY + 4);
+      doc.text(s.step, margin + 2, currentY + 4.2);
       doc.setTextColor(15, 23, 42);
-      doc.text(s.title, margin + 10, currentY + 4);
+      drawPdfLines(doc, titleLines, margin + 10, currentY + 4.2, 3, { maxWidth: 52 });
 
       doc.setFont(undefined, 'normal');
       doc.setTextColor(71, 85, 105);
-      doc.text(sanitizePdfText(s.desc), margin + 65, currentY + 4, { maxWidth: pageWidth - margin * 2 - 105 });
+      drawPdfLines(doc, descriptionLines, margin + 65, currentY + 4.2, 3, {
+        maxWidth: pageWidth - margin * 2 - 107,
+      });
 
-      doc.text(s.date ? format(new Date(s.date), 'dd/MM/yy HH:mm') : '—', pageWidth - margin - 35, currentY + 4);
+      doc.text(s.date ? format(new Date(s.date), 'dd/MM/yy HH:mm') : '-', pageWidth - margin - 35, currentY + 4.2);
 
-      currentY += 5.5;
+      currentY += timelineRowHeight;
     });
 
   } else {
@@ -385,11 +456,14 @@ export async function generateReplacementPdfReport({
   // Registrar exportação no banco para auditoria
   try {
     const replacementIds = targetOrders.map(o => o.id).filter(Boolean);
+    const authResult = await supabase.auth.getUser();
+    const authData = authResult?.data;
     await supabase.from('replacement_report_exports').insert({
       report_code: reportCode,
       report_type: reportType,
       filters: filters,
       replacement_ids: replacementIds,
+      generated_by: authData?.user?.id || null,
       generated_by_name: userName,
       status: 'completed'
     });
@@ -402,6 +476,14 @@ export async function generateReplacementPdfReport({
     ? `Reposicao_${singleOrder?.replacement_code || reportCode}.pdf`
     : `Relatorio_Reposicoes_${format(new Date(), 'yyyy-MM-dd')}.pdf`;
 
-  doc.save(filename);
-  return { success: true, reportCode, filename };
+  if (download) {
+    doc.save(filename);
+  }
+
+  return {
+    success: true,
+    reportCode,
+    filename,
+    pdfArrayBuffer: download ? null : doc.output('arraybuffer'),
+  };
 }

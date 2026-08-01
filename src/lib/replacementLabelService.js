@@ -85,17 +85,24 @@ export async function recordReplacementLabelPrint({
     throw new Error('ID da ordem de reposição é obrigatório.');
   }
 
+  const resolvedClientEventId = clientEventId
+    || globalThis.crypto?.randomUUID?.()
+    || null;
+
   const { data, error } = await supabase.rpc('register_replacement_label_print', {
     p_replacement_request_id: replacementOrderId,
     p_reprint_reason: reprintReason,
     p_reprint_reason_details: reprintReasonDetails,
     p_printer_name: printerName,
     p_user_name: userName,
-    p_client_event_id: clientEventId
+    p_client_event_id: resolvedClientEventId
   });
 
   if (error) {
     console.error('Erro RPC register_replacement_label_print:', error);
+    if (error.code === 'PGRST202') {
+      throw new Error('O serviço de impressão ainda não foi carregado pelo banco. Atualize a página e tente novamente.');
+    }
     throw new Error(error.message || 'Falha ao registrar impressão no banco de dados.');
   }
 
