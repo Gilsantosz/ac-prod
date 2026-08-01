@@ -16,10 +16,12 @@ export default function CollectionReadItem({
   const isBlocked = read.event_status === 'blocked' || read.event_status === 'duplicated';
   const isRework = read.event_status === 'rework';
   const isApproved = read.event_status === 'approved';
+  // Peça original reprovada que foi resolvida via reposição — tag distinto
+  const isApprovedViaReplacement = read.event_status === 'approved_via_replacement';
   const isNotFound = ['not_found', 'invalid'].includes(read.event_status);
   const isError = ['error', 'processing'].includes(read.event_status);
   const entryType = read.entry_type || read.result_payload?.entry_type || read.result_payload?.source;
-  const isReplacementEntry = ['baixa_reposicao', 'replacement_approval'].includes(entryType);
+  const isReplacementEntry = ['baixa_reposicao', 'replacement_approval'].includes(entryType) || isApprovedViaReplacement;
   const traceabilityCode = isReplacementEntry
     ? (read.raw_value || read.result_payload?.barcode || read.traceability_code || 'Sem identificação')
     : (read.traceability_code || read.raw_value || 'Sem identificação');
@@ -46,6 +48,11 @@ export default function CollectionReadItem({
     if (isBlocked) return <Badge className="bg-amber-500 text-white border-0 text-[10px]">BLOQUEADA</Badge>;
     if (isRework) return <Badge className="bg-purple-500 text-white border-0 text-[10px]">RETRABALHO</Badge>;
     if (isApproved) return <Badge className="bg-emerald-500 text-white border-0 text-[10px]">APROVADA</Badge>;
+    if (isApprovedViaReplacement) return (
+      <Badge className="bg-indigo-600 text-white border-0 text-[10px] gap-1">
+        ↻ APROVADA VIA REPOSIÇÃO
+      </Badge>
+    );
     if (isNotFound) return <Badge className="bg-zinc-600 text-white border-0 text-[10px]">NÃO LOCALIZADA</Badge>;
     if (isError) return <Badge className="bg-red-700 text-white border-0 text-[10px]">ERRO DE SINCRONIA</Badge>;
     return <Badge variant="outline" className="text-[10px]">{read.event_status}</Badge>;
@@ -58,7 +65,9 @@ export default function CollectionReadItem({
         'w-full text-left p-3.5 rounded-xl border transition-all duration-200 cursor-pointer space-y-2.5 flex flex-col justify-between hover:translate-y-[-1px] select-none',
         isSelected
           ? 'border-emerald-500/50 bg-emerald-500/5 shadow-sm ring-1 ring-emerald-500/15'
-          : 'border-border/50 bg-card hover:border-border/80'
+          : isApprovedViaReplacement
+            ? 'border-indigo-500/40 bg-indigo-500/5 hover:border-indigo-500/60'
+            : 'border-border/50 bg-card hover:border-border/80'
       )}
     >
       {/* Topo do card: Horário, Código e Status */}
@@ -73,7 +82,12 @@ export default function CollectionReadItem({
           </span>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
-          {isReplacementEntry ? (
+          {isApprovedViaReplacement ? (
+            // Peça original que foi reprovada e resolvida via reposição
+            <Badge className="bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/30 text-[9px] font-bold gap-1">
+              ↻ Resolvida por reposição
+            </Badge>
+          ) : isReplacementEntry ? (
             <Badge className="bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[9px] font-bold gap-1">
               ↻ Baixa por reposição
             </Badge>

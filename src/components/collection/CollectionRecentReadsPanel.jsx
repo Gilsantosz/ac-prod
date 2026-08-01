@@ -269,6 +269,7 @@ export default function CollectionRecentReadsPanel({
             >
               <option value="all">Todos Status</option>
               <option value="approved">Aprovadas</option>
+              <option value="approved_via_replacement">↻ Via Reposição</option>
               <option value="rejected">Reprovadas</option>
               <option value="blocked">Bloqueadas</option>
               <option value="duplicated">Duplicadas</option>

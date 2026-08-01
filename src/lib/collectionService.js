@@ -8,7 +8,9 @@ function normalizeCurrentPieceStatus(piece) {
   const replacementStatus = String(piece.replacement_status || '').trim().toLowerCase();
 
   if (status === 'blocked') return 'blocked';
-  if (['replaced', 'completed', 'approved', 'active', 'in_progress'].includes(status) || ['replaced', 'in_production', 'completed'].includes(replacementStatus)) {
+  // 'replaced' = peça original reprovada resolvida via reposição: tag distinto para o histórico
+  if (status === 'replaced' || replacementStatus === 'replaced') return 'approved_via_replacement';
+  if (['completed', 'approved', 'active', 'in_progress'].includes(status) || ['in_production', 'completed'].includes(replacementStatus)) {
     return 'approved';
   }
   if (['rejected', 'replacement_requested'].includes(status) || replacementStatus === 'requested') return 'rejected';
@@ -302,8 +304,9 @@ export async function getCollectionKpis({
     .eq('step_code_canonico', stepCode);
 
   const approvedPieceIds = new Set((approvedFacts || []).map(f => f.piece_id));
-  // Peças 'replaced' são consideradas aprovadas cumulativas (resolvidas via reposição)
+  // Peças 'replaced' são aprovadas via reposição — contam no cumulativo
   const replacedPieceIds = new Set(cellPieces.filter(p => p.status === 'replaced').map(p => p.id));
+  // approved_via_replacement e replaced são ambos aprovados nos KPIs (distintos apenas no histórico)
   const approvedCumulative = cellPieces.filter(p => approvedPieceIds.has(p.id) || replacedPieceIds.has(p.id)).length;
   const pending = Math.max(expected - approvedCumulative, 0);
 
