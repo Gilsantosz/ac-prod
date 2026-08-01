@@ -264,10 +264,12 @@ export async function getCollectionKpis({
   const stepCode = cellCodeMap[resolvedCellName.toLowerCase()] || resolvedCellName.toLowerCase();
 
   // 1. Buscar peças ativas atreladas a lotes não encerrados/cancelados
+  // CORREÇÃO: 'replaced' NÃO é excluído — peças substituídas continuam no universo de produção
+  // A peça original 'replaced' + a peça de reposição ambas contribuem para o total real do lote
   const { data: pieces } = await supabase
     .from('production_pieces')
     .select('id, status, rework_status, replacement_status, route_steps, requires_cut, requires_edge, requires_cnc, requires_joinery, pcp_import_batch_id, lot_id, production_lots!inner(status, pcp_import_batch_id)')
-    .not('status', 'in', '("cancelled","replaced","shipped")')
+    .not('status', 'in', '("cancelled","shipped")')
     .not('production_lots.status', 'in', '("closed","shipped","cancelled")');
 
   let activePieces = pieces || [];
@@ -300,7 +302,9 @@ export async function getCollectionKpis({
     .eq('step_code_canonico', stepCode);
 
   const approvedPieceIds = new Set((approvedFacts || []).map(f => f.piece_id));
-  const approvedCumulative = cellPieces.filter(p => approvedPieceIds.has(p.id)).length;
+  // Peças 'replaced' são consideradas aprovadas cumulativas (resolvidas via reposição)
+  const replacedPieceIds = new Set(cellPieces.filter(p => p.status === 'replaced').map(p => p.id));
+  const approvedCumulative = cellPieces.filter(p => approvedPieceIds.has(p.id) || replacedPieceIds.has(p.id)).length;
   const pending = Math.max(expected - approvedCumulative, 0);
 
   // 3. Leituras do turno/estação
