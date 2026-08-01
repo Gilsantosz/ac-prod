@@ -924,7 +924,7 @@ export async function collectReplacementStageJsFallback({
     notes: `Baixa de reposição na célula ${cellName} (${order.replacement_code || 'REPOSIÇÃO'})`
   });
 
-  // 5. Atualizar Estado da Peça e Ordem
+  // 5. Atualizar Estado da Peça Substituta, Peça Original e Ordem
   if (targetPiece.id) {
     await supabase.from('production_pieces').update({
       completed_steps: newCompletedSteps,
@@ -934,9 +934,16 @@ export async function collectReplacementStageJsFallback({
     }).eq('id', targetPiece.id);
   }
 
+  if (order.original_piece_id && order.original_piece_id !== targetPiece.id) {
+    await supabase.from('production_pieces').update({
+      completed_steps: newCompletedSteps,
+      current_stage: newNextStage || 'Concluída',
+      updated_at: new Date().toISOString()
+    }).eq('id', order.original_piece_id);
+  }
+
   await supabase.from('replacement_orders').update({
     status: isFinalStage ? 'completed' : 'in_production',
-    current_stage: newNextStage || 'Concluída',
     completed_at: isFinalStage ? new Date().toISOString() : order.completed_at,
     updated_at: new Date().toISOString()
   }).eq('id', order.id);
@@ -947,6 +954,7 @@ export async function collectReplacementStageJsFallback({
       updated_at: new Date().toISOString()
     }).eq('id', order.original_piece_id);
   }
+
 
   return {
     success: true,

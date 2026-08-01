@@ -229,44 +229,52 @@ export default function ReplacementOrderCard({
           </p>
 
           <div className="flex flex-wrap items-center gap-1.5 pt-1">
-            {order.route_steps.map((step, idx) => {
-              const formattedStep = formatStageName(step);
-              const completedSteps = order.replacement_piece?.completed_steps || [];
-              const isCompleted = completedSteps.some(s => formatStageName(s).toLowerCase() === formattedStep.toLowerCase());
+            {(() => {
+              const completedSteps = [
+                ...(order.replacement_piece?.completed_steps || []),
+                ...(order.original_piece?.completed_steps || []),
+                ...(order.completed_steps || [])
+              ].map(s => formatStageName(s));
 
-              // Identificar etapa ativa atual
-              const currentStageName = formatStageName(order.current_stage || order.replacement_piece?.current_stage || order.route_steps[0]);
-              const isCurrent = !isCompleted && currentStageName.toLowerCase() === formattedStep.toLowerCase();
+              // Primeira etapa da rota que ainda não foi concluída
+              const nextPendingStepInRoute = (order.route_steps || [])
+                .map(s => formatStageName(s))
+                .find(stepName => !completedSteps.some(cs => cs.toLowerCase() === stepName.toLowerCase()));
 
-              // Status visual da etapa
-              let badgeStyle = 'bg-secondary text-muted-foreground border-border/40';
-              let icon = '🔒';
+              return order.route_steps.map((step, idx) => {
+                const formattedStep = formatStageName(step);
+                const isCompleted = completedSteps.some(cs => cs.toLowerCase() === formattedStep.toLowerCase());
+                const isCurrent = !isCompleted && nextPendingStepInRoute && nextPendingStepInRoute.toLowerCase() === formattedStep.toLowerCase();
 
-              if (isCompleted) {
-                badgeStyle = 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30';
-                icon = '✓';
-              } else if (isCurrent) {
-                badgeStyle = 'bg-cyan-500/10 text-cyan-600 border-cyan-500/40 ring-1 ring-cyan-500/30 animate-pulse';
-                icon = '●';
-              } else {
-                badgeStyle = 'bg-slate-500/10 text-slate-500 border-slate-500/20';
-                icon = '🔒';
-              }
+                let badgeStyle = 'bg-slate-500/10 text-slate-500 border-slate-500/20';
+                let icon = '🔒';
 
-              return (
-                <Fragment key={idx}>
-                  {idx > 0 && <span className="text-muted-foreground text-[10px]">➔</span>}
-                  <Badge
-                    variant="outline"
-                    className={`text-[11px] px-2.5 py-1 font-bold cursor-pointer hover:opacity-80 transition-all ${badgeStyle}`}
-                    title={`Etapa: ${formattedStep} (${isCompleted ? 'Concluída' : isCurrent ? 'Liberada/Em Processamento' : 'Aguardando etapas anteriores'})`}
-                  >
-                    <span className="mr-1">{icon}</span>
-                    {formattedStep}
-                  </Badge>
-                </Fragment>
-              );
-            })}
+                if (isCompleted) {
+                  badgeStyle = 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30';
+                  icon = '✓';
+                } else if (isCurrent) {
+                  badgeStyle = 'bg-cyan-500/10 text-cyan-600 border-cyan-500/40 ring-1 ring-cyan-500/30 animate-pulse';
+                  icon = '●';
+                } else {
+                  badgeStyle = 'bg-slate-500/10 text-slate-500 border-slate-500/20';
+                  icon = '🔒';
+                }
+
+                return (
+                  <Fragment key={idx}>
+                    {idx > 0 && <span className="text-muted-foreground text-[10px]">➔</span>}
+                    <Badge
+                      variant="outline"
+                      className={`text-[11px] px-2.5 py-1 font-bold cursor-pointer hover:opacity-80 transition-all ${badgeStyle}`}
+                      title={`Etapa: ${formattedStep} (${isCompleted ? 'Concluída (Verde)' : isCurrent ? 'Destrancada / Em Produção (Aguardando Coleta)' : 'Bloqueada (Aguardando etapas anteriores)'})`}
+                    >
+                      <span className="mr-1">{icon}</span>
+                      {formattedStep}
+                    </Badge>
+                  </Fragment>
+                );
+              });
+            })()}
           </div>
         </div>
       )}

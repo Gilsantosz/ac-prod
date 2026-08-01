@@ -384,7 +384,7 @@ BEGIN
     now()
   );
 
-  -- 9. Atualizar Peça Substituta e Ordem de Reposição
+  -- 9. Atualizar Peça Substituta, Peça Original e Ordem de Reposição
   IF v_piece.id IS NOT NULL THEN
     UPDATE public.production_pieces
     SET completed_steps = v_completed,
@@ -393,6 +393,15 @@ BEGIN
         updated_at = now()
     WHERE id = v_piece.id;
   END IF;
+
+  IF v_original_piece.id IS NOT NULL AND v_original_piece.id <> COALESCE(v_piece.id, '00000000-0000-0000-0000-000000000000'::uuid) THEN
+    UPDATE public.production_pieces
+    SET completed_steps = v_completed,
+        current_stage = COALESCE(v_next_stage, 'Concluída'),
+        updated_at = now()
+    WHERE id = v_original_piece.id;
+  END IF;
+
 
   UPDATE public.replacement_orders
   SET status = CASE WHEN v_is_last_stage THEN 'completed' ELSE 'in_production' END,
