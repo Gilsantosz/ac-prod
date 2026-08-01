@@ -708,3 +708,385 @@ export async function cancelReplacement(orderId, { reason = '' } = {}) {
 
   return data;
 }
+
+/**
+ * RPC Transacional com Fallback Resiliente: Executa a baixa da peça de reposição por célula/posto.
+ */
+export async function collectReplacementStage({
+  barcode,
+  replacementOrderId = null,
+  cellId = null,
+  workstationId = null,
+  machineId = null,
+  operatorId = null,
+  shift = null,
+  clientEventId = null,
+  payload = {}
+}) {
+  if (!barcode || !barcode.trim()) {
+    throw new Error('Código de barras é obrigatório para a baixa produtiva.');
+  }
+
+  const cleanBarcode = barcode.trim();
+
+  try {
+    const { data, error } = await supabase.rpc('collect_replacement_stage', {
+      p_barcode: cleanBarcode,
+      p_replacement_order_id: replacementOrderId,
+      p_cell_id: cellId,
+      p_workstation_id: workstationId || machineId,
+      p_machine_id: machineId || workstationId,
+      p_operator_id: operatorId,
+      p_shift: shift,
+      p_client_event_id: clientEventId,
+      p_payload: payload
+    });
+
+    if (!error) return data;
+
+    // Se a RPC não foi encontrada no schema cache (PGRST202) ou houve instabilidade
+    console.warn('RPC collect_replacement_stage indisponível no PostgREST cache, executando fallback JS:', error.message);
+    return await collectReplacementStageJsFallback({
+      barcode: cleanBarcode,
+      replacementOrderId,
+      cellId,
+      workstationId: workstationId || machineId,
+      operatorId,
+      shift,
+      clientEventId,
+      payload
+    });
+  } catch (err) {
+    console.warn('Executando fallback JS para baixa de reposição:', err);
+    return await collectReplacementStageJsFallback({
+      barcode: cleanBarcode,
+      replacementOrderId,
+      cellId,
+      workstationId: workstationId || machineId,
+      operatorId,
+      shift,
+      clientEventId,
+      payload
+    });
+  }
+}
+
+/**
+ * Fallback JS para baixa de reposição quando a RPC ainda não estiver disponível no schema cache.
+ */
+export async function collectReplacementStageJsFallback({
+  barcode,
+  replacementOrderId = null,
+  cellId = null,
+  workstationId = null,
+  operatorId = null,
+  shift = '1',
+  clientEventId = null
+}) {
+  // 1. Buscar Ordem de Reposição por Código de Barras (Original, Substituta ou Código da Ordem)
+  let orderQuery = supabase
+    .from('replacement_orders')
+    .select(`
+      *,
+      original_piece:original_piece_id (*),
+      replacement_piece:replacement_piece_id (*)
+    `);
+
+  if (replacementOrderId) {
+    orderQuery = orderQuery.eq('id', replacementOrderId);
+  } else {
+    orderQuery = orderQuery.or(`replacement_code.eq.${barcode},original_piece_id.eq.${barcode},replacement_piece_id.eq.${barcode}`);
+  }
+
+  const { data: rawOrders } = await orderQuery.order('created_at', { ascending: false }).limit(20);
+  let order = (rawOrders || []).find(o => o.status !== 'cancelled' && o.status !== 'completed');
+
+  if (!order && (!rawOrders || rawOrders.length === 0)) {
+    // Buscar via production_pieces por piece_uid / piece_code / traceability_code
+    const { data: pieces } = await supabase
+      .from('production_pieces')
+      .select('id, piece_uid, piece_code, traceability_code')
+      .or(`piece_uid.eq.${barcode},piece_code.eq.${barcode},traceability_code.eq.${barcode}`)
+      .limit(10);
+
+    const pieceIds = (pieces || []).map(p => p.id);
+    if (pieceIds.length > 0) {
+      const { data: matchedOrders } = await supabase
+        .from('replacement_orders')
+        .select('*, original_piece:original_piece_id (*), replacement_piece:replacement_piece_id (*)')
+        .or(`original_piece_id.in.(${pieceIds.join(',')}),replacement_piece_id.in.(${pieceIds.join(',')})`)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      order = matchedOrders?.[0] || null;
+    }
+  }
+
+  if (!order) {
+    return {
+      success: false,
+      result_status: 'blocked',
+      reason_code: 'ORDER_NOT_FOUND',
+      message: 'Código não corresponde a nenhuma ordem de reposição válida ou peça cadastrada.'
+    };
+  }
+
+  if (order.status === 'cancelled') {
+    return {
+      success: false,
+      result_status: 'blocked',
+      reason_code: 'ORDER_CANCELLED',
+      message: 'Ordem de reposição cancelada. Nenhuma leitura é permitida.'
+    };
+  }
+
+  if (order.status === 'completed') {
+    return {
+      success: false,
+      result_status: 'blocked',
+      reason_code: 'ORDER_ALREADY_COMPLETED',
+      message: 'Reposição já finalizada com sucesso. Nenhuma nova baixa é necessária.'
+    };
+  }
+
+  if (['requested', 'under_review', 'approved', 'released'].includes(order.status)) {
+    await supabase.from('replacement_orders').update({
+      status: 'in_production',
+      released_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }).eq('id', order.id);
+    order.status = 'in_production';
+  }
+
+  // 2. Determinar Posto e Célula
+  let workstationName = 'Posto de Reposição';
+  let cellName = 'Célula de Reposição';
+
+  if (workstationId) {
+    const { data: ws } = await supabase.from('production_machines').select('name, cell_name').eq('id', workstationId).single();
+    if (ws) {
+      workstationName = ws.name;
+      cellName = ws.cell_name || cellName;
+    }
+  } else if (cellId) {
+    const { data: c } = await supabase.from('cells').select('name').eq('id', cellId).single();
+    if (c) cellName = c.name;
+  }
+
+  // 3. Determinar Rota e Entrada Direta na Célula
+  const targetPiece = order.replacement_piece || order.original_piece || {};
+  const routeSteps = targetPiece.route_steps || order.route_steps || ['Corte', 'Borda', 'Separação', 'Embalagem'];
+  const completedSteps = (targetPiece.completed_steps || []).map(s => formatStageName(s));
+  const currentWorkstationStage = formatStageName(cellName);
+
+  if (completedSteps.includes(currentWorkstationStage)) {
+    return {
+      success: true,
+      result_status: 'already_completed',
+      reason_code: 'STAGE_ALREADY_COMPLETED',
+      replacement_order_id: order.id,
+      completed_stage: currentWorkstationStage,
+      message: `Esta peça já recebeu baixa na etapa de ${currentWorkstationStage}.`
+    };
+  }
+
+  // Auto-concluir etapas até a célula atual
+  const newCompletedSteps = [...completedSteps];
+  for (const step of routeSteps) {
+    const formatted = formatStageName(step);
+    if (!newCompletedSteps.includes(formatted)) {
+      newCompletedSteps.push(formatted);
+    }
+    if (formatted.toLowerCase() === currentWorkstationStage.toLowerCase()) {
+      break;
+    }
+  }
+
+  const remainingSteps = routeSteps.map(s => formatStageName(s)).filter(s => !newCompletedSteps.includes(s));
+  const isFinalStage = remainingSteps.length === 0;
+  const newNextStage = remainingSteps[0] || null;
+
+
+  await supabase.from('production_stage_readings').insert({
+    piece_id: targetPiece.id || order.original_piece_id,
+    item_id: targetPiece.id || order.original_piece_id,
+    tag_value: barcode,
+    step_name: nextStage,
+    cell_name: cellName,
+    station_name: workstationName,
+    machine_id: workstationId,
+    machine_name: workstationName,
+    operator: 'Operador MES',
+    shift: shift || '1',
+    status: 'approved',
+    event_type: 'replacement_stage_reading',
+    client_event_id: clientEventId,
+    notes: `Baixa de reposição na célula ${cellName} (${order.replacement_code || 'REPOSIÇÃO'})`
+  });
+
+  // 5. Atualizar Estado da Peça e Ordem
+  if (targetPiece.id) {
+    await supabase.from('production_pieces').update({
+      completed_steps: newCompletedSteps,
+      current_stage: newNextStage || 'Concluída',
+      status: isFinalStage ? 'completed' : 'in_production',
+      updated_at: new Date().toISOString()
+    }).eq('id', targetPiece.id);
+  }
+
+  await supabase.from('replacement_orders').update({
+    status: isFinalStage ? 'completed' : 'in_production',
+    current_stage: newNextStage || 'Concluída',
+    completed_at: isFinalStage ? new Date().toISOString() : order.completed_at,
+    updated_at: new Date().toISOString()
+  }).eq('id', order.id);
+
+  if (isFinalStage && order.original_piece_id) {
+    await supabase.from('production_pieces').update({
+      status: 'replaced',
+      updated_at: new Date().toISOString()
+    }).eq('id', order.original_piece_id);
+  }
+
+  return {
+    success: true,
+    result_status: 'approved',
+    replacement_order_id: order.id,
+    completed_stage: currentWorkstationStage,
+    next_stage: newNextStage,
+    order_status: isFinalStage ? 'completed' : 'in_production',
+    replacement_completed: isFinalStage,
+    message: isFinalStage
+      ? `${currentWorkstationStage} concluída com sucesso! Ordem de reposição finalizada automaticamente.`
+      : `${currentWorkstationStage} concluída. Peça liberada para a próxima etapa: ${newNextStage}.`
+  };
+}
+
+
+/**
+ * RPC Admin: Força a conclusão auditada da ordem de reposição.
+ */
+export async function forceCompleteReplacement(orderId, { reason }) {
+  if (!orderId) throw new Error('ID da ordem de reposição é obrigatório.');
+  if (!reason || !reason.trim()) throw new Error('Justificativa é obrigatória para a conclusão forçada.');
+
+  const { data, error } = await supabase.rpc('force_complete_piece_replacement', {
+    p_order_id: orderId,
+    p_reason: reason.trim()
+  });
+
+  if (error) throw error;
+  if (!data?.success) throw new Error(data?.error || 'Falha ao forçar conclusão da reposição.');
+
+  return data;
+}
+
+/**
+ * Busca postos de trabalho / máquinas habilitados para reposição.
+ */
+export async function getEnabledWorkstations(cellId = null) {
+  let query = supabase
+    .from('production_machines')
+    .select('*')
+    .eq('active', true);
+
+  if (cellId) {
+    // Buscar nome da célula se fornecido UUID
+    const { data: cellData } = await supabase
+      .from('cells')
+      .select('name')
+      .eq('id', cellId)
+      .single();
+
+    if (cellData?.name) {
+      query = query.ilike('cell_name', `%${cellData.name}%`);
+    }
+  }
+
+  const { data, error } = await query.order('name', { ascending: true });
+  if (error) {
+    console.error('Erro ao buscar postos de trabalho:', error);
+    return [];
+  }
+
+  return (data || []).filter(m => m.allows_replacement !== false);
+}
+
+/**
+ * Busca autorizações ativas de um operador em postos de trabalho.
+ */
+export async function getOperatorWorkstationAuthorizations(operatorId) {
+  if (!operatorId) return [];
+
+  const { data, error } = await supabase
+    .from('workstation_operator_authorizations')
+    .select(`
+      *,
+      machine:machine_id (id, name, cell_name),
+      cell:cell_id (id, name)
+    `)
+    .eq('operator_id', operatorId)
+    .eq('is_active', true);
+
+  if (error) {
+    console.error('Erro ao buscar autorizações do operador:', error);
+    return [];
+  }
+
+  return data || [];
+}
+
+/**
+ * Concede autorização para operador em um posto de trabalho.
+ */
+export async function grantOperatorWorkstationAuthorization({
+  operatorId,
+  machineId = null,
+  cellId = null,
+  shift = '1',
+  authorizationType = 'permanent',
+  validUntil = null,
+  notes = ''
+}) {
+  if (!operatorId) throw new Error('ID do operador é obrigatório.');
+
+  const { data, error } = await supabase
+    .from('workstation_operator_authorizations')
+    .insert({
+      operator_id: operatorId,
+      machine_id: machineId,
+      cell_id: cellId,
+      shift,
+      authorization_type: authorizationType,
+      valid_until: validUntil,
+      is_active: true,
+      notes
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Revoga uma autorização de operador em posto.
+ */
+export async function revokeOperatorWorkstationAuthorization(authorizationId, blockedReason = '') {
+  if (!authorizationId) throw new Error('ID da autorização é obrigatório.');
+
+  const { data, error } = await supabase
+    .from('workstation_operator_authorizations')
+    .update({
+      is_active: false,
+      blocked_reason: blockedReason,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', authorizationId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+

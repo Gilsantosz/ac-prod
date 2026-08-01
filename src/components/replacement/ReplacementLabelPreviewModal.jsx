@@ -67,8 +67,14 @@ export default function ReplacementLabelPreviewModal({
   // Validação de Dados para Liberação de Impressão
   const validation = validateReplacementLabelData(order, origPiece, replPiece);
 
-  // Código de rastreio oficial da reposição
-  const traceCode = replPiece.traceability_code || replPiece.piece_uid || buildReplacementTraceCode(origPiece, (printHistory.length || 0) + 1);
+  // Código da peça original para o código de barras principal e texto
+  const originalCode = origPiece.piece_code 
+    || origPiece.piece_uid 
+    || origPiece.traceability_code 
+    || '09950020';
+
+  // Código de rastreio de reposição (para rodapé discreto)
+  const replacementCode = order?.replacement_code || replPiece.piece_uid || buildReplacementTraceCode(origPiece, 1);
 
   // Lotes
   const generalLot = order?.lot_code || origPiece.general_lot_code || origPiece.lot_code || '26072640';
@@ -91,8 +97,8 @@ export default function ReplacementLabelPreviewModal({
     }
   }, [open, order?.id]);
 
-  // Gerar SVG do Código de Barras Code 128 (Compacto para abrir espaço para o contexto completo)
-  const barcodeSvg = generateCode128Svg(traceCode, {
+  // Gerar SVG do Código de Barras Code 128 usando o CÓDIGO ORIGINAL DA PEÇA
+  const barcodeSvg = generateCode128Svg(originalCode, {
     height: 28,
     barWidth: 1.7,
     quietZone: 4,
@@ -126,9 +132,6 @@ export default function ReplacementLabelPreviewModal({
 
       toast.success(`Etiqueta de reposição enviada para impressão (${viaLabel}).`);
 
-      // O modal e seu CSS de 100 x 50 mm precisam permanecer montados enquanto
-      // o navegador prepara a pre-visualizacao. Fechar antes de window.print()
-      // fazia o Chrome imprimir a pagina inteira do Leo Flow.
       await waitForPrintableLayout();
       window.print();
 
@@ -169,7 +172,7 @@ export default function ReplacementLabelPreviewModal({
             </DialogTitle>
           </div>
           <DialogDescription className="text-xs text-muted-foreground mt-1">
-            Pré-visualização técnica oficial da etiqueta de chão de fábrica com contexto completo Promob e Code 128.
+            Pré-visualização técnica oficial da etiqueta com código de barras da peça original e identificador de reposição discreto.
           </DialogDescription>
         </DialogHeader>
 
@@ -253,21 +256,32 @@ export default function ReplacementLabelPreviewModal({
             >
               {/* LINHA 1 — REPOSIÇÃO E VIA */}
               <div className="flex items-center justify-between border-b border-black pb-0.5">
-                <span className="text-xs font-black tracking-widest uppercase">REPOSIÇÃO</span>
+                <span className="text-xs font-black tracking-widest uppercase">REPOSIÇÃO MES</span>
                 <span className="text-xs font-black tracking-wider uppercase">{viaLabel}</span>
               </div>
 
-              {/* LINHA 2 — NÚMERO DE RASTREIO */}
-              <div className="mt-0.5">
-                <div className="text-[7.5px] font-bold uppercase tracking-wider text-slate-700">
-                  NÚMERO DE RASTREIO
+              {/* LINHA 2 — CÓDIGO DA PEÇA E CÓDIGO DA REPOSIÇÃO (DISCRETO) */}
+              <div className="mt-0.5 flex items-center justify-between">
+                <div>
+                  <div className="text-[7.5px] font-bold uppercase tracking-wider text-slate-700">
+                    CÓDIGO ORIGINAL DA PEÇA
+                  </div>
+                  <div className="text-[11px] font-black tracking-wider text-black">
+                    {originalCode}
+                  </div>
                 </div>
-                <div className="text-[11px] font-black tracking-wider text-black">
-                  {traceCode}
+                {/* Código de reposição menor e sem destaque */}
+                <div className="text-right">
+                  <div className="text-[6.5px] font-normal text-slate-500 uppercase">
+                    REG. REPOSIÇÃO
+                  </div>
+                  <div className="text-[8px] font-normal text-slate-600">
+                    {replacementCode}
+                  </div>
                 </div>
               </div>
 
-              {/* LINHA 3 — CÓDIGO DE BARRAS CODE 128 */}
+              {/* LINHA 3 — CÓDIGO DE BARRAS CODE 128 (ORIGINAL DA PEÇA) */}
               <div className="flex flex-col items-center justify-center my-0.5">
                 <div
                   className="w-full flex justify-center overflow-hidden"
@@ -287,28 +301,27 @@ export default function ReplacementLabelPreviewModal({
                 </div>
               </div>
 
-              {/* LINHA 5 — DESCRIÇÃO COMPLETA DO PRODUTO PROMOB (LINHA 1 & LINHA 2) */}
+              {/* LINHA 5 — DESCRIÇÃO COMPLETA DO PRODUTO PROMOB */}
               <div className="my-0.5 space-y-0.5">
                 <div className="text-[7px] font-bold text-slate-700 uppercase">DESCRIÇÃO DO PRODUTO</div>
-                {/* Linha 1: Nome, Rota, Peça e Medidas Principais */}
                 <div className="text-[8.5px] font-black leading-tight uppercase line-clamp-1 text-black">
                   {fullContext.header}
                 </div>
-                {/* Linha 2: Matéria-Prima, Chapa, Fita e Dimensões Brutas */}
                 <div className="text-[7.5px] font-bold leading-none uppercase line-clamp-1 text-slate-600">
                   {fullContext.details}
                 </div>
               </div>
 
               {/* LINHA 6 — RODAPÉ COMPLETO */}
-              <div className="border-t border-black pt-0.5 text-[7.5px] font-black text-black flex items-center justify-between">
-                <span>{order.replacement_code || 'REP-20260730-7006'}</span>
-                <span>DESTINO: {order.destination_cell_name || 'CORTE'}</span>
-                <span>{orderDateFormatted}</span>
+              <div className="border-t border-black pt-0.5 text-[7.5px] text-black flex items-center justify-between">
+                <span className="font-normal text-slate-600">{replacementCode}</span>
+                <span className="font-black">DESTINO: {order.destination_cell_name || 'CORTE'}</span>
+                <span className="font-normal">{orderDateFormatted}</span>
               </div>
             </div>
           </div>
         </div>
+
 
         <DialogFooter className="p-4 md:p-6 border-t border-border/60 bg-muted/20 flex flex-col sm:flex-row items-center justify-between gap-3">
           <Button

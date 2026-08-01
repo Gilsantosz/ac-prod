@@ -17,7 +17,6 @@ import {
 import {
   getReplacementKpis,
   releaseReplacement,
-  completeReplacement,
   cancelReplacement
 } from '@/lib/replacementService';
 import { getCanonicalReplacementOrders } from '@/lib/replacementCanonicalService';
@@ -29,6 +28,9 @@ import ReplacementLabelPreviewModal from '@/components/replacement/ReplacementLa
 import ReplacementBatchPrintModal from '@/components/replacement/ReplacementBatchPrintModal';
 import ReplacementHistoryModal from '@/components/replacement/ReplacementHistoryModal';
 import LabelTemplateConfigModal from '@/components/replacement/LabelTemplateConfigModal';
+import ReplacementCollectionPanel from '@/components/replacement/ReplacementCollectionPanel';
+import WorkstationConfigModal from '@/components/replacement/WorkstationConfigModal';
+import ReplacementForceCompleteModal from '@/components/replacement/ReplacementForceCompleteModal';
 import { toast } from 'sonner';
 
 export default function ReplacementPage() {
@@ -46,6 +48,8 @@ export default function ReplacementPage() {
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
+  const [showWorkstationConfig, setShowWorkstationConfig] = useState(false);
+  const [forceCompleteOrder, setForceCompleteOrder] = useState(null);
 
   // Seleção Múltipla
   const [selectedIds, setSelectedIds] = useState([]);
@@ -94,7 +98,6 @@ export default function ReplacementPage() {
     invalidateAllMesQueries(queryClient);
     refetchKpis();
     refetchOrders();
-    toast.info('Dados de reposição atualizados.');
   };
 
   const handleToggleSelectAll = () => {
@@ -123,14 +126,8 @@ export default function ReplacementPage() {
   };
 
   const handleComplete = async (order) => {
-    try {
-      await completeReplacement(order.id);
-      toast.success('Ordem de reposição concluída! Peça original atualizada para replaced.');
-      handleRefresh();
-    } catch (error) {
-      console.error('Erro ao concluir reposição:', error);
-      toast.error(error.message || 'Falha ao concluir reposição.');
-    }
+    // Abrir modal de Conclusão Forçada Auditada
+    setForceCompleteOrder(order);
   };
 
   const handleCancel = async (order) => {
@@ -249,30 +246,21 @@ export default function ReplacementPage() {
                 className="cursor-pointer rounded-xl flex items-center gap-2 py-2 font-bold text-foreground"
               >
                 <Printer className="w-4 h-4 text-amber-500" />
-                <span>Imprimir etiquetas selecionadas</span>
+                <span>Imprimir etiquetas selecionadas ({validSelectedCount})</span>
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setShowBatchModal(true)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2">
-                <Printer className="w-4 h-4 text-amber-500" />
-                <span>Imprimir etiquetas por lote</span>
+              <DropdownMenuItem onClick={() => setShowHistoryModal(true)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2 text-muted-foreground">
+                <History className="w-4 h-4 text-slate-500" />
+                <span>Consultar histórico de impressão</span>
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => {
-                  if (filteredOrders.length > 0) setLabelModalOrder(filteredOrders[0]);
-                }}
-                className="cursor-pointer rounded-xl flex items-center gap-2 py-2"
-              >
-                <Printer className="w-4 h-4 text-slate-500" />
-                <span>Imprimir etiqueta individual</span>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setShowHistoryModal(true)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2">
-                <History className="w-4 h-4 text-purple-500" />
-                <span>Histórico de impressões e exportações</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setShowConfigModal(true)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2 text-muted-foreground">
-                <Settings className="w-4 h-4 text-slate-500" />
-                <span>Configurar modelos de etiqueta</span>
-              </DropdownMenuItem>
+              {userPermissions.admin && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setShowConfigModal(true)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2 text-muted-foreground">
+                    <Settings className="w-4 h-4 text-slate-500" />
+                    <span>Configuração do Modelo da Etiqueta</span>
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -280,13 +268,19 @@ export default function ReplacementPage() {
             variant="outline"
             size="sm"
             onClick={handleRefresh}
-            className="h-10 rounded-xl border-border/60 text-xs font-bold flex items-center gap-1.5"
+            className="h-10 rounded-xl border-border/80 text-xs font-bold flex items-center gap-1.5"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className="w-4 h-4 text-muted-foreground" />
             Atualizar
           </Button>
         </div>
       </div>
+
+      {/* Painel de Coleta de Reposição por Célula / Posto (Novo) */}
+      <ReplacementCollectionPanel
+        onCollectionSuccess={handleRefresh}
+        onOpenWorkstationConfig={userPermissions.admin ? () => setShowWorkstationConfig(true) : null}
+      />
 
       {/* Cards de KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

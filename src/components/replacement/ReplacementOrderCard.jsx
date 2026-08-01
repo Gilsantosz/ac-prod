@@ -217,34 +217,52 @@ export default function ReplacementOrderCard({
         </div>
       </div>
 
-      {/* Sequenciamento da Rota Produtiva */}
+      {/* Sequenciamento da Rota Produtiva e Linha do Tempo Interativa MES */}
       {order.route_steps && order.route_steps.length > 0 && (
-        <div className="bg-secondary/20 border border-border/40 rounded-xl p-2.5 text-xs space-y-1.5">
-          <p className="text-[11px] text-muted-foreground font-semibold flex items-center gap-1">
-            <GitCommit className="w-3.5 h-3.5 text-blue-500" />
-            Sequenciamento da Rota Produtiva (Peça aprovada reinicia no {destinationStage}):
+        <div className="bg-secondary/20 border border-border/40 rounded-xl p-3 text-xs space-y-2">
+          <p className="text-[11px] text-muted-foreground font-semibold flex items-center justify-between">
+            <span className="flex items-center gap-1">
+              <GitCommit className="w-3.5 h-3.5 text-blue-500" />
+              Linha do Tempo da Rota Real MES:
+            </span>
+            <span className="text-[10px] text-muted-foreground">Clique para detalhes</span>
           </p>
-          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
             {order.route_steps.map((step, idx) => {
               const formattedStep = formatStageName(step);
-              const isRejectionStage = formattedStep.toLowerCase().includes(rejectionStage.toLowerCase()) || String(step).toLowerCase().includes(rejectionStage.toLowerCase());
-              const isDestination = idx === 0;
+              const completedSteps = order.replacement_piece?.completed_steps || [];
+              const isCompleted = completedSteps.some(s => formatStageName(s).toLowerCase() === formattedStep.toLowerCase());
+
+              // Identificar etapa ativa atual
+              const currentStageName = formatStageName(order.current_stage || order.replacement_piece?.current_stage || order.route_steps[0]);
+              const isCurrent = !isCompleted && currentStageName.toLowerCase() === formattedStep.toLowerCase();
+
+              // Status visual da etapa
+              let badgeStyle = 'bg-secondary text-muted-foreground border-border/40';
+              let icon = '🔒';
+
+              if (isCompleted) {
+                badgeStyle = 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30';
+                icon = '✓';
+              } else if (isCurrent) {
+                badgeStyle = 'bg-cyan-500/10 text-cyan-600 border-cyan-500/40 ring-1 ring-cyan-500/30 animate-pulse';
+                icon = '●';
+              } else {
+                badgeStyle = 'bg-slate-500/10 text-slate-500 border-slate-500/20';
+                icon = '🔒';
+              }
+
               return (
                 <Fragment key={idx}>
                   {idx > 0 && <span className="text-muted-foreground text-[10px]">➔</span>}
                   <Badge
                     variant="outline"
-                    className={`text-[11px] px-2 py-0.5 font-bold ${
-                      isRejectionStage
-                        ? 'bg-rose-500/10 text-rose-600 border-rose-500/30'
-                        : isDestination
-                        ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30'
-                        : 'bg-secondary text-muted-foreground border-border/40'
-                    }`}
+                    className={`text-[11px] px-2.5 py-1 font-bold cursor-pointer hover:opacity-80 transition-all ${badgeStyle}`}
+                    title={`Etapa: ${formattedStep} (${isCompleted ? 'Concluída' : isCurrent ? 'Liberada/Em Processamento' : 'Aguardando etapas anteriores'})`}
                   >
+                    <span className="mr-1">{icon}</span>
                     {formattedStep}
-                    {isRejectionStage && <span className="ml-1 text-[9px] font-normal">(Reprovada)</span>}
-                    {isDestination && !isRejectionStage && <span className="ml-1 text-[9px] font-normal">(Novo Início)</span>}
                   </Badge>
                 </Fragment>
               );
@@ -330,6 +348,7 @@ export default function ReplacementOrderCard({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
         {canApprove && (
           <Button
             type="button"
@@ -354,15 +373,17 @@ export default function ReplacementOrderCard({
           </Button>
         )}
 
-        {canComplete && (
+        {/* Conclusão forçada restrita a Administrador */}
+        {userPermissions.admin && !['completed', 'cancelled'].includes(order.status) && (
           <Button
             type="button"
+            variant="outline"
             size="sm"
             onClick={() => onComplete(order)}
-            className="h-9 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl flex items-center gap-1.5"
+            className="h-9 text-xs font-bold border-rose-500/30 text-rose-600 hover:bg-rose-500/10 rounded-xl"
+            title="Conclusão excepcional forçada protegida por senha e auditoria"
           >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            Concluir Reposição
+            Concluir Forçada
           </Button>
         )}
 
