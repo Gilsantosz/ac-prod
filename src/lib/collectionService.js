@@ -8,10 +8,11 @@ function normalizeCurrentPieceStatus(piece) {
   const replacementStatus = String(piece.replacement_status || '').trim().toLowerCase();
 
   if (status === 'blocked') return 'blocked';
+  if (['replaced', 'completed', 'approved', 'active', 'in_progress'].includes(status) || ['replaced', 'in_production', 'completed'].includes(replacementStatus)) {
+    return 'approved';
+  }
   if (['rejected', 'replacement_requested'].includes(status) || replacementStatus === 'requested') return 'rejected';
   if (['rework', 'rework_pending', 'rework_in_progress'].includes(status)) return 'rework';
-  if (status === 'replaced' || replacementStatus === 'replaced') return 'replaced';
-  if (['completed', 'approved', 'active', 'in_progress'].includes(status)) return 'approved';
   return status || null;
 }
 
