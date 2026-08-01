@@ -709,6 +709,9 @@ export async function cancelReplacement(orderId, { reason = '' } = {}) {
   return data;
 }
 
+// Helper para verificar se um ID é virtual (gerado para células sem máquina cadastrada)
+const isVirtualId = (val) => typeof val === 'string' && (val.startsWith('cell-') || val.startsWith('virtual-'));
+
 /**
  * RPC Transacional com Fallback Resiliente: Executa a baixa da peça de reposição por célula/posto.
  */
@@ -728,29 +731,35 @@ export async function collectReplacementStage({
   }
 
   const cleanBarcode = barcode.trim();
+  const rawWsId = workstationId || machineId;
+
+  const validWorkstationId = isVirtualId(rawWsId) ? null : rawWsId;
+  const validCellId = isVirtualId(cellId) ? null : cellId;
+  const validOperatorId = isVirtualId(operatorId) ? null : operatorId;
+  const validOrderId = isVirtualId(replacementOrderId) ? null : replacementOrderId;
+
 
   try {
     const { data, error } = await supabase.rpc('collect_replacement_stage', {
       p_barcode: cleanBarcode,
-      p_replacement_order_id: replacementOrderId,
-      p_cell_id: cellId,
-      p_workstation_id: workstationId || machineId,
-      p_machine_id: machineId || workstationId,
-      p_operator_id: operatorId,
+      p_replacement_order_id: validOrderId,
+      p_cell_id: validCellId,
+      p_workstation_id: validWorkstationId,
+      p_machine_id: validWorkstationId,
+      p_operator_id: validOperatorId,
       p_shift: shift,
       p_client_event_id: clientEventId,
       p_payload: payload
     });
 
-    if (!error) return data;
+    if (!error && data?.success !== false) return data;
 
-    // Se a RPC não foi encontrada no schema cache (PGRST202) ou houve instabilidade
-    console.warn('RPC collect_replacement_stage indisponível no PostgREST cache, executando fallback JS:', error.message);
+    console.warn('RPC collect_replacement_stage com aviso ou fallback:', error?.message || data?.message);
     return await collectReplacementStageJsFallback({
       barcode: cleanBarcode,
       replacementOrderId,
       cellId,
-      workstationId: workstationId || machineId,
+      workstationId: rawWsId,
       operatorId,
       shift,
       clientEventId,
@@ -762,7 +771,7 @@ export async function collectReplacementStage({
       barcode: cleanBarcode,
       replacementOrderId,
       cellId,
-      workstationId: workstationId || machineId,
+      workstationId: rawWsId,
       operatorId,
       shift,
       clientEventId,
@@ -792,7 +801,7 @@ export async function collectReplacementStageJsFallback({
       replacement_piece:replacement_piece_id (*)
     `);
 
-  if (replacementOrderId) {
+  if (replacementOrderId && isValidUuid(replacementOrderId)) {
     orderQuery = orderQuery.eq('id', replacementOrderId);
   } else {
     orderQuery = orderQuery.or(`replacement_code.eq.${barcode},original_piece_id.eq.${barcode},replacement_piece_id.eq.${barcode}`);
@@ -818,16 +827,18 @@ export async function collectReplacementStageJsFallback({
         .order('created_at', { ascending: false })
         .limit(1);
 
-      order = matchedOrders?.[0] || null;
+      if (matchedOrders && matchedOrders.length > 0) {
+        order = matchedOrders[0];
+      }
     }
   }
 
   if (!order) {
     return {
       success: false,
-      result_status: 'blocked',
+      result_status: 'error',
       reason_code: 'ORDER_NOT_FOUND',
-      message: 'Código não corresponde a nenhuma ordem de reposição válida ou peça cadastrada.'
+      message: `Nenhuma ordem de reposição em aberto encontrada para o código ${barcode}.`
     };
   }
 
@@ -863,12 +874,18 @@ export async function collectReplacementStageJsFallback({
   let cellName = 'Célula de Reposição';
 
   if (workstationId) {
-    const { data: ws } = await supabase.from('production_machines').select('name, cell_name').eq('id', workstationId).single();
-    if (ws) {
-      workstationName = ws.name;
-      cellName = ws.cell_name || cellName;
+    if (typeof workstationId === 'string' && (workstationId.startsWith('cell-') || workstationId.startsWith('virtual-'))) {
+      const cleanName = workstationId.replace(/^(cell-|virtual-)/, '');
+      cellName = cleanName;
+      workstationName = cleanName;
+    } else if (isValidUuid(workstationId)) {
+      const { data: ws } = await supabase.from('production_machines').select('name, cell_name').eq('id', workstationId).single();
+      if (ws) {
+        workstationName = ws.name;
+        cellName = ws.cell_name || cellName;
+      }
     }
-  } else if (cellId) {
+  } else if (cellId && isValidUuid(cellId)) {
     const { data: c } = await supabase.from('cells').select('name').eq('id', cellId).single();
     if (c) cellName = c.name;
   }
@@ -911,10 +928,10 @@ export async function collectReplacementStageJsFallback({
     piece_id: targetPiece.id || order.original_piece_id,
     item_id: targetPiece.id || order.original_piece_id,
     tag_value: barcode,
-    step_name: nextStage,
+    step_name: currentWorkstationStage,
     cell_name: cellName,
     station_name: workstationName,
-    machine_id: workstationId,
+    machine_id: isValidUuid(workstationId) ? workstationId : null,
     machine_name: workstationName,
     operator: 'Operador MES',
     shift: shift || '1',
