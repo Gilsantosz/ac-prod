@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { KANBAN_STAGES, STAGE_NEXT } from '@/hooks/useTraceability';
 import LotCard from './LotCard';
-import { ChevronRight, Layers, User, Package } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Layers, User, Package, SlidersHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function LotKanban({ trace }) {
@@ -9,6 +9,62 @@ export default function LotKanban({ trace }) {
     Object.fromEntries(KANBAN_STAGES.map(s => [s.code, true]))
   );
   const [groupMode, setGroupMode] = useState('cover'); // 'none' | 'cover' | 'batch'
+
+  const kanbanRef = useRef(null);
+  const stickyScrollRef = useRef(null);
+  const isSyncingRef = useRef(false);
+  const [scrollWidth, setScrollWidth] = useState(0);
+
+  const updateScrollWidth = useCallback(() => {
+    if (kanbanRef.current) {
+      setScrollWidth(kanbanRef.current.scrollWidth);
+    }
+  }, []);
+
+  useEffect(() => {
+    updateScrollWidth();
+    const timer = setTimeout(updateScrollWidth, 150);
+    window.addEventListener('resize', updateScrollWidth);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', updateScrollWidth);
+    };
+  }, [trace.lots.data, groupMode, expandedStages, updateScrollWidth]);
+
+  const handleMainScroll = () => {
+    if (isSyncingRef.current) return;
+    if (kanbanRef.current && stickyScrollRef.current) {
+      isSyncingRef.current = true;
+      stickyScrollRef.current.scrollLeft = kanbanRef.current.scrollLeft;
+      requestAnimationFrame(() => {
+        isSyncingRef.current = false;
+      });
+    }
+  };
+
+  const handleStickyScroll = () => {
+    if (isSyncingRef.current) return;
+    if (kanbanRef.current && stickyScrollRef.current) {
+      isSyncingRef.current = true;
+      kanbanRef.current.scrollLeft = stickyScrollRef.current.scrollLeft;
+      requestAnimationFrame(() => {
+        isSyncingRef.current = false;
+      });
+    }
+  };
+
+  const scrollByAmount = (amount) => {
+    if (kanbanRef.current) {
+      kanbanRef.current.scrollBy({ left: amount, behavior: 'smooth' });
+    }
+  };
+
+  const scrollToStage = (stageCode) => {
+    const stageEl = document.getElementById(`kanban-stage-${stageCode}`);
+    if (stageEl && kanbanRef.current) {
+      stageEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+    }
+  };
 
   const toggleStage = (code) =>
     setExpandedStages(p => ({ ...p, [code]: !p[code] }));
@@ -93,7 +149,7 @@ export default function LotKanban({ trace }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 relative">
       {/* Controles de agrupamento */}
       <div className="flex items-center justify-between bg-card border border-border/60 rounded-2xl p-3.5 shadow-sm flex-wrap gap-3">
         <div className="flex items-center gap-3">
@@ -144,7 +200,12 @@ export default function LotKanban({ trace }) {
         </div>
       </div>
 
-      <div className="overflow-x-auto pb-4">
+      {/* Container principal do Kanban com scroll horizontal */}
+      <div
+        ref={kanbanRef}
+        onScroll={handleMainScroll}
+        className="overflow-x-auto pb-6 pt-1 custom-horizontal-scrollbar scroll-smooth"
+      >
         <div className="flex gap-4 min-w-max">
           {KANBAN_STAGES.map(stage => {
             const stageLots = trace.lotsByStage[stage.code] || [];
@@ -153,7 +214,11 @@ export default function LotKanban({ trace }) {
             const stageLotsGrouped = getGroupedLotsForStage(stageLots);
 
             return (
-              <div key={stage.code} className="w-80 shrink-0 space-y-3">
+              <div
+                key={stage.code}
+                id={`kanban-stage-${stage.code}`}
+                className="w-80 shrink-0 space-y-3"
+              >
                 {/* Header da coluna */}
                 <div
                   className={cn(
@@ -246,6 +311,64 @@ export default function LotKanban({ trace }) {
           })}
         </div>
       </div>
+
+      {/* ── Barra de Rolagem Horizontal FIXA no rodapé da tela ──────── */}
+      <div className="sticky bottom-4 z-40 w-full bg-card/95 backdrop-blur-md border border-border/80 rounded-2xl p-3 shadow-2xl space-y-2 mt-4 transition-all">
+        <div className="flex items-center justify-between gap-2 px-1">
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5 max-w-[80%]">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1 select-none">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-600" /> Atalhos de Etapa:
+            </span>
+            {KANBAN_STAGES.map(stage => {
+              const stageLots = trace.lotsByStage[stage.code] || [];
+              return (
+                <button
+                  key={`nav-${stage.code}`}
+                  onClick={() => scrollToStage(stage.code)}
+                  className={cn(
+                    "px-2.5 py-1 text-[11px] font-bold rounded-lg shrink-0 border transition-all flex items-center gap-1.5 select-none",
+                    stage.bg, stage.color, "border-border/40 hover:scale-105 active:scale-95 shadow-xs"
+                  )}
+                >
+                  <span>{stage.label}</span>
+                  <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-background/80 font-extrabold">
+                    {stageLots.length}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={() => scrollByAmount(-340)}
+              className="p-2 rounded-xl bg-secondary/80 hover:bg-secondary text-foreground border border-border/60 transition-all active:scale-90 shadow-xs"
+              title="Rolar para esquerda"
+              aria-label="Rolar para esquerda"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => scrollByAmount(340)}
+              className="p-2 rounded-xl bg-secondary/80 hover:bg-secondary text-foreground border border-border/60 transition-all active:scale-90 shadow-xs"
+              title="Rolar para direita"
+              aria-label="Rolar para direita"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Trilho de rolagem horizontal fixo e sincronizado */}
+        <div
+          ref={stickyScrollRef}
+          onScroll={handleStickyScroll}
+          className="w-full overflow-x-auto custom-horizontal-scrollbar py-1"
+        >
+          <div style={{ width: `${Math.max(scrollWidth, 1000)}px`, height: '2px' }} />
+        </div>
+      </div>
     </div>
   );
 }
+

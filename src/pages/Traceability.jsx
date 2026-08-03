@@ -37,7 +37,7 @@ export default function Traceability() {
   const completedPercent = totalLots > 0 ? Math.round((completedLots / totalLots) * 100) : 0;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 pb-32 sm:pb-36 lg:pb-40 max-w-[1600px] mx-auto space-y-6">
       
       {/* ── Cabeçalho Principal ───────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4 flex-wrap bg-card border border-border/60 rounded-3xl p-6 shadow-sm">
@@ -169,6 +169,13 @@ export default function Traceability() {
           <LotTimeline trace={trace} />
         </TabsContent>
       </Tabs>
+
+      {/* ── Indicador do Rodapé e Espaçamento para Barra Horizontal ─── */}
+      <div className="flex items-center justify-center gap-2 pt-6 text-xs font-medium text-muted-foreground/60 select-none border-t border-border/30 mt-8">
+        <span>Fim do painel de rastreabilidade</span>
+        <span>•</span>
+        <span>Role a barra horizontal para navegar entre todas as etapas</span>
+      </div>
 
       {/* ── Modal de Atualização de KPIs ────────────────────────────── */}
       <UpdateKpiModal

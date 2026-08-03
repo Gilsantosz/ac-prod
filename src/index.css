@@ -31,12 +31,41 @@ body {
 
 
 /* Área de toque mínima: aplicada via classes nos botões interativos, não globalmente */
-/* Scrollbar sutil para desktop */
+/* Scrollbar sutil e visível para desktop */
 @media (hover: hover) {
-  ::-webkit-scrollbar { width: 5px; height: 5px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: hsl(0 0% 80%); border-radius: 99px; }
-  ::-webkit-scrollbar-thumb:hover { background: hsl(0 0% 65%); }
+  ::-webkit-scrollbar { width: 8px; height: 10px; }
+  ::-webkit-scrollbar-track { background: hsl(var(--muted) / 0.3); border-radius: 99px; }
+  ::-webkit-scrollbar-thumb { background: hsl(var(--muted-foreground) / 0.4); border-radius: 99px; }
+  ::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.7); }
+}
+
+/* Barra de rolagem horizontal destacada para Kanban e Tabelas */
+.custom-horizontal-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(132 95% 40% / 0.7) hsl(var(--muted) / 0.5);
+}
+
+.custom-horizontal-scrollbar::-webkit-scrollbar {
+  height: 12px;
+}
+
+.custom-horizontal-scrollbar::-webkit-scrollbar-track {
+  background: hsl(var(--muted) / 0.5);
+  border-radius: 99px;
+  margin-left: 4px;
+  margin-right: 4px;
+}
+
+.custom-horizontal-scrollbar::-webkit-scrollbar-thumb {
+  background: hsl(132 95% 40% / 0.65);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  transition: background-color 0.2s ease;
+}
+
+.custom-horizontal-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #2d9c4a;
 }
 
 .pb-safe { padding-bottom: env(safe-area-inset-bottom, 16px); }

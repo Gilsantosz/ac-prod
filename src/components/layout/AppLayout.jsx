@@ -412,7 +412,7 @@ function AppShell() {
               Acesso somente para visualização. Alterações nesta página não estão autorizadas para este usuário.
             </div>
           )}
-          <div className="flex-1">
+          <div className="flex-1 pb-16 sm:pb-20">
             <Outlet />
           </div>
         </main>
