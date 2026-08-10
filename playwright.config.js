@@ -16,7 +16,7 @@ export default defineConfig({
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
   ],
   webServer: process.env.PLAYWRIGHT_SKIP_WEBSERVER ? undefined : {
-    command: 'npm run dev -- --host 127.0.0.1 --port 4174',
+    command: 'VITE_APP_BASE=/ac-prod/ npm run dev -- --host 127.0.0.1 --port 4174',
     url: 'http://127.0.0.1:4174/ac-prod/login',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

@@ -9,37 +9,9 @@ import { supabase } from '@/lib/supabaseClient';
 
 const SESSION_KEY = 'acprod_operator_session';
 
-// Fallback em memória quando o armazenamento do navegador está bloqueado.
+// Fallback em memória quando sessionStorage está bloqueado
 let _memorySession = null;
-
-function storeOperatorSession(session) {
-  try {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    sessionStorage.removeItem(SESSION_KEY);
-    _memorySession = null;
-  } catch (_) {
-    _memorySession = session;
-  }
-}
-
-function readStoredOperatorSession() {
-  try {
-    let raw = localStorage.getItem(SESSION_KEY);
-
-    // Migra a sessão da versão anterior para que a atualização não obrigue
-    // o operador a entrar novamente enquanto a sessão ainda for válida.
-    if (!raw) {
-      raw = sessionStorage.getItem(SESSION_KEY);
-      if (raw) {
-        localStorage.setItem(SESSION_KEY, raw);
-        sessionStorage.removeItem(SESSION_KEY);
-      }
-    }
-    return raw;
-  } catch (_) {
-    return null;
-  }
-}
+let _memoryDeviceId = null;
 
 /**
  * Obtém ou gera um ID de dispositivo persistente para fins de auditoria e rate limit.
@@ -48,14 +20,19 @@ export function getDeviceId() {
   try {
     let devId = localStorage.getItem('acprod_device_id');
     if (!devId) {
-      devId = typeof crypto !== 'undefined' && crypto.randomUUID 
+      devId = typeof crypto !== 'undefined' && crypto.randomUUID
         ? crypto.randomUUID() 
         : 'dev-' + Math.random().toString(36).slice(2, 11);
       localStorage.setItem('acprod_device_id', devId);
     }
     return devId;
   } catch (_) {
-    return 'browser-station';
+    if (!_memoryDeviceId) {
+      _memoryDeviceId = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : 'dev-' + Math.random().toString(36).slice(2, 11);
+    }
+    return _memoryDeviceId;
   }
 }
 
@@ -106,7 +83,11 @@ export async function loginOperator(loginName, registration) {
     logged_at: new Date().toISOString()
   };
 
-  storeOperatorSession(session);
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  } catch (_) {
+    _memorySession = session;
+  }
 
   notifySessionChange();
   return session;
@@ -142,7 +123,11 @@ export async function setOperatorSessionContext(cellId, machineId = null, statio
     selected_station_name: stationName
   };
 
-  storeOperatorSession(updatedSession);
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(updatedSession));
+  } catch (_) {
+    _memorySession = updatedSession;
+  }
 
   notifySessionChange();
   return updatedSession;
@@ -167,9 +152,15 @@ export async function heartbeatOperatorSession() {
   if (data?.success) {
     const renewed = {
       ...session,
-      expires_at: Date.now() + 8 * 60 * 60 * 1000 // Renova mais 8h localmente
+      expires_at: data.expires_at
+        ? new Date(data.expires_at).getTime()
+        : Date.now() + 8 * 60 * 60 * 1000
     };
-    storeOperatorSession(renewed);
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(renewed));
+    } catch (_) {
+      _memorySession = renewed;
+    }
   } else {
     // Sessão expirada/revogada no banco
     clearOperatorSession();
@@ -184,11 +175,10 @@ export function getOperatorSession() {
   if (_memorySession) { _memorySession = null; notifySessionChange(); return null; }
 
   try {
-    const raw = readStoredOperatorSession();
+    const raw = sessionStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const session = JSON.parse(raw);
     if (!session?.expires_at || session.expires_at < Date.now()) {
-      localStorage.removeItem(SESSION_KEY);
       sessionStorage.removeItem(SESSION_KEY);
       notifySessionChange();
       return null;
@@ -206,9 +196,9 @@ export function isOperatorLoggedIn() {
 /**
  * Limpa a sessão localmente e notifica o encerramento ao servidor.
  */
-export async function clearOperatorSession() {
+export async function clearOperatorSession({ notifyServer = true } = {}) {
   const session = getOperatorSession();
-  if (session?.token) {
+  if (notifyServer && session?.token) {
     try {
       await supabase.rpc('logout_operator_session', {
         p_session_token: session.token
@@ -218,7 +208,16 @@ export async function clearOperatorSession() {
     }
   }
 
-  try { localStorage.removeItem(SESSION_KEY); } catch (_) { /* ignore */ }
+  try { sessionStorage.removeItem(SESSION_KEY); } catch (_) { /* ignore */ }
+  _memorySession = null;
+  notifySessionChange();
+}
+
+/**
+ * Remove apenas o estado visual/local. Usado quando ainda existem eventos
+ * offline duráveis que precisam reconciliar com o token original.
+ */
+export function detachOperatorSession() {
   try { sessionStorage.removeItem(SESSION_KEY); } catch (_) { /* ignore */ }
   _memorySession = null;
   notifySessionChange();

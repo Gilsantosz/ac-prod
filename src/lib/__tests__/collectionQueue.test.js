@@ -74,6 +74,7 @@ import {
   enqueueCollectionEvent,
   getQueueStats,
   getQueueStatsByCellMachine,
+  markEventError,
   recoverStaleProcessingEvents,
 } from '../collectionEventQueue';
 
@@ -129,6 +130,31 @@ describe('Collection Local Queue SLA & Concurrency', () => {
 
     const wrongMachineStats = await getQueueStatsByCellMachine('Corte', 'machine-b1');
     expect(wrongMachineStats.total).toBe(0);
+  });
+
+  it('isola eventos produtivos e de reposição na mesma IndexedDB', async () => {
+    await enqueueCollectionEvent({ rawValue: 'P001', cellName: 'Corte', event_kind: 'production_stage' });
+    await enqueueCollectionEvent({ rawValue: 'R001', cellName: 'Corte', event_kind: 'replacement_stage' });
+
+    expect((await getQueueStatsByCellMachine('Corte', null, 'production_stage')).total).toBe(1);
+    expect((await getQueueStatsByCellMachine('Corte', null, 'replacement_stage')).total).toBe(1);
+  });
+
+  it('mantém falha de rede pendente com backoff e conserva bloqueio funcional para revisão', async () => {
+    const retryableId = await enqueueCollectionEvent({ rawValue: 'R001', event_kind: 'replacement_stage' });
+    await markEventError(retryableId, Object.assign(new Error('rede indisponível'), { retryable: true }));
+    expect(store.get(retryableId)).toMatchObject({ status: 'pending', retries: 1 });
+    expect(store.get(retryableId).next_attempt_at).toBeTruthy();
+
+    const blockedId = await enqueueCollectionEvent({ rawValue: 'R002', event_kind: 'replacement_stage' });
+    await markEventError(blockedId, Object.assign(new Error('etapa anterior pendente'), {
+      retryable: false,
+      result: { reason_code: 'PREVIOUS_STAGE_PENDING' },
+    }));
+    expect(store.get(blockedId)).toMatchObject({
+      status: 'error',
+      last_result: { reason_code: 'PREVIOUS_STAGE_PENDING' },
+    });
   });
 
   it('recupera eventos de processamento travados há mais de 120s', async () => {

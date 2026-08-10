@@ -110,6 +110,7 @@ export async function enqueueCollectionEvent(payload) {
     retries: 0,
     created_at_client: now,
     updated_at: now,
+    event_kind: payload.event_kind || (payload.is_replacement_event ? 'replacement_stage' : 'production_stage'),
     next_attempt_at: now,
     raw_value: payload.rawValue ?? payload.raw_value ?? '',
     lot_id: payload.lotId ?? payload.lot_id ?? null,
@@ -177,11 +178,12 @@ export async function getQueueStats() {
 /**
  * Retorna estatísticas da fila filtradas por célula e máquina.
  */
-export async function getQueueStatsByCellMachine(cellName, machineId) {
+export async function getQueueStatsByCellMachine(cellName, machineId, eventKind = null) {
   const all = await dbGetAll();
   const filtered = all.filter(e =>
     (!cellName || e.cellName === cellName || e.cell_name === cellName) &&
-    (!machineId || e.machineId === machineId || e.machine_id === machineId)
+    (!machineId || e.machineId === machineId || e.machine_id === machineId) &&
+    (!eventKind || e.event_kind === eventKind)
   );
   const now = Date.now();
   const staleThreshold = now - 60000;
@@ -297,14 +299,16 @@ export async function markEventError(clientEventId, error, maxRetries = 8) {
   const event = await dbGet(clientEventId);
   if (!event) return;
   const retries = (event.retries || 0) + 1;
-  event.status = retries >= maxRetries ? 'error' : 'pending';
+  const retryable = error?.retryable !== false;
+  event.status = retryable && retries < maxRetries ? 'pending' : 'error';
   event.retries = retries;
+  event.last_error = error?.message || String(error);
+  event.last_result = error?.result || null;
   const baseDelayMs = Math.min(300_000, 1_000 * (2 ** Math.max(retries - 1, 0)));
   const jitterMs = Math.round(baseDelayMs * Math.random() * 0.25);
   event.next_attempt_at = event.status === 'pending'
     ? new Date(Date.now() + baseDelayMs + jitterMs).toISOString()
     : null;
-  event.last_error = error?.message || String(error);
   event.sync_finished_at = new Date().toISOString();
   if (event.sync_started_at) {
     event.sync_duration_ms = new Date(event.sync_finished_at).getTime() - new Date(event.sync_started_at).getTime();
