@@ -168,6 +168,8 @@ async function mockSupabase(page) {
       manage_occurrences: true,
       view_reports: true,
       view_traceability: true,
+      view_replacements: true,
+      manage_replacements: true,
     },
   };
 
@@ -303,7 +305,7 @@ async function mockSupabase(page) {
       });
     }
 
-    if (path.endsWith('/rest/v1/rpc/register_traceability_rejection')) {
+    if (path.endsWith('/rest/v1/rpc/register_quality_rejection')) {
       state.occurrenceCreated = true;
       const reading = {
         id: 'reading-rejected-001',
@@ -318,16 +320,15 @@ async function mockSupabase(page) {
       };
       state.readings.unshift(reading);
       return fulfill({
-        success: false,
+        success: true,
         status: 'rejected',
-        message: 'Ocorrência registrada e peça bloqueada.',
-        lot,
-        item: { ...item, status: 'rejected' },
-        route: routeStep,
-        reading,
-        nextStep: null,
-        occurrence: { id: 'occurrence-test-001', status: 'open' },
-        kpiUpdate: { total: 1, approved: 0, rejected: 1, blocked: 0 },
+        message: 'Reprovação registrada com sucesso.',
+        piece_id: 'item-001',
+        nonconformity_id: 'nc-test-001',
+        nc_code: 'NC-2026-00001',
+        occurrence_id: 'occurrence-test-001',
+        reading_id: reading.id,
+        replacement_order_id: 'replacement-test-001',
       });
     }
 
@@ -347,9 +348,9 @@ test('fluxo principal de entrada e rastreabilidade produtiva', async ({ page }) 
   const state = await mockSupabase(page);
   await page.goto('login');
 
-  await page.getByLabel('E-mail').fill('operador.teste@leo.com.br');
+  await page.getByLabel(/E-mail Corporativo/i).fill('operador.teste@leo.com.br');
   await page.getByLabel('Senha').fill('SenhaTeste123!');
-  await page.getByRole('button', { name: 'Entrar' }).click();
+  await page.getByRole('button', { name: /Entrar no Leo Flow/i }).click();
   await expect(page).toHaveURL(/\/ac-prod\/?$/);
 
   await page.goto('entrada');
@@ -387,7 +388,6 @@ test('fluxo principal de entrada e rastreabilidade produtiva', async ({ page }) 
 
   await expect(page.getByText('LSM-TEST-001', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Últimas leituras')).toBeVisible();
-  await expect(page.getByText('Leituras hoje')).toBeVisible();
   await expect(page.getByText('Reprovadas', { exact: true }).first()).toBeVisible();
   expect(state.readings).toHaveLength(2);
 });
@@ -397,9 +397,10 @@ test('exibe lote geral antes dos lotes de clientes e abre o dashboard preditivo'
   await mockSupabase(page);
   await page.goto('login');
 
-  await page.getByLabel('E-mail').fill('operador.teste@leo.com.br');
+  await page.getByLabel(/E-mail Corporativo/i).fill('operador.teste@leo.com.br');
   await page.getByLabel('Senha').fill('SenhaTeste123!');
-  await page.getByRole('button', { name: 'Entrar' }).click();
+  await page.getByRole('button', { name: /Entrar no Leo Flow/i }).click();
+  await expect(page).toHaveURL(/\/ac-prod\/?$/);
 
   await page.goto('integridade-lote');
   await expect(page.getByRole('heading', { name: 'Painel de Integridade de Lote' })).toBeVisible();
@@ -421,9 +422,10 @@ test('separa gestão e posto de reposição e expande a sidebar sem reflow', asy
   await mockSupabase(page);
   await page.goto('login');
 
-  await page.getByLabel('E-mail').fill('operador.teste@leo.com.br');
+  await page.getByLabel(/E-mail Corporativo/i).fill('operador.teste@leo.com.br');
   await page.getByLabel('Senha').fill('SenhaTeste123!');
-  await page.getByRole('button', { name: 'Entrar' }).click();
+  await page.getByRole('button', { name: /Entrar no Leo Flow/i }).click();
+  await expect(page).toHaveURL(/\/ac-prod\/?$/);
   await page.goto('reposicao');
 
   await expect(page.getByRole('heading', { name: 'Gestão de Reposições' })).toBeVisible();

@@ -196,7 +196,7 @@ export default function ReplacementPage() {
     let y = 32;
     filteredOrders.forEach((order, index) => {
       if (y > 190) { doc.addPage(); y = 16; }
-      const line = `${index + 1}. ${pieceCode(order.replacement_piece)} | OP ${orderCode(order)} | ${customerName(order)} | ${REPLACEMENT_STATUS_LABELS[order.status] || order.status} | ${order.reason || 'Sem motivo'}`;
+      const line = `${index + 1}. ${pieceCode(order.replacement_piece)} | OP ${orderCode(order)} | ${customerName(order)} | ${REPLACEMENT_STATUS_LABELS[order.status]?.label || order.status} | ${order.reason || 'Sem motivo'}`;
       const lines = doc.splitTextToSize(line, 265);
       doc.text(lines, 14, y);
       y += lines.length * 5 + 2;
@@ -312,7 +312,7 @@ function ReplacementOrderCard({ order, busy, canManage, onApprove, onRelease, on
         <div className="min-w-0 space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-sm font-black">{pieceCode(order.replacement_piece)}</span>
-            <Badge variant="outline" className={statusTone(order.status)}>{REPLACEMENT_STATUS_LABELS[order.status] || order.status}</Badge>
+            <Badge variant="outline" className={statusTone(order.status)}>{REPLACEMENT_STATUS_LABELS[order.status]?.label || order.status}</Badge>
             <Badge variant="outline" className="capitalize">{order.priority || 'normal'}</Badge>
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3.5 w-3.5" /> {formatElapsed(order.created_at)}</span>
           </div>

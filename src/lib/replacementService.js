@@ -4,18 +4,75 @@ import { getDeviceId } from '@/lib/operatorSessionService';
 export const REPLACEMENT_EVENT_KIND = 'replacement_stage';
 
 export const REPLACEMENT_STATUS_LABELS = {
-  requested: 'Solicitada',
-  under_review: 'Em análise',
-  approved: 'Aprovada',
-  released: 'Liberada',
-  in_production: 'Em fabricação',
-  completed: 'Concluída',
-  cancelled: 'Cancelada',
-  'Reposição solicitada': 'Solicitada',
-  'Reposição em produção': 'Em fabricação',
-  Finalizada: 'Concluída',
-  Cancelada: 'Cancelada',
+  requested: { label: 'Solicitada', color: 'bg-amber-500/10 text-amber-600 border-amber-500/20' },
+  under_review: { label: 'Em análise', color: 'bg-purple-500/10 text-purple-600 border-purple-500/20' },
+  approved: { label: 'Aprovada', color: 'bg-blue-500/10 text-blue-600 border-blue-500/20' },
+  released: { label: 'Liberada', color: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/20' },
+  in_production: { label: 'Em fabricação', color: 'bg-cyan-500/10 text-cyan-600 border-cyan-500/20' },
+  completed: { label: 'Concluída', color: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' },
+  cancelled: { label: 'Cancelada', color: 'bg-slate-500/10 text-slate-600 border-slate-500/20' },
+  'Reposição solicitada': { label: 'Solicitada', color: 'bg-amber-500/10 text-amber-600 border-amber-500/20' },
+  'Reposição em produção': { label: 'Em fabricação', color: 'bg-cyan-500/10 text-cyan-600 border-cyan-500/20' },
+  Finalizada: { label: 'Concluída', color: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' },
+  Cancelada: { label: 'Cancelada', color: 'bg-slate-500/10 text-slate-600 border-slate-500/20' },
 };
+
+export const REPLACEMENT_PRIORITY_LABELS = {
+  normal: { label: 'Normal', color: 'text-slate-600 dark:text-slate-400' },
+  high: { label: 'Alta', color: 'text-amber-600 dark:text-amber-400 font-semibold' },
+  critical: { label: 'Crítica', color: 'text-rose-600 dark:text-rose-400 font-extrabold animate-pulse' },
+};
+
+export const STAGE_NAME_MAP = {
+  cut: 'Corte',
+  corte: 'Corte',
+  edge: 'Borda',
+  borda: 'Borda',
+  bordo: 'Borda',
+  drill: 'Furação',
+  furacao: 'Furação',
+  furação: 'Furação',
+  cnc: 'Usinagem CNC',
+  'usinagem cnc': 'Usinagem CNC',
+  canal: 'Canal',
+  maranello: 'Maranello',
+  portajoias: 'Porta Joias',
+  porta_joias: 'Porta Joias',
+  'porta joias': 'Porta Joias',
+  sorrento: 'Sorrento',
+  usi_especial: 'Usi Especial',
+  'usi especial': 'Usi Especial',
+  rasgo_freggio: 'Rasgo Freggio',
+  'rasgo freggio': 'Rasgo Freggio',
+  joinery: 'Marcenaria',
+  marcenaria: 'Marcenaria',
+  separation: 'Separação',
+  separacao: 'Separação',
+  separação: 'Separação',
+  packaging: 'Embalagem',
+  embalagem: 'Embalagem',
+  shipping: 'Expedição',
+  expedicao: 'Expedição',
+  expedição: 'Expedição',
+  created: 'Criada',
+  criada: 'Criada',
+  completed: 'Concluída',
+  concluida: 'Concluída',
+  concluída: 'Concluída',
+};
+
+export function formatStageName(stage) {
+  if (!stage) return 'Corte';
+  const value = String(stage).trim();
+  const normalized = value.toLocaleLowerCase('pt-BR');
+  if (STAGE_NAME_MAP[normalized]) return STAGE_NAME_MAP[normalized];
+  for (const [key, label] of Object.entries(STAGE_NAME_MAP)) {
+    if (key.length >= 3 && (normalized.startsWith(`${key} `) || normalized.startsWith(`${key}(`))) {
+      return value.replace(new RegExp(`^${key}`, 'i'), label);
+    }
+  }
+  return value;
+}
 
 const OPEN_STATUSES = new Set(['requested', 'under_review', 'approved', 'released', 'in_production', 'Reposição solicitada', 'Reposição em produção']);
 const COMPLETED_STATUSES = new Set(['completed', 'Finalizada']);
@@ -65,11 +122,72 @@ export async function getReplacementOrders({ limit = 250 } = {}) {
   if (lotsResult.error) throw lotsResult.error;
   const productionOrders = new Map((productionOrdersResult.data || []).map((item) => [item.id, item]));
   const lots = new Map((lotsResult.data || []).map((item) => [item.id, item]));
-  return orders.map((item) => ({
+  return orders.map((item) => enrichReplacementOrderData({
     ...item,
     production_order: productionOrders.get(item.production_order_id) || null,
     production_lot: lots.get(item.lot_id) || null,
   }));
+}
+
+export function enrichReplacementOrderData(order) {
+  if (!order) return order;
+  const original = order.original_piece || {};
+  const replacement = order.replacement_piece || {};
+  const lot = original.lot || order.production_lot || {};
+  const storedStage = String(order.rejection_stage || '').trim();
+  const invalidStages = new Set(['', 'n/a', 'concluída', 'concluida', 'completed', 'created']);
+  const rawStage = invalidStages.has(storedStage.toLocaleLowerCase('pt-BR'))
+    ? original.current_stage || 'Corte'
+    : storedStage;
+  const rejectionStage = formatStageName(rawStage);
+  const clientLot = order.resolved_client_lot || order.lot_code || original.lot_code || lot.lot_code || null;
+  const generalLot = order.resolved_general_lot || order.general_lot_code || original.general_lot_code || lot.general_lot_code || null;
+  const traceabilityCode = original.traceability_code || original.piece_uid || original.piece_code || null;
+  const route = Array.isArray(original.route_steps) && original.route_steps.length
+    ? original.route_steps.map(formatStageName)
+    : [];
+
+  return {
+    ...order,
+    rejection_stage: rejectionStage,
+    origin_cell_name: order.origin_cell_name || `Célula de ${rejectionStage}`,
+    environment_name: order.environment_name || original.environment_name || original.environment || null,
+    resolved_client_lot: clientLot,
+    resolved_general_lot: generalLot,
+    original_piece: {
+      ...original,
+      piece_code: original.piece_code || traceabilityCode,
+      piece_uid: original.piece_uid || traceabilityCode,
+      traceability_code: traceabilityCode,
+      lot_code: clientLot,
+      general_lot_code: generalLot,
+      route_steps: route,
+    },
+    replacement_piece: replacement,
+    route_steps: route,
+  };
+}
+
+export async function getReplacementReportOrder(order) {
+  if (!order?.id) throw new Error('Ordem de reposição inválida para o relatório.');
+  const pieceIds = [
+    order.original_piece?.id || order.original_piece_id,
+    order.replacement_piece?.id || order.replacement_piece_id,
+  ].filter(Boolean);
+  if (!pieceIds.length) throw new Error('A ordem não possui peça rastreável vinculada.');
+
+  const { data, error } = await supabase
+    .from('production_stage_readings')
+    .select(`
+      id, piece_id, tag_value, step_name, cell_name, station_name,
+      machine_name, operator, operator_name_snapshot, shift, status,
+      event_type, entry_type, traceability_type, notes, created_at
+    `)
+    .in('piece_id', pieceIds)
+    .order('created_at', { ascending: true })
+    .limit(1000);
+  if (error) throw new Error(`Não foi possível carregar a rastreabilidade do relatório: ${error.message}`);
+  return { ...order, traceability_readings: data || [] };
 }
 
 export function calculateReplacementAdminSummary(orders, now = new Date()) {
@@ -140,19 +258,22 @@ export async function releaseReplacement(orderId, payload = {}) {
 }
 
 export async function cancelReplacement(orderId, reason) {
+  const normalizedReason = typeof reason === 'string' ? reason.trim() : String(reason?.reason || '').trim();
+  if (!normalizedReason) throw new Error('Motivo é obrigatório para cancelar a reposição.');
   const { data, error } = await supabase.rpc('cancel_piece_replacement', {
     p_order_id: orderId,
-    p_payload: { reason },
+    p_payload: { reason: normalizedReason },
   });
   if (error) throw error;
   return requireSuccess(data, 'Não foi possível cancelar a reposição.');
 }
 
 export async function forceCompleteReplacement(orderId, reason) {
+  const normalizedReason = typeof reason === 'string' ? reason.trim() : String(reason?.reason || '').trim();
+  if (!normalizedReason) throw new Error('Justificativa é obrigatória para a conclusão forçada.');
   const { data, error } = await supabase.rpc('force_complete_piece_replacement', {
     p_order_id: orderId,
-    p_reason: reason,
-    p_payload: { source: 'replacement_admin', reason },
+    p_reason: normalizedReason,
   });
   if (error) throw error;
   return requireSuccess(data, 'Não foi possível concluir a reposição de forma auditada.');
@@ -239,4 +360,65 @@ export function subscribeToReplacementCell({ cellId, onMessage, onStatus }) {
 export function unsubscribeFromReplacementCell(channel) {
   if (!channel) return Promise.resolve();
   return supabase.removeChannel(channel);
+}
+
+export async function getEnabledWorkstations(userAllowedCells = null, userRole = null) {
+  const { data, error } = await supabase
+    .from('production_machines')
+    .select('*')
+    .eq('active', true)
+    .order('name', { ascending: true });
+  if (error) throw error;
+
+  let workstations = (data || []).filter((machine) => machine.allows_replacement !== false);
+  const allowedNames = (Array.isArray(userAllowedCells) ? userAllowedCells : [userAllowedCells])
+    .filter(Boolean)
+    .map((name) => String(name).trim());
+  if (userRole !== 'admin' && allowedNames.length) {
+    const allowed = allowedNames.map((name) => name.toLocaleLowerCase('pt-BR'));
+    workstations = workstations.filter((machine) => {
+      const cell = String(machine.cell_name || machine.name || '').toLocaleLowerCase('pt-BR');
+      return allowed.some((name) => cell.includes(name) || name.includes(cell));
+    });
+  }
+  return workstations;
+}
+
+export async function getOperatorWorkstationAuthorizations(operatorId) {
+  if (!operatorId) return [];
+  const { data, error } = await supabase
+    .from('workstation_operator_authorizations')
+    .select('*, machine:machine_id (id, name, cell_name), cell:cell_id (id, name)')
+    .eq('operator_id', operatorId)
+    .eq('is_active', true);
+  if (error) throw error;
+  return data || [];
+}
+
+export async function grantOperatorWorkstationAuthorization({
+  operatorId,
+  machineId = null,
+  cellId = null,
+  shift = '1',
+  authorizationType = 'permanent',
+  validUntil = null,
+  notes = '',
+}) {
+  if (!operatorId) throw new Error('ID do operador é obrigatório.');
+  const { data, error } = await supabase
+    .from('workstation_operator_authorizations')
+    .insert({
+      operator_id: operatorId,
+      machine_id: machineId,
+      cell_id: cellId,
+      shift,
+      authorization_type: authorizationType,
+      valid_until: validUntil,
+      is_active: true,
+      notes,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }
