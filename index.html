@@ -2,6 +2,8 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://uozuzdfvnufsjsonswag.supabase.co wss://uozuzdfvnufsjsonswag.supabase.co; worker-src 'self' blob:; manifest-src 'self'; frame-src 'none'; upgrade-insecure-requests" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
@@ -33,58 +35,6 @@
     <!-- O manifest é injetado automaticamente pelo vite-plugin-pwa -->
 
     <title>Leo Flow — Controle de Produção</title>
-
-    <!-- ─── Auto-limpeza de Service Worker desatualizado ─────────────── -->
-    <script>
-      // Versão atual do manifest — incrementar a cada mudança de manifest
-      // Incrementado após a correção da rastreabilidade por rota para invalidar instalações PWA
-      // que ainda estejam executando o shell antigo. A limpeza abaixo afeta
-      // apenas Service Workers e Cache Storage; IndexedDB/localStorage e a
-      // fila durável de coletas permanecem preservados.
-      var MANIFEST_VERSION = '1.4.2-route-tracking';
-      var storedVersion = localStorage.getItem('lf_manifest_version');
-      if (storedVersion !== MANIFEST_VERSION) {
-        localStorage.setItem('lf_manifest_version', MANIFEST_VERSION);
-        // Cancela todos os service workers antigos e recarrega a página
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.getRegistrations().then(function(registrations) {
-            var promises = registrations.map(function(r) { return r.unregister(); });
-            return Promise.all(promises);
-          }).then(function() {
-            // Limpa caches do workbox
-            if ('caches' in window) {
-              caches.keys().then(function(names) {
-                names.forEach(function(name) { caches.delete(name); });
-              });
-            }
-            // Força reload apenas se houve mudança de versão (não na primeira visita)
-            if (storedVersion) {
-              window.location.reload(true);
-            }
-          });
-        }
-      }
-    </script>
-
-    <!-- ─── SPA Routing: GitHub Pages redirect ─────────────────────────── -->
-    <script>
-      // Single Page Apps for GitHub Pages: decodifica redirecionamento vindo de 404.html
-      (function(l) {
-        if (l.search[1] === '/') {
-          var decoded = l.search.slice(1).split('&').map(function(s) {
-            return s.replace(/~and~/g, '&');
-          }).join('?');
-          window.history.replaceState(null, null,
-            l.pathname.slice(0, -1) + decoded + l.hash
-          );
-        }
-        var redirect = sessionStorage.redirect;
-        delete sessionStorage.redirect;
-        if (redirect && redirect !== location.href) {
-          history.replaceState(null, null, redirect);
-        }
-      }(window.location));
-    </script>
 
     <!-- ─── Performance: preconnect ao Supabase ────────────────────────── -->
     <link rel="preconnect" href="https://uozuzdfvnufsjsonswag.supabase.co" />

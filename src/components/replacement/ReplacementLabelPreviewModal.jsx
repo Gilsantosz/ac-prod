@@ -14,7 +14,7 @@ import {
   getReplacementLabelPrintHistory,
   buildReplacementTraceCode
 } from '@/lib/replacementLabelService';
-import { generateCode128Svg } from '@/lib/barcodeGenerator';
+import { generateCode128DataUri } from '@/lib/barcodeGenerator';
 import { generateReplacementPdfReport } from '@/lib/reports/replacementPdfReportService';
 import { formatPieceFullContext } from '@/lib/pieceFormat';
 
@@ -98,7 +98,7 @@ export default function ReplacementLabelPreviewModal({
   }, [open, order?.id]);
 
   // Gerar SVG do Código de Barras Code 128 usando o CÓDIGO ORIGINAL DA PEÇA
-  const barcodeSvg = generateCode128Svg(originalCode, {
+  const barcodeDataUri = generateCode128DataUri(originalCode, {
     height: 28,
     barWidth: 1.7,
     quietZone: 4,
@@ -283,10 +283,13 @@ export default function ReplacementLabelPreviewModal({
 
               {/* LINHA 3 — CÓDIGO DE BARRAS CODE 128 (ORIGINAL DA PEÇA) */}
               <div className="flex flex-col items-center justify-center my-0.5">
-                <div
-                  className="w-full flex justify-center overflow-hidden"
-                  dangerouslySetInnerHTML={{ __html: barcodeSvg }}
-                />
+                <div className="w-full flex justify-center overflow-hidden">
+                  <img
+                    src={barcodeDataUri}
+                    alt={`Código de barras ${originalCode}`}
+                    className="max-h-[42px] max-w-full"
+                  />
+                </div>
               </div>
 
               {/* LINHA 4 — LOTES GERAL E CLIENTE */}

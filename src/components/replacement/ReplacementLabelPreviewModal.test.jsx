@@ -29,7 +29,7 @@ vi.mock('@/lib/replacementLabelService', () => ({
 }));
 
 vi.mock('@/lib/barcodeGenerator', () => ({
-  generateCode128Svg: vi.fn(() => '<svg aria-label="codigo de barras"></svg>'),
+  generateCode128DataUri: vi.fn(() => 'data:image/svg+xml;charset=utf-8,mocked'),
 }));
 
 vi.mock('@/lib/reports/replacementPdfReportService', () => ({

@@ -25,18 +25,25 @@ const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
   console.error("Missing environment variables VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY");
-  console.log("Current env:", process.env);
+  process.exit(1);
+}
+
+const testEmail = String(process.env.AC_PROD_TEST_EMAIL || '').trim();
+const testPassword = String(process.env.AC_PROD_TEST_PASSWORD || '');
+
+if (!testEmail || !testPassword) {
+  console.error('Missing AC_PROD_TEST_EMAIL or AC_PROD_TEST_PASSWORD.');
   process.exit(1);
 }
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function test() {
-  // Sign in as admin
-  console.log("Signing in as admin@prodview.com...");
+  // Credenciais de teste são fornecidas apenas pelo ambiente local/CI.
+  console.log("Signing in with the configured test account...");
   const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-    email: 'admin@prodview.com',
-    password: 'admin123'
+    email: testEmail,
+    password: testPassword,
   });
   if (authError) {
     console.error("Auth error:", authError);

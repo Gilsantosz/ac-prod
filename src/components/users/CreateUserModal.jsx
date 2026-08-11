@@ -18,7 +18,22 @@ import { useCells } from '@/hooks/useCells';
 import { getDefaultPermissions } from '@/config/appRoutes';
 import PageAccessMatrix, { normalizePagePermissions } from '@/components/users/PageAccessMatrix';
 
-export default function CreateUserModal({ open, onOpenChange, onInvite, saving }) {
+const ROLE_OPTIONS = [
+  { value: 'operator', label: 'Operador / Usuário', rank: 10 },
+  { value: 'viewer', label: 'Visualizador / Auditor', rank: 10 },
+  { value: 'supervisor', label: 'Supervisor / Líder', rank: 20 },
+  { value: 'manager', label: 'Gestor', rank: 30 },
+  { value: 'admin', label: 'Administrador', rank: 40 },
+];
+
+function creatorAuthorityRank(creator) {
+  const roleRank = ROLE_OPTIONS.find((option) => option.value === creator?.role)?.rank || 0;
+  if (creator?.permissions?.manage_users === true) return Math.max(roleRank, 20);
+  if (creator?.permissions?.manage_operators === true) return Math.max(roleRank, 15);
+  return roleRank;
+}
+
+export default function CreateUserModal({ open, onOpenChange, onInvite, saving, creator }) {
   const { activeCells } = useCells();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -29,11 +44,26 @@ export default function CreateUserModal({ open, onOpenChange, onInvite, saving }
   const [permissions, setPermissions] = useState(() => getDefaultPermissions('operator'));
   const [reportDeliveryEnabled, setReportDeliveryEnabled] = useState(false);
   const [receivesDailyReport, setReceivesDailyReport] = useState(false);
+  const availableRoles = creator?.role === 'admin'
+    ? ROLE_OPTIONS
+    : ROLE_OPTIONS.filter((option) => option.rank < creatorAuthorityRank(creator));
+  const creatorCells = creator?.managed_cells?.length
+    ? creator.managed_cells
+    : creator?.cell ? [creator.cell] : [];
+  const availableCells = creator?.role === 'admin' || creatorCells.length === 0
+    ? activeCells
+    : activeCells.filter((cellOption) => creatorCells.includes(cellOption.name));
 
   // Atualiza as permissões automaticamente quando o papel muda
   useEffect(() => {
     setPermissions(getDefaultPermissions(role));
   }, [role]);
+
+  useEffect(() => {
+    if (!availableRoles.some((option) => option.value === role)) {
+      setRole(availableRoles[0]?.value || 'operator');
+    }
+  }, [availableRoles, role]);
 
   const toggleCell = (cellName) => {
     setManagedCells((current) => (
@@ -169,11 +199,9 @@ export default function CreateUserModal({ open, onOpenChange, onInvite, saving }
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="operator">Operador / Usuário</SelectItem>
-                  <SelectItem value="supervisor">Supervisor / Líder</SelectItem>
-                  <SelectItem value="manager">Gestor</SelectItem>
-                  <SelectItem value="admin">Administrador</SelectItem>
-                  <SelectItem value="viewer">Visualizador / Auditor</SelectItem>
+                  {availableRoles.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -190,7 +218,7 @@ export default function CreateUserModal({ open, onOpenChange, onInvite, saving }
               </p>
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-              {activeCells.map((c) => {
+              {availableCells.map((c) => {
                 const active = managedCells.includes(c.name);
                 return (
                   <button
@@ -251,7 +279,7 @@ export default function CreateUserModal({ open, onOpenChange, onInvite, saving }
               role={role}
               permissions={permissions}
               onChange={setPermissions}
-              disabled={role === 'admin'}
+              disabled={role === 'admin' || creator?.role !== 'admin'}
             />
           </div>
 

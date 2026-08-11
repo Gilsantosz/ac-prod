@@ -260,18 +260,7 @@ export async function getReplacementKpis() {
 }
 
 export async function getActiveReplacementOperators() {
-  const { data, error } = await supabase
-    .from('operator_sessions')
-    .select(`
-      id, started_at, last_seen_at, expires_at, shift_snapshot,
-      cell_id, cell_name_snapshot, machine_id, machine_name_snapshot,
-      operator:operator_id (id, name, registration)
-    `)
-    .is('ended_at', null)
-    .is('revoked_at', null)
-    .gt('expires_at', new Date().toISOString())
-    .order('last_seen_at', { ascending: false })
-    .limit(50);
+  const { data, error } = await supabase.rpc('get_active_replacement_operators');
   if (error) throw error;
   return data || [];
 }

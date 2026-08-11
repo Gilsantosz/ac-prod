@@ -37,11 +37,23 @@ jobs:
             supabase db push --project-ref "$PROJECT_REF"
             for function_name in \
               send-report-email \
-              send-scheduled-reports \
               sendDailyClosure \
-              schedule-report-job
+              schedule-report-job \
+              admin-users \
+              promob-parse-order \
+              promob-api-sync \
+              generate-productive-backup \
+              sync-google-drive-archive
             do
               supabase functions deploy "$function_name" --project-ref "$PROJECT_REF"
+            done
+            # Estes endpoints possuem autenticação própria: segredo de cron ou
+            # recuperação pública com rate limit e resposta anti-enumeração.
+            for function_name in \
+              send-scheduled-reports \
+              recover-password
+            do
+              supabase functions deploy "$function_name" --no-verify-jwt --project-ref "$PROJECT_REF"
             done
           else
             echo "Aviso: Segredos Supabase (SUPABASE_ACCESS_TOKEN e SUPABASE_DB_PASSWORD) nao configurados no GitHub. Pulando migracao automatica."
