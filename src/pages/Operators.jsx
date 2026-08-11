@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   HardHat, Plus, Edit2, CheckCircle, XCircle, Unlock,
-  Search, History, MapPin, Cpu, Clock, RefreshCw, KeyRound, Trash2, ShieldAlert
+  Search, History, MapPin, Cpu, Clock, RefreshCw, KeyRound, Trash2, ShieldAlert, RotateCcw
 } from 'lucide-react';
 
 import PageHeader from '@/components/ui/PageHeader';
@@ -229,6 +229,15 @@ export default function Operators() {
                           Inativo
                         </Badge>
                       )}
+                      <Badge
+                        variant="outline"
+                        className={op.replacement_enabled
+                          ? 'border-amber-500/25 bg-amber-500/10 text-[10px] font-bold text-amber-700 dark:text-amber-300'
+                          : 'text-[10px] font-bold text-muted-foreground'}
+                      >
+                        <RotateCcw className="mr-1 h-3 w-3" />
+                        {op.replacement_enabled ? 'Reposição liberada' : 'Sem baixa de reposição'}
+                      </Badge>
                     </div>
                   </div>
 
@@ -419,6 +428,7 @@ function OperatorFormModal({ operator, activeCells, allMachines, onClose, onSubm
   const [loginName, setLoginName] = useState(operator?.login_name || '');
   const [registration, setRegistration] = useState('');
   const [shift, setShift] = useState(operator?.shift || '1º Turno');
+  const [replacementEnabled, setReplacementEnabled] = useState(operator?.replacement_enabled === true);
   
   // Célula / Máquina Principal
   const [primaryCellId, setPrimaryCellId] = useState(operator?.primary_cell_id || '');
@@ -505,6 +515,7 @@ function OperatorFormModal({ operator, activeCells, allMachines, onClose, onSubm
       primary_machine_id: primaryMachineId || null,
       cell_ids: cellIds,
       machine_ids: machineIds,
+      replacement_enabled: replacementEnabled,
       active: operator ? operator.active : true
     });
   };
@@ -576,6 +587,34 @@ function OperatorFormModal({ operator, activeCells, allMachines, onClose, onSubm
               </select>
             </div>
           </div>
+
+          <hr className="border-border/40" />
+
+          <label
+            htmlFor="form-replacement-enabled"
+            className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 ${
+              replacementEnabled
+                ? 'border-amber-500/30 bg-amber-500/10'
+                : 'border-border/60 bg-secondary/10'
+            }`}
+          >
+            <input
+              id="form-replacement-enabled"
+              type="checkbox"
+              checked={replacementEnabled}
+              onChange={(event) => setReplacementEnabled(event.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-input text-amber-600 focus:ring-amber-500"
+            />
+            <span className="min-w-0">
+              <span className="flex items-center gap-2 text-sm font-bold text-foreground">
+                <RotateCcw className="h-4 w-4 text-amber-600" />
+                Liberação para reposição
+              </span>
+              <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+                Permite que este colaborador faça login no Posto de Reposição e registre baixas produtivas nas células e máquinas autorizadas abaixo.
+              </span>
+            </span>
+          </label>
 
           <hr className="border-border/40" />
 

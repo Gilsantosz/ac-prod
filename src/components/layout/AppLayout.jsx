@@ -100,12 +100,15 @@ function AppShell() {
   return (
     <div className="relative flex h-[100dvh] w-full overflow-hidden bg-background">
       {!kiosk && desktopPointer && (
-        <div className="relative z-30 hidden h-full w-[64px] shrink-0 md:block">
-          <motion.aside
+        <div
+          className={cn(
+            'relative z-30 hidden h-full shrink-0 md:block',
+            expanded ? 'w-[240px]' : 'w-[64px]'
+          )}
+          data-testid="desktop-sidebar-slot"
+        >
+          <aside
             ref={sidebarRef}
-            initial={false}
-            animate={{ width: expanded ? 240 : 64 }}
-            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
             onMouseEnter={() => {
               pointerInsideRef.current = true;
               cancelClose();
@@ -128,12 +131,10 @@ function AppShell() {
               }, 0);
             }}
             className={cn(
-              'absolute inset-y-0 left-0 flex flex-col overflow-hidden border-r border-border/60 bg-card',
-              expanded && 'shadow-2xl shadow-black/20'
+              'relative flex h-full w-full flex-col overflow-hidden border-r border-border/60 bg-card'
             )}
             aria-label="Navegação principal"
           >
-            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#76FB91]/60 to-transparent" />
             <Link
               to="/"
               className={cn(
@@ -192,7 +193,7 @@ function AppShell() {
                 </DropdownMenu>
               )}
             </div>
-          </motion.aside>
+          </aside>
         </div>
       )}
 
@@ -228,7 +229,7 @@ function AppShell() {
           )}
         </AnimatePresence>
 
-        <main className="flex-1 overflow-y-auto"><Outlet /></main>
+        <main className="min-w-0 flex-1 overflow-y-auto" data-testid="app-content"><Outlet /></main>
       </div>
       {user && <LeoAssistantChat user={user} />}
     </div>

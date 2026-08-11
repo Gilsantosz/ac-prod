@@ -417,7 +417,7 @@ test('exibe lote geral antes dos lotes de clientes e abre o dashboard preditivo'
   await expect(page.getByText('Prontas para separação')).toBeVisible();
 });
 
-test('separa gestão e posto de reposição e expande a sidebar sem reflow', async ({ page }) => {
+test('mantém a gestão rica, separa o posto e reposiciona a página com a sidebar', async ({ page }) => {
   await serveStaticBuild(page);
   await mockSupabase(page);
   await page.goto('login');
@@ -428,8 +428,10 @@ test('separa gestão e posto de reposição e expande a sidebar sem reflow', asy
   await expect(page).toHaveURL(/\/ac-prod\/?$/);
   await page.goto('reposicao');
 
-  await expect(page.getByRole('heading', { name: 'Gestão de Reposições' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Módulo de Reposição MES' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Abrir Posto de Reposição' })).toBeVisible();
+  await expect(page.getByText('Solicitadas', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Histórico e concluídas', { exact: false })).toBeVisible();
   await expect(page.getByLabel('Código de barras da peça substituta')).toHaveCount(0);
 
   const sidebar = page.getByRole('complementary', { name: 'Navegação principal' });
@@ -443,10 +445,11 @@ test('separa gestão e posto de reposição e expande a sidebar sem reflow', asy
   const expandedSidebar = await sidebar.boundingBox();
   const expandedMain = await main.boundingBox();
   expect(expandedSidebar?.width).toBeGreaterThanOrEqual(238);
-  expect(expandedMain?.x).toBe(initialMain?.x);
+  expect(expandedMain?.x).toBeGreaterThanOrEqual((initialMain?.x || 0) + 170);
+  expect(expandedMain?.width).toBeLessThan(initialMain?.width || Number.POSITIVE_INFINITY);
 
   await page.getByRole('button', { name: 'Abrir Posto de Reposição' }).click();
   await expect(page).toHaveURL(/\/reposicao\/posto$/);
-  await expect(page.getByRole('heading', { name: 'Acesso à Produção' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Acesso autorizado à reposição' })).toBeVisible();
   await expect(page.getByLabel('Código de barras da peça substituta')).toHaveCount(0);
 });

@@ -222,6 +222,43 @@ export function calculateReplacementAdminSummary(orders, now = new Date()) {
   });
 }
 
+export async function getReplacementKpis() {
+  const { data, error } = await supabase
+    .from('replacement_orders')
+    .select('id, status, priority, reason, origin_cell_name, created_at, completed_at')
+    .order('created_at', { ascending: false })
+    .limit(2000);
+  if (error) throw error;
+
+  const now = Date.now();
+  const summary = (data || []).reduce((result, order) => {
+    const status = order.status;
+    if (status === 'requested' || status === 'Reposição solicitada') result.requested += 1;
+    if (status === 'under_review') result.underReview += 1;
+    if (status === 'approved') result.approved += 1;
+    if (status === 'released') result.released += 1;
+    if (status === 'in_production' || status === 'Reposição em produção') result.inProduction += 1;
+    if (status === 'completed' || status === 'Finalizada') {
+      result.completed += 1;
+      if (order.completed_at) {
+        result.completedHours += Math.max((new Date(order.completed_at).getTime() - new Date(order.created_at).getTime()) / 3_600_000, 0);
+      }
+    }
+    if (status === 'cancelled' || status === 'Cancelada') result.cancelled += 1;
+    if (OPEN_STATUSES.has(status) && now - new Date(order.created_at).getTime() > 86_400_000) result.delayed += 1;
+    return result;
+  }, {
+    requested: 0, underReview: 0, approved: 0, released: 0,
+    inProduction: 0, completed: 0, cancelled: 0, delayed: 0,
+    completedHours: 0,
+  });
+
+  return {
+    ...summary,
+    avgHours: summary.completed > 0 ? Math.round(summary.completedHours / summary.completed) : 0,
+  };
+}
+
 export async function getActiveReplacementOperators() {
   const { data, error } = await supabase
     .from('operator_sessions')
@@ -316,7 +353,7 @@ export async function getReplacementHistory(orderId = null) {
 }
 
 export async function getReplacementStationQueue(sessionToken) {
-  const { data, error } = await supabase.rpc('get_replacement_station_queue_v2', {
+  const { data, error } = await supabase.rpc('get_replacement_station_queue_v3', {
     p_session_token: sessionToken,
     p_device_id: getDeviceId(),
   });
@@ -332,7 +369,7 @@ export async function collectReplacementStageV2({
   createdAtClient = new Date().toISOString(),
   payload = {},
 }) {
-  const { data, error } = await supabase.rpc('collect_replacement_stage_v2', {
+  const { data, error } = await supabase.rpc('collect_replacement_stage_v3', {
     p_session_token: sessionToken,
     p_barcode: String(barcode || '').trim(),
     p_client_event_id: clientEventId,

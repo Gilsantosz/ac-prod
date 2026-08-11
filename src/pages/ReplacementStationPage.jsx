@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, BellRing, CheckCircle2, Clock3, Factory, LogOut,
-  MapPin, PackageCheck, RefreshCw, Route, ScanLine, Settings2,
+  MapPin, PackageCheck, RefreshCw, RotateCcw, Route, ScanLine, Settings2,
   ShieldAlert, Truck, UserRound, Wifi, WifiOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -153,14 +153,22 @@ function ContextSelector({ session, onConfirm, loading }) {
   }, [cells, machines, onConfirm]);
 
   return (
-    <section className="mx-auto max-w-2xl rounded-3xl border border-border/70 bg-card p-5 shadow-xl md:p-7">
+    <section className="mx-auto max-w-4xl overflow-hidden rounded-3xl border border-border/70 bg-card shadow-xl">
+      <div className="border-b border-border/60 bg-amber-500/5 p-5 md:p-7">
       <div className="flex items-start gap-3">
         <div className="rounded-2xl bg-amber-500/10 p-3 text-amber-600"><Settings2 className="h-6 w-6" /></div>
         <div>
           <h2 className="text-lg font-black">Identifique a célula e o posto</h2>
-          <p className="mt-1 text-sm text-muted-foreground">A seleção vale somente enquanto esta rota estiver aberta.</p>
+          <p className="mt-1 max-w-xl text-pretty text-sm text-muted-foreground">Escolha o ponto produtivo em que as peças substitutas serão bipadas. A seleção vale somente durante esta sessão.</p>
         </div>
       </div>
+      </div>
+      <div className="grid border-b border-border/60 sm:grid-cols-3">
+        <ContextDetail icon={ShieldAlert} title="Acesso validado" text="Colaborador liberado para reposição" />
+        <ContextDetail icon={Factory} title={`${cells.length} célula(s)`} text="Somente vínculos ativos do cadastro" />
+        <ContextDetail icon={Settings2} title={`${(session?.machines || []).filter((machine) => machine.allows_replacement !== false).length} posto(s)`} text="Máquinas habilitadas para baixa" />
+      </div>
+      <div className="p-5 md:p-7">
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="replacement-cell">Célula autorizada</Label>
@@ -196,6 +204,8 @@ function ContextSelector({ session, onConfirm, loading }) {
         {loading ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <MapPin className="mr-2 h-4 w-4" />}
         Iniciar posto de reposição
       </Button>
+      <p className="mt-3 text-center text-xs text-muted-foreground">Todas as baixas serão vinculadas ao colaborador, célula, posto, dispositivo e horário desta sessão.</p>
+      </div>
     </section>
   );
 }
@@ -419,8 +429,8 @@ function ReplacementStation() {
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div>
-              <h1 className="text-xl font-black tracking-tight md:text-2xl">Posto de Reposição</h1>
-              <p className="mt-1 text-xs text-muted-foreground">Baixa sequencial real da peça substituta.</p>
+              <h1 className="text-balance text-xl font-black md:text-2xl">Posto de Reposição por Célula</h1>
+              <p className="mt-1 text-pretty text-xs text-muted-foreground">Baixa sequencial da peça substituta com autorização, rastreabilidade e sincronização operacional.</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2 text-xs">
@@ -514,7 +524,7 @@ function StatusCard({ icon: Icon, label, value, tone, spin = false }) {
     <div className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm">
       <div className={`inline-flex rounded-xl p-2 ${tones[tone] || tones.slate}`}><Icon className={`h-4 w-4 ${spin ? 'animate-spin' : ''}`} /></div>
       <p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</p>
-      <p className="mt-1 text-xl font-black text-foreground">{value}</p>
+      <p className="mt-1 text-xl font-black tabular-nums text-foreground">{value}</p>
     </div>
   );
 }
@@ -558,9 +568,27 @@ function FreshReplacementStation() {
   }
 
   return (
-    <OperationalLoginGate>
+    <OperationalLoginGate
+      sessionPurpose="replacement"
+      pageTitle="Posto de Reposição"
+      pageSubtitle="BAIXA PRODUTIVA POR CÉLULA"
+      pageDescription="Acesso exclusivo para colaboradores liberados no cadastro de operadores."
+      submitLabel="Entrar no Posto de Reposição"
+      accessTitle="Acesso autorizado à reposição"
+      accessDescription="Informe seu login e matrícula. O servidor verificará sua liberação antes de abrir as células."
+      icon={RotateCcw}
+    >
       <ReplacementStation />
     </OperationalLoginGate>
+  );
+}
+
+function ContextDetail({ icon: Icon, title, text }) {
+  return (
+    <div className="flex items-start gap-3 border-border/60 p-4 sm:border-r sm:last:border-r-0">
+      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+      <div><p className="text-xs font-bold">{title}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{text}</p></div>
+    </div>
   );
 }
 

@@ -10,7 +10,7 @@ import { calculateReplacementAdminSummary, collectReplacementStageV2 } from '@/l
 describe('replacementService', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('usa somente a RPC v2 e preserva o contrato idempotente', async () => {
+  it('usa somente a RPC v3 autorizada e preserva o contrato idempotente', async () => {
     rpc.mockResolvedValue({ data: { success: true, result_status: 'approved' }, error: null });
 
     await collectReplacementStageV2({
@@ -18,7 +18,7 @@ describe('replacementService', () => {
     });
 
     expect(rpc).toHaveBeenCalledTimes(1);
-    expect(rpc).toHaveBeenCalledWith('collect_replacement_stage_v2', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('collect_replacement_stage_v3', expect.objectContaining({
       p_session_token: 'token', p_barcode: 'REP-123', p_client_event_id: 'event-123',
       p_device_id: 'browser-device',
     }));

@@ -11,7 +11,7 @@ import {
  * Hook de sessão operacional.
  * Gerencia login, logout, expiração e estado reativo da estação.
  */
-export function useOperatorSession() {
+export function useOperatorSession({ purpose = 'production' } = {}) {
   const [session, setSession] = useState(() => getOperatorSession());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -50,7 +50,7 @@ export function useOperatorSession() {
     setLoading(true);
     setError(null);
     try {
-      const sess = await loginOperator(loginName, registration);
+      const sess = await loginOperator(loginName, registration, { purpose });
       setSession(sess);
       return sess;
     } catch (err) {
@@ -59,7 +59,7 @@ export function useOperatorSession() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [purpose]);
 
   const logout = useCallback(async () => {
     setLoading(true);

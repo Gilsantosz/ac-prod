@@ -1,368 +1,388 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { jsPDF } from 'jspdf';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AlertTriangle, CheckCircle2, Clock3, FileClock, FileDown, Factory,
-  History, PackageCheck, Printer, RefreshCw, Route, Search, ShieldCheck,
-  Truck, UserRound, X, XCircle,
+  ArrowRight, CheckCircle2, CheckSquare, Download, Factory, FileText,
+  Filter, History, LockKeyhole, Printer, RefreshCw, RotateCcw, Search,
+  Settings, ShieldCheck, Square, Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import PageHeader from '@/components/ui/PageHeader';
-import { Badge } from '@/components/ui/badge';
+import { invalidateAllMesQueries } from '@/config/queryKeys';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useAuth } from '@/lib/AuthContext';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 import {
-  REPLACEMENT_STATUS_LABELS,
-  approveReplacement,
-  calculateReplacementAdminSummary,
-  cancelReplacement,
-  forceCompleteReplacement,
-  getActiveReplacementOperators,
-  getReplacementHistory,
-  getReplacementOrders,
-  registerReplacementLabelPrint,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  cancelReplacement, getActiveReplacementOperators, getReplacementKpis,
   releaseReplacement,
 } from '@/lib/replacementService';
+import { getCanonicalReplacementOrders } from '@/lib/replacementCanonicalService';
+import { generateReplacementPdfReport } from '@/lib/reports/replacementPdfReportService';
+import { useAuth } from '@/lib/AuthContext';
+import ReplacementOrderCard from '@/components/replacement/ReplacementOrderCard';
+import ReplacementApproveModal from '@/components/replacement/ReplacementApproveModal';
+import ReplacementLabelPreviewModal from '@/components/replacement/ReplacementLabelPreviewModal';
+import ReplacementBatchPrintModal from '@/components/replacement/ReplacementBatchPrintModal';
+import ReplacementHistoryModal from '@/components/replacement/ReplacementHistoryModal';
+import LabelTemplateConfigModal from '@/components/replacement/LabelTemplateConfigModal';
+import ReplacementForceCompleteModal from '@/components/replacement/ReplacementForceCompleteModal';
 
-const OPEN_STATUSES = new Set(['requested', 'under_review', 'approved', 'released', 'in_production', 'Reposição solicitada', 'Reposição em produção']);
-const COMPLETE_STATUSES = new Set(['completed', 'Finalizada']);
-const CANCELLED_STATUSES = new Set(['cancelled', 'Cancelada']);
-
-function formatDate(value) {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(date);
-}
-
-function formatElapsed(value) {
-  const seconds = Math.max((Date.now() - new Date(value || Date.now()).getTime()) / 1000, 0);
-  if (seconds < 3600) return `${Math.max(Math.floor(seconds / 60), 1)} min`;
-  const hours = Math.floor(seconds / 3600);
-  return `${hours}h ${Math.floor((seconds % 3600) / 60)}min`;
-}
-
-function orderCode(order) {
-  return order.production_order?.order_number || order.production_order?.order_code || order.production_order_id?.slice(0, 8) || '—';
-}
-
-function customerName(order) {
-  return order.production_order?.customer_legal_name || order.production_order?.customer_name || '—';
-}
-
-function pieceCode(piece) {
-  return piece?.traceability_code || piece?.piece_uid || piece?.piece_code || '—';
-}
-
-function normalizeStage(value) {
-  const key = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
-  return ({ corte: 'cut', cut: 'cut', borda: 'edge', edge: 'edge', usinagem: 'cnc', cnc: 'cnc', marcenaria: 'joinery', joinery: 'joinery', separacao: 'separation', separation: 'separation', embalagem: 'packaging', packaging: 'packaging' })[key] || key;
-}
-
-function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>'"]/g, (character) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
-  }[character]));
-}
-
-function statusTone(status) {
-  if (COMPLETE_STATUSES.has(status)) return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
-  if (CANCELLED_STATUSES.has(status)) return 'border-slate-500/25 bg-slate-500/10 text-slate-600';
-  if (['in_production', 'Reposição em produção'].includes(status)) return 'border-blue-500/25 bg-blue-500/10 text-blue-700 dark:text-blue-300';
-  return 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300';
-}
+const ACTIVE_STATUSES = ['requested', 'under_review', 'approved', 'released', 'in_production'];
+const CLOSED_STATUSES = ['completed', 'cancelled'];
 
 export default function ReplacementPage() {
-  const navigate = useNavigate();
   const { user } = useAuth();
-  const [orders, setOrders] = useState([]);
-  const [operators, setOperators] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('open');
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState('active');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
-  const [busyId, setBusyId] = useState(null);
-  const [history, setHistory] = useState(null);
+  const [search, setSearch] = useState('');
+  const [approveOrderId, setApproveOrderId] = useState(null);
+  const [labelModalOrder, setLabelModalOrder] = useState(null);
+  const [showBatchModal, setShowBatchModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [forceCompleteOrder, setForceCompleteOrder] = useState(null);
+  const [cancelOrder, setCancelOrder] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelling, setCancelling] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
 
-  const canManage = ['admin', 'manager', 'supervisor'].includes(user?.role)
-    || user?.permissions?.manage_replacements === true;
+  const userPermissions = {
+    approve_replacements: user?.role === 'admin' || user?.role === 'manager' || user?.permissions?.approve_replacements,
+    manage_replacements: ['admin', 'manager', 'supervisor'].includes(user?.role) || user?.permissions?.manage_replacements,
+    admin: user?.role === 'admin',
+  };
 
-  const loadData = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) setLoading(true);
-    try {
-      const [ordersResult, operatorsResult] = await Promise.all([
-        getReplacementOrders(),
-        getActiveReplacementOperators(),
-      ]);
-      setOrders(ordersResult);
-      setOperators(operatorsResult);
-    } catch (error) {
-      toast.error(error.message || 'Falha ao carregar a gestão de reposições.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const { data: kpis = {}, refetch: refetchKpis } = useQuery({
+    queryKey: ['replacement-kpis'],
+    queryFn: getReplacementKpis,
+    refetchInterval: 15_000,
+  });
+
+  const { data: activeOperators = [] } = useQuery({
+    queryKey: ['replacement-active-operators'],
+    queryFn: getActiveReplacementOperators,
+    refetchInterval: 30_000,
+  });
+
+  const {
+    data: ordersData = { orders: [], count: 0 },
+    isLoading,
+    isError,
+    error: ordersError,
+    refetch: refetchOrders,
+  } = useQuery({
+    queryKey: ['replacement-orders', activeTab, statusFilter, priorityFilter, search],
+    queryFn: () => getCanonicalReplacementOrders({
+      status: statusFilter !== 'all' ? statusFilter : null,
+      priority: priorityFilter !== 'all' ? priorityFilter : null,
+      search: search.trim() || null,
+      limit: 100,
+    }),
+    refetchInterval: 10_000,
+  });
+
+  const filteredOrders = useMemo(() => (ordersData.orders || []).filter((order) => {
+    if (statusFilter !== 'all') return true;
+    return (activeTab === 'active' ? ACTIVE_STATUSES : CLOSED_STATUSES).includes(order.status);
+  }), [activeTab, ordersData.orders, statusFilter]);
 
   useEffect(() => {
-    loadData();
-    const interval = window.setInterval(() => loadData({ silent: true }), 45_000);
-    return () => window.clearInterval(interval);
-  }, [loadData]);
+    setSelectedIds((current) => current.filter((id) => filteredOrders.some((order) => order.id === id)));
+  }, [filteredOrders]);
 
-  const summary = useMemo(() => calculateReplacementAdminSummary(orders), [orders]);
-  const filteredOrders = useMemo(() => {
-    const term = search.trim().toLocaleLowerCase('pt-BR');
-    return orders.filter((order) => {
-      const matchesStatus = statusFilter === 'all'
-        || (statusFilter === 'open' && OPEN_STATUSES.has(order.status))
-        || (statusFilter === 'completed' && COMPLETE_STATUSES.has(order.status))
-        || (statusFilter === 'cancelled' && CANCELLED_STATUSES.has(order.status))
-        || order.status === statusFilter;
-      const matchesPriority = priorityFilter === 'all' || order.priority === priorityFilter;
-      const searchable = [
-        order.id, order.reason, order.status, orderCode(order), customerName(order),
-        order.production_lot?.lot_code, pieceCode(order.original_piece),
-        pieceCode(order.replacement_piece), order.original_piece?.piece_name,
-        order.replacement_piece?.piece_name,
-      ].filter(Boolean).join(' ').toLocaleLowerCase('pt-BR');
-      return matchesStatus && matchesPriority && (!term || searchable.includes(term));
-    });
-  }, [orders, priorityFilter, search, statusFilter]);
+  const selectedOrders = filteredOrders.filter((order) => selectedIds.includes(order.id));
+  const printableSelected = selectedOrders.filter((order) => order.status !== 'cancelled');
+  const activeTotal = (kpis.requested || 0) + (kpis.underReview || 0) + (kpis.approved || 0) + (kpis.released || 0) + (kpis.inProduction || 0);
 
-  const runAction = async (order, action, successMessage) => {
-    setBusyId(order.id);
+  const handleRefresh = () => {
+    invalidateAllMesQueries(queryClient);
+    refetchKpis();
+    refetchOrders();
+  };
+
+  const toggleAll = () => {
+    setSelectedIds(selectedIds.length === filteredOrders.length && filteredOrders.length
+      ? []
+      : filteredOrders.map((order) => order.id));
+  };
+
+  const toggleOne = (id) => {
+    setSelectedIds((current) => current.includes(id)
+      ? current.filter((value) => value !== id)
+      : [...current, id]);
+  };
+
+  const handleRelease = async (order) => {
     try {
-      await action();
-      toast.success(successMessage);
-      await loadData({ silent: true });
+      await releaseReplacement(order.id);
+      toast.success('Ordem liberada para fabricação.');
+      handleRefresh();
     } catch (error) {
-      toast.error(error.message || 'A operação foi recusada pelo servidor.');
-    } finally {
-      setBusyId(null);
+      toast.error(error.message || 'Falha ao liberar a reposição.');
     }
   };
 
-  const handleCancel = (order) => {
-    const reason = window.prompt('Informe o motivo obrigatório do cancelamento:');
-    if (!reason?.trim()) return;
-    runAction(order, () => cancelReplacement(order.id, reason.trim()), 'Reposição cancelada com auditoria.');
-  };
-
-  const handleForceComplete = (order) => {
-    const reason = window.prompt('Justifique a conclusão forçada. Esta ação será auditada:');
-    if (!reason?.trim()) return;
-    runAction(order, () => forceCompleteReplacement(order.id, reason.trim()), 'Reposição concluída de forma auditada.');
-  };
-
-  const handlePrint = async (order) => {
-    const isReprint = Boolean(order.label_printed_at || order.print_count > 0);
-    const reason = isReprint ? window.prompt('Informe o motivo da reimpressão:') : null;
-    if (isReprint && !reason?.trim()) return;
-    setBusyId(order.id);
+  const confirmCancel = async () => {
+    if (!cancelOrder || !cancelReason.trim()) return;
+    setCancelling(true);
     try {
-      await registerReplacementLabelPrint(order, { reason: reason?.trim() || null });
-      const popup = window.open('', '_blank', 'width=760,height=520');
-      if (!popup) throw new Error('O navegador bloqueou a janela de impressão.');
-      popup.document.write(`<!doctype html><html><head><title>Etiqueta de reposição</title><style>body{font-family:Arial;padding:28px}.box{border:3px solid #111;padding:24px}.code{font:700 30px monospace}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:20px}small{display:block;color:#555;text-transform:uppercase}</style></head><body><div class="box"><h1>REPOSIÇÃO</h1><div class="code">${escapeHtml(pieceCode(order.replacement_piece))}</div><div class="grid"><div><small>Peça</small>${escapeHtml(order.replacement_piece?.piece_name)}</div><div><small>Original</small>${escapeHtml(pieceCode(order.original_piece))}</div><div><small>Pedido</small>${escapeHtml(orderCode(order))}</div><div><small>Lote</small>${escapeHtml(order.production_lot?.lot_code)}</div><div><small>Cliente</small>${escapeHtml(customerName(order))}</div><div><small>Prioridade</small>${escapeHtml(order.priority)}</div></div></div><script>window.onload=()=>{window.print();window.close()}</script></body></html>`);
-      popup.document.close();
-      toast.success(isReprint ? 'Reimpressão registrada.' : 'Impressão registrada.');
-      await loadData({ silent: true });
+      await cancelReplacement(cancelOrder.id, cancelReason.trim());
+      toast.success('Ordem de reposição cancelada com auditoria.');
+      setCancelOrder(null);
+      setCancelReason('');
+      handleRefresh();
     } catch (error) {
-      toast.error(error.message || 'Falha ao imprimir a etiqueta.');
+      toast.error(error.message || 'Falha ao cancelar a reposição.');
     } finally {
-      setBusyId(null);
+      setCancelling(false);
     }
   };
 
-  const openHistory = async (order) => {
-    setBusyId(order.id);
-    try {
-      const data = await getReplacementHistory(order.id);
-      setHistory({ order, ...data });
-    } catch (error) {
-      toast.error(error.message || 'Falha ao consultar o histórico.');
-    } finally {
-      setBusyId(null);
+  const exportPdf = async ({ orders = null, singleOrder = null, reportType }) => {
+    if (!singleOrder && (!orders || orders.length === 0)) {
+      toast.error('Selecione ao menos uma reposição para exportar.');
+      return;
     }
-  };
-
-  const exportPdf = () => {
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-    doc.setFontSize(17);
-    doc.text('Relatório de Reposições — AC.Prod', 14, 16);
-    doc.setFontSize(9);
-    doc.text(`Gerado em ${formatDate(new Date())} · ${filteredOrders.length} registro(s)`, 14, 23);
-    let y = 32;
-    filteredOrders.forEach((order, index) => {
-      if (y > 190) { doc.addPage(); y = 16; }
-      const line = `${index + 1}. ${pieceCode(order.replacement_piece)} | OP ${orderCode(order)} | ${customerName(order)} | ${REPLACEMENT_STATUS_LABELS[order.status]?.label || order.status} | ${order.reason || 'Sem motivo'}`;
-      const lines = doc.splitTextToSize(line, 265);
-      doc.text(lines, 14, y);
-      y += lines.length * 5 + 2;
-    });
-    doc.save(`reposicoes-${new Date().toISOString().slice(0, 10)}.pdf`);
+    try {
+      await generateReplacementPdfReport({
+        orders,
+        singleOrder,
+        filters: { status: statusFilter, priority: priorityFilter, search },
+        reportType,
+        userName: user?.name || 'Operador MES',
+      });
+      toast.success('Relatório PDF gerado com sucesso.');
+    } catch (error) {
+      toast.error(error.message || 'Falha ao exportar o relatório PDF.');
+    }
   };
 
   return (
     <div className="mx-auto max-w-[1700px] space-y-6 p-4 sm:p-6 lg:p-8">
-      <PageHeader
-        title="Gestão de Reposições"
-        subtitle="Aprovação, liberação, auditoria, etiquetas e acompanhamento do fluxo substituto."
-        actions={(
+      <header className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
+        <div>
+          <h1 className="flex items-center gap-2 text-balance text-2xl font-black text-foreground">
+            <RotateCcw className="h-7 w-7 text-amber-500" />
+            Módulo de Reposição MES
+          </h1>
+          <p className="mt-1 max-w-3xl text-pretty text-sm text-muted-foreground">
+            Gestão transacional de peças reprovadas, aprovação, fabricação, etiquetas, rastreabilidade e relatórios.
+          </p>
+        </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={exportPdf}><FileDown className="mr-2 h-4 w-4" /> Relatório PDF</Button>
-          <Button className="bg-amber-500 font-bold text-white hover:bg-amber-600" onClick={() => navigate('/reposicao/posto')}>
-            <Factory className="mr-2 h-4 w-4" /> Abrir Posto de Reposição
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button className="h-10 rounded-xl bg-amber-500 font-bold text-white hover:bg-amber-600">
+                <Printer className="mr-2 h-4 w-4" /> Imprimir / Exportar
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72 rounded-2xl p-1.5">
+              <DropdownMenuItem onClick={() => exportPdf({ orders: filteredOrders, reportType: 'filtered' })} className="rounded-xl py-2">
+                <FileText className="mr-2 h-4 w-4 text-blue-500" /> PDF das reposições filtradas
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!selectedOrders.length} onClick={() => exportPdf({ orders: selectedOrders, reportType: 'selected' })} className="rounded-xl py-2">
+                <Download className="mr-2 h-4 w-4 text-emerald-500" /> PDF das selecionadas
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={!printableSelected.length} onClick={() => setShowBatchModal(true)} className="rounded-xl py-2 font-bold">
+                <Printer className="mr-2 h-4 w-4 text-amber-500" /> Imprimir {printableSelected.length} etiqueta(s)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowHistoryModal(true)} className="rounded-xl py-2">
+                <History className="mr-2 h-4 w-4" /> Histórico de impressão
+              </DropdownMenuItem>
+              {userPermissions.admin && <DropdownMenuSeparator />}
+              {userPermissions.admin && (
+                <DropdownMenuItem onClick={() => setShowConfigModal(true)} className="rounded-xl py-2">
+                  <Settings className="mr-2 h-4 w-4" /> Modelo da etiqueta
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button variant="outline" className="h-10 rounded-xl font-bold" onClick={handleRefresh}>
+            <RefreshCw className="mr-2 h-4 w-4" /> Atualizar
           </Button>
         </div>
-        )}
-      />
+      </header>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard icon={PackageCheck} label="Disponíveis" value={summary.available} tone="emerald" />
-        <SummaryCard icon={Factory} label="Em fabricação" value={summary.inProduction} tone="blue" />
-        <SummaryCard icon={AlertTriangle} label="Atrasadas (+24h)" value={summary.delayed} tone="rose" />
-        <SummaryCard icon={CheckCircle2} label="Concluídas no turno" value={summary.completedThisShift} tone="violet" />
-      </section>
-
-      <section className="rounded-3xl border border-border/70 bg-card p-4 shadow-sm">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar peça, lote, pedido, cliente ou motivo" className="h-11 rounded-xl pl-10" />
+      <section className="overflow-hidden rounded-3xl border border-amber-500/25 bg-card shadow-sm" data-testid="replacement-station-entry">
+        <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-center lg:justify-between lg:p-6">
+          <div className="flex min-w-0 items-start gap-4">
+            <div className="rounded-2xl bg-amber-500/10 p-3 text-amber-600"><Factory className="h-7 w-7" /></div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-balance text-lg font-black">Posto de Baixa Produtiva de Reposição</h2>
+                <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                  {activeOperators.length} operador(es) online
+                </span>
+              </div>
+              <p className="mt-1 max-w-3xl text-pretty text-sm text-muted-foreground">
+                A bipagem por célula funciona em uma página operacional separada. O login só é liberado para colaboradores com permissão de reposição ativa.
+              </p>
+            </div>
           </div>
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded-xl border border-input bg-background px-3 text-sm">
-            <option value="open">Em aberto</option><option value="all">Todos os status</option><option value="completed">Concluídas</option><option value="cancelled">Canceladas</option>
-            <option value="requested">Solicitadas</option><option value="approved">Aprovadas</option><option value="released">Liberadas</option><option value="in_production">Em fabricação</option>
-          </select>
-          <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)} className="h-11 rounded-xl border border-input bg-background px-3 text-sm">
-            <option value="all">Todas as prioridades</option><option value="critical">Crítica</option><option value="high">Alta</option><option value="normal">Normal</option>
-          </select>
-          <Button variant="outline" onClick={() => loadData()} disabled={loading}><RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Atualizar</Button>
+          <div className="flex flex-wrap gap-2">
+            {userPermissions.admin && (
+              <Button variant="outline" className="rounded-xl" onClick={() => navigate('/operadores')}>
+                <Users className="mr-2 h-4 w-4" /> Liberar colaboradores
+              </Button>
+            )}
+            <Button className="rounded-xl bg-amber-500 font-bold text-white hover:bg-amber-600" onClick={() => navigate('/reposicao/posto')}>
+              Abrir Posto de Reposição <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        <div className="grid border-t border-border/60 bg-secondary/15 sm:grid-cols-3">
+          <StationDetail icon={LockKeyhole} title="Login restrito" text="Matrícula, usuário autenticado e liberação de reposição." />
+          <StationDetail icon={ShieldCheck} title="Célula autorizada" text="Somente células e máquinas vinculadas ao colaborador." />
+          <StationDetail icon={RefreshCw} title="Fila e sincronização" text="Sequência produtiva, Realtime e reconciliação offline." />
         </div>
       </section>
 
-      <section className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-black">Ordens de reposição</h2>
-            <Badge variant="outline">{filteredOrders.length}</Badge>
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <Kpi label="Solicitadas" value={kpis.requested} caption="Aguardando análise" tone="text-amber-600" />
+        <Kpi label="Aprovadas" value={kpis.approved} caption="Prontas para liberar" tone="text-blue-600" />
+        <Kpi label="Em produção" value={kpis.inProduction} caption="No chão de fábrica" tone="text-cyan-600" />
+        <Kpi label="Concluídas" value={kpis.completed} caption="Peças finalizadas" tone="text-emerald-600" />
+        <Kpi label="Atrasadas" value={kpis.delayed} caption="Mais de 24h abertas" tone="text-rose-600" />
+        <Kpi label="Tempo médio" value={`${kpis.avgHours || 0}h`} caption="Solicitação até fim" />
+      </section>
+
+      <section className="space-y-4 rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
+        <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
+          <div className="flex w-fit rounded-xl border border-border/40 bg-secondary/50 p-1 text-xs font-bold">
+            <TabButton active={activeTab === 'active'} onClick={() => { setActiveTab('active'); setStatusFilter('all'); }} icon={RotateCcw}>
+              Fila ativa ({activeTotal})
+            </TabButton>
+            <TabButton active={activeTab === 'completed'} onClick={() => { setActiveTab('completed'); setStatusFilter('all'); }} icon={CheckCircle2} completed>
+              Histórico e concluídas ({kpis.completed || 0})
+            </TabButton>
           </div>
-          {loading && orders.length === 0 ? (
-            <EmptyState icon={RefreshCw} text="Carregando reposições..." spin />
-          ) : filteredOrders.length === 0 ? (
-            <EmptyState icon={PackageCheck} text="Nenhuma reposição corresponde aos filtros." />
-          ) : filteredOrders.map((order) => (
+          <div className="relative w-full lg:max-w-sm">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar lote, pedido, cliente ou peça" className="h-10 rounded-xl pl-9" />
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 border-t border-border/40 pt-3 text-xs">
+          <Filter className="h-4 w-4 text-muted-foreground" />
+          <label className="flex items-center gap-2 font-semibold text-muted-foreground">
+            Status
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-9 rounded-lg border border-input bg-background px-2 text-xs font-medium text-foreground">
+              <option value="all">Todos</option><option value="requested">Solicitadas</option><option value="under_review">Em análise</option>
+              <option value="approved">Aprovadas</option><option value="released">Liberadas</option><option value="in_production">Em produção</option>
+              <option value="completed">Concluídas</option><option value="cancelled">Canceladas</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 font-semibold text-muted-foreground">
+            Prioridade
+            <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)} className="h-9 rounded-lg border border-input bg-background px-2 text-xs font-medium text-foreground">
+              <option value="all">Todas</option><option value="normal">Normal</option><option value="high">Alta</option><option value="critical">Crítica</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section className="flex flex-col justify-between gap-3 rounded-2xl border border-border/60 bg-secondary/35 p-3.5 text-xs sm:flex-row sm:items-center">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={toggleAll} className="h-8 font-bold">
+            {selectedIds.length === filteredOrders.length && filteredOrders.length
+              ? <CheckSquare className="mr-2 h-4 w-4 text-amber-500" />
+              : <Square className="mr-2 h-4 w-4" />}
+            {selectedIds.length === filteredOrders.length && filteredOrders.length ? 'Limpar seleção' : 'Selecionar todos os visíveis'}
+          </Button>
+          <span className="font-semibold text-muted-foreground"><strong className="tabular-nums text-foreground">{selectedIds.length}</strong> selecionada(s)</span>
+        </div>
+        {!!selectedIds.length && (
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" className="rounded-xl" onClick={() => exportPdf({ orders: selectedOrders, reportType: 'selected' })}><FileText className="mr-2 h-4 w-4" /> PDF</Button>
+            <Button size="sm" className="rounded-xl bg-amber-500 font-bold text-white hover:bg-amber-600" onClick={() => setShowBatchModal(true)}><Printer className="mr-2 h-4 w-4" /> Etiquetas ({printableSelected.length})</Button>
+          </div>
+        )}
+      </section>
+
+      {isLoading ? (
+        <div className="space-y-4" aria-label="Carregando ordens de reposição"><OrderSkeleton /><OrderSkeleton /></div>
+      ) : isError ? (
+        <div className="rounded-2xl border border-rose-500/25 bg-rose-500/10 p-6 text-center">
+          <p className="font-bold text-rose-700 dark:text-rose-300">Não foi possível carregar as reposições.</p>
+          <p className="mt-1 text-sm text-muted-foreground">{ordersError?.message}</p>
+          <Button variant="outline" className="mt-4" onClick={() => refetchOrders()}>Tentar novamente</Button>
+        </div>
+      ) : !filteredOrders.length ? (
+        <div className="rounded-2xl border border-border/60 bg-card p-12 text-center shadow-sm">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-secondary/60"><RotateCcw className="h-6 w-6 text-muted-foreground" /></div>
+          <h3 className="mt-3 text-base font-bold">Nenhuma Ordem de Reposição Encontrada</h3>
+          <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">Não há ordens registradas para os filtros selecionados nesta aba.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {filteredOrders.map((order) => (
             <ReplacementOrderCard
               key={order.id}
               order={order}
-              busy={busyId === order.id}
-              canManage={canManage}
-              onApprove={() => runAction(order, () => approveReplacement(order.id), 'Reposição aprovada.')}
-              onRelease={() => runAction(order, () => releaseReplacement(order.id), 'Reposição liberada para produção.')}
-              onCancel={() => handleCancel(order)}
-              onForceComplete={() => handleForceComplete(order)}
-              onPrint={() => handlePrint(order)}
-              onHistory={() => openHistory(order)}
+              onApprove={() => setApproveOrderId(order.id)}
+              onRelease={handleRelease}
+              onComplete={() => setForceCompleteOrder(order)}
+              onCancel={() => { setCancelOrder(order); setCancelReason(''); }}
+              userPermissions={userPermissions}
+              isSelected={selectedIds.includes(order.id)}
+              onToggleSelect={() => toggleOne(order.id)}
+              onOpenLabelModal={setLabelModalOrder}
+              onOpenPdfReport={(singleOrder) => exportPdf({ singleOrder, reportType: 'individual' })}
+              onOpenHistoryModal={() => setShowHistoryModal(true)}
             />
           ))}
         </div>
+      )}
 
-        <aside className="space-y-3">
-          <div>
-            <h2 className="text-sm font-black">Operadores ativos</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">Sessões operacionais validadas no servidor</p>
-          </div>
-          {operators.length === 0 ? <EmptyState icon={UserRound} text="Nenhum operador ativo agora." /> : operators.map((session) => (
-            <div key={session.id} className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm">
-              <div className="flex items-start gap-3">
-                <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-600"><UserRound className="h-4 w-4" /></div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-bold">{session.operator?.name || 'Operador'}</p>
-                  <p className="text-xs text-muted-foreground">{session.operator?.registration || 'Matrícula validada'}</p>
-                  <p className="mt-2 text-xs"><strong>{session.cell_name_snapshot || 'Sem célula'}</strong>{session.machine_name_snapshot ? ` · ${session.machine_name_snapshot}` : ''}</p>
-                  <p className="mt-1 text-[10px] text-muted-foreground">Último sinal {formatElapsed(session.last_seen_at)} atrás</p>
-                </div>
-              </div>
-            </div>
-          ))}
-        </aside>
-      </section>
+      {approveOrderId && <ReplacementApproveModal open onOpenChange={(open) => !open && setApproveOrderId(null)} orderId={approveOrderId} onApproved={handleRefresh} />}
+      {labelModalOrder && <ReplacementLabelPreviewModal open onOpenChange={(open) => !open && setLabelModalOrder(null)} order={labelModalOrder} userPermissions={userPermissions} onPrinted={handleRefresh} />}
+      {showBatchModal && <ReplacementBatchPrintModal open onOpenChange={setShowBatchModal} selectedOrders={selectedOrders.length ? selectedOrders : filteredOrders} userPermissions={userPermissions} onBatchComplete={handleRefresh} />}
+      {showHistoryModal && <ReplacementHistoryModal open onOpenChange={setShowHistoryModal} />}
+      {showConfigModal && <LabelTemplateConfigModal open onOpenChange={setShowConfigModal} />}
+      {forceCompleteOrder && <ReplacementForceCompleteModal order={forceCompleteOrder} open onOpenChange={(open) => !open && setForceCompleteOrder(null)} onSuccess={handleRefresh} />}
 
-      {history && <HistoryModal data={history} onClose={() => setHistory(null)} />}
+      <AlertDialog open={!!cancelOrder} onOpenChange={(open) => !open && setCancelOrder(null)}>
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancelar ordem de reposição?</AlertDialogTitle>
+            <AlertDialogDescription>O cancelamento será registrado na auditoria e exige uma justificativa operacional.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <Textarea value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder="Informe o motivo do cancelamento" rows={3} />
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancelling}>Voltar</AlertDialogCancel>
+            <AlertDialogAction disabled={!cancelReason.trim() || cancelling} onClick={(event) => { event.preventDefault(); confirmCancel(); }} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {cancelling ? 'Cancelando...' : 'Confirmar cancelamento'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
 
-function SummaryCard({ icon: Icon, label, value, tone }) {
-  const tones = { emerald: 'bg-emerald-500/10 text-emerald-600', blue: 'bg-blue-500/10 text-blue-600', rose: 'bg-rose-500/10 text-rose-600', violet: 'bg-violet-500/10 text-violet-600' };
-  return <div className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm"><span className={`inline-flex rounded-xl p-2 ${tones[tone]}`}><Icon className="h-4 w-4" /></span><p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-black">{value}</p></div>;
+function StationDetail({ icon: Icon, title, text }) {
+  return <div className="flex gap-3 border-border/60 p-4 sm:border-r sm:last:border-r-0"><Icon className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" /><div><p className="text-xs font-bold">{title}</p><p className="mt-0.5 text-xs text-muted-foreground">{text}</p></div></div>;
 }
 
-function ReplacementOrderCard({ order, busy, canManage, onApprove, onRelease, onCancel, onForceComplete, onPrint, onHistory }) {
-  const route = order.replacement_piece?.route_steps || [];
-  const completed = new Set((order.replacement_piece?.completed_steps || []).map(normalizeStage));
-  const canApprove = ['requested', 'under_review', 'Reposição solicitada'].includes(order.status);
-  const canRelease = ['approved'].includes(order.status);
-  const canClose = OPEN_STATUSES.has(order.status);
-  return (
-    <article className="rounded-3xl border border-border/70 bg-card p-4 shadow-sm md:p-5">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0 space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-sm font-black">{pieceCode(order.replacement_piece)}</span>
-            <Badge variant="outline" className={statusTone(order.status)}>{REPLACEMENT_STATUS_LABELS[order.status]?.label || order.status}</Badge>
-            <Badge variant="outline" className="capitalize">{order.priority || 'normal'}</Badge>
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3.5 w-3.5" /> {formatElapsed(order.created_at)}</span>
-          </div>
-          <div className="grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
-            <Detail label="Peça original" value={`${pieceCode(order.original_piece)} · ${order.original_piece?.piece_name || ''}`} />
-            <Detail label="Peça substituta" value={order.replacement_piece?.piece_name} />
-            <Detail label="Lote / pedido" value={`${order.production_lot?.lot_code || '—'} · ${orderCode(order)}`} />
-            <Detail label="Cliente" value={customerName(order)} />
-            <Detail label="Ambiente" value={order.replacement_piece?.environment} />
-            <Detail label="Material / cor" value={[order.replacement_piece?.material, order.replacement_piece?.color].filter(Boolean).join(' · ')} />
-            <Detail label="Dimensões" value={[order.replacement_piece?.length, order.replacement_piece?.width, order.replacement_piece?.height].filter((value) => value != null).join(' × ')} />
-            <Detail label="Motivo da reprovação" value={order.reason} tone="text-rose-600 dark:text-rose-400" />
-          </div>
-          <div>
-            <p className="mb-2 flex items-center gap-2 text-xs font-bold text-muted-foreground"><Route className="h-4 w-4" /> Rota da peça substituta</p>
-            <div className="flex flex-wrap gap-1.5">{route.length ? route.map((step) => <span key={step} className={`rounded-lg border px-2 py-1 text-[10px] font-bold ${completed.has(normalizeStage(step)) ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600' : normalizeStage(step) === normalizeStage(order.replacement_piece?.current_stage) ? 'border-amber-500/30 bg-amber-500/10 text-amber-600' : 'border-border text-muted-foreground'}`}>{step}</span>) : <span className="text-xs text-muted-foreground">Rota ainda não definida.</span>}</div>
-          </div>
-        </div>
-        <div className="flex min-w-[210px] flex-wrap gap-2 xl:max-w-[250px] xl:justify-end">
-          <Button size="sm" variant="outline" onClick={onHistory} disabled={busy}><History className="mr-2 h-4 w-4" /> Histórico</Button>
-          <Button size="sm" variant="outline" onClick={onPrint} disabled={busy || !order.replacement_piece}><Printer className="mr-2 h-4 w-4" /> Etiqueta</Button>
-          {canManage && canApprove && <Button size="sm" onClick={onApprove} disabled={busy}><ShieldCheck className="mr-2 h-4 w-4" /> Aprovar</Button>}
-          {canManage && canRelease && <Button size="sm" onClick={onRelease} disabled={busy}><Truck className="mr-2 h-4 w-4" /> Liberar</Button>}
-          {canManage && canClose && <Button size="sm" variant="outline" onClick={onForceComplete} disabled={busy}><CheckCircle2 className="mr-2 h-4 w-4" /> Concluir auditado</Button>}
-          {canManage && canClose && <Button size="sm" variant="destructive" onClick={onCancel} disabled={busy}><XCircle className="mr-2 h-4 w-4" /> Cancelar</Button>}
-        </div>
-      </div>
-    </article>
-  );
+function Kpi({ label, value = 0, caption, tone = 'text-foreground' }) {
+  return <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm"><p className="text-[11px] font-bold uppercase text-muted-foreground">{label}</p><p className={`mt-1 text-2xl font-black tabular-nums ${tone}`}>{value ?? 0}</p><p className="mt-1 text-[10px] text-muted-foreground">{caption}</p></div>;
 }
 
-function Detail({ label, value, tone = '' }) {
-  return <div className="rounded-xl bg-secondary/25 px-3 py-2"><p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">{label}</p><p className={`mt-0.5 truncate font-semibold ${tone}`}>{value || '—'}</p></div>;
+function TabButton({ active, onClick, icon: Icon, children, completed = false }) {
+  return <button type="button" onClick={onClick} className={`flex items-center gap-1.5 rounded-lg px-3 py-2 ${active ? `bg-background shadow-sm ${completed ? 'text-emerald-600' : 'text-amber-600'}` : 'text-muted-foreground hover:bg-background/50'}`}><Icon className="h-3.5 w-3.5" />{children}</button>;
 }
 
-function EmptyState({ icon: Icon, text, spin = false }) {
-  return <div className="rounded-2xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground"><Icon className={`mx-auto mb-2 h-5 w-5 ${spin ? 'animate-spin' : ''}`} />{text}</div>;
-}
-
-function HistoryModal({ data, onClose }) {
-  const events = [
-    ...data.audits.map((item) => ({ ...item, kind: 'Auditoria', date: item.created_at, title: item.action })),
-    ...data.prints.map((item) => ({ ...item, kind: 'Etiqueta', date: item.printed_at, title: item.reprint_reason ? 'Reimpressão' : 'Impressão' })),
-  ].sort((a, b) => new Date(b.date) - new Date(a.date));
-  return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/55 p-4" role="dialog" aria-modal="true" aria-label="Histórico da reposição">
-      <section className="max-h-[85vh] w-full max-w-2xl overflow-hidden rounded-3xl border border-border bg-card shadow-2xl">
-        <header className="flex items-center justify-between border-b border-border p-4"><div><h2 className="font-black">Histórico da reposição</h2><p className="mt-1 font-mono text-xs text-muted-foreground">{pieceCode(data.order.replacement_piece)}</p></div><Button size="icon" variant="ghost" onClick={onClose} aria-label="Fechar histórico"><X className="h-4 w-4" /></Button></header>
-        <div className="max-h-[68vh] space-y-3 overflow-y-auto p-4">{events.length === 0 ? <EmptyState icon={FileClock} text="Nenhum evento auditado encontrado." /> : events.map((event) => <div key={`${event.kind}-${event.id}`} className="flex gap-3 rounded-2xl border border-border/70 p-3"><span className="mt-0.5 rounded-xl bg-secondary p-2"><FileClock className="h-4 w-4" /></span><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-bold">{event.title}</p><Badge variant="outline">{event.kind}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{formatDate(event.date)} · {event.user_name || event.printer_name || 'Sistema'}</p>{event.metadata && <pre className="mt-2 max-w-full overflow-x-auto whitespace-pre-wrap rounded-lg bg-secondary/40 p-2 text-[10px]">{JSON.stringify(event.metadata, null, 2)}</pre>}</div></div>)}</div>
-      </section>
-    </div>
-  );
+function OrderSkeleton() {
+  return <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-5"><div className="flex justify-between"><Skeleton className="h-8 w-52 rounded-xl" /><Skeleton className="h-7 w-28 rounded-xl" /></div><div className="grid gap-3 md:grid-cols-3"><Skeleton className="h-20 rounded-xl" /><Skeleton className="h-20 rounded-xl" /><Skeleton className="h-20 rounded-xl" /></div><Skeleton className="h-24 rounded-xl" /></div>;
 }

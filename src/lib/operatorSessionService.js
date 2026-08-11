@@ -45,13 +45,17 @@ function notifySessionChange() {
 /**
  * Autentica o operador via RPC seguro `operator_login_v2` e cria sessão no servidor.
  */
-export async function loginOperator(loginName, registration) {
+export async function loginOperator(loginName, registration, { purpose = 'production' } = {}) {
   if (!loginName?.trim()) throw new Error('Informe o nome de login do operador.');
   if (!registration?.trim()) throw new Error('Informe a matrícula.');
 
   const deviceId = getDeviceId();
 
-  const { data, error } = await supabase.rpc('operator_login_v2', {
+  const rpcName = purpose === 'replacement'
+    ? 'replacement_operator_login_v2'
+    : 'operator_login_v2';
+
+  const { data, error } = await supabase.rpc(rpcName, {
     p_login_name: loginName.trim(),
     p_registration: registration.trim(),
     p_device_id: deviceId
@@ -80,7 +84,8 @@ export async function loginOperator(loginName, registration) {
     token: session_token,
     session_id: session_id,
     expires_at: new Date(expires_at).getTime(),
-    logged_at: new Date().toISOString()
+    logged_at: new Date().toISOString(),
+    purpose: data.scope || purpose,
   };
 
   try {
