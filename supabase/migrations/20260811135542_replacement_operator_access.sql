@@ -1,4 +1,5 @@
 -- AC.Prod / Leo Flow
+-- Migration id aligned with the production Supabase migration history.
 -- Permissao explicita de reposicao no cadastro do colaborador e RPCs
 -- dedicadas ao posto de baixa produtiva.
 
