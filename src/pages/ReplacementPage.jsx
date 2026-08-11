@@ -1,23 +1,28 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { invalidateAllMesQueries } from '@/config/queryKeys';
 import {
-  RotateCcw, Filter, Search, CheckCircle2, RefreshCw, Printer, FileText, Download,
-  History, Settings, CheckSquare, Square
+  ArrowRight, CheckCircle2, CheckSquare, Download, Factory, FileText,
+  Filter, History, LockKeyhole, Printer, RefreshCw, RotateCcw, Search,
+  Settings, ShieldCheck, Square, Users,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { invalidateAllMesQueries } from '@/config/queryKeys';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  getReplacementKpis,
+  cancelReplacement, getActiveReplacementOperators, getReplacementKpis,
   releaseReplacement,
-  cancelReplacement
 } from '@/lib/replacementService';
 import { getCanonicalReplacementOrders } from '@/lib/replacementCanonicalService';
 import { generateReplacementPdfReport } from '@/lib/reports/replacementPdfReportService';
@@ -28,71 +33,77 @@ import ReplacementLabelPreviewModal from '@/components/replacement/ReplacementLa
 import ReplacementBatchPrintModal from '@/components/replacement/ReplacementBatchPrintModal';
 import ReplacementHistoryModal from '@/components/replacement/ReplacementHistoryModal';
 import LabelTemplateConfigModal from '@/components/replacement/LabelTemplateConfigModal';
-import ReplacementCollectionPanel from '@/components/replacement/ReplacementCollectionPanel';
-import WorkstationConfigModal from '@/components/replacement/WorkstationConfigModal';
 import ReplacementForceCompleteModal from '@/components/replacement/ReplacementForceCompleteModal';
-import { toast } from 'sonner';
+
+const ACTIVE_STATUSES = ['requested', 'under_review', 'approved', 'released', 'in_production'];
+const CLOSED_STATUSES = ['completed', 'cancelled'];
 
 export default function ReplacementPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
-
-  const [activeTab, setActiveTab] = useState('active'); // 'active' | 'completed'
+  const [activeTab, setActiveTab] = useState('active');
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [search, setSearch] = useState('');
-  
-  // Modais
   const [approveOrderId, setApproveOrderId] = useState(null);
   const [labelModalOrder, setLabelModalOrder] = useState(null);
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
-  const [showWorkstationConfig, setShowWorkstationConfig] = useState(false);
   const [forceCompleteOrder, setForceCompleteOrder] = useState(null);
-
-  // Seleção Múltipla
+  const [cancelOrder, setCancelOrder] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelling, setCancelling] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
 
-  // Permissões
   const userPermissions = {
     approve_replacements: user?.role === 'admin' || user?.role === 'manager' || user?.permissions?.approve_replacements,
-    manage_replacements: user?.role === 'admin' || user?.role === 'manager' || user?.role === 'supervisor' || user?.permissions?.manage_replacements,
-    admin: user?.role === 'admin'
+    manage_replacements: ['admin', 'manager', 'supervisor'].includes(user?.role) || user?.permissions?.manage_replacements,
+    admin: user?.role === 'admin',
   };
 
-  // Carregar KPIs
   const { data: kpis = {}, refetch: refetchKpis } = useQuery({
     queryKey: ['replacement-kpis'],
-    queryFn: () => getReplacementKpis(),
-    refetchInterval: 15000
+    queryFn: getReplacementKpis,
+    refetchInterval: 15_000,
   });
 
-  // Carregar Ordens com Filtros
-  const { data: ordersData = { orders: [], count: 0 }, isLoading, refetch: refetchOrders } = useQuery({
+  const { data: activeOperators = [] } = useQuery({
+    queryKey: ['replacement-active-operators'],
+    queryFn: getActiveReplacementOperators,
+    refetchInterval: 30_000,
+  });
+
+  const {
+    data: ordersData = { orders: [], count: 0 },
+    isLoading,
+    isError,
+    error: ordersError,
+    refetch: refetchOrders,
+  } = useQuery({
     queryKey: ['replacement-orders', activeTab, statusFilter, priorityFilter, search],
     queryFn: () => getCanonicalReplacementOrders({
       status: statusFilter !== 'all' ? statusFilter : null,
       priority: priorityFilter !== 'all' ? priorityFilter : null,
       search: search.trim() || null,
-      limit: 100
+      limit: 100,
     }),
-    refetchInterval: 10000
+    refetchInterval: 10_000,
   });
 
-  const filteredOrders = (ordersData.orders || []).filter(order => {
+  const filteredOrders = useMemo(() => (ordersData.orders || []).filter((order) => {
     if (statusFilter !== 'all') return true;
-    if (activeTab === 'active') {
-      return ['requested', 'under_review', 'approved', 'released', 'in_production'].includes(order.status);
-    } else {
-      return ['completed', 'cancelled'].includes(order.status);
-    }
-  });
+    return (activeTab === 'active' ? ACTIVE_STATUSES : CLOSED_STATUSES).includes(order.status);
+  }), [activeTab, ordersData.orders, statusFilter]);
 
-  // Ordens selecionadas
-  const selectedOrdersList = filteredOrders.filter(o => selectedIds.includes(o.id));
-  const validSelectedCount = selectedOrdersList.filter(o => o.status !== 'cancelled').length;
-  const cancelledSelectedCount = selectedOrdersList.length - validSelectedCount;
+  useEffect(() => {
+    setSelectedIds((current) => current.filter((id) => filteredOrders.some((order) => order.id === id)));
+  }, [filteredOrders]);
+
+  const selectedOrders = filteredOrders.filter((order) => selectedIds.includes(order.id));
+  const printableSelected = selectedOrders.filter((order) => order.status !== 'cancelled');
+  const activeTotal = (kpis.requested || 0) + (kpis.underReview || 0) + (kpis.approved || 0) + (kpis.released || 0) + (kpis.inProduction || 0);
 
   const handleRefresh = () => {
     invalidateAllMesQueries(queryClient);
@@ -100,370 +111,218 @@ export default function ReplacementPage() {
     refetchOrders();
   };
 
-  const handleToggleSelectAll = () => {
-    if (selectedIds.length === filteredOrders.length && filteredOrders.length > 0) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(filteredOrders.map(o => o.id));
-    }
+  const toggleAll = () => {
+    setSelectedIds(selectedIds.length === filteredOrders.length && filteredOrders.length
+      ? []
+      : filteredOrders.map((order) => order.id));
   };
 
-  const handleToggleSelect = (id) => {
-    setSelectedIds(prev =>
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
+  const toggleOne = (id) => {
+    setSelectedIds((current) => current.includes(id)
+      ? current.filter((value) => value !== id)
+      : [...current, id]);
   };
 
   const handleRelease = async (order) => {
     try {
       await releaseReplacement(order.id);
-      toast.success('Ordem de reposição liberada para fabricação.');
+      toast.success('Ordem liberada para fabricação.');
       handleRefresh();
     } catch (error) {
-      console.error('Erro ao liberar reposição:', error);
-      toast.error(error.message || 'Falha ao liberar reposição.');
+      toast.error(error.message || 'Falha ao liberar a reposição.');
     }
   };
 
-  const handleComplete = async (order) => {
-    // Abrir modal de Conclusão Forçada Auditada
-    setForceCompleteOrder(order);
-  };
-
-  const handleCancel = async (order) => {
+  const confirmCancel = async () => {
+    if (!cancelOrder || !cancelReason.trim()) return;
+    setCancelling(true);
     try {
-      await cancelReplacement(order.id, { reason: 'Cancelado via painel de reposição' });
-      toast.success('Ordem de reposição cancelada.');
+      await cancelReplacement(cancelOrder.id, cancelReason.trim());
+      toast.success('Ordem de reposição cancelada com auditoria.');
+      setCancelOrder(null);
+      setCancelReason('');
       handleRefresh();
     } catch (error) {
-      console.error('Erro ao cancelar reposição:', error);
-      toast.error(error.message || 'Falha ao cancelar reposição.');
+      toast.error(error.message || 'Falha ao cancelar a reposição.');
+    } finally {
+      setCancelling(false);
     }
   };
 
-  // Exportação em PDF por Filtro
-  const handleExportFilteredPdf = async () => {
-    try {
-      await generateReplacementPdfReport({
-        orders: filteredOrders,
-        filters: { status: statusFilter, priority: priorityFilter, search },
-        reportType: 'filtered',
-        userName: user?.name || 'Operador MES'
-      });
-      toast.success('Relatório PDF das reposições filtradas gerado com sucesso.');
-    } catch (err) {
-      console.error('Erro ao gerar relatório PDF filtrado:', err);
-      toast.error('Falha ao exportar relatório PDF.');
-    }
-  };
-
-  // Exportação em PDF dos Selecionados
-  const handleExportSelectedPdf = async () => {
-    if (selectedOrdersList.length === 0) {
-      toast.error('Selecione ao menos uma ordem de reposição para exportar.');
+  const exportPdf = async ({ orders = null, singleOrder = null, reportType }) => {
+    if (!singleOrder && (!orders || orders.length === 0)) {
+      toast.error('Selecione ao menos uma reposição para exportar.');
       return;
     }
     try {
       await generateReplacementPdfReport({
-        orders: selectedOrdersList,
-        reportType: 'selected',
-        userName: user?.name || 'Operador MES'
+        orders,
+        singleOrder,
+        filters: { status: statusFilter, priority: priorityFilter, search },
+        reportType,
+        userName: user?.name || 'Operador MES',
       });
-      toast.success('Relatório PDF das reposições selecionadas gerado com sucesso.');
-    } catch (err) {
-      console.error('Erro ao gerar relatório PDF selecionados:', err);
-      toast.error('Falha ao exportar relatório PDF.');
-    }
-  };
-
-  // Exportação de PDF Individual
-  const handleOpenSinglePdfReport = async (order) => {
-    try {
-      await generateReplacementPdfReport({
-        singleOrder: order,
-        reportType: 'individual',
-        userName: user?.name || 'Operador MES'
-      });
-      toast.success(`Relatório PDF da reposição ${order.replacement_code} gerado.`);
-    } catch (err) {
-      console.error('Erro ao gerar relatório individual:', err);
-      toast.error('Falha ao gerar relatório PDF.');
+      toast.success('Relatório PDF gerado com sucesso.');
+    } catch (error) {
+      toast.error(error.message || 'Falha ao exportar o relatório PDF.');
     }
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Cabeçalho */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="mx-auto max-w-[1700px] space-y-6 p-4 sm:p-6 lg:p-8">
+      <header className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
         <div>
-          <h1 className="text-xl md:text-2xl font-black text-foreground flex items-center gap-2 tracking-tight">
-            <RotateCcw className="w-6 h-6 text-amber-500" />
+          <h1 className="flex items-center gap-2 text-balance text-2xl font-black text-foreground">
+            <RotateCcw className="h-7 w-7 text-amber-500" />
             Módulo de Reposição MES
           </h1>
-          <p className="text-xs md:text-sm text-muted-foreground mt-1">
-            Gestão transacional de peças reprovadas, ordens de reposição, emissão de etiquetas e relatórios PDF.
+          <p className="mt-1 max-w-3xl text-pretty text-sm text-muted-foreground">
+            Gestão transacional de peças reprovadas, aprovação, fabricação, etiquetas, rastreabilidade e relatórios.
           </p>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Novo Botão Principal Imprimir / Exportar */}
+        <div className="flex flex-wrap gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button
-                size="sm"
-                className="h-10 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-md"
-              >
-                <Printer className="w-4 h-4" />
-                Imprimir / Exportar
+              <Button className="h-10 rounded-xl bg-amber-500 font-bold text-white hover:bg-amber-600">
+                <Printer className="mr-2 h-4 w-4" /> Imprimir / Exportar
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64 rounded-2xl p-1.5 border-border shadow-xl text-xs">
-              <DropdownMenuItem onClick={handleExportFilteredPdf} className="cursor-pointer rounded-xl flex items-center gap-2 py-2">
-                <FileText className="w-4 h-4 text-blue-500" />
-                <span>Relatório PDF das reposições filtradas</span>
+            <DropdownMenuContent align="end" className="w-72 rounded-2xl p-1.5">
+              <DropdownMenuItem onClick={() => exportPdf({ orders: filteredOrders, reportType: 'filtered' })} className="rounded-xl py-2">
+                <FileText className="mr-2 h-4 w-4 text-blue-500" /> PDF das reposições filtradas
               </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={selectedOrdersList.length === 0}
-                onClick={handleExportSelectedPdf}
-                className="cursor-pointer rounded-xl flex items-center gap-2 py-2"
-              >
-                <FileText className="w-4 h-4 text-emerald-500" />
-                <span>Relatório PDF das reposições selecionadas</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => {
-                  if (filteredOrders.length > 0) handleOpenSinglePdfReport(filteredOrders[0]);
-                }}
-                className="cursor-pointer rounded-xl flex items-center gap-2 py-2"
-              >
-                <Download className="w-4 h-4 text-indigo-500" />
-                <span>Relatório individual</span>
+              <DropdownMenuItem disabled={!selectedOrders.length} onClick={() => exportPdf({ orders: selectedOrders, reportType: 'selected' })} className="rounded-xl py-2">
+                <Download className="mr-2 h-4 w-4 text-emerald-500" /> PDF das selecionadas
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                disabled={selectedOrdersList.length === 0}
-                onClick={() => setShowBatchModal(true)}
-                className="cursor-pointer rounded-xl flex items-center gap-2 py-2 font-bold text-foreground"
-              >
-                <Printer className="w-4 h-4 text-amber-500" />
-                <span>Imprimir etiquetas selecionadas ({validSelectedCount})</span>
+              <DropdownMenuItem disabled={!printableSelected.length} onClick={() => setShowBatchModal(true)} className="rounded-xl py-2 font-bold">
+                <Printer className="mr-2 h-4 w-4 text-amber-500" /> Imprimir {printableSelected.length} etiqueta(s)
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setShowHistoryModal(true)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2 text-muted-foreground">
-                <History className="w-4 h-4 text-slate-500" />
-                <span>Consultar histórico de impressão</span>
+              <DropdownMenuItem onClick={() => setShowHistoryModal(true)} className="rounded-xl py-2">
+                <History className="mr-2 h-4 w-4" /> Histórico de impressão
               </DropdownMenuItem>
+              {userPermissions.admin && <DropdownMenuSeparator />}
               {userPermissions.admin && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setShowConfigModal(true)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2 text-muted-foreground">
-                    <Settings className="w-4 h-4 text-slate-500" />
-                    <span>Configuração do Modelo da Etiqueta</span>
-                  </DropdownMenuItem>
-                </>
+                <DropdownMenuItem onClick={() => setShowConfigModal(true)} className="rounded-xl py-2">
+                  <Settings className="mr-2 h-4 w-4" /> Modelo da etiqueta
+                </DropdownMenuItem>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            className="h-10 rounded-xl border-border/80 text-xs font-bold flex items-center gap-1.5"
-          >
-            <RefreshCw className="w-4 h-4 text-muted-foreground" />
-            Atualizar
+          <Button variant="outline" className="h-10 rounded-xl font-bold" onClick={handleRefresh}>
+            <RefreshCw className="mr-2 h-4 w-4" /> Atualizar
           </Button>
         </div>
-      </div>
+      </header>
 
-      {/* Painel de Coleta de Reposição por Célula / Posto (Novo) */}
-      <ReplacementCollectionPanel
-        onCollectionSuccess={handleRefresh}
-        onOpenWorkstationConfig={userPermissions.admin ? () => setShowWorkstationConfig(true) : null}
-      />
-
-      {/* Cards de KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="bg-card border border-border/60 rounded-2xl p-3.5 space-y-1 shadow-sm">
-          <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Solicitadas</p>
-          <p className="text-2xl font-black text-amber-600 dark:text-amber-400">{kpis.requested || 0}</p>
-          <p className="text-[10px] text-muted-foreground">Aguardando análise</p>
-        </div>
-
-        <div className="bg-card border border-border/60 rounded-2xl p-3.5 space-y-1 shadow-sm">
-          <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Aprovadas</p>
-          <p className="text-2xl font-black text-blue-600 dark:text-blue-400">{kpis.approved || 0}</p>
-          <p className="text-[10px] text-muted-foreground">Prontas p/ liberar</p>
-        </div>
-
-        <div className="bg-card border border-border/60 rounded-2xl p-3.5 space-y-1 shadow-sm">
-          <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Em Produção</p>
-          <p className="text-2xl font-black text-cyan-600 dark:text-cyan-400">{kpis.inProduction || 0}</p>
-          <p className="text-[10px] text-muted-foreground">No chão de fábrica</p>
-        </div>
-
-        <div className="bg-card border border-border/60 rounded-2xl p-3.5 space-y-1 shadow-sm">
-          <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Concluídas</p>
-          <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{kpis.completed || 0}</p>
-          <p className="text-[10px] text-muted-foreground">Peças finalizadas</p>
-        </div>
-
-        <div className="bg-card border border-border/60 rounded-2xl p-3.5 space-y-1 shadow-sm">
-          <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Atrasadas</p>
-          <p className="text-2xl font-black text-rose-600 dark:text-rose-400">{kpis.delayed || 0}</p>
-          <p className="text-[10px] text-muted-foreground">&gt; 24h em aberto</p>
-        </div>
-
-        <div className="bg-card border border-border/60 rounded-2xl p-3.5 space-y-1 shadow-sm">
-          <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Tempo Médio</p>
-          <p className="text-2xl font-black text-foreground">{kpis.avgHours || 0}h</p>
-          <p className="text-[10px] text-muted-foreground">Solicitação → Fim</p>
-        </div>
-      </div>
-
-      {/* Abas e Filtros */}
-      <div className="bg-card border border-border/60 rounded-2xl p-4 space-y-4 shadow-sm">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          {/* Abas */}
-          <div className="flex p-1 bg-secondary/50 rounded-xl border border-border/40 text-xs font-bold">
-            <button
-              type="button"
-              onClick={() => setActiveTab('active')}
-              className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
-                activeTab === 'active' ? 'bg-background shadow text-amber-600 dark:text-amber-400 font-extrabold' : 'text-muted-foreground hover:bg-background/40'
-              }`}
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Fila Ativa ({(kpis.requested || 0) + (kpis.approved || 0) + (kpis.inProduction || 0)})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('completed')}
-              className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
-                activeTab === 'completed' ? 'bg-background shadow text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-muted-foreground hover:bg-background/40'
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Histórico & Concluídas ({kpis.completed || 0})
-            </button>
+      <section className="overflow-hidden rounded-3xl border border-amber-500/25 bg-card shadow-sm" data-testid="replacement-station-entry">
+        <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-center lg:justify-between lg:p-6">
+          <div className="flex min-w-0 items-start gap-4">
+            <div className="rounded-2xl bg-amber-500/10 p-3 text-amber-600"><Factory className="h-7 w-7" /></div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-balance text-lg font-black">Posto de Baixa Produtiva de Reposição</h2>
+                <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                  {activeOperators.length} operador(es) online
+                </span>
+              </div>
+              <p className="mt-1 max-w-3xl text-pretty text-sm text-muted-foreground">
+                A bipagem por célula funciona em uma página operacional separada. O login só é liberado para colaboradores com permissão de reposição ativa.
+              </p>
+            </div>
           </div>
-
-          {/* Busca Textual */}
-          <div className="relative min-w-[240px]">
-            <Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por lote, pedido, cliente..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-10 text-xs rounded-xl"
-            />
-          </div>
-        </div>
-
-        {/* Filtros Secundários */}
-        <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-border/40 text-xs">
-          <div className="flex items-center gap-2">
-            <Filter className="w-3.5 h-3.5 text-muted-foreground" />
-            <span className="font-semibold text-muted-foreground">Status:</span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="h-8 rounded-lg border border-input bg-background px-2 text-xs font-medium focus-visible:outline-none"
-            >
-              <option value="all">Todos os Status</option>
-              <option value="requested">Solicitadas</option>
-              <option value="under_review">Em Análise</option>
-              <option value="approved">Aprovadas</option>
-              <option value="released">Liberadas</option>
-              <option value="in_production">Em Produção</option>
-              <option value="completed">Concluídas</option>
-              <option value="cancelled">Canceladas</option>
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-muted-foreground">Prioridade:</span>
-            <select
-              value={priorityFilter}
-              onChange={(e) => setPriorityFilter(e.target.value)}
-              className="h-8 rounded-lg border border-input bg-background px-2 text-xs font-medium focus-visible:outline-none"
-            >
-              <option value="all">Todas as Prioridades</option>
-              <option value="normal">Normal</option>
-              <option value="high">Alta</option>
-              <option value="critical">Crítica</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* BARRA DE SELEÇÃO EM LOTE */}
-      <div className="bg-secondary/40 border border-border/60 rounded-2xl p-3.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleToggleSelectAll}
-            className="h-8 text-xs font-bold flex items-center gap-1.5"
-          >
-            {selectedIds.length === filteredOrders.length && filteredOrders.length > 0 ? (
-              <CheckSquare className="w-4 h-4 text-amber-500" />
-            ) : (
-              <Square className="w-4 h-4 text-muted-foreground" />
+          <div className="flex flex-wrap gap-2">
+            {userPermissions.admin && (
+              <Button variant="outline" className="rounded-xl" onClick={() => navigate('/operadores')}>
+                <Users className="mr-2 h-4 w-4" /> Liberar colaboradores
+              </Button>
             )}
-            {selectedIds.length === filteredOrders.length && filteredOrders.length > 0
-              ? 'Limpar seleção'
-              : 'Selecionar todos os visíveis'}
+            <Button className="rounded-xl bg-amber-500 font-bold text-white hover:bg-amber-600" onClick={() => navigate('/reposicao/posto')}>
+              Abrir Posto de Reposição <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        <div className="grid border-t border-border/60 bg-secondary/15 sm:grid-cols-3">
+          <StationDetail icon={LockKeyhole} title="Login restrito" text="Matrícula, usuário autenticado e liberação de reposição." />
+          <StationDetail icon={ShieldCheck} title="Célula autorizada" text="Somente células e máquinas vinculadas ao colaborador." />
+          <StationDetail icon={RefreshCw} title="Fila e sincronização" text="Sequência produtiva, Realtime e reconciliação offline." />
+        </div>
+      </section>
+
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <Kpi label="Solicitadas" value={kpis.requested} caption="Aguardando análise" tone="text-amber-600" />
+        <Kpi label="Aprovadas" value={kpis.approved} caption="Prontas para liberar" tone="text-blue-600" />
+        <Kpi label="Em produção" value={kpis.inProduction} caption="No chão de fábrica" tone="text-cyan-600" />
+        <Kpi label="Concluídas" value={kpis.completed} caption="Peças finalizadas" tone="text-emerald-600" />
+        <Kpi label="Atrasadas" value={kpis.delayed} caption="Mais de 24h abertas" tone="text-rose-600" />
+        <Kpi label="Tempo médio" value={`${kpis.avgHours || 0}h`} caption="Solicitação até fim" />
+      </section>
+
+      <section className="space-y-4 rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
+        <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
+          <div className="flex w-fit rounded-xl border border-border/40 bg-secondary/50 p-1 text-xs font-bold">
+            <TabButton active={activeTab === 'active'} onClick={() => { setActiveTab('active'); setStatusFilter('all'); }} icon={RotateCcw}>
+              Fila ativa ({activeTotal})
+            </TabButton>
+            <TabButton active={activeTab === 'completed'} onClick={() => { setActiveTab('completed'); setStatusFilter('all'); }} icon={CheckCircle2} completed>
+              Histórico e concluídas ({kpis.completed || 0})
+            </TabButton>
+          </div>
+          <div className="relative w-full lg:max-w-sm">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar lote, pedido, cliente ou peça" className="h-10 rounded-xl pl-9" />
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 border-t border-border/40 pt-3 text-xs">
+          <Filter className="h-4 w-4 text-muted-foreground" />
+          <label className="flex items-center gap-2 font-semibold text-muted-foreground">
+            Status
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-9 rounded-lg border border-input bg-background px-2 text-xs font-medium text-foreground">
+              <option value="all">Todos</option><option value="requested">Solicitadas</option><option value="under_review">Em análise</option>
+              <option value="approved">Aprovadas</option><option value="released">Liberadas</option><option value="in_production">Em produção</option>
+              <option value="completed">Concluídas</option><option value="cancelled">Canceladas</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 font-semibold text-muted-foreground">
+            Prioridade
+            <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)} className="h-9 rounded-lg border border-input bg-background px-2 text-xs font-medium text-foreground">
+              <option value="all">Todas</option><option value="normal">Normal</option><option value="high">Alta</option><option value="critical">Crítica</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section className="flex flex-col justify-between gap-3 rounded-2xl border border-border/60 bg-secondary/35 p-3.5 text-xs sm:flex-row sm:items-center">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={toggleAll} className="h-8 font-bold">
+            {selectedIds.length === filteredOrders.length && filteredOrders.length
+              ? <CheckSquare className="mr-2 h-4 w-4 text-amber-500" />
+              : <Square className="mr-2 h-4 w-4" />}
+            {selectedIds.length === filteredOrders.length && filteredOrders.length ? 'Limpar seleção' : 'Selecionar todos os visíveis'}
           </Button>
-
-          <span className="text-muted-foreground font-semibold">
-            <strong>{selectedIds.length}</strong> reposições selecionadas
-            {selectedIds.length > 0 && (
-              <span className="text-[11px] ml-1 font-normal">
-                ({validSelectedCount} prontas para impressão{cancelledSelectedCount > 0 ? `, ${cancelledSelectedCount} canceladas` : ''})
-              </span>
-            )}
-          </span>
+          <span className="font-semibold text-muted-foreground"><strong className="tabular-nums text-foreground">{selectedIds.length}</strong> selecionada(s)</span>
         </div>
-
-        {selectedIds.length > 0 && (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExportSelectedPdf}
-              className="h-8 rounded-xl text-xs font-bold border-border/60 flex items-center gap-1.5"
-            >
-              <FileText className="w-3.5 h-3.5 text-blue-500" />
-              Exportar Selecionados (PDF)
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => setShowBatchModal(true)}
-              className="h-8 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white flex items-center gap-1.5 shadow"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              Imprimir Etiquetas ({validSelectedCount})
-            </Button>
+        {!!selectedIds.length && (
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" className="rounded-xl" onClick={() => exportPdf({ orders: selectedOrders, reportType: 'selected' })}><FileText className="mr-2 h-4 w-4" /> PDF</Button>
+            <Button size="sm" className="rounded-xl bg-amber-500 font-bold text-white hover:bg-amber-600" onClick={() => setShowBatchModal(true)}><Printer className="mr-2 h-4 w-4" /> Etiquetas ({printableSelected.length})</Button>
           </div>
         )}
-      </div>
+      </section>
 
-      {/* Lista de Ordens de Reposição */}
       {isLoading ? (
-        <div className="py-12 text-center space-y-3">
-          <div className="w-8 h-8 border-4 border-amber-500/30 border-t-amber-500 rounded-full animate-spin mx-auto"></div>
-          <p className="text-xs text-muted-foreground">Carregando ordens de reposição...</p>
+        <div className="space-y-4" aria-label="Carregando ordens de reposição"><OrderSkeleton /><OrderSkeleton /></div>
+      ) : isError ? (
+        <div className="rounded-2xl border border-rose-500/25 bg-rose-500/10 p-6 text-center">
+          <p className="font-bold text-rose-700 dark:text-rose-300">Não foi possível carregar as reposições.</p>
+          <p className="mt-1 text-sm text-muted-foreground">{ordersError?.message}</p>
+          <Button variant="outline" className="mt-4" onClick={() => refetchOrders()}>Tentar novamente</Button>
         </div>
-      ) : filteredOrders.length === 0 ? (
-        <div className="bg-card border border-border/60 rounded-2xl p-12 text-center space-y-3 shadow-sm">
-          <div className="w-12 h-12 rounded-full bg-secondary/50 flex items-center justify-center mx-auto text-muted-foreground">
-            <RotateCcw className="w-6 h-6" />
-          </div>
-          <h3 className="text-base font-bold text-foreground">Nenhuma Ordem de Reposição Encontrada</h3>
-          <p className="text-xs text-muted-foreground max-w-md mx-auto">
-            Não há ordens de reposição registradas para os filtros selecionados nesta aba.
-          </p>
+      ) : !filteredOrders.length ? (
+        <div className="rounded-2xl border border-border/60 bg-card p-12 text-center shadow-sm">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-secondary/60"><RotateCcw className="h-6 w-6 text-muted-foreground" /></div>
+          <h3 className="mt-3 text-base font-bold">Nenhuma Ordem de Reposição Encontrada</h3>
+          <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">Não há ordens registradas para os filtros selecionados nesta aba.</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -473,66 +332,57 @@ export default function ReplacementPage() {
               order={order}
               onApprove={() => setApproveOrderId(order.id)}
               onRelease={handleRelease}
-              onComplete={handleComplete}
-              onCancel={handleCancel}
+              onComplete={() => setForceCompleteOrder(order)}
+              onCancel={() => { setCancelOrder(order); setCancelReason(''); }}
               userPermissions={userPermissions}
               isSelected={selectedIds.includes(order.id)}
-              onToggleSelect={() => handleToggleSelect(order.id)}
-              onOpenLabelModal={(ord) => setLabelModalOrder(ord)}
-              onOpenPdfReport={handleOpenSinglePdfReport}
+              onToggleSelect={() => toggleOne(order.id)}
+              onOpenLabelModal={setLabelModalOrder}
+              onOpenPdfReport={(singleOrder) => exportPdf({ singleOrder, reportType: 'individual' })}
               onOpenHistoryModal={() => setShowHistoryModal(true)}
             />
           ))}
         </div>
       )}
 
-      {/* Modal de Aprovação */}
-      {approveOrderId && (
-        <ReplacementApproveModal
-          open={!!approveOrderId}
-          onOpenChange={(open) => !open && setApproveOrderId(null)}
-          orderId={approveOrderId}
-          onApproved={handleRefresh}
-        />
-      )}
+      {approveOrderId && <ReplacementApproveModal open onOpenChange={(open) => !open && setApproveOrderId(null)} orderId={approveOrderId} onApproved={handleRefresh} />}
+      {labelModalOrder && <ReplacementLabelPreviewModal open onOpenChange={(open) => !open && setLabelModalOrder(null)} order={labelModalOrder} userPermissions={userPermissions} onPrinted={handleRefresh} />}
+      {showBatchModal && <ReplacementBatchPrintModal open onOpenChange={setShowBatchModal} selectedOrders={selectedOrders.length ? selectedOrders : filteredOrders} userPermissions={userPermissions} onBatchComplete={handleRefresh} />}
+      {showHistoryModal && <ReplacementHistoryModal open onOpenChange={setShowHistoryModal} />}
+      {showConfigModal && <LabelTemplateConfigModal open onOpenChange={setShowConfigModal} />}
+      {forceCompleteOrder && <ReplacementForceCompleteModal order={forceCompleteOrder} open onOpenChange={(open) => !open && setForceCompleteOrder(null)} onSuccess={handleRefresh} />}
 
-      {/* Modal de Pré-visualização de Etiqueta Térmica */}
-      {labelModalOrder && (
-        <ReplacementLabelPreviewModal
-          open={!!labelModalOrder}
-          onOpenChange={(open) => !open && setLabelModalOrder(null)}
-          order={labelModalOrder}
-          userPermissions={userPermissions}
-          onPrinted={handleRefresh}
-        />
-      )}
-
-      {/* Modal de Impressão e Exportação em Lote */}
-      {showBatchModal && (
-        <ReplacementBatchPrintModal
-          open={showBatchModal}
-          onOpenChange={setShowBatchModal}
-          selectedOrders={selectedOrdersList.length > 0 ? selectedOrdersList : filteredOrders}
-          userPermissions={userPermissions}
-          onBatchComplete={handleRefresh}
-        />
-      )}
-
-      {/* Modal de Histórico de Impressões e Exportações */}
-      {showHistoryModal && (
-        <ReplacementHistoryModal
-          open={showHistoryModal}
-          onOpenChange={setShowHistoryModal}
-        />
-      )}
-
-      {/* Modal de Configuração de Modelos de Etiqueta */}
-      {showConfigModal && (
-        <LabelTemplateConfigModal
-          open={showConfigModal}
-          onOpenChange={setShowConfigModal}
-        />
-      )}
+      <AlertDialog open={!!cancelOrder} onOpenChange={(open) => !open && setCancelOrder(null)}>
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancelar ordem de reposição?</AlertDialogTitle>
+            <AlertDialogDescription>O cancelamento será registrado na auditoria e exige uma justificativa operacional.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <Textarea value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder="Informe o motivo do cancelamento" rows={3} />
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancelling}>Voltar</AlertDialogCancel>
+            <AlertDialogAction disabled={!cancelReason.trim() || cancelling} onClick={(event) => { event.preventDefault(); confirmCancel(); }} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {cancelling ? 'Cancelando...' : 'Confirmar cancelamento'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
+}
+
+function StationDetail({ icon: Icon, title, text }) {
+  return <div className="flex gap-3 border-border/60 p-4 sm:border-r sm:last:border-r-0"><Icon className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" /><div><p className="text-xs font-bold">{title}</p><p className="mt-0.5 text-xs text-muted-foreground">{text}</p></div></div>;
+}
+
+function Kpi({ label, value = 0, caption, tone = 'text-foreground' }) {
+  return <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm"><p className="text-[11px] font-bold uppercase text-muted-foreground">{label}</p><p className={`mt-1 text-2xl font-black tabular-nums ${tone}`}>{value ?? 0}</p><p className="mt-1 text-[10px] text-muted-foreground">{caption}</p></div>;
+}
+
+function TabButton({ active, onClick, icon: Icon, children, completed = false }) {
+  return <button type="button" onClick={onClick} className={`flex items-center gap-1.5 rounded-lg px-3 py-2 ${active ? `bg-background shadow-sm ${completed ? 'text-emerald-600' : 'text-amber-600'}` : 'text-muted-foreground hover:bg-background/50'}`}><Icon className="h-3.5 w-3.5" />{children}</button>;
+}
+
+function OrderSkeleton() {
+  return <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-5"><div className="flex justify-between"><Skeleton className="h-8 w-52 rounded-xl" /><Skeleton className="h-7 w-28 rounded-xl" /></div><div className="grid gap-3 md:grid-cols-3"><Skeleton className="h-20 rounded-xl" /><Skeleton className="h-20 rounded-xl" /><Skeleton className="h-20 rounded-xl" /></div><Skeleton className="h-24 rounded-xl" /></div>;
 }

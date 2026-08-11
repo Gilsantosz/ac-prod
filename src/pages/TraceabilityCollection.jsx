@@ -13,11 +13,12 @@ import { useOperatorSession } from '@/hooks/useOperatorSession';
 import { useCollectionQueue } from '@/hooks/useCollectionQueue';
 import { useCells } from '@/hooks/useCells';
 import { getOperatorAllowedCells } from '@/lib/operatorCellRules';
-import {
-  fetchProductionMachines,
-  processProductionReading,
-} from '@/lib/traceabilityService';
+import { fetchProductionMachines } from '@/lib/traceabilityService';
 import { registerReadingOccurrence } from '@/lib/productionHistoryService';
+import {
+  COLLECTION_EVENT_KINDS,
+  dispatchCollectionEvent,
+} from '@/lib/collectionEventDispatcher';
 
 // Novos componentes operacionais da célula
 import CollectionRecentReadsPanel from '@/components/collection/CollectionRecentReadsPanel';
@@ -435,18 +436,16 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   // ─── Função que processa um evento da fila ──────────────────────────────────
   const processEvent = useCallback(async (event) => {
-    if (!event.cellName && !cellName) throw new Error('Célula não definida.');
-    const result = await processProductionReading({
-      rawValue: event.raw_value || event.rawValue,
-      cellName: event.cellName || cellName,
-      shift: event.shift || shift,
-      operator: event.operator || operator,
-      operatorId: event.operatorId || operatorId,
-      client_event_id: event.client_event_id,
-      readerType: event.readerType || 'keyboard_barcode',
-      machineId: event.machineId || machine?.id || null,
-      machineName: event.machineName || machine?.name || null,
-      enqueue_duration_ms: event.enqueue_duration_ms || 0,
+    if (event.event_kind !== COLLECTION_EVENT_KINDS.REPLACEMENT_STAGE && !event.cellName && !cellName) {
+      throw new Error('Célula não definida.');
+    }
+    const result = await dispatchCollectionEvent({
+      cellName,
+      shift,
+      operator,
+      operatorId,
+      machineId: machine?.id || null,
+      machineName: machine?.name || null,
       ...event,
     });
     refreshData();
@@ -457,6 +456,7 @@ export default function TraceabilityCollection({ embedded = false }) {
   const { stats: queueStats, flushing, enqueue, processNow, retryQueueErrors } = useCollectionQueue(processEvent, {
     cellName,
     machineId: machine?.id,
+    eventKind: COLLECTION_EVENT_KINDS.PRODUCTION_STAGE,
   });
 
   // ─── Handler principal de leitura — enfileira e processa ────────────────────
@@ -486,6 +486,7 @@ export default function TraceabilityCollection({ embedded = false }) {
 
     const eventPayload = {
       ...payload,
+      event_kind: COLLECTION_EVENT_KINDS.PRODUCTION_STAGE,
       raw_value: payload.rawValue ?? payload.raw_value ?? '',
       cellName,
       shift,

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
@@ -40,11 +40,10 @@ function userHasCellAccess(user, cellName) {
   return cleanUserCells.includes(cleanCellName);
 }
 
-export default function NotificationCenter() {
+export default function NotificationCenter({ open, onOpenChange }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
 
   const { data: alerts = [] } = useQuery({
     queryKey: ['unresolvedAlerts'],
@@ -98,7 +97,7 @@ export default function NotificationCenter() {
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <button
           className="relative flex items-center justify-center w-10 h-10 shrink-0 rounded-xl border border-border/80 bg-card text-muted-foreground hover:text-foreground active:scale-95 transition-all focus:outline-none"

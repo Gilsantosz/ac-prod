@@ -70,7 +70,7 @@ export async function fetchAccessAttempts(loginName = null) {
 }
 
 async function saveOperator(operatorId, operatorData) {
-  const { data, error } = await supabase.rpc('admin_upsert_operator', {
+  const { data, error } = await supabase.rpc('admin_upsert_operator_v2', {
     p_operator_id: operatorId,
     p_data: {
       ...operatorData,

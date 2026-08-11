@@ -35,9 +35,13 @@ export default function OperationalLoginGate({
   pageTitle = "Coleta / Bipagem",
   pageSubtitle = "ESTAÇÃO DE CONTROLE OPERACIONAL",
   pageDescription = "Identificação do operador para início do turno de produção.",
-  icon: IconComponent = ScanLine
+  icon: IconComponent = ScanLine,
+  sessionPurpose = 'production',
+  submitLabel = 'Entrar na Produção',
+  accessTitle = 'Acesso à Produção',
+  accessDescription = 'Informe seus dados de identificação para iniciar o trabalho nesta estação.',
 }) {
-  const { isLoggedIn, loading, error, login } = useOperatorSession();
+  const { isLoggedIn, loading, error, login } = useOperatorSession({ purpose: sessionPurpose });
   const { user } = useAuth();
   const [name, setName] = useState('');
   const [registration, setRegistration] = useState('');
@@ -130,10 +134,10 @@ export default function OperationalLoginGate({
 
             <div className="text-center space-y-0.5">
               <h2 className="text-base font-extrabold text-foreground tracking-tight">
-                Acesso à Produção
+                {accessTitle}
               </h2>
               <p className="text-[11px] text-muted-foreground max-w-xs mx-auto leading-tight">
-                Informe seus dados de identificação para iniciar o trabalho nesta estação.
+                {accessDescription}
               </p>
             </div>
 
@@ -295,7 +299,7 @@ export default function OperationalLoginGate({
                 ) : (
                   <>
                     <LogIn className="w-3.5 h-3.5" />
-                    <span>Entrar na Produção</span>
+                    <span>{submitLabel}</span>
                   </>
                 )}
               </Button>

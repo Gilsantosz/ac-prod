@@ -43,6 +43,7 @@ import IntegrityLogs from '@/pages/IntegrityLogs';
 import JoineryPage from '@/pages/JoineryPage';
 import ManualProductionEntryPage from '@/pages/ManualProductionEntryPage';
 import ReplacementPage from '@/pages/ReplacementPage';
+import ReplacementStationPage from '@/pages/ReplacementStationPage';
 import QualityPage from '@/pages/QualityPage';
 import Traceability from '@/pages/Traceability';
 import { useProductionRealtimeSync } from '@/hooks/useProductionRealtimeSync';
@@ -161,6 +162,7 @@ const AuthenticatedApp = () => {
           <Route path="/expedicao" element={<ShippingPage />} />
           <Route path="/alertas-mes" element={<MesAlertsPage />} />
           <Route path="/reposicao" element={<ReplacementPage />} />
+          <Route path="/reposicao/posto" element={<ReplacementStationPage />} />
           <Route path="/qualidade" element={<QualityPage />} />
 
           <Route path="/rotas-produtivas" element={<ProductionRoutes />} />

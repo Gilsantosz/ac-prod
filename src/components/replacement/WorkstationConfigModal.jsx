@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Sliders, ShieldCheck, UserPlus, Check, X, Plus, Trash2, AlertCircle } from 'lucide-react';
+import { Sliders, ShieldCheck, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
@@ -13,8 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import {
   getEnabledWorkstations,
-  grantOperatorWorkstationAuthorization,
-  revokeOperatorWorkstationAuthorization
+  grantOperatorWorkstationAuthorization
 } from '@/lib/replacementService';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';

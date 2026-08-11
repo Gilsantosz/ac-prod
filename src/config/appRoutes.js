@@ -180,12 +180,13 @@ export const appRoutes = [
   {
     path: '/reposicao',
     label: 'Reposição',
-    description: 'Gestão de ordens de reposição de peças reprovadas e acompanhamento',
+    description: 'Gestão auditada de peças reprovadas e reposições produtivas',
     icon: RotateCcw,
     group: 'mes',
     permission: 'view_replacements',
     showInSidebar: true,
-    showInDashboardHub: true
+    showInDashboardHub: true,
+    aliases: ['/reposicao/posto']
   },
 
   // ─── GRUPO 4: GESTÃO ───────────────────────────────────────────────

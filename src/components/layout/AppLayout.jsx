@@ -1,425 +1,259 @@
-import { useState, useEffect } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { LogOut, Sun, Moon, Menu, X,
-  ChevronLeft, Maximize2, Minimize2,
-} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, Outlet, useLocation } from 'react-router-dom';
+import { LogOut, Menu, Moon, Sun, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { KioskProvider, useKiosk } from '@/lib/KioskContext';
 import { useAuth } from '@/lib/AuthContext';
-import LeoLogo from '@/components/ui/LeoLogo';
-import BackButton from '@/components/ui/BackButton';
 import { useRealtimeSync } from '@/hooks/useRealtimeSync';
 import { useTheme } from '@/hooks/useTheme';
-import { useFullscreenMode } from '@/hooks/useFullscreenMode';
-import FullscreenGate from '@/components/layout/FullscreenGate';
+import LeoLogo from '@/components/ui/LeoLogo';
+import NotificationCenter from '@/components/layout/NotificationCenter';
+import LeoAssistantChat from '@/components/assistant/LeoAssistantChat';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { motion, AnimatePresence } from 'framer-motion';
-import NotificationCenter from '@/components/layout/NotificationCenter';
-import LeoAssistantChat from '@/components/assistant/LeoAssistantChat';
+import { appRoutes, routeGroups } from '@/config/appRoutes';
 
-import { appRoutes, routeGroups, canUserViewRoute, canUserEditRoute, getRouteAccess } from '@/config/appRoutes';
+const DESKTOP_POINTER_QUERY = '(hover: hover) and (pointer: fine)';
+const SIDEBAR_CLOSE_DELAY_MS = 180;
+
+export function isDesktopSidebarExpanded({ hovered, focused, profileOpen, notificationsOpen }) {
+  return hovered || focused || profileOpen || notificationsOpen;
+}
 
 export default function AppLayout() {
-  return (
-    <KioskProvider>
-      <AppShell />
-    </KioskProvider>
-  );
+  return <KioskProvider><AppShell /></KioskProvider>;
 }
 
 function AppShell() {
   const location = useLocation();
-  const navigate = useNavigate();
-  const [mobileOpen, setMobileOpen] = useState(false);
   const { kiosk } = useKiosk();
   const { user, logout } = useAuth();
-  const { isFullscreen, isAvailable, enterFullscreen, exitFullscreen } = useFullscreenMode();
-
-  // Sidebar collapse state — persisted
-  const [collapsed, setCollapsed] = useState(() => {
-    try { return localStorage.getItem('sidebar-collapsed') === 'true'; }
-    catch { return false; }
-  });
-
   const [theme, setTheme] = useTheme();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [desktopPointer, setDesktopPointer] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia(DESKTOP_POINTER_QUERY).matches
+  ));
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const sidebarRef = useRef(null);
+  const pointerInsideRef = useRef(false);
+  const closeTimerRef = useRef(null);
+
+  useRealtimeSync(!!user);
 
   useEffect(() => {
-    try { localStorage.setItem('sidebar-collapsed', String(collapsed)); }
-    catch { /* noop */ }
-  }, [collapsed]);
+    const media = window.matchMedia(DESKTOP_POINTER_QUERY);
+    const update = () => setDesktopPointer(media.matches);
+    update();
+    media.addEventListener?.('change', update);
+    return () => media.removeEventListener?.('change', update);
+  }, []);
 
-  // Fecha o drawer ao mudar de rota (mobile)
   useEffect(() => {
     setMobileOpen(false);
   }, [location.pathname]);
 
-  useRealtimeSync(!!user);
+  useEffect(() => () => window.clearTimeout(closeTimerRef.current), []);
 
-  const visibleNav = appRoutes.filter((item) => {
-    if (!item.showInSidebar) return false;
-    return canUserViewRoute(user, item.path);
+  const cancelClose = useCallback(() => {
+    window.clearTimeout(closeTimerRef.current);
+  }, []);
+
+  const scheduleClose = useCallback(() => {
+    cancelClose();
+    closeTimerRef.current = window.setTimeout(() => {
+      if (!pointerInsideRef.current && !sidebarRef.current?.contains(document.activeElement)) {
+        setHovered(false);
+        setFocused(false);
+      }
+    }, SIDEBAR_CLOSE_DELAY_MS);
+  }, [cancelClose]);
+
+  const expanded = desktopPointer && isDesktopSidebarExpanded({
+    hovered, focused, profileOpen, notificationsOpen,
   });
 
-  const currentAccess = getRouteAccess(location.pathname);
-  const pageIsReadOnly = Boolean(currentAccess.editPermission) && !canUserEditRoute(user, location.pathname);
-
-  const currentRouteObj = appRoutes.find((r) => r.path === location.pathname || r.aliases?.includes(location.pathname));
-  const currentRouteLabel = currentRouteObj?.label || '';
+  const visibleNav = useMemo(() => appRoutes.filter((item) => {
+    if (!item.showInSidebar) return false;
+    if (item.permission === 'adminOnly' && user?.role !== 'admin') return false;
+    if (user?.role === 'operator' && ['/pcp', '/celulas-metas', '/usuarios', '/rotas-produtivas'].includes(item.path)) return false;
+    if (user?.role === 'admin') return true;
+    if (!user?.permissions) return false;
+    if (item.permission === 'ai_operations') {
+      return !!(user.permissions.ai_operations || user.permissions.view_reports || user.permissions.manage_automations);
+    }
+    return item.permission ? !!user.permissions[item.permission] : true;
+  }), [user]);
 
   const userInitials = user
-    ? (user.name ? user.name.substring(0, 2).toUpperCase() : user.email.substring(0, 2).toUpperCase())
+    ? (user.name || user.email || '??').substring(0, 2).toUpperCase()
     : '??';
+  const mobileOnlyClass = desktopPointer ? 'md:hidden' : '';
 
   return (
-    <div className="h-[100dvh] w-full flex bg-background overflow-hidden relative">
-
-      {/* ── Desktop Sidebar ───────────────────────────────────────────────── */}
-      {!kiosk && (
-        <aside
+    <div className="relative flex h-[100dvh] w-full overflow-hidden bg-background">
+      {!kiosk && desktopPointer && (
+        <div
           className={cn(
-            'hidden md:flex flex-col shrink-0 h-full bg-card border-r border-border/60 transition-all duration-300 ease-in-out relative z-20',
-            collapsed ? 'w-[64px]' : 'w-[240px]'
+            'relative z-30 hidden h-full shrink-0 md:block',
+            expanded ? 'w-[240px]' : 'w-[64px]'
           )}
+          data-testid="desktop-sidebar-slot"
         >
-          {/* Decorative top glow */}
-          <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-[#76FB91]/60 to-transparent" />
-
-          {/* ── Logo / Toggle ──────────────────────────────────────────────── */}
-          <button
-            onClick={() => setCollapsed(c => !c)}
+          <aside
+            ref={sidebarRef}
+            onMouseEnter={() => {
+              pointerInsideRef.current = true;
+              cancelClose();
+              setHovered(true);
+            }}
+            onMouseLeave={() => {
+              pointerInsideRef.current = false;
+              if (!profileOpen && !notificationsOpen) scheduleClose();
+            }}
+            onFocusCapture={() => {
+              cancelClose();
+              setFocused(true);
+            }}
+            onBlurCapture={() => {
+              window.setTimeout(() => {
+                if (!sidebarRef.current?.contains(document.activeElement)) {
+                  setFocused(false);
+                  if (!pointerInsideRef.current && !profileOpen && !notificationsOpen) scheduleClose();
+                }
+              }, 0);
+            }}
             className={cn(
-              'flex items-center gap-3 px-4 h-16 shrink-0 border-b border-border/60',
-              'hover:bg-secondary/60 transition-colors duration-200 select-none group w-full text-left',
-              collapsed ? 'justify-center px-0' : 'justify-between'
+              'relative flex h-full w-full flex-col overflow-hidden border-r border-border/60 bg-card'
             )}
-            title={collapsed ? 'Expandir menu' : 'Colapsar menu'}
+            aria-label="Navegação principal"
           >
-            <div className={cn('flex items-center gap-3', collapsed && 'justify-center')}>
+            <Link
+              to="/"
+              className={cn(
+                'flex h-16 shrink-0 items-center gap-3 border-b border-border/60 px-4 transition-colors hover:bg-secondary/60',
+                !expanded && 'justify-center px-0'
+              )}
+              title={!expanded ? 'Leo Flow' : undefined}
+            >
               <LeoLogo size="sm" className="shrink-0" />
-              {!collapsed && (
-                <span className="font-extrabold text-lg leading-none tracking-tight select-none font-display text-foreground">
-                  Leo Flow
-                </span>
+              {expanded && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="whitespace-nowrap font-display text-lg font-extrabold tracking-tight">Leo Flow</motion.span>}
+            </Link>
+
+            <nav className="flex-1 select-none space-y-4 overflow-y-auto overflow-x-hidden px-2 py-3">
+              <NavigationGroups items={visibleNav} pathname={location.pathname} expanded={expanded} />
+            </nav>
+
+            <div className={cn('shrink-0 space-y-2 border-t border-border/60 p-3', !expanded && 'flex flex-col items-center')}>
+              <div className={cn('flex w-full items-center gap-2', !expanded ? 'flex-col' : 'justify-between')}>
+                <NotificationCenter
+                  open={notificationsOpen}
+                  onOpenChange={(open) => {
+                    setNotificationsOpen(open);
+                    if (open) { cancelClose(); setHovered(true); }
+                    else if (!pointerInsideRef.current && !profileOpen) scheduleClose();
+                  }}
+                />
+                <button
+                  className={cn('flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground', !expanded ? 'h-10 w-10 justify-center px-0' : 'flex-1')}
+                  onClick={() => setTheme((value) => (value === 'dark' ? 'light' : 'dark'))}
+                  title={theme === 'dark' ? 'Ativar Modo Claro' : 'Ativar Modo Escuro'}
+                >
+                  {theme === 'dark' ? <Sun className="h-4.5 w-4.5 shrink-0 text-amber-400" /> : <Moon className="h-4.5 w-4.5 shrink-0 text-indigo-400" />}
+                  {expanded && <span className="whitespace-nowrap">{theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}</span>}
+                </button>
+              </div>
+
+              {user && (
+                <DropdownMenu
+                  open={profileOpen}
+                  onOpenChange={(open) => {
+                    setProfileOpen(open);
+                    if (open) { cancelClose(); setHovered(true); }
+                    else if (!pointerInsideRef.current && !notificationsOpen) scheduleClose();
+                  }}
+                >
+                  <DropdownMenuTrigger asChild>
+                    <button className={cn('flex w-full items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-secondary focus:outline-none', !expanded && 'justify-center')} title={!expanded ? (user.name || user.email) : undefined}>
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#76FB91] text-sm font-extrabold text-black shadow-sm">{userInitials}</span>
+                      {expanded && <span className="min-w-0 flex-1 text-left"><span className="block truncate text-xs font-bold leading-tight">{user.name || user.email}</span><span className="mt-0.5 block truncate text-[10px] capitalize leading-none text-muted-foreground">{user.role || 'Operador'}</span></span>}
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent side="right" align="end" className="mb-2 w-52 rounded-2xl border border-border/80 bg-card p-1 shadow-md">
+                    <div className="mb-1 border-b border-border/65 px-3 py-2 text-xs"><p className="truncate font-semibold">{user.name || user.email}</p><p className="mt-0.5 capitalize text-muted-foreground">{user.role || 'Operador'}</p></div>
+                    <DropdownMenuItem onClick={logout} className="flex cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-destructive focus:bg-destructive/10 focus:text-destructive"><LogOut className="h-4 w-4" /> Sair do sistema</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
-            {!collapsed && (
-              <ChevronLeft
-                className={cn(
-                  'w-4 h-4 text-muted-foreground transition-transform duration-300 group-hover:text-foreground shrink-0',
-                )}
-              />
-            )}
-          </button>
-
-          {/* ── Nav Items ─────────────────────────────────────────────────── */}
-          <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-4 px-2 select-none">
-            {Object.entries(routeGroups).map(([groupKey, groupLabel]) => {
-              const groupItems = visibleNav.filter(item => item.group === groupKey);
-              if (groupItems.length === 0) return null;
-
-              return (
-                <div key={groupKey} className="space-y-1">
-                  {!collapsed && (
-                    <h4 className="px-3 text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-none mb-2 mt-2 opacity-65">
-                      {groupLabel}
-                    </h4>
-                  )}
-                  {groupItems.map((item) => {
-                    const active = location.pathname === item.path || (item.aliases && item.aliases.some(alias => location.pathname === alias));
-                    const Icon = item.icon;
-                    return (
-                      <Link
-                        key={item.path}
-                        to={item.path}
-                        title={collapsed ? item.label : undefined}
-                        className={cn(
-                          'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 select-none group',
-                          collapsed ? 'justify-center' : 'justify-start',
-                          active
-                            ? 'bg-[#76FB91]/20 text-foreground font-semibold border border-[#76FB91]/30 shadow-sm'
-                            : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-                        )}
-                      >
-                        <Icon
-                          className={cn(
-                            'shrink-0 transition-transform duration-200 group-hover:scale-110 w-4.5 h-4.5',
-                            active ? 'text-[#2d9c4a]' : ''
-                          )}
-                        />
-                        {!collapsed && <span className="truncate">{item.label}</span>}
-                      </Link>
-                    );
-                  })}
-                </div>
-              );
-            })}
-          </nav>
-
-
-          {/* ── Footer: Tema + Perfil ──────────────────────────────────────── */}
-          <div className={cn(
-            'shrink-0 border-t border-border/60 p-3 space-y-2',
-            collapsed ? 'flex flex-col items-center' : ''
-          )}>
-            {/* Theme & Notifications */}
-            <div className={cn('flex items-center gap-2 w-full', collapsed ? 'flex-col' : 'justify-between')}>
-              <NotificationCenter />
-              <button
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-muted-foreground hover:bg-secondary hover:text-foreground transition-all duration-200',
-                  collapsed ? 'w-10 h-10 justify-center px-0' : 'flex-1'
-                )}
-                onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
-                title={theme === 'dark' ? 'Ativar Modo Claro' : 'Ativar Modo Escuro'}
-              >
-                {theme === 'dark' ? (
-                  <Sun className="w-4.5 h-4.5 text-amber-400 shrink-0" />
-                ) : (
-                  <Moon className="w-4.5 h-4.5 text-indigo-400 shrink-0" />
-                )}
-                {!collapsed && <span className="text-sm">{theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}</span>}
-              </button>
-            </div>
-
-            {/* User profile */}
-            {user && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    className={cn(
-                      'flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-secondary transition-all duration-200 w-full focus:outline-none',
-                      collapsed ? 'justify-center' : 'justify-start'
-                    )}
-                    title={collapsed ? (user.name || user.email) : undefined}
-                  >
-                    <div className="w-8 h-8 rounded-full bg-[#76FB91] text-black font-extrabold flex items-center justify-center text-sm shadow-sm shrink-0">
-                      {userInitials}
-                    </div>
-                    {!collapsed && (
-                      <div className="text-left min-w-0 flex-1">
-                        <p className="text-xs font-bold leading-tight truncate text-foreground">{user.name || user.email}</p>
-                        <p className="text-[10px] text-muted-foreground capitalize leading-none mt-0.5 truncate">{user.role || 'Operador'}</p>
-                      </div>
-                    )}
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  side="right"
-                  align="end"
-                  className="w-52 mb-2 rounded-2xl p-1 bg-card border border-border/80 shadow-md z-50"
-                >
-                  <div className="px-3 py-2 border-b border-border/65 text-xs mb-1">
-                    <p className="font-semibold text-foreground truncate">{user.name || user.email}</p>
-                    <p className="text-muted-foreground capitalize mt-0.5">{user.role || 'Operador'}</p>
-                  </div>
-                  {isAvailable && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={isFullscreen ? exitFullscreen : enterFullscreen}
-                        className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm cursor-pointer"
-                      >
-                        {isFullscreen
-                          ? <><Minimize2 className="w-4 h-4 shrink-0" /><span>Sair do Modo Operação</span></>
-                          : <><Maximize2 className="w-4 h-4 shrink-0" /><span>Modo Operação</span></>}
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={logout}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm text-destructive focus:bg-destructive/10 focus:text-destructive cursor-pointer"
-                  >
-                    <LogOut className="w-4 h-4 shrink-0" />
-                    <span>Sair do sistema</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
-        </aside>
+          </aside>
+        </div>
       )}
 
-      {/* ── Mobile Topbar ─────────────────────────────────────────────────── */}
-      <div className={cn('flex flex-col flex-1 min-w-0 overflow-hidden', kiosk && 'w-full')}>
-        <header className={cn(
-          'md:hidden flex items-center justify-between px-4 h-16 bg-card border-b border-border/60 z-20 shrink-0 relative transition-colors',
-          kiosk && 'hidden'
-        )}>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setMobileOpen(true)}
-              className="flex items-center justify-center w-10 h-10 rounded-xl border border-border/80 bg-card text-foreground hover:bg-secondary active:scale-95 transition-all"
-              aria-label="Abrir menu"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-            {location.pathname !== '/' && (
-              <BackButton className="h-9 px-2.5 text-xs font-bold shrink-0" />
-            )}
-            <div className="flex items-center gap-2">
-              <LeoLogo size="sm" className="shrink-0" />
-              <span className="font-bold text-base leading-tight text-foreground font-display hidden sm:inline-block">Leo Flow</span>
+      <div className={cn('flex min-w-0 flex-1 flex-col overflow-hidden', kiosk && 'w-full')}>
+        {!kiosk && (
+          <header className={cn('relative z-20 flex h-16 shrink-0 items-center justify-between border-b border-border/60 bg-card px-4 transition-colors', mobileOnlyClass)}>
+            <div className="flex items-center gap-3">
+              <button onClick={() => setMobileOpen(true)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-border/80 bg-card transition-all hover:bg-secondary active:scale-95" aria-label="Abrir menu"><Menu className="h-5 w-5" /></button>
+              <Link to="/" className="flex items-center gap-2"><LeoLogo size="sm" className="shrink-0" /><span className="font-display text-base font-bold">Leo Flow</span></Link>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <NotificationCenter />
-            {isAvailable && (
-              <button
-                className="flex items-center justify-center w-10 h-10 rounded-xl border border-border/80 bg-card text-muted-foreground hover:text-foreground active:scale-95 transition-all"
-                onClick={isFullscreen ? exitFullscreen : enterFullscreen}
-                title={isFullscreen ? 'Sair do Modo Operação' : 'Entrar no Modo Operação'}
-                aria-label={isFullscreen ? 'Sair do Modo Operação' : 'Entrar no Modo Operação'}
-              >
-                {isFullscreen
-                  ? <Minimize2 className="w-4.5 h-4.5 text-[#76FB91]" />
-                  : <Maximize2 className="w-4.5 h-4.5" />}
+            <div className="flex items-center gap-2">
+              <NotificationCenter />
+              <button className="flex h-10 w-10 items-center justify-center rounded-xl border border-border/80 bg-card text-muted-foreground transition-all hover:text-foreground active:scale-95" onClick={() => setTheme((value) => (value === 'dark' ? 'light' : 'dark'))} aria-label="Alternar tema">
+                {theme === 'dark' ? <Sun className="h-4.5 w-4.5 text-amber-400" /> : <Moon className="h-4.5 w-4.5 text-indigo-400" />}
               </button>
-            )}
-            <button
-              className="flex items-center justify-center w-10 h-10 rounded-xl border border-border/80 bg-card text-muted-foreground hover:text-foreground active:scale-95 transition-all"
-              onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
-            >
-              {theme === 'dark' ? (
-                <Sun className="w-4.5 h-4.5 text-amber-400" />
-              ) : (
-                <Moon className="w-4.5 h-4.5 text-indigo-400" />
-              )}
-            </button>
-          </div>
-        </header>
+            </div>
+          </header>
+        )}
 
-        {/* ── Mobile Drawer ─────────────────────────────────────────────── */}
         <AnimatePresence>
-          {mobileOpen && (
+          {!kiosk && mobileOpen && (
             <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 0.5 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setMobileOpen(false)}
-                className="fixed inset-0 bg-black z-40 md:hidden"
-              />
-              <motion.div
-                initial={{ x: '-100%' }}
-                animate={{ x: 0 }}
-                exit={{ x: '-100%' }}
-                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                className="fixed inset-y-0 left-0 w-[280px] bg-card border-r border-border/60 z-50 p-5 flex flex-col md:hidden"
-              >
-                {/* Header drawer */}
-                <div className="flex items-center justify-between pb-4 border-b border-border/60 mb-4 shrink-0">
-                  <div className="flex items-center gap-2">
-                    <LeoLogo size="sm" className="shrink-0" />
-                    <span className="font-bold text-base text-foreground font-display">Leo Flow</span>
-                  </div>
-                  <button
-                    onClick={() => setMobileOpen(false)}
-                    className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-secondary transition-colors"
-                  >
-                    <X className="w-5 h-5 text-muted-foreground" />
-                  </button>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.5 }} exit={{ opacity: 0 }} onClick={() => setMobileOpen(false)} className={cn('fixed inset-0 z-40 bg-black', mobileOnlyClass)} />
+              <motion.aside initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className={cn('fixed inset-y-0 left-0 z-50 flex w-[280px] flex-col border-r border-border/60 bg-card p-5', mobileOnlyClass)} aria-label="Menu móvel">
+                <div className="mb-4 flex shrink-0 items-center justify-between border-b border-border/60 pb-4"><Link to="/" className="flex items-center gap-2"><LeoLogo size="sm" /><span className="font-display text-base font-bold">Leo Flow</span></Link><button onClick={() => setMobileOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-secondary" aria-label="Fechar menu"><X className="h-5 w-5 text-muted-foreground" /></button></div>
+                <nav className="flex-1 space-y-4 overflow-y-auto pr-1"><NavigationGroups items={visibleNav} pathname={location.pathname} expanded mobile onNavigate={() => setMobileOpen(false)} /></nav>
+                <div className="mt-auto shrink-0 border-t border-border/60 pt-4">
+                  {user && <div className="mb-3 flex items-center gap-3 rounded-xl bg-secondary/50 p-2.5"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#76FB91] text-sm font-extrabold text-black">{userInitials}</span><span className="min-w-0 flex-1"><span className="block truncate text-xs font-bold">{user.name || user.email}</span><span className="mt-0.5 block truncate text-[10px] capitalize leading-none text-muted-foreground">{user.role || 'Operador'}</span></span></div>}
+                  <button onClick={logout} className="flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm text-destructive transition-colors hover:bg-destructive/10"><LogOut className="h-5 w-5" /> Sair do sistema</button>
                 </div>
-
-                {/* Nav list */}
-                <nav className="flex-1 space-y-4 overflow-y-auto pr-1">
-                  {Object.entries(routeGroups).map(([groupKey, groupLabel]) => {
-                    const groupItems = visibleNav.filter(item => item.group === groupKey);
-                    if (groupItems.length === 0) return null;
-
-                    return (
-                      <div key={groupKey} className="space-y-1">
-                        <h4 className="px-4 text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-none mb-2 mt-2 opacity-60">
-                          {groupLabel}
-                        </h4>
-                        {groupItems.map((item) => {
-                          const active = location.pathname === item.path || (item.aliases && item.aliases.some(alias => location.pathname === alias));
-                          const Icon = item.icon;
-                          return (
-                            <Link
-                              key={item.path}
-                              to={item.path}
-                              onClick={() => setMobileOpen(false)}
-                              className={cn(
-                                'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 select-none',
-                                active
-                                  ? 'bg-[#76FB91]/20 text-foreground font-semibold border border-[#76FB91]/30 shadow-sm'
-                                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-                              )}
-                            >
-                              <Icon className={cn('w-5 h-5 shrink-0', active ? 'text-[#2d9c4a]' : '')} />
-                              <span>{item.label}</span>
-                            </Link>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </nav>
-
-
-                {/* Footer drawer */}
-                <div className="pt-4 border-t border-border/60 mt-auto shrink-0">
-                  {user && (
-                    <div className="flex items-center gap-3 p-2.5 rounded-xl bg-secondary/50 mb-3">
-                      <div className="w-9 h-9 rounded-full bg-[#76FB91] text-black font-extrabold flex items-center justify-center text-sm shadow-sm shrink-0">
-                        {userInitials}
-                      </div>
-                      <div className="text-left min-w-0 flex-1">
-                        <p className="text-xs font-bold leading-tight truncate">{user.name || user.email}</p>
-                        <p className="text-[10px] text-muted-foreground capitalize leading-none mt-0.5 truncate">{user.role || 'Operador'}</p>
-                      </div>
-                    </div>
-                  )}
-                  <button
-                    onClick={logout}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-destructive hover:bg-destructive/10 transition-colors focus:outline-none"
-                  >
-                    <LogOut className="w-5 h-5 shrink-0" />
-                    <span>Sair do sistema</span>
-                  </button>
-                </div>
-              </motion.div>
+              </motion.aside>
             </>
           )}
         </AnimatePresence>
 
-        {/* ── Main Content ─────────────────────────────────────────────── */}
-        <main className="flex-1 overflow-y-auto flex flex-col">
-          {!kiosk && location.pathname !== '/' && (
-            <div className="sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 py-2.5 bg-card/95 backdrop-blur-md border-b border-border/60 shrink-0">
-              <div className="flex items-center gap-3 min-w-0">
-                <BackButton />
-                <div className="h-4 w-[1px] bg-border/60 shrink-0 hidden sm:block" />
-                <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground truncate">
-                  <Link to="/" className="hover:text-foreground transition-colors font-medium">Início</Link>
-                  <span>/</span>
-                  <span className="font-bold text-foreground truncate">{currentRouteLabel || location.pathname.slice(1)}</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {pageIsReadOnly && (
-            <div className="sticky top-11 z-30 border-b border-amber-300/60 bg-amber-50/95 px-4 py-2 text-center text-xs font-semibold text-amber-900 backdrop-blur dark:border-amber-700/50 dark:bg-amber-950/90 dark:text-amber-100">
-              Acesso somente para visualização. Alterações nesta página não estão autorizadas para este usuário.
-            </div>
-          )}
-          <div className="flex-1 pb-16 sm:pb-20">
-            <Outlet />
-          </div>
-        </main>
+        <main className="min-w-0 flex-1 overflow-y-auto" data-testid="app-content"><Outlet /></main>
       </div>
       {user && <LeoAssistantChat user={user} />}
-      {/* Gate de tela cheia — aparece ao abrir como PWA */}
-      <FullscreenGate />
     </div>
   );
+}
+
+function NavigationGroups({ items, pathname, expanded, mobile = false, onNavigate }) {
+  return Object.entries(routeGroups).map(([groupKey, groupLabel]) => {
+    const groupItems = items.filter((item) => item.group === groupKey);
+    if (groupItems.length === 0) return null;
+    return (
+      <div key={groupKey} className="space-y-1">
+        {expanded && <h4 className={cn('mb-2 mt-2 text-[9px] font-bold uppercase leading-none tracking-widest text-muted-foreground opacity-65', mobile ? 'px-4' : 'px-3')}>{groupLabel}</h4>}
+        {groupItems.map((item) => {
+          const active = pathname === item.path || item.aliases?.some((alias) => pathname === alias.split('?')[0]);
+          const Icon = item.icon;
+          return (
+            <Link key={item.path} to={item.path} onClick={onNavigate} title={!expanded ? item.label : undefined} className={cn('group flex items-center gap-3 rounded-xl text-sm font-medium transition-all duration-200', mobile ? 'px-4 py-3' : 'px-3 py-2.5', !expanded && 'justify-center', active ? 'border border-[#76FB91]/30 bg-[#76FB91]/20 font-semibold text-foreground shadow-sm' : 'text-muted-foreground hover:bg-secondary hover:text-foreground')}>
+              <Icon className={cn('h-4.5 w-4.5 shrink-0 transition-transform duration-200 group-hover:scale-110', active && 'text-[#2d9c4a]')} />
+              {expanded && <span className="truncate whitespace-nowrap">{item.label}</span>}
+            </Link>
+          );
+        })}
+      </div>
+    );
+  });
 }

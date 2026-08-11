@@ -95,7 +95,7 @@ function trackingPayload(includeClientLots) {
   }));
   return {
     ...generalLotTracking,
-    general_lots: [{ ...generalLotTracking.general_lots[0], client_lots }],
+    general_lots: [{ ...generalLotTracking.general_lots[0], client_lots: clientLots }],
   };
 }
 
@@ -168,6 +168,8 @@ async function mockSupabase(page) {
       manage_occurrences: true,
       view_reports: true,
       view_traceability: true,
+      view_replacements: true,
+      manage_replacements: true,
     },
   };
 
@@ -221,6 +223,29 @@ async function mockSupabase(page) {
 
     if (path.endsWith('/rest/v1/rpc/get_general_lot_tracking')) {
       return fulfill(trackingPayload(Boolean(request.postDataJSON()?.p_batch_id)));
+    }
+
+    if (path.endsWith('/rest/v1/rpc/operator_login_v2')) {
+      return fulfill({
+        success: true,
+        session_id: 'operator-session-test',
+        session_token: 'operator-token-test',
+        expires_at: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString(),
+        operator: {
+          id: 'operator-test',
+          name: 'Operador Teste',
+          login_name: 'operador.teste',
+          registration_masked: '***123',
+          shift: '1º Turno',
+          primary_cell_id: 'cell-cut',
+          primary_machine_id: null,
+          cells: [{ id: 'cell-cut', name: 'Corte', is_primary: true }],
+          machines: [],
+        },
+      });
+    }
+    if (path.endsWith('/rest/v1/rpc/logout_operator_session') || path.endsWith('/rest/v1/rpc/heartbeat_operator_session')) {
+      return fulfill({ success: true, expires_at: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString() });
     }
 
     if (path.endsWith('/rest/v1/rpc/process_production_reading')) {
@@ -280,7 +305,7 @@ async function mockSupabase(page) {
       });
     }
 
-    if (path.endsWith('/rest/v1/rpc/register_traceability_rejection')) {
+    if (path.endsWith('/rest/v1/rpc/register_quality_rejection')) {
       state.occurrenceCreated = true;
       const reading = {
         id: 'reading-rejected-001',
@@ -295,16 +320,15 @@ async function mockSupabase(page) {
       };
       state.readings.unshift(reading);
       return fulfill({
-        success: false,
+        success: true,
         status: 'rejected',
-        message: 'Ocorrência registrada e peça bloqueada.',
-        lot,
-        item: { ...item, status: 'rejected' },
-        route: routeStep,
-        reading,
-        nextStep: null,
-        occurrence: { id: 'occurrence-test-001', status: 'open' },
-        kpiUpdate: { total: 1, approved: 0, rejected: 1, blocked: 0 },
+        message: 'Reprovação registrada com sucesso.',
+        piece_id: 'item-001',
+        nonconformity_id: 'nc-test-001',
+        nc_code: 'NC-2026-00001',
+        occurrence_id: 'occurrence-test-001',
+        reading_id: reading.id,
+        replacement_order_id: 'replacement-test-001',
       });
     }
 
@@ -324,13 +348,17 @@ test('fluxo principal de entrada e rastreabilidade produtiva', async ({ page }) 
   const state = await mockSupabase(page);
   await page.goto('login');
 
-  await page.getByLabel('E-mail').fill('operador.teste@leo.com.br');
+  await page.getByLabel(/E-mail Corporativo/i).fill('operador.teste@leo.com.br');
   await page.getByLabel('Senha').fill('SenhaTeste123!');
-  await page.getByRole('button', { name: 'Entrar' }).click();
+  await page.getByRole('button', { name: /Entrar no Leo Flow/i }).click();
   await expect(page).toHaveURL(/\/ac-prod\/?$/);
 
   await page.goto('entrada');
+  await page.getByLabel('Nome/Login do operador').fill('operador.teste');
+  await page.getByLabel('Matrícula').fill('00123');
+  await page.getByRole('button', { name: 'Entrar na Produção' }).click();
   await expect(page.getByRole('heading', { name: 'Apontamento MES' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Manual Rápido' }).click();
   await page.locator('#quick-produced').fill('10');
   await page.getByRole('button', { name: 'Registrar Produção' }).click();
   await expect(page.getByText('Produção registrada')).toBeVisible();
@@ -351,17 +379,16 @@ test('fluxo principal de entrada e rastreabilidade produtiva', async ({ page }) 
   await scanner.press('Enter');
   await expect(page.getByRole('status').filter({ hasText: 'Etapa esperada' })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Registrar Ocorrência / Reprovar Peça' }).click();
+  await page.getByRole('button', { name: 'Reprovar Peça', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
-  await page.getByLabel('Observação').fill('Avaria identificada no teste E2E');
-  await page.getByRole('button', { name: 'Reprovar e criar ocorrência' }).click();
-  await expect(page.getByText('Ocorrência registrada e peça bloqueada.').first()).toBeVisible();
+  await page.getByLabel('Observações / Detalhes').fill('Avaria identificada no teste E2E');
+  await page.getByRole('button', { name: 'Confirmar Rejeição' }).click();
+  await expect(page.getByText('Reprovação registrada com sucesso.').first()).toBeVisible();
   expect(state.occurrenceCreated).toBe(true);
 
   await expect(page.getByText('LSM-TEST-001', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Últimas leituras')).toBeVisible();
-  await expect(page.getByText('Leituras hoje')).toBeVisible();
-  await expect(page.getByText('Reprovadas')).toBeVisible();
+  await expect(page.getByText('Reprovadas', { exact: true }).first()).toBeVisible();
   expect(state.readings).toHaveLength(2);
 });
 
@@ -370,13 +397,14 @@ test('exibe lote geral antes dos lotes de clientes e abre o dashboard preditivo'
   await mockSupabase(page);
   await page.goto('login');
 
-  await page.getByLabel('E-mail').fill('operador.teste@leo.com.br');
+  await page.getByLabel(/E-mail Corporativo/i).fill('operador.teste@leo.com.br');
   await page.getByLabel('Senha').fill('SenhaTeste123!');
-  await page.getByRole('button', { name: 'Entrar' }).click();
+  await page.getByRole('button', { name: /Entrar no Leo Flow/i }).click();
+  await expect(page).toHaveURL(/\/ac-prod\/?$/);
 
   await page.goto('integridade-lote');
   await expect(page.getByRole('heading', { name: 'Painel de Integridade de Lote' })).toBeVisible();
-  await expect(page.getByText('Lote geral')).toBeVisible();
+  await expect(page.getByText('Lote geral', { exact: true })).toBeVisible();
   await expect(page.getByText('15587', { exact: true })).toBeVisible();
   await expect(page.getByText('143332', { exact: true })).toBeVisible();
   await expect(page.getByText('143403', { exact: true })).toBeVisible();
@@ -387,4 +415,41 @@ test('exibe lote geral antes dos lotes de clientes e abre o dashboard preditivo'
   await expect(page.getByText('O prazo mostrado termina antes da embalagem')).toBeVisible();
   await expect(page.getByText('Tempo aprendido por etapa')).toBeVisible();
   await expect(page.getByText('Prontas para separação')).toBeVisible();
+});
+
+test('mantém a gestão rica, separa o posto e reposiciona a página com a sidebar', async ({ page }) => {
+  await serveStaticBuild(page);
+  await mockSupabase(page);
+  await page.goto('login');
+
+  await page.getByLabel(/E-mail Corporativo/i).fill('operador.teste@leo.com.br');
+  await page.getByLabel('Senha').fill('SenhaTeste123!');
+  await page.getByRole('button', { name: /Entrar no Leo Flow/i }).click();
+  await expect(page).toHaveURL(/\/ac-prod\/?$/);
+  await page.goto('reposicao');
+
+  await expect(page.getByRole('heading', { name: 'Módulo de Reposição MES' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Abrir Posto de Reposição' })).toBeVisible();
+  await expect(page.getByText('Solicitadas', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Histórico e concluídas', { exact: false })).toBeVisible();
+  await expect(page.getByLabel('Código de barras da peça substituta')).toHaveCount(0);
+
+  const sidebar = page.getByRole('complementary', { name: 'Navegação principal' });
+  const main = page.locator('main');
+  const initialSidebar = await sidebar.boundingBox();
+  const initialMain = await main.boundingBox();
+  expect(initialSidebar?.width).toBeLessThanOrEqual(66);
+
+  await sidebar.hover();
+  await page.waitForTimeout(240);
+  const expandedSidebar = await sidebar.boundingBox();
+  const expandedMain = await main.boundingBox();
+  expect(expandedSidebar?.width).toBeGreaterThanOrEqual(238);
+  expect(expandedMain?.x).toBeGreaterThanOrEqual((initialMain?.x || 0) + 170);
+  expect(expandedMain?.width).toBeLessThan(initialMain?.width || Number.POSITIVE_INFINITY);
+
+  await page.getByRole('button', { name: 'Abrir Posto de Reposição' }).click();
+  await expect(page).toHaveURL(/\/reposicao\/posto$/);
+  await expect(page.getByRole('heading', { name: 'Acesso autorizado à reposição' })).toBeVisible();
+  await expect(page.getByLabel('Código de barras da peça substituta')).toHaveCount(0);
 });

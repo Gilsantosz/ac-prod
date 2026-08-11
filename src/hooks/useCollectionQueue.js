@@ -15,7 +15,7 @@ import {
  * @param {object} options — opções de filtro (cellName, machineId)
  */
 export function useCollectionQueue(processFn, options = {}) {
-  const { cellName, machineId } = options;
+  const { cellName, machineId, eventKind } = options;
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
@@ -31,11 +31,11 @@ export function useCollectionQueue(processFn, options = {}) {
   processFnRef.current = processFn;
 
   const refreshStats = useCallback(async () => {
-    const s = (cellName || machineId)
-      ? await getQueueStatsByCellMachine(cellName, machineId)
+    const s = (cellName || machineId || eventKind)
+      ? await getQueueStatsByCellMachine(cellName, machineId, eventKind)
       : await getQueueStats();
     setStats(s);
-  }, [cellName, machineId]);
+  }, [cellName, machineId, eventKind]);
 
   const withQueueLock = useCallback(async (task) => {
     if (navigator.locks?.request) {

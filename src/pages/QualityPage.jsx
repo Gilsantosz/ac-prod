@@ -5,7 +5,7 @@ import {
   Download, RefreshCw, Layers,
   PieChart as PieIcon, Activity, Target, ClipboardList,
   CheckCircle2, AlertOctagon, Factory, TrendingDown, Loader2,
-  Calendar, ChevronDown, SlidersHorizontal, ExternalLink, Info, Filter, X
+  Calendar, ChevronDown, SlidersHorizontal, ExternalLink, Info, Filter
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {

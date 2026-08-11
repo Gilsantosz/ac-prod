@@ -185,7 +185,7 @@ export default function Login() {
                 {/* Form */}
                 <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
                   <div className="space-y-1.5">
-                    <Label htmlFor="email" className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                    <Label htmlFor="user-email-input" className="text-xs font-bold text-slate-300 uppercase tracking-wider">
                       E-mail Corporativo
                     </Label>
                     <div className="relative">
@@ -208,7 +208,7 @@ export default function Login() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="password" className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                    <Label htmlFor="user-password-input" className="text-xs font-bold text-slate-300 uppercase tracking-wider">
                       Senha
                     </Label>
                     <div className="relative">
