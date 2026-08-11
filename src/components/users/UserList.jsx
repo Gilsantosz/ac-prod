@@ -42,6 +42,7 @@ const PERMISSION_LABELS = {
 export default function UserList({
   users,
   currentUserId,
+  currentUser,
   onUpdate,
   onDelete,
   onResetPassword,
@@ -104,6 +105,7 @@ export default function UserList({
               key={u.id}
               user={u}
               currentUserId={currentUserId}
+              currentUser={currentUser}
               onUpdate={onUpdate}
               onDelete={onDelete}
               onOpenResetDialog={() => setResetUser(u)}
@@ -126,7 +128,20 @@ export default function UserList({
   );
 }
 
-function UserCard({ user, currentUserId, onUpdate, onDelete, onOpenResetDialog, onResetPassword, onResendInvite, readOnly }) {
+const ROLE_RANK = { viewer: 10, operator: 10, supervisor: 20, manager: 30, admin: 40 };
+
+function canManageTarget(currentUser, targetUser) {
+  if (currentUser?.role === 'admin') return true;
+  const roleRank = ROLE_RANK[currentUser?.role] || 0;
+  const authorityRank = currentUser?.permissions?.manage_users === true
+    ? Math.max(roleRank, 20)
+    : currentUser?.permissions?.manage_operators === true
+      ? Math.max(roleRank, 15)
+      : roleRank;
+  return (ROLE_RANK[targetUser?.role] || 0) < authorityRank;
+}
+
+function UserCard({ user, currentUserId, currentUser, onUpdate, onDelete, onOpenResetDialog, onResetPassword, onResendInvite, readOnly }) {
   const { activeCells } = useCells();
   const [isEditing, setIsEditing] = useState(false);
   const [showPermissionsDetails, setShowPermissionsDetails] = useState(false);
@@ -148,6 +163,8 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onOpenResetDialog, 
   const [editReportEmail, setEditReportEmail] = useState(user.report_email || user.email || '');
 
   const isSelf = user.id === currentUserId;
+  const canResetTarget = !readOnly && canManageTarget(currentUser, user);
+  const canEditProfiles = !readOnly && currentUser?.role === 'admin';
   const activePermissionsCount = Object.values(user.permissions || {}).filter(Boolean).length;
 
   const handleSave = async () => {
@@ -330,30 +347,34 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onOpenResetDialog, 
               </div>
             </div>
 
-            {!readOnly && (
+            {(canResetTarget || canEditProfiles) && (
               <div className="flex items-center justify-end gap-2 self-end sm:self-center shrink-0">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1 text-xs"
-                  onClick={onOpenResetDialog}
-                  title="Redefinir a senha deste colaborador"
-                >
-                  <KeyRound className="w-3.5 h-3.5 text-muted-foreground" />
-                  Redefinir Senha
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1 text-xs"
-                  onClick={() => onResendInvite(user.email)}
-                  title="Reenviar convite de acesso"
-                >
-                  <Send className="w-3.5 h-3.5 text-muted-foreground" />
-                  Reenviar
-                </Button>
+                {canResetTarget && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1 text-xs"
+                      onClick={onOpenResetDialog}
+                      title="Redefinir a senha deste colaborador"
+                    >
+                      <KeyRound className="w-3.5 h-3.5 text-muted-foreground" />
+                      Redefinir Senha
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1 text-xs"
+                      onClick={() => onResendInvite(user.email)}
+                      title="Reenviar convite de acesso"
+                    >
+                      <Send className="w-3.5 h-3.5 text-muted-foreground" />
+                      Reenviar
+                    </Button>
+                  </>
+                )}
 
-                <div className="flex gap-1 border-l border-border/40 pl-2">
+                {canEditProfiles && <div className="flex gap-1 border-l border-border/40 pl-2">
                   <Button
                     variant="outline"
                     size="icon"
@@ -373,7 +394,7 @@ function UserCard({ user, currentUserId, onUpdate, onDelete, onOpenResetDialog, 
                   >
                     <Trash2 className="w-4 h-4 text-muted-foreground hover:text-destructive transition-colors" />
                   </Button>
-                </div>
+                </div>}
               </div>
             )}
           </div>

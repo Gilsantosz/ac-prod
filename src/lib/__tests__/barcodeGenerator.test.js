@@ -35,4 +35,15 @@ describe('barcodeGenerator — Code 128 (Subset B / Subset C)', () => {
     expect(dataUri).toMatch(/^data:image\/svg\+xml;/);
     expect(dataUri).toContain('940002');
   });
+
+  it('escapa texto e atributos antes de inseri-los no SVG', () => {
+    const svg = generateCode128Svg('</text><image onerror="alert(1)">', {
+      fontFamily: 'mono" onload="alert(1)',
+    });
+
+    expect(svg).not.toContain('</text><image');
+    expect(svg).not.toContain('onload="alert(1)');
+    expect(svg).toContain('&lt;/text&gt;&lt;image onerror="alert(1)"&gt;');
+    expect(svg).toContain('mono&quot; onload=&quot;alert(1)');
+  });
 });

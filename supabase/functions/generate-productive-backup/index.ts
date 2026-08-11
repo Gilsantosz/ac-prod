@@ -1,5 +1,5 @@
 // Edge Function: generate-productive-backup
-// Gera backup completo da Ordem de Produção com retenção de 4 anos.
+// Gera backup completo da Ordem de Produção com retenção de 3 anos.
 // SEGURANÇA: Usa service role somente no servidor, nunca exposto ao frontend.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -117,7 +117,7 @@ serve(async (req) => {
         file_size:       snapBytes.length,
         revision:        1,
         generated_by:    effectiveRequestedBy,
-        expires_at:      addYears(now, 4).toISOString(),
+        expires_at:      addYears(now, 3).toISOString(),
         status:          "available",
       }).select().single();
 
@@ -217,7 +217,7 @@ serve(async (req) => {
           file_size:         xmlContent.length,
           revision,
           generated_by:      effectiveRequestedBy,
-          expires_at:        addYears(now, 4).toISOString(),
+          expires_at:        addYears(now, 3).toISOString(),
           status:            "available",
         });
       }
@@ -254,7 +254,7 @@ serve(async (req) => {
         file_size:       jsonBytes.length,
         revision,
         generated_by:    effectiveRequestedBy,
-        expires_at:      addYears(now, 4).toISOString(),
+        expires_at:      addYears(now, 3).toISOString(),
         status:          "available",
       });
     }
@@ -289,7 +289,7 @@ serve(async (req) => {
       file_size:       snapBytes.length,
       revision,
       generated_by:    effectiveRequestedBy,
-      expires_at:      addYears(now, 4).toISOString(),
+      expires_at:      addYears(now, 3).toISOString(),
       status:          "available",
     });
 
@@ -331,7 +331,7 @@ serve(async (req) => {
       file_size:       manifestBytes.length,
       revision,
       generated_by:    effectiveRequestedBy,
-      expires_at:      addYears(now, 4).toISOString(),
+      expires_at:      addYears(now, 3).toISOString(),
       status:          "available",
     }).select().single();
 
@@ -346,7 +346,7 @@ serve(async (req) => {
         import_file_id: batchId,
         user_id: effectiveRequestedBy,
         action: "backup_created",
-        message: `Backup automático de 4 anos criado com sucesso (${filesToCreate.length + 1} arquivos)`,
+        message: `Backup automático de 3 anos criado com sucesso (${filesToCreate.length + 1} arquivos)`,
         severity: "info",
         metadata_json: { basePath, files: filesToCreate.map(f => f.file_name) }
       });
@@ -359,7 +359,7 @@ serve(async (req) => {
         revision,
         basePath,
         filesCreated: filesToCreate.length + 1,  // +1 manifest
-        expiresAt:    addYears(now, 4).toISOString(),
+        expiresAt:    addYears(now, 3).toISOString(),
       },
     }), { headers: { ...CORS, "Content-Type": "application/json" } });
 

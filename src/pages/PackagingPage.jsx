@@ -21,6 +21,7 @@ import {
   getPackingProgress
 } from '@/lib/packingService';
 import { getCustomerCovers, createCoverVolume, getCustomerCoverDetails } from '@/lib/customerCoverService';
+import { printVolumeLabel } from '@/lib/volumeLabelPrinter';
 
 const playBeep = (type) => {
   try {
@@ -325,33 +326,13 @@ export default function PackagingPage() {
   };
 
   const handlePrintLabel = (volume) => {
-    const printWindow = window.open('', '_blank', 'width=400,height=600');
-    if (!printWindow) return;
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Etiqueta de Volume</title>
-          <style>
-            body { font-family: monospace; padding: 20px; text-align: center; }
-            .barcode { font-size: 24px; font-weight: bold; margin: 20px 0; letter-spacing: 5px; }
-            .meta { border-top: 1px dashed #000; padding-top: 10px; text-align: left; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <h2>AC.Prod MES</h2>
-          <h3>VOLUME DE EMBALAGEM</h3>
-          <div class="barcode">${volume.volume_code}</div>
-          <div class="meta">
-            <p><strong>Carga / Lote Geral:</strong> ${selectedCover ? selectedCover.general_lot_code : selectedLot?.lot_code}</p>
-            <p><strong>Destinatário:</strong> ${selectedCover ? selectedCover.customer_name_exact : selectedLot?.production_orders?.customer_name}</p>
-            <p><strong>Status:</strong> ${volume.status === 'closed' ? 'FECHADO & LACRADO' : 'ABERTO'}</p>
-            <p><strong>Data:</strong> ${new Date().toLocaleDateString('pt-BR')}</p>
-          </div>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
+    printVolumeLabel({
+      volumeCode: volume.volume_code,
+      lotCode: selectedCover ? selectedCover.general_lot_code : selectedLot?.lot_code,
+      customerName: selectedCover ? selectedCover.customer_name_exact : selectedLot?.production_orders?.customer_name,
+      status: volume.status === 'closed' ? 'FECHADO & LACRADO' : 'ABERTO',
+      generatedAt: new Date().toLocaleDateString('pt-BR'),
+    });
   };
 
   const filteredPieces = checklistPieces.filter(p =>

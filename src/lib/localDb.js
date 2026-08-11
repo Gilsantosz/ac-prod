@@ -400,17 +400,22 @@ const createEntityClient = (entityName) => {
         }
       });
 
-      // Se for a entidade User, intercepta a alteração de senha para fazer via RPC seguro
+      // Compatibilidade legada: senhas administrativas passam pela mesma Edge
+      // Function protegida por hierarquia usada na tela atual de usuários.
       if (entityName === 'User') {
         const password = clean.password;
         delete clean.password;
         
         if (password) {
-          const { error: rpcError } = await supabase.rpc('admin_update_user_password', {
-            target_user_id: id,
-            new_password: password,
+          const { data: resetData, error: resetError } = await supabase.functions.invoke('admin-users', {
+            body: {
+              action: 'reset_password',
+              userId: id,
+              password,
+            },
           });
-          if (rpcError) throw rpcError;
+          if (resetError) throw resetError;
+          if (!resetData?.success) throw new Error(resetData?.error || 'Não foi possível redefinir a senha.');
         }
       }
 

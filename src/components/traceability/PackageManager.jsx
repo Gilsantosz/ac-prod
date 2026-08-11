@@ -19,6 +19,7 @@ import {
   getVolumeItems,
   getPackingProgress
 } from '@/lib/packingService';
+import { printVolumeLabel } from '@/lib/volumeLabelPrinter';
 
 export default function PackageManager({ trace }) {
   const qc = useQueryClient();
@@ -132,36 +133,15 @@ export default function PackageManager({ trace }) {
   // ─── Imprimir Etiqueta do Volume ──────────────────────────────
   const handlePrintLabel = (volume) => {
     if (!volume) return;
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Etiqueta de Volume - ${volume.volume_code}</title>
-          <style>
-            body { font-family: 'Courier New', monospace; padding: 20px; text-align: center; }
-            .label-box { border: 3px solid #000; padding: 20px; width: 380px; margin: 0 auto; border-radius: 8px; }
-            .title { font-size: 20px; font-weight: bold; margin-bottom: 10px; text-transform: uppercase; }
-            .code { font-size: 26px; font-weight: bold; margin: 15px 0; background: #000; color: #fff; padding: 5px; }
-            .meta { text-align: left; font-size: 13px; line-height: 1.6; }
-            .footer { font-size: 10px; margin-top: 20px; color: #555; }
-          </style>
-        </head>
-        <body onload="window.print(); window.close();">
-          <div class="label-box">
-            <div class="title">Leo Flow — Volume</div>
-            <div class="code">${volume.volume_code}</div>
-            <div class="meta">
-              <strong>LOTE:</strong> ${selectedLot?.lot_code}<br/>
-              <strong>CLIENTE:</strong> ${selectedLot?.production_orders?.customer_name || 'Sob Medida'}<br/>
-              <strong>PEDIDO:</strong> ${selectedLot?.production_orders?.order_code || selectedLot?.order_id || ''}<br/>
-              <strong>GERADO EM:</strong> ${new Date(volume.created_at).toLocaleString('pt-BR')}<br/>
-            </div>
-            <div class="footer">Leo Flow Rastreabilidade de Chão de Fábrica</div>
-          </div>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+    printVolumeLabel({
+      volumeCode: volume.volume_code,
+      lotCode: selectedLot?.lot_code,
+      customerName: selectedLot?.production_orders?.customer_name || 'Sob Medida',
+      orderCode: selectedLot?.production_orders?.order_code || selectedLot?.order_id || '',
+      generatedAt: new Date(volume.created_at).toLocaleString('pt-BR'),
+      variant: 'detailed',
+      closeAfterPrint: true,
+    });
   };
 
   return (

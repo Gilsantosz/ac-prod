@@ -22,6 +22,19 @@ const START_CODE_B = 104;
 const START_CODE_C = 105;
 const STOP_CODE = 106;
 
+function escapeXmlText(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function escapeXmlAttribute(value) {
+  return escapeXmlText(value)
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 /**
  * Codifica uma string textual para a sequência de valores numéricos Code 128 (Auto B/C)
  */
@@ -120,7 +133,7 @@ export function generateCode128Svg(text, {
 
   let textSvg = '';
   if (showText) {
-    textSvg = `<text x="${(totalWidth / 2).toFixed(2)}" y="${(height + fontSize + 2).toFixed(2)}" text-anchor="middle" font-family="${fontFamily}" font-size="${fontSize}" font-weight="bold" fill="#000000">${cleanText}</text>`;
+    textSvg = `<text x="${(totalWidth / 2).toFixed(2)}" y="${(height + fontSize + 2).toFixed(2)}" text-anchor="middle" font-family="${escapeXmlAttribute(fontFamily)}" font-size="${fontSize}" font-weight="bold" fill="#000000">${escapeXmlText(cleanText)}</text>`;
   }
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalWidth.toFixed(2)} ${totalSvgHeight.toFixed(2)}" width="${totalWidth.toFixed(2)}" height="${totalSvgHeight.toFixed(2)}">

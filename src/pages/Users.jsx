@@ -434,11 +434,13 @@ export default function Users() {
               onOpenChange={setIsCreateModalOpen}
               onInvite={handleInvite}
               saving={saving}
+              creator={me}
             />
           )}
           <UserList
             users={users}
             currentUserId={me?.id}
+            currentUser={me}
             readOnly={!canManageUsers}
             onOpenCreateModal={() => setIsCreateModalOpen(true)}
             onUpdate={(id, payload) => updateUser.mutate({ id, payload })}

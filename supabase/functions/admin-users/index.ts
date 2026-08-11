@@ -13,6 +13,45 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ALLOWED_ROLES = new Set(['operator', 'supervisor', 'manager', 'admin', 'viewer']);
+const ROLE_RANK: Record<string, number> = {
+  viewer: 10,
+  operator: 10,
+  supervisor: 20,
+  manager: 30,
+  admin: 40,
+};
+
+type CallerProfile = {
+  id: string;
+  role: string;
+  active: boolean | null;
+  permissions: Record<string, unknown> | null;
+  managed_cells: string[] | null;
+  cell: string | null;
+};
+
+function authorityRank(caller: CallerProfile): number {
+  const roleRank = ROLE_RANK[caller.role] || 0;
+  if (caller.permissions?.manage_users === true) return Math.max(roleRank, 20);
+  if (caller.permissions?.manage_operators === true) return Math.max(roleRank, 15);
+  return roleRank;
+}
+
+function canManageTarget(caller: CallerProfile, targetRole: string): boolean {
+  if (caller.role === 'admin') return true;
+  return (ROLE_RANK[targetRole] || 0) < authorityRank(caller);
+}
+
+function requestedPermissionEscalations(
+  caller: CallerProfile,
+  requested: Record<string, unknown>,
+): string[] {
+  if (caller.role === 'admin') return [];
+  return Object.entries(requested)
+    .filter(([, enabled]) => enabled === true)
+    .map(([key]) => key)
+    .filter((key) => caller.permissions?.[key] !== true);
+}
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -40,9 +79,9 @@ Deno.serve(async (request) => {
 
     const { data: caller } = await admin
       .from('profiles')
-      .select('id, role, active, permissions')
+      .select('id, role, active, permissions, managed_cells, cell')
       .eq('id', userResult.user.id)
-      .maybeSingle();
+      .maybeSingle() as { data: CallerProfile | null };
 
     const isAuthorized =
       caller &&
@@ -51,8 +90,8 @@ Deno.serve(async (request) => {
         caller.role === 'admin' ||
         caller.role === 'manager' ||
         caller.role === 'supervisor' ||
-        Boolean(caller.permissions?.manage_users) ||
-        Boolean(caller.permissions?.manage_operators)
+        caller.permissions?.manage_users === true ||
+        caller.permissions?.manage_operators === true
       );
 
     if (!isAuthorized) {
@@ -67,16 +106,24 @@ Deno.serve(async (request) => {
       if (!userId) return json({ success: false, error: 'ID do usuário não fornecido.' }, 422);
       if (newPassword.length < 8) return json({ success: false, error: 'A senha deve ter pelo menos 8 caracteres.' }, 422);
 
+      const { data: targetProfile } = await admin
+        .from('profiles')
+        .select('id, email, name, role')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (!targetProfile) {
+        if (caller.role !== 'admin') {
+          return json({ success: false, error: 'Somente administradores podem alterar contas sem perfil válido.' }, 403);
+        }
+      } else if (!canManageTarget(caller, String(targetProfile.role || 'operator'))) {
+        return json({ success: false, error: 'Você não pode redefinir a senha de uma conta com nível igual ou superior ao seu.' }, 403);
+      }
+
       const { data: updated, error: updateError } = await admin.auth.admin.updateUserById(userId, {
         password: newPassword,
       });
       if (updateError) throw updateError;
-
-      const { data: targetProfile } = await admin
-        .from('profiles')
-        .select('email, name')
-        .eq('id', userId)
-        .maybeSingle();
 
       await admin.from('system_audit_logs').insert({
         user_id: caller.id,
@@ -120,8 +167,34 @@ Deno.serve(async (request) => {
     if (password.length < 8) return json({ success: false, error: 'A senha deve ter pelo menos 8 caracteres.' }, 422);
     if (!name) return json({ success: false, error: 'Informe o nome do colaborador.' }, 422);
     if (!ALLOWED_ROLES.has(role)) return json({ success: false, error: 'Papel de acesso inválido.' }, 422);
+    if (!canManageTarget(caller, role)) {
+      return json({ success: false, error: 'Você não pode criar uma conta com nível igual ou superior ao seu.' }, 403);
+    }
     if (role === 'operator' && managedCells.length === 0) {
       return json({ success: false, error: 'Selecione pelo menos uma célula autorizada para o operador.' }, 422);
+    }
+
+    const permissionEscalations = requestedPermissionEscalations(caller, permissions);
+    if (permissionEscalations.length > 0) {
+      return json({
+        success: false,
+        error: 'Não é permitido conceder permissões que o próprio responsável não possui.',
+        invalid_permissions: permissionEscalations,
+      }, 403);
+    }
+
+    const callerCells = Array.from(new Set(
+      (Array.isArray(caller.managed_cells) && caller.managed_cells.length > 0
+        ? caller.managed_cells
+        : caller.cell ? [caller.cell] : [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean),
+    ));
+    if (caller.role !== 'admin' && callerCells.length > 0) {
+      const outsideCallerScope = managedCells.filter((cellName) => !callerCells.includes(cellName));
+      if (outsideCallerScope.length > 0) {
+        return json({ success: false, error: 'Uma ou mais células estão fora do seu escopo de gestão.' }, 403);
+      }
     }
 
     if (managedCells.length > 0) {
@@ -180,10 +253,9 @@ Deno.serve(async (request) => {
         role,
         cell: managedCells[0] || cell,
         managed_cells: managedCells,
-        access_scope: {
-          ...accessScope,
-          cells: managedCells,
-        },
+        access_scope: caller.role === 'admin'
+          ? { ...accessScope, cells: managedCells }
+          : { cells: managedCells, machines: [] },
         permissions,
         active: true,
       }, { onConflict: 'id' })

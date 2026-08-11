@@ -101,7 +101,7 @@ export default defineConfig(({ mode }) => {
           enabled: false,
         },
         registerType: 'autoUpdate',
-        injectRegister: 'inline',
+        injectRegister: 'script-defer',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icons/*.png'],
         manifest: {
           id: normalizedBase,

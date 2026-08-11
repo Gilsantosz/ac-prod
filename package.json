@@ -26,7 +26,10 @@
     "test:unit": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "security:audit": "npm audit --omit=dev --audit-level=high",
+    "security:secrets": "secretlint --maskSecrets \"**/*\"",
+    "security:check": "npm run security:audit && npm run security:secrets"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^17.0.0",
@@ -84,7 +87,7 @@
     "react-leaflet": "^4.2.1",
     "react-markdown": "^9.0.1",
     "react-resizable-panels": "^2.1.7",
-    "react-router-dom": "^7.18.1",
+    "react-router-dom": "^7.18.2",
     "recharts": "^2.15.4",
     "sonner": "^2.0.1",
     "tailwind-merge": "^3.0.2",
@@ -99,6 +102,7 @@
   "devDependencies": {
     "@eslint/js": "^9.19.0",
     "@playwright/test": "^1.60.0",
+    "@secretlint/secretlint-rule-preset-recommend": "^13.0.4",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
@@ -122,7 +126,8 @@
     "jsdom": "^26.1.0",
     "msw": "^2.10.2",
     "playwright": "^1.60.0",
-    "postcss": "^8.5.3",
+    "postcss": "^8.5.26",
+    "secretlint": "^13.0.4",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.2",
     "vite": "^6.1.0",
