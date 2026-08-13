@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import {
-  BellRing, RefreshCw, AlertTriangle, AlertCircle, CheckCircle, CheckCheck, Boxes,
+  BellRing, RefreshCw, AlertTriangle, AlertCircle, CheckCircle,
   MapPin, Cpu, User, Box, Truck, Landmark, Search, Clock, History, FileText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -22,8 +22,7 @@ import {
 } from '@/components/ui/dialog';
 import {
   runOperationalAlertDiagnostics,
-  resolveAlertManually,
-  resolveAlertsInBulk
+  resolveAlertManually
 } from '@/lib/operationalAlertService';
 
 const STAGE_CODE_TO_NAME = {
@@ -106,12 +105,6 @@ export default function OperationalAlertsPanel() {
   const [resolvingAlert, setResolvingAlert] = useState(null);
   const [resolutionNote, setResolutionNote] = useState('');
   const [resolvingIds, setResolvingIds] = useState({});
-
-  // Estados para modal de resolução em lote
-  const [bulkModalOpen, setBulkModalOpen] = useState(false);
-  const [bulkTargetLot, setBulkTargetLot] = useState(null);
-  const [bulkNote, setBulkNote] = useState('');
-  const [bulkLoading, setBulkLoading] = useState(false);
 
   // Executa o diagnóstico automático ao abrir a página para garantir que os alertas sejam calculados
   useEffect(() => {
@@ -211,56 +204,6 @@ export default function OperationalAlertsPanel() {
       return matchesSeverity && matchesCell && matchesType && matchesGeneralLot && matchesStatus;
     });
   }, [alerts, filterSeverity, filterCell, filterType, filterGeneralLot, filterStatus]);
-
-  // Lista de alertas ativos (não resolvidos) dentro dos filtros atuais
-  const unresolvedFilteredAlerts = useMemo(() => {
-    return filteredAlerts.filter(a => a.resolved === false || a.resolved === null);
-  }, [filteredAlerts]);
-
-  const handleOpenBulkModal = (targetLot = null) => {
-    setBulkTargetLot(targetLot);
-    setBulkNote('');
-    setBulkModalOpen(true);
-  };
-
-  const handleConfirmBulkResolve = async () => {
-    let targetAlerts = unresolvedFilteredAlerts;
-    if (bulkTargetLot) {
-      targetAlerts = alerts.filter(a => (a.resolved === false || a.resolved === null) && String(a.metadata?.general_lot_code || '') === String(bulkTargetLot));
-    }
-
-    const idsToResolve = targetAlerts.map(a => a.id).filter(Boolean);
-    if (idsToResolve.length === 0) {
-      toast.info('Nenhum alerta ativo encontrado para dar baixa.');
-      setBulkModalOpen(false);
-      return;
-    }
-
-    try {
-      setBulkLoading(true);
-      const note = bulkNote.trim() || (bulkTargetLot ? `Baixa em lote para o Lote Geral ${bulkTargetLot}` : 'Baixa em lote de alertas de fábrica.');
-      
-      const idSet = new Set(idsToResolve);
-      qc.setQueryData(['all-alerts-list'], (oldAlerts) => {
-        if (!oldAlerts) return oldAlerts;
-        return oldAlerts.map(a => idSet.has(a.id) ? { ...a, resolved: true, resolved_at: new Date().toISOString() } : a);
-      });
-
-      const res = await resolveAlertsInBulk(idsToResolve, note);
-      toast.success(`✅ Baixa em lote concluída em ${res.resolvedCount} alerta(s)!`);
-      
-      setBulkModalOpen(false);
-      await refetch();
-      await refetchHistory();
-      qc.invalidateQueries({ queryKey: ['unresolvedAlerts'] });
-      qc.invalidateQueries({ queryKey: ['mes-hub-kpis'] });
-    } catch (e) {
-      toast.error(`Erro ao dar baixa em lote: ${e.message}`);
-      await refetch();
-    } finally {
-      setBulkLoading(false);
-    }
-  };
 
   const handleOpenAlertDetails = async (alert) => {
     setSelectedAlert(alert);
@@ -431,19 +374,6 @@ export default function OperationalAlertsPanel() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9 shadow-sm font-semibold"
-            onClick={() => handleOpenBulkModal(filterGeneralLot !== 'all' ? filterGeneralLot : null)}
-            disabled={unresolvedFilteredAlerts.length === 0}
-          >
-            <CheckCheck className="w-4 h-4" />
-            <span>
-              {filterGeneralLot !== 'all'
-                ? `Dar Baixa no Lote ${filterGeneralLot} (${unresolvedFilteredAlerts.length})`
-                : `Dar Baixa em Todos (${unresolvedFilteredAlerts.length})`}
-            </span>
-          </Button>
-
           <Button
             className="gap-2 bg-rose-600 hover:bg-rose-700 text-white text-xs h-9 shadow-sm"
             onClick={handleRunDiagnostics}
@@ -800,18 +730,6 @@ export default function OperationalAlertsPanel() {
                         >
                           Abrir Detalhes
                         </Button>
-                        {!isResolved && alert.metadata?.general_lot_code && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 text-[10px] text-amber-700 dark:text-amber-300 hover:text-amber-800 hover:bg-amber-100/50 rounded-lg px-2.5 border border-amber-300 dark:border-amber-700 font-semibold"
-                            onClick={() => handleOpenBulkModal(alert.metadata.general_lot_code)}
-                            title={`Dar baixa em todos os alertas do Lote Geral ${alert.metadata.general_lot_code}`}
-                          >
-                            <Boxes className="w-3.5 h-3.5 mr-1 text-amber-600" />
-                            Baixa Lote Geral {alert.metadata.general_lot_code}
-                          </Button>
-                        )}
                         {!isResolved && (
                           <Button
                             size="sm"
@@ -835,79 +753,6 @@ export default function OperationalAlertsPanel() {
           </div>
         </div>
       )}
-
-      {/* Modal para Resolução em Lote de Alertas */}
-      <Dialog open={bulkModalOpen} onOpenChange={setBulkModalOpen}>
-        <DialogContent className="max-w-md bg-card border border-border/70 rounded-2xl shadow-2xl p-6">
-          <DialogHeader className="space-y-1">
-            <DialogTitle className="flex items-center gap-2 text-foreground font-bold text-base">
-              <CheckCheck className="w-5 h-5 text-emerald-500 shrink-0" />
-              Dar Baixa em Lote de Alertas MES
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground">
-              Esta ação resolverá múltiplos alertas operacionais pendentes de uma só vez.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="py-3 space-y-3">
-            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs space-y-1">
-              <p className="font-bold text-emerald-700 dark:text-emerald-300 flex items-center justify-between">
-                <span>Total de alertas para dar baixa:</span>
-                <span className="font-mono text-sm font-extrabold text-foreground bg-background px-2 py-0.5 rounded-lg border border-emerald-500/20">
-                  {bulkTargetLot
-                    ? alerts.filter(a => (a.resolved === false || a.resolved === null) && String(a.metadata?.general_lot_code || '') === String(bulkTargetLot)).length
-                    : unresolvedFilteredAlerts.length} alerta(s)
-                </span>
-              </p>
-              {bulkTargetLot ? (
-                <p className="text-[11px] text-muted-foreground">
-                  Filtro Específico: <strong>Lote Geral {bulkTargetLot}</strong>
-                </p>
-              ) : (
-                <p className="text-[11px] text-muted-foreground">
-                  {filterGeneralLot !== 'all' ? `Lote Geral: ${filterGeneralLot}` : 'Baixa aplicável a todos os alertas ativos no filtro atual.'}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label htmlFor="bulk-resolution-note-input" className="block text-xs font-semibold text-muted-foreground mb-1">
-                Observação / Justificativa da Baixa em Lote
-              </label>
-              <textarea
-                id="bulk-resolution-note-input"
-                value={bulkNote}
-                onChange={(e) => setBulkNote(e.target.value)}
-                placeholder={bulkTargetLot ? `Ex: Baixa geral concluída no Lote Geral ${bulkTargetLot}. Peças conferidas.` : "Ex: Resolução em lote efetuada pelo supervisor de produção."}
-                className="w-full min-h-[80px] p-2.5 rounded-xl border border-border/80 bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500 placeholder:text-muted-foreground/60 resize-none"
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => setBulkModalOpen(false)}
-              disabled={bulkLoading}
-              className="text-xs h-9"
-            >
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleConfirmBulkResolve}
-              disabled={bulkLoading}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9 font-semibold flex items-center gap-1.5"
-            >
-              {bulkLoading ? (
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <CheckCheck className="w-4 h-4" />
-              )}
-              {bulkLoading ? 'Processando Baixa...' : 'Confirmar Baixa em Lote'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Modal para Observação da Resolução Individual */}
       <Dialog open={!!resolvingAlert} onOpenChange={(open) => { if (!open) setResolvingAlert(null); }}>
