@@ -26,6 +26,9 @@ import {
 } from '@/lib/replacementService';
 import { getCanonicalReplacementOrders } from '@/lib/replacementCanonicalService';
 import { generateReplacementPdfReport } from '@/lib/reports/replacementPdfReportService';
+import ExportReportMenu from '@/components/reports/ExportReportMenu';
+import { fetchReplacementReportRows } from '@/lib/reports/replacementReportData';
+import { createReplacementReportDefinition } from '@/lib/reports/replacementReportDefinition';
 import { useAuth } from '@/lib/AuthContext';
 import ReplacementOrderCard from '@/components/replacement/ReplacementOrderCard';
 import ReplacementApproveModal from '@/components/replacement/ReplacementApproveModal';
@@ -168,6 +171,16 @@ export default function ReplacementPage() {
     }
   };
 
+  const loadReplacementReport = async () => {
+    const filters = { tab: activeTab, status: statusFilter, priority: priorityFilter, search };
+    const result = await fetchReplacementReportRows(filters);
+    return createReplacementReportDefinition({
+      ...result,
+      filters,
+      generatedBy: user?.name || user?.email || '',
+    });
+  };
+
   return (
     <div className="mx-auto max-w-[1700px] space-y-6 p-4 sm:p-6 lg:p-8">
       <header className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
@@ -181,15 +194,16 @@ export default function ReplacementPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <ExportReportMenu getReport={loadReplacementReport} formats={['xlsx', 'csv']} className="h-10 rounded-xl font-bold" />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button className="h-10 rounded-xl bg-amber-500 font-bold text-white hover:bg-amber-600">
-                <Printer className="mr-2 h-4 w-4" /> Imprimir / Exportar
+                <Printer className="mr-2 h-4 w-4" /> PDF / Etiquetas
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72 rounded-2xl p-1.5">
               <DropdownMenuItem onClick={() => exportPdf({ orders: filteredOrders, reportType: 'filtered' })} className="rounded-xl py-2">
-                <FileText className="mr-2 h-4 w-4 text-blue-500" /> PDF das reposições filtradas
+                <FileText className="mr-2 h-4 w-4 text-blue-500" /> PDF da lista visível ({filteredOrders.length})
               </DropdownMenuItem>
               <DropdownMenuItem disabled={!selectedOrders.length} onClick={() => exportPdf({ orders: selectedOrders, reportType: 'selected' })} className="rounded-xl py-2">
                 <Download className="mr-2 h-4 w-4 text-emerald-500" /> PDF das selecionadas

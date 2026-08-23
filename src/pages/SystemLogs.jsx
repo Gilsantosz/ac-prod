@@ -5,10 +5,13 @@ import PageHeader from '@/components/ui/PageHeader';
 import { Button } from '@/components/ui/button';
 import {
   Shield, RefreshCw, Search, ChevronDown, ChevronUp,
-  CheckCircle, XCircle, Download,
+  CheckCircle, XCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { buildBrandedCsv, downloadBlob } from '@/lib/reportBranding';
+import { useAuth } from '@/lib/AuthContext';
+import ExportReportMenu from '@/components/reports/ExportReportMenu';
+import { fetchSystemAuditReportRows } from '@/lib/reports/auditReportData';
+import { createSystemAuditReportDefinition } from '@/lib/reports/auditReportDefinitions';
 
 const ACTION_LABELS = {
   login:              { label: 'Login',             color: 'text-blue-600',   bg: 'bg-blue-100 dark:bg-blue-900/30' },
@@ -30,6 +33,7 @@ const ACTION_LABELS = {
 };
 
 export default function SystemLogs() {
+  const { user } = useAuth();
   const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState('');
   const [successFilter, setSuccessFilter] = useState('');
@@ -49,7 +53,7 @@ export default function SystemLogs() {
 
       if (actionFilter) query = query.eq('action', actionFilter);
       if (successFilter !== '') query = query.eq('success', successFilter === 'true');
-      if (dateFrom) query = query.gte('created_at', new Date(dateFrom).toISOString());
+      if (dateFrom) query = query.gte('created_at', new Date(`${dateFrom}T00:00:00`).toISOString());
       if (search) {
         query = query.or(
           `user_email.ilike.%${search}%,user_name.ilike.%${search}%,entity_id.ilike.%${search}%,entity_label.ilike.%${search}%`
@@ -64,37 +68,13 @@ export default function SystemLogs() {
     keepPreviousData: true,
   });
 
-  const exportLogs = async () => {
-    const columns = [
-      { key: 'date', label: 'Data/Hora' },
-      { key: 'user', label: 'Usuario' },
-      { key: 'email', label: 'Email' },
-      { key: 'role', label: 'Role' },
-      { key: 'action', label: 'Acao' },
-      { key: 'entity', label: 'Entidade' },
-      { key: 'id', label: 'ID' },
-      { key: 'success', label: 'Sucesso' },
-      { key: 'page', label: 'Pagina' },
-    ];
-    const rows = logs.map(l => [
-      new Date(l.created_at).toLocaleString('pt-BR'), l.user_name || '', l.user_email || '', l.user_role || '',
-      l.action, l.entity || '', l.entity_id || '', l.success ? 'Sim' : 'Nao', l.page || '',
-    ]).map((values) => Object.fromEntries(columns.map((column, index) => [column.key, values[index]])));
-    const csv = buildBrandedCsv({
-      title: 'Logs do Sistema',
-      subtitle: 'Historico de auditoria e rastreabilidade',
-      summary: [
-        { label: 'Registros exportados', value: logs.length },
-        { label: 'Filtro de acao', value: actionFilter || 'Todas' },
-        { label: 'Filtro de sucesso', value: successFilter === '' ? 'Todos' : successFilter === 'true' ? 'Sim' : 'Nao' },
-      ],
-      columns,
-      rows,
+  const loadAuditReport = async () => {
+    const result = await fetchSystemAuditReportRows({ search, action: actionFilter, success: successFilter, dateFrom });
+    return createSystemAuditReportDefinition({
+      ...result,
+      filters: { search, action: actionFilter, success: successFilter, dateFrom },
+      generatedBy: user?.name || user?.email || '',
     });
-    downloadBlob(
-      new Blob([csv], { type: 'text/csv;charset=utf-8' }),
-      `logs-sistema-${new Date().toISOString().split('T')[0]}.csv`
-    );
   };
 
   const actionInfo = (action) => ACTION_LABELS[action] || { label: action, color: 'text-muted-foreground', bg: 'bg-secondary/60' };
@@ -111,9 +91,7 @@ export default function SystemLogs() {
           <Button variant="outline" size="sm" className="gap-2" onClick={() => refetch()}>
             <RefreshCw className={cn('w-3.5 h-3.5', isFetching && 'animate-spin')} /> Atualizar
           </Button>
-          <Button variant="outline" size="sm" className="gap-2" onClick={exportLogs}>
-            <Download className="w-3.5 h-3.5" /> Exportar CSV
-          </Button>
+          <ExportReportMenu getReport={loadAuditReport} formats={['xlsx', 'csv']} className="h-9 rounded-lg text-xs" />
         </div>
       </div>
 
