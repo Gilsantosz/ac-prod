@@ -102,4 +102,3 @@ export function assertReportRowLimit(report, formatName) {
   }
   return rowCount;
 }
-

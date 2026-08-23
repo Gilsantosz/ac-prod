@@ -83,4 +83,3 @@ export async function renderReportChartPng(chart, { width = 1400, height = 620 }
 
   return canvas.toDataURL('image/png', 1);
 }
-

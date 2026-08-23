@@ -41,4 +41,3 @@ describe('relatório analítico de produção', () => {
     expect(report.charts[0].series[0].values.reduce((sum, value) => sum + value, 0)).toBe(200);
   });
 });
-

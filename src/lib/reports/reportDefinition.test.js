@@ -23,4 +23,3 @@ describe('definição central de relatório', () => {
     expect(() => createReportDefinition({ ...input, tables: [{ id: 'data', columns: [], rows: [] }] })).toThrow(/não possui colunas/i);
   });
 });
-

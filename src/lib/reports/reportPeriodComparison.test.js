@@ -44,4 +44,3 @@ describe('comparação de períodos de relatórios', () => {
     })).toMatchObject({ direction: 'down', assessment: 'positive' });
   });
 });
-

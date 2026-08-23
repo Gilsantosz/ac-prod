@@ -19,4 +19,3 @@ describe('renderizador PDF compartilhado', () => {
     expect(signature).toBe('%PDF-');
   });
 });
-

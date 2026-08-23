@@ -75,4 +75,3 @@ export function createOeeReportDefinition({ overall, byCell = [], occurrences = 
     metadata: { currentMetrics: overall, source: 'oee-metrics' },
   });
 }
-

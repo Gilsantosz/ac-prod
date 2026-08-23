@@ -20,4 +20,3 @@ export function exportReportCsv(report, options = {}) {
   downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), filename);
   return { filename, rowCount: getReportTable(report, options.tableId)?.rows?.length || 0 };
 }
-

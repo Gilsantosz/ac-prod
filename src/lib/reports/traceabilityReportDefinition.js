@@ -40,4 +40,3 @@ export function createTraceabilityReportDefinition({ rows = [], filters = {}, ge
     metadata: { rowCount: rows.length, source: 'production_stage_readings' },
   });
 }
-

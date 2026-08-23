@@ -54,4 +54,3 @@ export function createOccurrenceReportDefinition({ occurrences = [], date, cell 
     metadata: { rowCount: filtered.length, source: 'occurrences' },
   });
 }
-

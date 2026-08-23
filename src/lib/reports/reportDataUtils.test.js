@@ -37,4 +37,3 @@ describe('utilitários de dados de relatórios', () => {
       .toBe('leo-flow-dados-producao-2026-08-01-2026-08-31.csv');
   });
 });
-
