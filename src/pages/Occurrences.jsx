@@ -11,8 +11,10 @@ import ParetoChart from '@/components/occurrences/ParetoChart';
 import RecentOccurrences from '@/components/occurrences/RecentOccurrences';
 import ExportOccurrencesButton from '@/components/occurrences/ExportOccurrencesButton';
 import PageHeader from '@/components/ui/PageHeader';
+import { useAuth } from '@/lib/AuthContext';
 
 export default function Occurrences() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
   const chartRef = useRef(null);
@@ -26,8 +28,12 @@ export default function Occurrences() {
   const cellsList = useMemo(() => activeCells.map((c) => c.name), [activeCells]);
 
   const { data: occurrences = [] } = useQuery({
-    queryKey: ['occurrences'],
-    queryFn: () => base44.entities.Occurrence.list('-created_date', 500),
+    queryKey: ['occurrences', date, cell, shift],
+    queryFn: () => base44.entities.Occurrence.filter({
+      date,
+      ...(cell !== 'all' ? { cell } : {}),
+      ...(shift !== 'all' ? { shift } : {}),
+    }, '-created_date'),
     initialData: [],
   });
 
@@ -145,6 +151,7 @@ export default function Occurrences() {
             cell={cell} 
             shift={shift} 
             chartEl={chartRef.current} 
+            generatedBy={user?.name || user?.email || ''}
           />
         </div>
       </div>

@@ -1,7 +1,7 @@
 // Gera PDF e Excel do Resumo Diário com KPIs, matriz por célula/turno e tabelas por unidade.
 import { jsPDF } from 'jspdf';
-import * as XLSX from 'xlsx';
 import { drawBrandedPdfFooter, drawBrandedPdfHeader } from '@/lib/reportBranding';
+import { createReportDefinition } from '@/lib/reports/reportDefinition';
 
 const fmt = (n) => (Number(n) || 0).toLocaleString('pt-BR');
 const attain = (t) => (Number(t.target) > 0 ? Math.round((Number(t.realized ?? t.produced) / Number(t.target)) * 100) : 0);
@@ -45,6 +45,20 @@ export function calculatePlannedMinutes(summary, cells = []) {
   }, 0);
 }
 
+export function calculateDailyReportMetrics(summary, cells = []) {
+  const total = summary?.total || {};
+  const totalsByUnit = summary?.totalsByUnit || [];
+  const totalTarget = totalsByUnit.reduce((sum, row) => sum + (Number(row.target) || 0), 0);
+  const totalRealized = totalsByUnit.reduce((sum, row) => sum + (Number(row.realized) || 0), 0);
+  const totalAttainment = totalTarget > 0 ? Math.round((totalRealized / totalTarget) * 100) : 0;
+  const plannedMinutes = calculatePlannedMinutes(summary, cells);
+  const availability = plannedMinutes > 0 ? Math.max((plannedMinutes - Number(total.downtime || 0)) / plannedMinutes, 0) : 0;
+  const performance = totalTarget > 0 ? Math.min(totalRealized / totalTarget, 1.5) : 0;
+  const quality = Number(total.produced) > 0 ? Math.max(Number(total.good) / Number(total.produced), 0) : 0;
+  const oee = Math.round(availability * performance * quality * 1000) / 10;
+  return { total, totalsByUnit, totalTarget, totalRealized, totalAttainment, plannedMinutes, availability, performance, quality, oee };
+}
+
 export async function exportDailySummaryPdf({ date, shift, cell, summary, cells = [] }) {
   const doc = new jsPDF();
   const pageW = doc.internal.pageSize.getWidth();
@@ -57,16 +71,7 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary, cells 
     ? (cell.length === 0 ? 'Todas' : cell.join(', '))
     : (cell === 'all' ? 'Todas' : cell);
 
-  const t = summary.total;
-  const totalsByUnit = summary.totalsByUnit || [];
-  const totalTarget = totalsByUnit.reduce((sum, row) => sum + (Number(row.target) || 0), 0);
-  const totalRealized = totalsByUnit.reduce((sum, row) => sum + (Number(row.realized) || 0), 0);
-  const totalAttainment = totalTarget > 0 ? Math.round((totalRealized / totalTarget) * 100) : 0;
-  const plannedMinutes = calculatePlannedMinutes(summary, cells);
-  const availability = plannedMinutes > 0 ? Math.max((plannedMinutes - Number(t.downtime || 0)) / plannedMinutes, 0) : 0;
-  const performance = totalTarget > 0 ? Math.min(totalRealized / totalTarget, 1.5) : 0;
-  const quality = Number(t.produced) > 0 ? Math.max(Number(t.good) / Number(t.produced), 0) : 0;
-  const oee = Math.round(availability * performance * quality * 1000) / 10;
+  const { total: t, totalsByUnit, totalAttainment, oee } = calculateDailyReportMetrics(summary, cells);
   let y = await drawBrandedPdfHeader(doc, {
     title: 'Resumo Diário de Produção',
     subtitle: `Data: ${date.split('-').reverse().join('/')} | Turnos: ${shiftStr} | Células: ${cellStr}`,
@@ -322,66 +327,92 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary, cells 
   doc.save(`resumo-diario-${date}.pdf`);
 }
 
-export function exportDailySummaryExcel({ date, summary }) {
-  const workbook = XLSX.utils.book_new();
+function selectionLabel(value, allLabel) {
+  if (Array.isArray(value)) return value.length ? value.join(', ') : allLabel;
+  return !value || value === 'all' ? allLabel : value;
+}
 
-  // 1. Aba: Produção por Célula, Turno e Unidade
-  const byCellShiftData = (summary.byCellShift || []).map((r) => ({
-    'Célula': r.cell,
-    'Turno': r.shift,
-    'Unidade de Medida': r.unitLabel,
-    'Capacidade': Number(r.capacity) || 0,
-    'Meta Planejada': Number(r.target) || 0,
-    'Produção Realizada': Number(r.realized ?? r.produced) || 0,
-    'Diferença Meta': Number(r.differenceTarget) || 0,
-    'Eficiência Meta (%)': `${Number(r.efficiencyTarget ?? attain(r))}%`,
-    'Peças Boas': Number(r.good) || 0,
-    'Refugo': Number(r.scrap) || 0,
-    'Taxa Refugo (%)': `${Number(r.scrapRate) || 0}%`,
-    'Tempo de Parada (min)': Number(r.downtime) || 0,
-  }));
-  const ws1 = XLSX.utils.json_to_sheet(byCellShiftData);
-  XLSX.utils.book_append_sheet(workbook, ws1, 'Célula x Turno x Unidade');
+function normalizedSummaryRow(row = {}) {
+  return {
+    ...row,
+    capacity: Number(row.capacity) || 0,
+    target: Number(row.target) || 0,
+    realized: Number(row.realized ?? row.produced) || 0,
+    differenceTarget: Number(row.differenceTarget ?? ((row.realized ?? row.produced) - row.target)) || 0,
+    efficiency: Number(row.efficiencyTarget ?? attain(row)) / 100,
+    good: Number(row.good) || 0,
+    scrap: Number(row.scrap) || 0,
+    scrapRate: (Number(row.scrapRate) || 0) / 100,
+    downtime: Number(row.downtime) || 0,
+  };
+}
 
-  // 2. Aba: Totais por Unidade
-  const totalsByUnitData = (summary.totalsByUnit || []).map((r) => ({
-    'Unidade de Medida': r.unitLabel,
-    'Capacidade Total': Number(r.capacity) || 0,
-    'Meta Total': Number(r.target) || 0,
-    'Produção Realizada': Number(r.realized ?? r.produced) || 0,
-    'Diferença Meta': Number(r.differenceTarget) || 0,
-    'Eficiência Meta (%)': `${attain(r)}%`,
-    'Refugo': Number(r.scrap) || 0,
-    'Paradas (min)': Number(r.downtime) || 0,
-  }));
-  const ws2 = XLSX.utils.json_to_sheet(totalsByUnitData);
-  XLSX.utils.book_append_sheet(workbook, ws2, 'Totais por Unidade');
+export function createDailySummaryReport({ date, shift, cell, summary, cells = [], generatedBy = '' }) {
+  const metrics = calculateDailyReportMetrics(summary, cells);
+  const detailedRows = (summary.byCellShift || []).map(normalizedSummaryRow);
+  const totalsByUnit = (summary.totalsByUnit || []).map(normalizedSummaryRow);
+  const byCell = (summary.byCell || []).map(normalizedSummaryRow);
+  const byShift = (summary.byShift || []).map(normalizedSummaryRow);
+  const detailedColumns = [
+    { key: 'cell', label: 'Célula', type: 'text', width: 22 },
+    { key: 'shift', label: 'Turno', type: 'text', width: 16 },
+    { key: 'unitLabel', label: 'Unidade de medida', type: 'text', width: 20 },
+    { key: 'capacity', label: 'Capacidade', type: 'number', width: 14 },
+    { key: 'target', label: 'Meta planejada', type: 'number', width: 16 },
+    { key: 'realized', label: 'Produção realizada', type: 'number', width: 18 },
+    { key: 'differenceTarget', label: 'Diferença da meta', type: 'number', width: 18 },
+    { key: 'efficiency', label: 'Atingimento', type: 'percentage', width: 15 },
+    { key: 'good', label: 'Peças boas', type: 'number', width: 14 },
+    { key: 'scrap', label: 'Refugo', type: 'number', width: 12 },
+    { key: 'scrapRate', label: 'Taxa de refugo', type: 'percentage', width: 16 },
+    { key: 'downtime', label: 'Parada (min)', type: 'duration', width: 15 },
+  ];
+  const aggregateColumns = [
+    { key: 'label', label: 'Agrupamento', type: 'text', width: 24 },
+    { key: 'unitLabel', label: 'Unidade', type: 'text', width: 18 },
+    { key: 'target', label: 'Meta', type: 'number', width: 14 },
+    { key: 'realized', label: 'Realizado', type: 'number', width: 14 },
+    { key: 'differenceTarget', label: 'Diferença', type: 'number', width: 14 },
+    { key: 'efficiency', label: 'Atingimento', type: 'percentage', width: 15 },
+    { key: 'scrap', label: 'Refugo', type: 'number', width: 12 },
+    { key: 'downtime', label: 'Parada (min)', type: 'duration', width: 15 },
+  ];
+  const withLabel = (rows, field) => rows.map((row) => ({ ...row, label: row[field] || '—' }));
 
-  // 3. Aba: Produção por Célula
-  const byCellData = (summary.byCell || []).map((r) => ({
-    'Célula': r.cell,
-    'Unidade': r.unitLabel,
-    'Meta': Number(r.target) || 0,
-    'Realizado': Number(r.realized ?? r.produced) || 0,
-    'Diferença': Number(r.differenceTarget) || 0,
-    'Atingimento (%)': `${attain(r)}%`,
-    'Paradas (min)': Number(r.downtime) || 0,
-  }));
-  const ws3 = XLSX.utils.json_to_sheet(byCellData);
-  XLSX.utils.book_append_sheet(workbook, ws3, 'Por Célula');
+  return createReportDefinition({
+    id: 'resumo-diario',
+    title: 'Resumo Diário de Produção',
+    subtitle: `Produção de ${date.split('-').reverse().join('/')}`,
+    generatedAt: new Date().toISOString(),
+    generatedBy,
+    period: { from: date, to: date },
+    filters: { Turnos: selectionLabel(shift, 'Todos'), Células: selectionLabel(cell, 'Todas') },
+    summary: [
+      { key: 'attainment', label: 'Atingimento', value: metrics.totalAttainment / 100, format: 'percentage' },
+      { key: 'oee', label: 'OEE', value: metrics.oee / 100, format: 'percentage' },
+      { key: 'scrapRate', label: 'Taxa de refugo', value: (Number(metrics.total.scrapRate) || 0) / 100, format: 'percentage' },
+      { key: 'downtime', label: 'Paradas', value: Number(metrics.total.downtime) || 0, format: 'duration' },
+      ...totalsByUnit.map((row, index) => ({ key: `realized-${index}`, label: `Realizado (${row.unitLabel})`, value: row.realized, format: 'number' })),
+    ],
+    tables: [
+      { id: 'daily-detail', title: 'Produção por célula, turno e unidade', sheet: 'data', primary: true, columns: detailedColumns, rows: detailedRows },
+      { id: 'daily-units', title: 'Totais por unidade', sheet: 'analysis', columns: aggregateColumns, rows: withLabel(totalsByUnit, 'unitLabel') },
+      { id: 'daily-cells', title: 'Produção por célula', sheet: 'analysis', columns: aggregateColumns, rows: withLabel(byCell, 'cell') },
+      { id: 'daily-shifts', title: 'Produção por turno', sheet: 'analysis', columns: aggregateColumns, rows: withLabel(byShift, 'shift') },
+    ],
+    charts: [{
+      id: 'daily-production-target', title: 'Produção × Meta por unidade', type: 'line',
+      categories: totalsByUnit.map((row) => row.unitLabel),
+      series: [
+        { name: 'Realizado', color: '#00522d', values: totalsByUnit.map((row) => row.realized) },
+        { name: 'Meta', color: '#d6a900', values: totalsByUnit.map((row) => row.target) },
+      ],
+    }],
+    metadata: { currentMetrics: metrics, source: 'daily-summary' },
+  });
+}
 
-  // 4. Aba: Produção por Turno
-  const byShiftData = (summary.byShift || []).map((r) => ({
-    'Turno': r.shift,
-    'Unidade': r.unitLabel,
-    'Meta': Number(r.target) || 0,
-    'Realizado': Number(r.realized ?? r.produced) || 0,
-    'Diferença': Number(r.differenceTarget) || 0,
-    'Atingimento (%)': `${attain(r)}%`,
-    'Paradas (min)': Number(r.downtime) || 0,
-  }));
-  const ws4 = XLSX.utils.json_to_sheet(byShiftData);
-  XLSX.utils.book_append_sheet(workbook, ws4, 'Por Turno');
-
-  XLSX.writeFile(workbook, `resumo-diario-${date}.xlsx`);
+export async function exportDailySummaryExcel(payload) {
+  const { exportReportExcel } = await import('@/lib/reports/reportExcelRenderer');
+  return exportReportExcel(createDailySummaryReport(payload));
 }
