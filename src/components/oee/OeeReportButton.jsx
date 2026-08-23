@@ -1,31 +1,17 @@
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { FileDown, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { useMemo } from 'react';
+import ExportReportMenu from '@/components/reports/ExportReportMenu';
 import { exportOeeReport } from '@/lib/exportOeeReport';
+import { createOeeReportDefinition } from '@/lib/reports/oeeReportDefinition';
+import { buildReportFilename } from '@/lib/reports/reportDataUtils';
 
-export default function OeeReportButton({ overall, byCell, occurrences, meta, chartsRef, disabled }) {
-  const [loading, setLoading] = useState(false);
+export default function OeeReportButton({ overall, byCell, occurrences, meta, filters, chartsRef, generatedBy = '', disabled }) {
+  const report = useMemo(() => createOeeReportDefinition({ overall, byCell, occurrences, filters, generatedBy }), [byCell, filters, generatedBy, occurrences, overall]);
+  const formatExporters = useMemo(() => ({
+    pdf: (definition) => exportOeeReport(
+      { overall, byCell, occurrences, meta, chartsEl: chartsRef?.current },
+      buildReportFilename(definition, 'pdf'),
+    ),
+  }), [byCell, chartsRef, meta, occurrences, overall]);
 
-  const handleExport = async () => {
-    if (!overall || byCell.length === 0) {
-      toast.error('Sem dados para exportar.');
-      return;
-    }
-    setLoading(true);
-    try {
-      await exportOeeReport({ overall, byCell, occurrences, meta, chartsEl: chartsRef?.current });
-      toast.success('Relatório de OEE gerado.');
-    } catch {
-      toast.error('Falha ao gerar o relatório.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <Button variant="outline" onClick={handleExport} disabled={disabled || loading} className="gap-2 bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full shadow-sm">
-      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} Exportar PDF
-    </Button>
-  );
+  return <ExportReportMenu report={report} disabled={disabled || !overall || !byCell.length} formatExporters={formatExporters} />;
 }

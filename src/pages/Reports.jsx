@@ -1,15 +1,14 @@
 import { useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { base44 } from '@/lib/localDb';
 import { useQuery } from '@tanstack/react-query';
-import { Button } from '@/components/ui/button';
-import { Download, Gauge, LineChart, Target, TrendingUp } from 'lucide-react';
-import { toast } from 'sonner';
-import { format } from 'date-fns';
-import { monthlySeries, monthlyByCell, monthOverMonth, seasonalityAlerts, executiveSummary, nextMonthProjection, cellBenchmark } from '@/lib/reportMetrics';
-import { exportProductionCsv } from '@/lib/exportReports';
+import { Gauge, LineChart, Target, TrendingUp } from 'lucide-react';
+import { endOfMonth, format, parseISO } from 'date-fns';
 import { useCells } from '@/hooks/useCells';
 import { seriesByCell } from '@/lib/trendMetrics';
+import { useAuth } from '@/lib/AuthContext';
+import { fetchProductionReportSnapshot } from '@/lib/reports/productionReportData';
+import { createProductionAnalysisReport } from '@/lib/reports/productionAnalysisReport';
+import { formatDatePtBr, getDefaultReportPeriod } from '@/lib/reports/reportDataUtils';
 import ExecutiveDashboard from '@/components/reports/ExecutiveDashboard';
 import NextMonthForecast from '@/components/reports/NextMonthForecast';
 import CellBenchmark from '@/components/reports/CellBenchmark';
@@ -25,40 +24,46 @@ import { Label } from '@/components/ui/label';
 import TrendLineChart from '@/components/trend/TrendLineChart';
 import TrendSummaryCards from '@/components/trend/TrendSummaryCards';
 import ExportTrendButton from '@/components/trend/ExportTrendButton';
+import ExportReportMenu from '@/components/reports/ExportReportMenu';
 
 export default function Reports() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [range, setRange] = useState({ from: '', to: '' });
+  const [range, setRange] = useState(() => getDefaultReportPeriod());
   const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
   const reportRef = useRef(null);
   const { getCell } = useCells();
+  const { user } = useAuth();
   const requestedTab = searchParams.get('tab');
   const activeTab = ['production', 'trend'].includes(requestedTab) ? requestedTab : 'production';
+  const validRange = Boolean(range.from && range.to && range.from <= range.to);
 
-  const { data: all = [] } = useQuery({
-    queryKey: ['production'],
-    queryFn: () => base44.entities.ProductionEntry.list('-created_date', 2000),
-    initialData: [],
-    refetchInterval: 15000,
+  const productionQuery = useQuery({
+    queryKey: ['report', 'production-analysis', range.from, range.to, 'all-cells', 'all-shifts'],
+    queryFn: () => fetchProductionReportSnapshot({ period: range, filters: { cell: 'all', shift: 'all' } }),
+    enabled: activeTab === 'production' && validRange,
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
   });
 
-  const filtered = useMemo(() => all.filter((e) => {
-    if (range.from && e.date < range.from) return false;
-    if (range.to && e.date > range.to) return false;
-    return true;
-  }), [all, range]);
+  const productionReport = useMemo(() => productionQuery.data
+    ? createProductionAnalysisReport(productionQuery.data, { generatedBy: user?.name || user?.email || '' })
+    : null, [productionQuery.data, user?.email, user?.name]);
+  const filtered = productionQuery.data?.entries || [];
+  const analysis = productionReport?.metadata?.analysis || {};
+  const { series = [], byCell = { cells: [], rows: [] }, mom = null, alerts = [], summary = null, forecast = null, benchmark = { labels: [], months: [], byCell: {}, cells: [] } } = analysis;
 
-  const series = useMemo(() => monthlySeries(filtered), [filtered]);
-  const byCell = useMemo(() => monthlyByCell(filtered), [filtered]);
-  const mom = useMemo(() => monthOverMonth(series), [series]);
-  const alerts = useMemo(() => seasonalityAlerts(filtered, 15), [filtered]);
-  const summary = useMemo(() => executiveSummary(filtered), [filtered]);
-  const forecast = useMemo(() => nextMonthProjection(series), [series]);
-  const benchmark = useMemo(() => cellBenchmark(filtered), [filtered]);
-  const monthEntries = useMemo(
-    () => all.filter((e) => e.date && e.date.slice(0, 7) === month),
-    [all, month]
-  );
+  const trendPeriod = useMemo(() => {
+    const from = `${month}-01`;
+    return { from, to: format(endOfMonth(parseISO(from)), 'yyyy-MM-dd') };
+  }, [month]);
+  const trendQuery = useQuery({
+    queryKey: ['report', 'production-trend', trendPeriod.from, trendPeriod.to],
+    queryFn: () => fetchProductionReportSnapshot({ period: trendPeriod, includeComparison: false }),
+    enabled: activeTab === 'trend',
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
+  const monthEntries = trendQuery.data?.entries || [];
   const byCellTrend = useMemo(() => seriesByCell(monthEntries, month, getCell), [monthEntries, month, getCell]);
   const trendCells = useMemo(() => byCellTrend.map((c) => c.cell), [byCellTrend]);
 
@@ -77,26 +82,13 @@ export default function Reports() {
   const oeeTrendData = useMemo(() => buildTrendPivot('oee'), [byCellTrend]);
   const prodTrendData = useMemo(() => buildTrendPivot('productivity'), [byCellTrend]);
 
-  const handleExport = () => {
-    if (!filtered.length) {
-      toast.error('Nenhum dado para exportar no período selecionado');
-      return;
-    }
-    exportProductionCsv(filtered);
-    toast.success('CSV exportado');
-  };
-
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
       <PageHeader
         title="Relatórios Analíticos"
         subtitle="Produtividade mês a mês e histórico de performance das células."
         icon={LineChart}
-        actions={
-          <Button variant="outline" className="gap-2 bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full shadow-sm" onClick={handleExport}>
-            <Download className="w-4 h-4" /> Exportar CSV
-          </Button>
-        }
+        actions={<ExportReportMenu report={productionReport} disabled={!filtered.length || productionQuery.isFetching} />}
       />
       <Tabs
         value={activeTab}
@@ -109,7 +101,18 @@ export default function Reports() {
         </TabsList>
         <TabsContent value="production" className="space-y-5">
           <DateRangeFilter range={range} setRange={setRange} />
-          {filtered.length === 0 ? (
+          {productionQuery.data?.comparisonPeriod && (
+            <p className="text-xs text-muted-foreground px-1">
+              Comparação automática: {formatDatePtBr(productionQuery.data.comparisonPeriod.from)} a {formatDatePtBr(productionQuery.data.comparisonPeriod.to)} · snapshot de {filtered.length.toLocaleString('pt-BR')} registro(s).
+            </p>
+          )}
+          {!validRange ? (
+            <div className="text-center py-20 text-muted-foreground border border-dashed border-border rounded-2xl">Informe um período válido para gerar a análise.</div>
+          ) : productionQuery.isLoading ? (
+            <div className="text-center py-20 text-muted-foreground border border-dashed border-border rounded-2xl">Carregando o snapshot completo do período...</div>
+          ) : productionQuery.isError ? (
+            <div className="text-center py-20 text-destructive border border-dashed border-destructive/40 rounded-2xl">Não foi possível carregar o relatório: {productionQuery.error?.message}</div>
+          ) : filtered.length === 0 ? (
             <div className="text-center py-20 text-muted-foreground border border-dashed border-border rounded-2xl">Nenhum dado de produção para o período selecionado.</div>
           ) : (
             <>
@@ -134,7 +137,11 @@ export default function Reports() {
             </div>
           </div>
 
-          {monthEntries.length === 0 ? (
+          {trendQuery.isLoading ? (
+            <div className="text-center py-20 text-muted-foreground border border-dashed border-border rounded-2xl">Carregando tendência do mês...</div>
+          ) : trendQuery.isError ? (
+            <div className="text-center py-20 text-destructive border border-dashed border-destructive/40 rounded-2xl">Não foi possível carregar a tendência: {trendQuery.error?.message}</div>
+          ) : monthEntries.length === 0 ? (
             <div className="text-center py-20 text-muted-foreground border border-dashed border-border rounded-2xl">
               Nenhum dado de produção para o mês selecionado.
             </div>

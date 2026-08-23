@@ -1,8 +1,9 @@
 import { jsPDF } from 'jspdf';
-import { buildBrandedCsv, downloadBlob, drawBrandedPdfFooter, drawBrandedPdfHeader, loadLeoLogoDataUrl, REPORT_BRAND } from '@/lib/reportBranding';
+import { downloadBlob, drawBrandedPdfFooter, drawBrandedPdfHeader, loadLeoLogoDataUrl, REPORT_BRAND } from '@/lib/reportBranding';
+import { createReportDefinition } from '@/lib/reports/reportDefinition';
 
 const entryColumns = [
-  { key: 'date', label: 'Data' },
+  { key: 'date', label: 'Data', type: 'date' },
   { key: 'shift', label: 'Turno' },
   { key: 'cell', label: 'Célula' },
   { key: 'hour', label: 'Hora' },
@@ -13,18 +14,18 @@ const entryColumns = [
   { key: 'customer_legal_name', label: 'Razão Social' },
   { key: 'product_name', label: 'Produto' },
   { key: 'route_name', label: 'Roteiro' },
-  { key: 'finalization_date', label: 'Finalização' },
+  { key: 'finalization_date', label: 'Finalização', type: 'date' },
   { key: 'pallet_number', label: 'Pallet' },
   { key: 'process_step', label: 'Etapa' },
-  { key: 'produced', label: 'Produzido' },
-  { key: 'approved_quantity', label: 'Aprovado' },
-  { key: 'rejected_quantity', label: 'Reprovado' },
-  { key: 'pending_quantity', label: 'Pendente' },
-  { key: 'target', label: 'Meta' },
-  { key: 'scrap', label: 'Refugo' },
-  { key: 'downtime', label: 'Parada (min)' },
+  { key: 'produced', label: 'Produzido', type: 'number' },
+  { key: 'approved_quantity', label: 'Aprovado', type: 'number' },
+  { key: 'rejected_quantity', label: 'Reprovado', type: 'number' },
+  { key: 'pending_quantity', label: 'Pendente', type: 'number' },
+  { key: 'target', label: 'Meta', type: 'number' },
+  { key: 'scrap', label: 'Refugo', type: 'number' },
+  { key: 'downtime', label: 'Parada (min)', type: 'duration' },
   { key: 'operator', label: 'Operador' },
-  { key: 'occurrence_count', label: 'Ocorrências' },
+  { key: 'occurrence_count', label: 'Ocorrências', type: 'integer' },
   { key: 'status', label: 'Status' },
 ];
 
@@ -74,14 +75,47 @@ export function buildReportHtml(report, logoDataUrl = '') {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${htmlEscape(report.title)}</title></head><body style="font-family:Arial,sans-serif;color:#0f172a;margin:24px"><header style="background:#00522d;color:white;padding:20px;border-radius:6px;display:flex;align-items:center;gap:14px">${logoDataUrl ? `<img src="${logoDataUrl}" alt="Leo Madeiras" width="56" height="56" style="display:block;border-radius:6px">` : ''}<div><strong style="color:#fff200;font-size:24px">Leo Madeiras</strong><div>Leo Flow - Controle e Rastreabilidade</div></div></header><h1>${htmlEscape(report.title)}</h1><p>Gerado em ${new Date(report.generatedAt).toLocaleString('pt-BR')} por ${htmlEscape(report.generatedBy)}</p><table style="border-collapse:collapse;margin:16px 0">${summary.map((item) => `<tr><td style="padding:5px 16px 5px 0;color:#64748b">${htmlEscape(item.label)}</td><td style="font-weight:bold">${htmlEscape(item.value)}</td></tr>`).join('')}</table><h2>Recomendações</h2><ul>${report.analysis.recommendations.map((item) => `<li>${htmlEscape(item)}</li>`).join('')}</ul><h2>Dados</h2><table style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr>${entryColumns.map((column) => `<th style="text-align:left;background:#f1f5f9;border:1px solid #cbd5e1;padding:6px">${htmlEscape(column.label)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${entryColumns.map((column) => `<td style="border:1px solid #e2e8f0;padding:5px">${htmlEscape(row[column.key])}</td>`).join('')}</tr>`).join('')}</tbody></table></body></html>`;
 }
 
-function exportCsv(report) {
-  const csv = buildBrandedCsv({ title: report.title, subtitle: `${report.filters.startDate} a ${report.filters.endDate}`, summary: summaryRows(report), columns: entryColumns, rows: reportRows(report) });
-  downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `${safeName(report.title)}.csv`);
+export function toOperationalReportDefinition(report) {
+  const generatedDate = new Date(report.generatedAt || Date.now());
+  const fallbackDate = Number.isNaN(generatedDate.getTime()) ? new Date().toISOString().slice(0, 10) : generatedDate.toISOString().slice(0, 10);
+  const startDate = report.filters?.startDate || fallbackDate;
+  const endDate = report.filters?.endDate || startDate;
+  const kpi = report.analysis?.kpis || {};
+  return createReportDefinition({
+    id: report.reportType || safeName(report.title),
+    title: report.title,
+    subtitle: `${startDate} a ${endDate}`,
+    generatedAt: report.generatedAt,
+    generatedBy: report.generatedBy,
+    period: { from: startDate, to: endDate },
+    filters: report.filters || {},
+    summary: [
+      { key: 'produced', label: 'Produzido', value: Number(kpi.produced) || 0, format: 'integer' },
+      { key: 'target', label: 'Meta', value: Number(kpi.target) || 0, format: 'integer' },
+      { key: 'efficiency', label: 'Eficiência', value: (Number(kpi.efficiency) || 0) / 100, format: 'percentage' },
+      { key: 'scrapRate', label: 'Taxa de refugo', value: (Number(kpi.scrapRate) || 0) / 100, format: 'percentage' },
+      { key: 'downtime', label: 'Paradas', value: Number(kpi.downtime) || 0, format: 'duration' },
+    ],
+    tables: [{
+      id: 'operational-data',
+      title: 'Dados operacionais',
+      sheet: 'data',
+      primary: true,
+      columns: entryColumns,
+      rows: reportRows(report),
+    }],
+    metadata: { traceId: report.traceId, source: 'operational-report' },
+  });
+}
+
+async function exportCsv(report) {
+  const { exportReportCsv } = await import('@/lib/reports/reportCsvRenderer');
+  return exportReportCsv(toOperationalReportDefinition(report));
 }
 
 async function exportExcel(report) {
-  const html = buildReportHtml(report, await loadLeoLogoDataUrl());
-  downloadBlob(new Blob([`\uFEFF${html}`], { type: 'application/vnd.ms-excel;charset=utf-8' }), `${safeName(report.title)}.xls`);
+  const { exportReportExcel } = await import('@/lib/reports/reportExcelRenderer');
+  return exportReportExcel(toOperationalReportDefinition(report));
 }
 
 async function exportPdf(report) {

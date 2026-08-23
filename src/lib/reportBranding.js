@@ -1,4 +1,5 @@
 import leoLogoUrl from '@/assets/leo-madeiras-logo.jpg';
+import { buildRawCsv, escapeCsvCell } from '@/lib/reports/reportDataUtils';
 
 export const REPORT_BRAND = {
   company: 'Leo Madeiras',
@@ -27,10 +28,16 @@ export async function loadLeoLogoDataUrl() {
   return logoDataUrlPromise;
 }
 
-export async function drawBrandedPdfHeader(doc, { title, subtitle = '', summary = [] } = {}) {
+export async function drawBrandedPdfHeader(doc, {
+  title,
+  subtitle = '',
+  summary = [],
+  generatedAt = new Date(),
+  logoDataUrl,
+} = {}) {
   const pageW = doc.internal.pageSize.getWidth();
   const margin = 14;
-  const logo = await loadLeoLogoDataUrl();
+  const logo = logoDataUrl === undefined ? await loadLeoLogoDataUrl() : logoDataUrl;
 
   doc.setFillColor(...REPORT_BRAND.primary);
   doc.roundedRect(margin, 10, pageW - margin * 2, 28, 4, 4, 'F');
@@ -70,7 +77,8 @@ export async function drawBrandedPdfHeader(doc, { title, subtitle = '', summary 
     doc.text(subtitleLines, margin, y);
     y += Math.max(5, subtitleLines.length * 5);
   }
-  doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, margin, y);
+  const generatedDate = generatedAt instanceof Date ? generatedAt : new Date(generatedAt);
+  doc.text(`Gerado em: ${(Number.isNaN(generatedDate.getTime()) ? new Date() : generatedDate).toLocaleString('pt-BR')}`, margin, y);
   y += 9;
 
   const rows = summary.filter((row) => row?.label);
@@ -112,28 +120,13 @@ export function drawBrandedPdfFooter(doc) {
   }
 }
 
-export function escapeCsv(value) {
-  const text = value == null ? '' : String(value);
-  return `"${text.replace(/"/g, '""')}"`;
+export function escapeCsv(value, delimiter = ';') {
+  return escapeCsvCell(value, delimiter);
 }
 
-export function buildBrandedCsv({ title, subtitle = '', summary = [], columns = [], rows = [], delimiter = ';' }) {
-  const headerRows = [
-    ['Logomarca', REPORT_BRAND.company],
-    ['Sistema', `${REPORT_BRAND.system} - Relatorios Industriais`],
-    ['Relatorio', title || 'Relatorio Industrial'],
-    ['Periodo/Filtros', subtitle],
-    ['Gerado em', new Date().toLocaleString('pt-BR')],
-    ...summary.filter((row) => row?.label).map((row) => [row.label, row.value ?? '']),
-    [],
-  ];
-
-  const tableHeader = columns.map((c) => c.label);
-  const tableRows = rows.map((row) => columns.map((c) => row[c.key] ?? ''));
-
-  return '\uFEFF' + [...headerRows, tableHeader, ...tableRows]
-    .map((line) => line.map(escapeCsv).join(delimiter))
-    .join('\n');
+export function buildBrandedCsv({ columns = [], rows = [], delimiter = ';' }) {
+  // Compatibilidade para consumidores legados: CSV agora representa somente dados brutos.
+  return buildRawCsv({ columns, rows, delimiter, includeBom: true });
 }
 
 export function downloadBlob(blob, filename) {

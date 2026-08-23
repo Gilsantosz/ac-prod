@@ -1,41 +1,45 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Download, Filter, ScanLine } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Filter, ScanLine } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { supabase } from '@/lib/supabaseClient';
-import { buildBrandedCsv, downloadBlob } from '@/lib/reportBranding';
+import ExportReportMenu from '@/components/reports/ExportReportMenu';
+import { fetchTraceabilityReadingsReport, normalizeTraceabilityReading } from '@/lib/reports/traceabilityReportData';
+import { createTraceabilityReportDefinition } from '@/lib/reports/traceabilityReportDefinition';
+import { useAuth } from '@/lib/AuthContext';
 
-const EMPTY = { search: '', tagType: 'all', cell: 'all', step: 'all', operator: '', status: 'all', date: '', shift: 'all', readerType: 'all' };
+function localToday() {
+  const date = new Date();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+const EMPTY = { search: '', tagType: 'all', cell: 'all', step: 'all', operator: '', status: 'all', date: localToday(), shift: 'all', readerType: 'all' };
 
 export default function TraceabilityReadingsReport() {
+  const { user } = useAuth();
   const [filters, setFilters] = useState(EMPTY);
+  const optionCache = useRef({ cells: new Set(), steps: new Set() });
   const set = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
 
-  const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['traceability-report-readings'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('production_stage_readings')
-        .select(`
-          *,
-          production_lots (lot_code, order_number, product_code, product_name),
-          production_lot_items (item_code, product_code, product_name),
-          production_tags (tag_type, tag_format)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(3000);
-      if (error) throw error;
-      return data || [];
-    },
+  const { data: rows = [], isLoading, isFetching, isError, error } = useQuery({
+    queryKey: ['report', 'traceability-readings', filters.date, filters.operator, filters.status, filters.shift, filters.readerType, filters.cell, filters.step],
+    queryFn: () => fetchTraceabilityReadingsReport(filters),
     initialData: [],
     retry: false,
+    staleTime: 60_000,
   });
 
-  const options = useMemo(() => ({
-    cells: [...new Set(rows.map((row) => row.cell_name).filter(Boolean))].sort(),
-    steps: [...new Set(rows.map((row) => row.step_name).filter(Boolean))].sort(),
-  }), [rows]);
+  const options = useMemo(() => {
+    rows.forEach((row) => {
+      if (row.cell_name) optionCache.current.cells.add(row.cell_name);
+      if (row.step_name) optionCache.current.steps.add(row.step_name);
+    });
+    return {
+      cells: [...optionCache.current.cells].sort(),
+      steps: [...optionCache.current.steps].sort(),
+    };
+  }, [rows]);
 
   const filtered = useMemo(() => rows.filter((row) => {
     const text = [row.production_lots?.lot_code, row.production_lots?.order_number, row.production_lots?.product_code, row.production_lots?.product_name, row.production_lot_items?.item_code, row.production_lot_items?.product_name, row.tag_value].join(' ').toLowerCase();
@@ -51,32 +55,17 @@ export default function TraceabilityReadingsReport() {
     return true;
   }), [rows, filters]);
 
-  const exportCsv = () => {
-    const normalized = filtered.map((row) => ({
-      date: row.date, hour: row.hour, lot: row.production_lots?.lot_code, order: row.production_lots?.order_number,
-      product: row.production_lot_items?.product_name || row.production_lots?.product_name,
-      piece: row.production_lot_items?.item_code, tag: row.tag_value, tagType: row.production_tags?.tag_type,
-      cell: row.cell_name, step: row.step_name, operator: row.operator, status: row.status,
-      shift: row.shift, reader: row.reader_type,
-    }));
-    const csv = buildBrandedCsv({
-      title: 'Rastreabilidade por Leitura',
-      subtitle: 'Filtros de lote, pedido, produto, peça, tag, célula, etapa, operador, status, data, turno e leitor',
-      summary: [{ label: 'Leituras', value: normalized.length }],
-      columns: [
-        ['date','Data'],['hour','Hora'],['lot','Lote'],['order','Pedido/OP'],['product','Produto'],['piece','Peça'],
-        ['tag','Tag'],['tagType','Tipo tag'],['cell','Célula'],['step','Etapa'],['operator','Operador'],
-        ['status','Status'],['shift','Turno'],['reader','Leitor'],
-      ].map(([key,label]) => ({ key, label })),
-      rows: normalized,
-    });
-    downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `rastreabilidade-leituras-${new Date().toISOString().slice(0,10)}.csv`);
-  };
+  const normalized = useMemo(() => filtered.map(normalizeTraceabilityReading), [filtered]);
+  const report = useMemo(() => createTraceabilityReportDefinition({
+    rows: normalized,
+    filters,
+    generatedBy: user?.name || user?.email || '',
+  }), [filters, normalized, user?.email, user?.name]);
 
   return (
     <div className="space-y-4">
       <div className="bg-card border border-border rounded-md p-4 space-y-3">
-        <div className="flex items-center justify-between gap-3"><div><h3 className="font-semibold flex items-center gap-2"><Filter className="w-4 h-4" /> Filtros de rastreabilidade</h3><p className="text-xs text-muted-foreground mt-1">{filtered.length} leitura(s) encontrada(s)</p></div><Button variant="outline" onClick={exportCsv} disabled={!filtered.length} className="gap-2"><Download /> Exportar CSV</Button></div>
+        <div className="flex items-center justify-between gap-3"><div><h3 className="font-semibold flex items-center gap-2"><Filter className="w-4 h-4" /> Filtros de rastreabilidade</h3><p className="text-xs text-muted-foreground mt-1">{filtered.length} leitura(s) encontrada(s)</p></div><ExportReportMenu report={report} formats={['xlsx', 'csv']} disabled={!filtered.length || isFetching} /></div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <Input value={filters.search} onChange={(event) => set('search', event.target.value)} placeholder="Lote, pedido, produto, peça ou tag" />
           <Input value={filters.operator} onChange={(event) => set('operator', event.target.value)} placeholder="Operador" />
@@ -95,8 +84,9 @@ export default function TraceabilityReadingsReport() {
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-secondary z-10"><tr>{['Data/Hora','Lote / Pedido','Peça / Tag','Etapa / Célula','Operador','Status','Leitor'].map((label) => <th key={label} className="text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap">{label}</th>)}</tr></thead>
             <tbody className="divide-y divide-border">
-              {isLoading && <tr><td colSpan="7" className="p-8 text-center text-muted-foreground">Carregando rastreabilidade...</td></tr>}
-              {!isLoading && !filtered.length && <tr><td colSpan="7" className="p-8 text-center text-muted-foreground">Nenhuma leitura para os filtros.</td></tr>}
+              {(isLoading || isFetching) && <tr><td colSpan="7" className="p-8 text-center text-muted-foreground">Carregando rastreabilidade...</td></tr>}
+              {isError && <tr><td colSpan="7" className="p-8 text-center text-destructive">Falha ao carregar leituras: {error?.message}</td></tr>}
+              {!isFetching && !isLoading && !filtered.length && <tr><td colSpan="7" className="p-8 text-center text-muted-foreground">Nenhuma leitura para os filtros.</td></tr>}
               {filtered.map((row) => (
                 <tr key={row.id} className="hover:bg-secondary/40">
                   <td className="px-3 py-2 whitespace-nowrap">{row.date}<br/><span className="text-xs text-muted-foreground">{row.hour}</span></td>

@@ -8,10 +8,14 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { toast } from 'sonner';
-import { FileText, RefreshCw, Search, Calendar, SlidersHorizontal, Loader2, Download } from 'lucide-react';
+import { FileText, RefreshCw, Search, Calendar, SlidersHorizontal, Loader2 } from 'lucide-react';
+import { useAuth } from '@/lib/AuthContext';
+import ExportReportMenu from '@/components/reports/ExportReportMenu';
+import { fetchIntegrityAuditReportRows } from '@/lib/reports/auditReportData';
+import { createIntegrityAuditReportDefinition } from '@/lib/reports/auditReportDefinitions';
 
 export default function IntegrityLogs() {
+  const { user } = useAuth();
   const [lotSearch, setLotSearch] = useState('');
   const [pieceSearch, setPieceSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -28,9 +32,9 @@ export default function IntegrityLogs() {
     queryFn: async () => {
       let query = supabase
         .from('production_collection_events')
-        .select('*')
+        .select('id, processed_at, created_at, date, lot_code, piece_code, raw_value, cell_name, operator_name, shift, result_status, status, reader_type, error_message')
         .order('processed_at', { ascending: false })
-        .limit(200);
+        .range(0, 199);
 
       if (lotSearch.trim()) {
         query = query.ilike('lot_code', `%${lotSearch.trim()}%`);
@@ -60,39 +64,19 @@ export default function IntegrityLogs() {
     }
   });
 
-  const handleExportCSV = () => {
-    if (logs.length === 0) {
-      toast.warning('Nenhum dado disponível para exportação.');
-      return;
-    }
-
-    try {
-      const headers = ['Data/Hora', 'Lote', 'Peça', 'Célula', 'Operador', 'Turno', 'Resultado', 'Mensagem'];
-      const csvRows = [
-        headers.join(','),
-        ...logs.map(log => [
-          new Date(log.processed_at || log.created_at).toLocaleString('pt-BR'),
-          log.lot_code || '',
-          log.piece_code || '',
-          log.cell_name || '',
-          log.operator_name || '',
-          log.shift || '',
-          log.result_status || log.status || '',
-          `"${(log.error_message || 'OK').replace(/"/g, '""')}"`
-        ].join(','))
-      ];
-
-      const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(csvRows.join('\n'));
-      const link = document.createElement('a');
-      link.setAttribute('href', csvContent);
-      link.setAttribute('download', `auditoria_integridade_lote_${new Date().toISOString().slice(0,10)}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      toast.success('Logs exportados com sucesso!');
-    } catch (_) {
-      toast.error('Erro ao exportar logs para CSV.');
-    }
+  const loadIntegrityReport = async () => {
+    const result = await fetchIntegrityAuditReportRows({
+      lot: lotSearch,
+      piece: pieceSearch,
+      status: statusFilter,
+      dateFrom,
+      dateTo,
+    });
+    return createIntegrityAuditReportDefinition({
+      ...result,
+      filters: { lot: lotSearch, piece: pieceSearch, status: statusFilter, dateFrom, dateTo },
+      generatedBy: user?.name || user?.email || '',
+    });
   };
 
   return (
@@ -179,9 +163,7 @@ export default function IntegrityLogs() {
         </div>
 
         <div className="flex justify-between items-center pt-2 border-t border-border/40">
-          <Button onClick={handleExportCSV} variant="outline" size="sm" className="h-9 rounded-xl gap-1.5 font-medium border-border/60">
-            <Download className="w-4 h-4" /> Exportar CSV
-          </Button>
+          <ExportReportMenu getReport={loadIntegrityReport} formats={['xlsx', 'csv']} className="h-9 rounded-xl text-xs font-medium border-border/60" />
           <Button onClick={() => refetch()} variant="outline" size="sm" className="h-9 rounded-xl gap-1.5 font-medium border-border/60">
             <RefreshCw className="w-4 h-4" /> Recarregar Logs
           </Button>

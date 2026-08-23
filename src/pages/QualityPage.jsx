@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ShieldAlert, BarChart3,
-  Download, RefreshCw, Layers,
+  RefreshCw, Layers,
   PieChart as PieIcon, Activity, Target, ClipboardList,
   CheckCircle2, AlertOctagon, Factory, TrendingDown, Loader2,
   Calendar, ChevronDown, SlidersHorizontal, ExternalLink, Info, Filter
@@ -13,16 +13,20 @@ import {
   Tooltip, Legend, CartesianGrid, PieChart, Pie, Cell, LabelList
 } from 'recharts';
 import { useAuth } from '@/lib/AuthContext';
-import {
-  getQualityDashboardMetrics,
-  getNonconformities,
-  exportNonconformitiesCSV
-} from '@/lib/qualityService';
+import { getQualityDashboardMetrics } from '@/lib/qualityService';
+import ExportReportMenu from '@/components/reports/ExportReportMenu';
+import { createQualityReportDefinition } from '@/lib/reports/qualityReportDefinition';
 import QualityDefectCatalogTab from '@/components/quality/QualityDefectCatalogTab';
 import NonconformitiesListTab from '@/components/quality/NonconformitiesListTab';
 import QualityChartDetailsModal from '@/components/quality/QualityChartDetailsModal';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { toast } from 'sonner';
+
+const QUALITY_PERIOD_LABELS = {
+  today: 'Hoje',
+  '7d': 'Últimos 7 dias',
+  '30d': 'Últimos 30 dias',
+  month: 'Este mês',
+};
 
 const SIX_M_COLORS = {
   'Máquina': '#f59e0b',
@@ -76,23 +80,21 @@ export default function QualityPage() {
     queryKey: ['quality-metrics', timeRange, selectedCell],
     queryFn: () => getQualityDashboardMetrics({
       period: timeRange,
-      cellId: selectedCell !== 'all' ? selectedCell : null
+      cellName: selectedCell !== 'all' ? selectedCell : null
     }),
     refetchInterval: 20_000,
     staleTime: 10_000,
     retry: 1,
   });
 
-  const handleExportCSV = async () => {
-    try {
-      const data = await getNonconformities({ limit: 1000 });
-      exportNonconformitiesCSV(data.nonconformities || []);
-      toast.success('Relatório CSV exportado com sucesso!');
-    } catch (error) {
-      console.error('Erro ao exportar CSV:', error);
-      toast.error('Falha ao exportar CSV de qualidade.');
-    }
-  };
+  const qualityReport = useMemo(() => createQualityReportDefinition({
+    metrics,
+    filters: {
+      periodLabel: QUALITY_PERIOD_LABELS[timeRange],
+      cell: selectedCell,
+    },
+    generatedBy: user?.name || user?.email || '',
+  }), [metrics, selectedCell, timeRange, user?.email, user?.name]);
 
   const openChartDetails = (chartType) => {
     setDetailsModalState({ open: true, chartType });
@@ -137,16 +139,11 @@ export default function QualityPage() {
             <SlidersHorizontal className="w-4 h-4" />
           </Button>
 
-          {/* Exportar CSV */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportCSV}
-            className="h-10 rounded-xl border-border/70 text-xs font-bold flex items-center gap-1.5 shadow-sm"
-          >
-            <Download className="w-4 h-4 text-emerald-600" />
-            Exportar CSV
-          </Button>
+          <ExportReportMenu
+            report={qualityReport}
+            disabled={isLoading || metricsIsError}
+            className="h-10 rounded-xl border-border/70 text-xs font-bold"
+          />
 
           {/* Atualizar */}
           <Button
@@ -564,6 +561,7 @@ export default function QualityPage() {
         onOpenChange={(isOpen) => setDetailsModalState((prev) => ({ ...prev, open: isOpen }))}
         chartType={detailsModalState.chartType}
         metrics={metrics}
+        report={qualityReport}
       />
 
       {/* Modal de Filtro Avançado */}

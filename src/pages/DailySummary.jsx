@@ -313,6 +313,7 @@ export default function DailySummary() {
             shift={selectedShifts}
             cell={selectedCells}
             summary={summary}
+            generatedBy={user?.name || user?.email || ''}
             cells={activeCells}
           />
           <CloseShiftButton

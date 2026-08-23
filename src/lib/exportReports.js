@@ -1,6 +1,6 @@
 // Exportação de dados de produção para CSV
-import { format } from 'date-fns';
 import { buildBrandedCsv, downloadBlob } from '@/lib/reportBranding';
+import { buildReportFilename } from '@/lib/reports/reportDataUtils';
 
 const HEADERS = [
   { key: 'date', label: 'Data' },
@@ -36,6 +36,6 @@ export function exportProductionCsv(entries, meta = {}) {
 
   downloadBlob(
     new Blob([csv], { type: 'text/csv;charset=utf-8;' }),
-    `relatorio-producao-${format(new Date(), 'yyyy-MM-dd')}.csv`
+    buildReportFilename({ id: 'producao', generatedAt: new Date().toISOString(), period: meta.period }, 'csv')
   );
 }

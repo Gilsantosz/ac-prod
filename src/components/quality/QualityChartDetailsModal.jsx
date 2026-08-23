@@ -1,12 +1,11 @@
 import {
-  BarChart3, PieChart as PieIcon, Activity, Factory, Download
+  BarChart3, PieChart as PieIcon, Activity, Factory
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { exportNonconformitiesCSV } from '@/lib/qualityService';
-import { toast } from 'sonner';
+import ExportReportMenu from '@/components/reports/ExportReportMenu';
 
-export default function QualityChartDetailsModal({ open, onOpenChange, chartType, metrics }) {
+export default function QualityChartDetailsModal({ open, onOpenChange, chartType, metrics, report }) {
   if (!chartType || !metrics) return null;
 
   let title = 'Detalhamento dos Indicadores';
@@ -35,16 +34,6 @@ export default function QualityChartDetailsModal({ open, onOpenChange, chartType
     Icon = Factory;
     iconColor = 'text-violet-500';
   }
-
-  const handleExportData = () => {
-    try {
-      exportNonconformitiesCSV(metrics.rawNCs || []);
-      toast.success('Relatório CSV detalhado exportado com sucesso!');
-    } catch (err) {
-      console.error(err);
-      toast.error('Falha ao exportar dados.');
-    }
-  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -198,15 +187,11 @@ export default function QualityChartDetailsModal({ open, onOpenChange, chartType
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0 flex-col sm:flex-row justify-between">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportData}
-            className="w-full sm:w-auto h-9 rounded-xl text-xs font-bold flex items-center gap-1.5"
-          >
-            <Download className="w-4 h-4 text-emerald-600" />
-            Exportar Dados (CSV)
-          </Button>
+          <ExportReportMenu
+            report={report}
+            formats={['csv']}
+            className="w-full sm:w-auto h-9 rounded-xl text-xs font-bold"
+          />
 
           <Button
             variant="outline"

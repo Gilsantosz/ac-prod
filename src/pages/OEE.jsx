@@ -11,8 +11,11 @@ import OeeByCellChart from '@/components/oee/OeeByCellChart';
 import OeeCellTable from '@/components/oee/OeeCellTable';
 import OeeReportButton from '@/components/oee/OeeReportButton';
 import { computeOEE, oeeByCell } from '@/lib/oeeMetrics';
+import { fetchProductionReportSnapshot } from '@/lib/reports/productionReportData';
+import { useAuth } from '@/lib/AuthContext';
 
 export default function OEE() {
+  const { user } = useAuth();
   // Dark mode detection
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
   useEffect(() => {
@@ -29,24 +32,32 @@ export default function OEE() {
     cell: 'all',
   });
 
-  const { getCell } = useCells();
+  const { getCell, activeCells } = useCells();
   const chartsRef = useRef(null);
 
-  const { data: all = [] } = useQuery({
-    queryKey: ['production'],
-    queryFn: () => base44.entities.ProductionEntry.list('-date', 5000),
-    initialData: [],
+  const { data: productionSnapshot } = useQuery({
+    queryKey: ['report', 'oee-source', filters.date, filters.shift, filters.cell],
+    queryFn: () => fetchProductionReportSnapshot({
+      period: { from: filters.date, to: filters.date },
+      filters: { shift: filters.shift, cell: filters.cell },
+      includeComparison: false,
+    }),
     refetchInterval: 15000,
   });
+  const all = productionSnapshot?.entries || [];
 
   const { data: allOccurrences = [] } = useQuery({
-    queryKey: ['occurrences'],
-    queryFn: () => base44.entities.Occurrence.list('-created_date', 500),
+    queryKey: ['occurrences', 'oee', filters.date, filters.shift, filters.cell],
+    queryFn: () => base44.entities.Occurrence.filter({
+      date: filters.date,
+      ...(filters.shift !== 'all' ? { shift: filters.shift } : {}),
+      ...(filters.cell !== 'all' ? { cell: filters.cell } : {}),
+    }, '-created_date'),
     initialData: [],
     refetchInterval: 15000,
   });
 
-  const cells = useMemo(() => [...new Set(all.map((e) => e.cell).filter(Boolean))], [all]);
+  const cells = useMemo(() => activeCells.map((cell) => cell.name).filter(Boolean), [activeCells]);
 
   const filtered = useMemo(() => all.filter((e) => {
     if (filters.date && e.date !== filters.date) return false;
@@ -89,7 +100,7 @@ export default function OEE() {
           <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
             <DashboardFilters filters={filters} setFilters={setFilters} cells={cells} />
             <div className="w-full sm:w-auto shrink-0 flex">
-              <OeeReportButton overall={overall} byCell={byCell} occurrences={filteredOccurrences} meta={reportMeta} chartsRef={chartsRef} disabled={filtered.length === 0} />
+              <OeeReportButton overall={overall} byCell={byCell} occurrences={filteredOccurrences} meta={reportMeta} filters={filters} chartsRef={chartsRef} generatedBy={user?.name || user?.email || ''} disabled={filtered.length === 0} />
             </div>
           </div>
         }

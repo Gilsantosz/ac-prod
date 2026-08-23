@@ -137,6 +137,8 @@ export default defineConfig(({ mode }) => {
           cleanupOutdatedCaches: true,
           // Mantém somente os arquivos estáticos do aplicativo no cache.
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          // O motor Excel é carregado e armazenado pelo navegador somente quando o usuário exporta.
+          globIgnores: ['**/exceljs.min-*.js'],
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           // Dados MES são transacionais: nunca reutilizar respostas antigas do Supabase.
           // O modo offline e a fila durável de coletas são controlados pela aplicação,
