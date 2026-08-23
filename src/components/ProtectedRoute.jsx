@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import { Lock, ShieldAlert, ArrowLeft, LogOut } from 'lucide-react';
-import { canUserViewRoute, getRouteAccess, permissionLabels } from '@/config/appRoutes';
+import { canUserViewRoute, getRouteAccess, isRouteOnStandby, permissionLabels } from '@/config/appRoutes';
 import { navTo } from '@/lib/navigation';
 
 
@@ -36,6 +36,10 @@ export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthe
 
   if (!isAuthenticated) {
     return unauthenticatedElement;
+  }
+
+  if (isRouteOnStandby(location.pathname)) {
+    return <Navigate to="/" replace />;
   }
 
   // Controle de Rota baseado em Permissões Granulares (RBAC)

@@ -16,7 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { appRoutes, routeGroups } from '@/config/appRoutes';
+import { activeAppRoutes, routeGroups } from '@/config/appRoutes';
 
 const DESKTOP_POINTER_QUERY = '(hover: hover) and (pointer: fine)';
 const SIDEBAR_CLOSE_DELAY_MS = 180;
@@ -80,7 +80,7 @@ function AppShell() {
     hovered, focused, profileOpen, notificationsOpen,
   });
 
-  const visibleNav = useMemo(() => appRoutes.filter((item) => {
+  const visibleNav = useMemo(() => activeAppRoutes.filter((item) => {
     if (!item.showInSidebar) return false;
     if (item.permission === 'adminOnly' && user?.role !== 'admin') return false;
     if (user?.role === 'operator' && ['/pcp', '/celulas-metas', '/usuarios', '/rotas-produtivas'].includes(item.path)) return false;
