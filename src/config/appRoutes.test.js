@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  activeAppRoutes,
   canUserEditRoute,
   canUserViewRoute,
   getRouteAccess,
+  isRouteOnStandby,
+  pageAccessCatalog,
 } from './appRoutes';
 import { normalizePagePermissions } from '@/components/users/PageAccessMatrix';
 
@@ -11,13 +14,30 @@ describe('controle granular de acesso às páginas', () => {
     const user = {
       role: 'viewer',
       permissions: {
-        view_packaging: true,
-        manage_packaging: false,
+        view_quality: true,
+        manage_quality: false,
       },
     };
 
-    expect(canUserViewRoute(user, '/embalagem')).toBe(true);
-    expect(canUserEditRoute(user, '/embalagem')).toBe(false);
+    expect(canUserViewRoute(user, '/qualidade')).toBe(true);
+    expect(canUserEditRoute(user, '/qualidade')).toBe(false);
+  });
+
+  it('mantém as páginas em standby fora da navegação e bloqueia acessos diretos e aliases', () => {
+    const standbyPaths = ['/baixa-manual', '/embalagem', '/expedicao'];
+    const admin = { role: 'admin', permissions: {} };
+
+    standbyPaths.forEach((path) => {
+      expect(isRouteOnStandby(path)).toBe(true);
+      expect(canUserViewRoute(admin, path)).toBe(false);
+      expect(canUserEditRoute(admin, path)).toBe(false);
+      expect(activeAppRoutes.some((route) => route.path === path)).toBe(false);
+      expect(pageAccessCatalog.some((route) => route.path === path)).toBe(false);
+    });
+
+    expect(isRouteOnStandby('/entrada-manual')).toBe(true);
+    expect(isRouteOnStandby('/rastreabilidade/embalagem')).toBe(true);
+    expect(isRouteOnStandby('/rastreabilidade/expedicao')).toBe(true);
   });
 
   it('preserva compatibilidade com a permissão operacional antiga', () => {

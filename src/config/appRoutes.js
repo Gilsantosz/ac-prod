@@ -20,6 +20,16 @@ export const routeGroups = {
   admin:       'Administração'
 };
 
+// Páginas preservadas no código, mas temporariamente indisponíveis no produto.
+// Para reativar uma página, basta remover o caminho desta lista.
+export const STANDBY_PAGE_PATHS = Object.freeze([
+  '/baixa-manual',
+  '/embalagem',
+  '/expedicao',
+]);
+
+const standbyPagePaths = new Set(STANDBY_PAGE_PATHS);
+
 export const appRoutes = [
   // ─── GRUPO 1: OPERAÇÃO ──────────────────────────────────────────────
   {
@@ -153,7 +163,8 @@ export const appRoutes = [
     permission: 'manage_packaging',
     showInSidebar: true,
     showInDashboardHub: true,
-    tabTarget: 'packaging'
+    tabTarget: 'packaging',
+    aliases: ['/rastreabilidade/embalagem']
   },
   {
     path: '/expedicao',
@@ -164,7 +175,8 @@ export const appRoutes = [
     permission: 'manage_shipping',
     showInSidebar: true,
     showInDashboardHub: true,
-    tabTarget: 'shipping'
+    tabTarget: 'shipping',
+    aliases: ['/rastreabilidade/expedicao']
   },
   {
     path: '/alertas-mes',
@@ -336,6 +348,18 @@ export const appRoutes = [
   }
 ];
 
+export const isRouteOnStandby = (path = '/') => {
+  const cleanPath = String(path).split('?')[0].replace(/\/$/, '') || '/';
+  if (standbyPagePaths.has(cleanPath)) return true;
+  const route = appRoutes.find((item) => (
+    item.path === cleanPath
+    || item.aliases?.some((alias) => alias.split('?')[0] === cleanPath)
+  ));
+  return route ? standbyPagePaths.has(route.path) : false;
+};
+
+export const activeAppRoutes = appRoutes.filter((route) => !isRouteOnStandby(route.path));
+
 const PAGE_ACCESS_OVERRIDES = {
   '/': { viewPermission: 'view_dashboards' },
   '/coleta': { viewPermission: 'view_collection', editPermission: 'traceability_collect' },
@@ -377,7 +401,9 @@ export const routeAccessCatalog = appRoutes
     }),
   }));
 
-export const pageAccessCatalog = routeAccessCatalog.filter((route) => route.showInSidebar);
+export const pageAccessCatalog = routeAccessCatalog.filter(
+  (route) => route.showInSidebar && !isRouteOnStandby(route.path)
+);
 
 const normalizePath = (path = '/') => {
   const cleanPath = String(path).split('?')[0].replace(/\/$/, '') || '/';
@@ -413,12 +439,14 @@ const getPermissionValue = (user, permission, legacyPermission) => {
 };
 
 export const canUserViewRoute = (user, path) => {
+  if (isRouteOnStandby(path)) return false;
   const access = getRouteAccess(path);
   if (access.adminOnly && user?.role !== 'admin') return false;
   return getPermissionValue(user, access.viewPermission, access.legacyViewPermission || access.editPermission);
 };
 
 export const canUserEditRoute = (user, path) => {
+  if (isRouteOnStandby(path)) return false;
   const access = getRouteAccess(path);
   if (!access.editPermission) return false;
   if (access.adminOnly && user?.role !== 'admin') return false;

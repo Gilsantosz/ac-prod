@@ -1,4 +1,4 @@
-import { appRoutes, canUserViewRoute, getRouteAccess, routeGroups } from '@/config/appRoutes';
+import { activeAppRoutes, canUserViewRoute, getRouteAccess, routeGroups } from '@/config/appRoutes';
 
 const STAGES = [
   ['imported', 'Importado'],
@@ -87,7 +87,7 @@ function topicKeywords(route) {
  * Ao adicionar uma página em appRoutes, o chat passa a reconhecê-la sem manter
  * uma segunda lista manual e sujeita a ficar desatualizada.
  */
-export const NAVIGATION_TOPICS = appRoutes.map((route) => {
+export const NAVIGATION_TOPICS = activeAppRoutes.map((route) => {
   const access = getRouteAccess(route.path);
   return {
     path: route.path,
