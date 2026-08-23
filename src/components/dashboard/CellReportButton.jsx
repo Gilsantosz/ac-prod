@@ -20,7 +20,7 @@ import { FileText, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportCellReport } from '@/lib/exportCellReport';
 
-export default function CellReportButton({ cells, allEntries, date }) {
+export default function CellReportButton({ cells, allEntries, date, periodLabel }) {
   const [open, setOpen] = useState(false);
   const [cell, setCell] = useState('');
   const [busy, setBusy] = useState(false);
@@ -32,12 +32,12 @@ export default function CellReportButton({ cells, allEntries, date }) {
     }
     const cellEntries = allEntries.filter((e) => e.cell === cell && (!date || e.date === date));
     if (!cellEntries.length) {
-      toast.error('Nenhum registro para esta célula na data selecionada');
+      toast.error('Nenhum registro para esta célula no período selecionado');
       return;
     }
     setBusy(true);
     try {
-      await exportCellReport(cell, date, allEntries);
+      await exportCellReport(cell, date, allEntries, undefined, periodLabel);
       toast.success('Relatório PDF gerado');
       setOpen(false);
     } catch {
@@ -81,7 +81,7 @@ export default function CellReportButton({ cells, allEntries, date }) {
               </Select>
             </div>
             <p className="text-sm text-muted-foreground">
-              Data: {date || 'Todas as datas'} — o PDF inclui resumo de eficiência, metas atingidas e observações por turno.
+              Período: {periodLabel || date || 'Todas as datas'} — o PDF inclui resumo de eficiência, metas atingidas e observações por turno.
             </p>
           </div>
           <DialogFooter className="border-t border-border/60 pt-4">

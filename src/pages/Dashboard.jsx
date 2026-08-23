@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/lib/localDb';
 import { supabase } from '@/lib/supabaseClient';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Package, Target, Gauge, AlertTriangle, Monitor, Minimize2, LayoutDashboard, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -44,18 +44,19 @@ import DailyProductionCard from '@/components/dashboard/DailyProductionCard';
 import DashboardLayoutSettings from '@/components/dashboard/DashboardLayoutSettings';
 import RealtimeCellProgressPanel from '@/components/dashboard/RealtimeCellProgressPanel';
 import GeneralLotProgressPanel from '@/components/dashboard/GeneralLotProgressPanel';
+import AnnualProductionSummary from '@/components/dashboard/AnnualProductionSummary';
+import {
+  ANNUAL_FILTER_DISABLED,
+  buildDashboardYearOptions,
+  getDashboardPeriodRange,
+  isAnnualFilterActive,
+  matchesDashboardPeriod,
+} from '@/lib/dashboardPeriod';
 
 const PANEL_IDS = ['realtimeProgress', 'generalLotProgress', 'monthlyTracker', 'dailyProduction', 'charts', 'weeklyRanking', 'effDrop', 'goalProgress', 'goalProjection', 'weeklyTrend', 'highPerformers'];
 
-async function fetchDashboardProductionEntries(referenceDate) {
-  const reference = new Date(`${referenceDate}T12:00:00`);
-  const rangeStart = new Date(reference.getFullYear(), reference.getMonth(), 1);
-  rangeStart.setDate(rangeStart.getDate() - 7);
-  const rangeEnd = new Date(reference.getFullYear(), reference.getMonth() + 1, 1);
-  rangeEnd.setDate(rangeEnd.getDate() + 1);
-
-  const startDate = format(rangeStart, 'yyyy-MM-dd');
-  const endDate = format(rangeEnd, 'yyyy-MM-dd');
+async function fetchDashboardProductionEntries(referenceDate, year) {
+  const { startDate, endDate } = getDashboardPeriodRange(referenceDate, year);
   const pageSize = 1000;
   const rows = [];
 
@@ -76,24 +77,49 @@ async function fetchDashboardProductionEntries(referenceDate) {
   return rows.map(row => ({ ...row, created_date: row.created_at }));
 }
 
+async function fetchDashboardYearBounds() {
+  const [oldestResult, newestResult] = await Promise.all([
+    supabase
+      .from('production_entries')
+      .select('date')
+      .not('date', 'is', null)
+      .order('date', { ascending: true })
+      .limit(1),
+    supabase
+      .from('production_entries')
+      .select('date')
+      .not('date', 'is', null)
+      .order('date', { ascending: false })
+      .limit(1),
+  ]);
+
+  if (oldestResult.error) throw oldestResult.error;
+  if (newestResult.error) throw newestResult.error;
+  return {
+    oldestDate: oldestResult.data?.[0]?.date,
+    newestDate: newestResult.data?.[0]?.date,
+  };
+}
+
 export default function Dashboard({ kioskModeOverride = false }) {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const [theme, setTheme] = useTheme();
 
   const [filters, setFilters] = useState({
     date: format(new Date(), 'yyyy-MM-dd'),
+    year: ANNUAL_FILTER_DISABLED,
     shift: 'all',
     cell: 'all',
   });
+  const annualMode = isAnnualFilterActive(filters.year);
 
-  const { data: all = [] } = useQuery({
-    queryKey: ['production', filters.date],
-    queryFn: () => fetchDashboardProductionEntries(filters.date),
+  const { data: all = [], isFetching: productionLoading } = useQuery({
+    queryKey: ['production', 'dashboard', filters.date, filters.year],
+    queryFn: () => fetchDashboardProductionEntries(filters.date, filters.year),
     initialData: [],
     staleTime: 0,
     refetchOnMount: true,
-    refetchInterval: 10000,
+    refetchInterval: annualMode ? false : 10000,
   });
 
   const { data: goals = [] } = useQuery({
@@ -101,6 +127,17 @@ export default function Dashboard({ kioskModeOverride = false }) {
     queryFn: () => base44.entities.DailyGoal.list('-date', 200),
     initialData: [],
   });
+
+  const { data: yearBounds } = useQuery({
+    queryKey: ['dashboard-production-year-bounds'],
+    queryFn: fetchDashboardYearBounds,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const availableYears = useMemo(
+    () => buildDashboardYearOptions(yearBounds?.oldestDate, yearBounds?.newestDate),
+    [yearBounds],
+  );
 
   const { activeCells } = useCells();
   const validCellNames = useMemo(() => activeCells.map(c => c.name.trim()), [activeCells]);
@@ -153,7 +190,7 @@ export default function Dashboard({ kioskModeOverride = false }) {
   const filtered = useMemo(() => all.filter((e) => {
     const eCell = (e.cell || '').trim();
     if (!validCellNames.includes(eCell)) return false;
-    if (filters.date && e.date !== filters.date) return false;
+    if (!matchesDashboardPeriod(e.date, filters.date, filters.year)) return false;
     if (filters.shift !== 'all' && e.shift !== filters.shift) return false;
     if (activeCell !== 'all' && eCell !== activeCell) return false;
     return true;
@@ -189,15 +226,19 @@ export default function Dashboard({ kioskModeOverride = false }) {
     return result;
   }, [filtered, cells]);
   const performers = useMemo(() => highPerformers(filtered, 95), [filtered]);
-  const projection = useMemo(() => projectGoal(filtered, 3), [filtered]);
-  const effDrop = useMemo(() => detectEfficiencyDrop(filtered, 3, 10), [filtered]);
+  const projection = useMemo(() => projectGoal(annualMode ? [] : filtered, 3), [annualMode, filtered]);
+  const effDrop = useMemo(() => detectEfficiencyDrop(annualMode ? [] : filtered, 3, 10), [annualMode, filtered]);
+  const dashboardReferenceDate = useMemo(
+    () => filters.date ? new Date(`${filters.date}T12:00:00`) : new Date(),
+    [filters.date],
+  );
   const monthlyTracking = useMemo(() => {
     const validEntries = all.filter(e => validCellNames.includes(e.cell));
     const validGoals = goals.filter(g => validCellNames.includes(g.cell));
     const cellEntries = activeCell === 'all' ? validEntries : validEntries.filter(e => e.cell === activeCell);
     const cellGoals = activeCell === 'all' ? validGoals : validGoals.filter(g => g.cell === activeCell);
-    return monthlyGoalTracking(cellEntries, cellGoals);
-  }, [all, goals, activeCell, validCellNames]);
+    return monthlyGoalTracking(cellEntries, cellGoals, dashboardReferenceDate);
+  }, [all, goals, activeCell, validCellNames, dashboardReferenceDate]);
 
   const cellMonthlyTrackings = useMemo(() => {
     if (activeCell !== 'all') return [];
@@ -216,11 +257,11 @@ export default function Dashboard({ kioskModeOverride = false }) {
     const trackings = [];
     for (const [cellName, data] of Object.entries(cellMap)) {
       if (!validCellNames.includes(cellName)) continue;
-      const tr = monthlyGoalTracking(data.entries, data.goals);
+      const tr = monthlyGoalTracking(data.entries, data.goals, dashboardReferenceDate);
       if (tr && tr.target > 0) trackings.push({ cell: cellName, ...tr });
     }
     return trackings.sort((a, b) => b.completedPct - a.completedPct);
-  }, [all, goals, activeCell, validCellNames]);
+  }, [all, goals, activeCell, validCellNames, dashboardReferenceDate]);
   const ranking = useMemo(
     () => weeklyRanking(all.filter(e => validCellNames.includes(e.cell)), goals.filter(g => validCellNames.includes(g.cell)), filters.date ? new Date(filters.date + 'T00:00:00') : new Date()),
     [all, goals, filters.date, validCellNames]
@@ -233,6 +274,7 @@ export default function Dashboard({ kioskModeOverride = false }) {
   const weeklyTrendLabel = filters.cell === 'all' ? 'Todas as células' : filters.cell;
 
   const goalProgress = useMemo(() => {
+    if (annualMode) return [];
     return goals
       .filter((g) => {
         if (!validCellNames.includes(g.cell)) return false;
@@ -248,15 +290,16 @@ export default function Dashboard({ kioskModeOverride = false }) {
         return { cell: g.cell, shift: g.shift, target: Number(g.target) || 0, produced };
       })
       .filter((it) => it.target > 0);
-  }, [goals, filtered, filters, validCellNames]);
+  }, [annualMode, goals, filtered, filters, validCellNames]);
 
-  usePerformanceAlert(performers);
+  const alertPerformers = useMemo(() => annualMode ? [] : performers, [annualMode, performers]);
+  usePerformanceAlert(alertPerformers);
   useEfficiencyDropAlert(effDrop);
 
   // Monitora células com eficiência < 70% por 3h+ seguidas (sobre os dados do dia selecionado)
   const dayEntries = useMemo(
-    () => all.filter((e) => !filters.date || e.date === filters.date),
-    [all, filters.date]
+    () => annualMode ? [] : all.filter((e) => !filters.date || e.date === filters.date),
+    [annualMode, all, filters.date]
   );
   const lowEffAlerts = useMemo(
     () => detectSustainedLowEfficiency(dayEntries, 70, 3),
@@ -267,34 +310,83 @@ export default function Dashboard({ kioskModeOverride = false }) {
   const chartsRef = useRef(null);
   const { order, hidden, sizes, reorder, toggleHidden, toggleSize } = useDashboardLayout(PANEL_IDS);
 
-  const panels = useMemo(() => [
-    { id: 'realtimeProgress', title: 'Produção em Tempo Real', node: <RealtimeCellProgressPanel date={filters.date} kioskCell={kioskCell} filterCell={kiosk ? kioskCell : filters.cell} /> },
-    { id: 'generalLotProgress', title: 'Lotes Gerais PCP', node: <GeneralLotProgressPanel /> },
-    { id: 'monthlyTracker', title: 'Acompanhamento Mensal', node: <MonthlyGoalTracker tracking={monthlyTracking} cellTrackings={cellMonthlyTrackings} /> },
-    { id: 'dailyProduction', title: 'Produção Diária', node: <DailyProductionCard filtered={filtered} kiosk={kiosk} kioskCell={kioskCell} /> },
-    { id: 'weeklyRanking', title: 'Ranking Semanal', node: <WeeklyRankingPanel ranking={ranking} /> },
-    { id: 'effDrop', title: 'Alerta de Eficiência', node: <EfficiencyAlert alert={effDrop} /> },
-    { id: 'goalProgress', title: 'Progresso do Turno', node: <GoalProgressPanel items={goalProgress} /> },
-    { id: 'goalProjection', title: 'Projeção de Meta', node: <GoalProjection projection={projection} /> },
-    { id: 'weeklyTrend', title: 'Tendência Semanal', node: <WeeklyEfficiencyChart data={weeklyTrend} cellLabel={weeklyTrendLabel} /> },
-    { id: 'highPerformers', title: 'Operadores Destaque', node: <HighPerformerPanel performers={performers} /> },
-    {
-      id: 'charts',
-      title: 'Gráficos de Produtividade',
+  const panels = useMemo(() => {
+    const result = [];
+
+    if (!annualMode) {
+      result.push({
+        id: 'realtimeProgress',
+        title: 'Produção em Tempo Real',
+        node: <RealtimeCellProgressPanel date={filters.date} kioskCell={kioskCell} filterCell={kiosk ? kioskCell : filters.cell} />,
+      });
+    }
+
+    result.push({ id: 'generalLotProgress', title: 'Lotes Gerais PCP', node: <GeneralLotProgressPanel /> });
+    result.push({
+      id: 'monthlyTracker',
+      title: annualMode ? `Resumo Anual ${filters.year}` : 'Acompanhamento Mensal',
+      node: annualMode
+        ? <AnnualProductionSummary entries={filtered} year={filters.year} chartRef={chartsRef} loading={productionLoading} />
+        : <MonthlyGoalTracker tracking={monthlyTracking} cellTrackings={cellMonthlyTrackings} />,
+    });
+    result.push({
+      id: 'dailyProduction',
+      title: annualMode ? `Produção Anual ${filters.year}` : 'Produção Diária',
       node: (
-        <div ref={chartsRef} className={kiosk ? 'space-y-4 bg-background' : 'space-y-6 bg-background'}>
+        <DailyProductionCard
+          filtered={filtered}
+          kiosk={kiosk}
+          kioskCell={kioskCell}
+          periodMode={annualMode ? 'annual' : 'daily'}
+          periodLabel={annualMode ? filters.year : ''}
+        />
+      ),
+    });
+
+    if (!annualMode) {
+      result.push(
+        { id: 'weeklyRanking', title: 'Ranking Semanal', node: <WeeklyRankingPanel ranking={ranking} /> },
+        { id: 'effDrop', title: 'Alerta de Eficiência', node: <EfficiencyAlert alert={effDrop} /> },
+        { id: 'goalProgress', title: 'Progresso do Turno', node: <GoalProgressPanel items={goalProgress} /> },
+        { id: 'goalProjection', title: 'Projeção de Meta', node: <GoalProjection projection={projection} /> },
+        { id: 'weeklyTrend', title: 'Tendência Semanal', node: <WeeklyEfficiencyChart data={weeklyTrend} cellLabel={weeklyTrendLabel} /> },
+      );
+    }
+
+    result.push({
+      id: 'highPerformers',
+      title: annualMode ? 'Operadores Destaque no Ano' : 'Operadores Destaque',
+      node: <HighPerformerPanel performers={performers} />,
+    });
+    result.push({
+      id: 'charts',
+      title: annualMode ? 'Comparativos Anuais' : 'Gráficos de Produtividade',
+      node: (
+        <div ref={annualMode ? undefined : chartsRef} className={kiosk ? 'space-y-4 bg-background' : 'space-y-6 bg-background'}>
+          {!annualMode && (
+            <div className={kiosk ? 'grid grid-cols-1 xl:grid-cols-2 gap-4' : 'grid grid-cols-1 lg:grid-cols-2 gap-6'}>
+              <HourlyChart grouped={byHour} />
+              <TrendChart grouped={byHour} />
+            </div>
+          )}
           <div className={kiosk ? 'grid grid-cols-1 xl:grid-cols-2 gap-4' : 'grid grid-cols-1 lg:grid-cols-2 gap-6'}>
-            <HourlyChart grouped={byHour} />
-            <TrendChart grouped={byHour} />
-          </div>
-          <div className={kiosk ? 'grid grid-cols-1 xl:grid-cols-2 gap-4' : 'grid grid-cols-1 lg:grid-cols-2 gap-6'}>
-            <ShiftCellPanel title="Produtividade por Turno" subtitle="Comparativo entre turnos" grouped={byShift} />
-            <ShiftCellPanel title="Produtividade por Célula" subtitle="Comparativo entre células" grouped={byCell} />
+            <ShiftCellPanel
+              title={`Produtividade por Turno${annualMode ? ` — ${filters.year}` : ''}`}
+              subtitle={annualMode ? 'Comparativo consolidado do ano' : 'Comparativo entre turnos'}
+              grouped={byShift}
+            />
+            <ShiftCellPanel
+              title={`Produtividade por Célula${annualMode ? ` — ${filters.year}` : ''}`}
+              subtitle={annualMode ? 'Comparativo consolidado do ano' : 'Comparativo entre células'}
+              grouped={byCell}
+            />
           </div>
         </div>
       ),
-    },
-  ], [filters.date, filters.cell, monthlyTracking, cellMonthlyTrackings, ranking, effDrop, goalProgress, projection, weeklyTrend, weeklyTrendLabel, performers, byHour, byShift, byCell, kiosk, kioskCell, filtered]);
+    });
+
+    return result;
+  }, [annualMode, filters.date, filters.cell, filters.year, monthlyTracking, cellMonthlyTrackings, ranking, effDrop, goalProgress, projection, weeklyTrend, weeklyTrendLabel, performers, byHour, byShift, byCell, kiosk, kioskCell, filtered, productionLoading]);
 
   return (
     <div className={kiosk ? 'p-4 space-y-4' : 'p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6'}>
@@ -303,14 +395,21 @@ export default function Dashboard({ kioskModeOverride = false }) {
         <>
           <PageHeader
             title={`Painéis de Produtividade`}
-            subtitle="Indicadores automáticos por turno, célula e hora."
+            subtitle={annualMode
+              ? `Resumo consolidado de janeiro a dezembro de ${filters.year}.`
+              : 'Indicadores automáticos por turno, célula e hora.'}
             icon={LayoutDashboard}
             actions={
-              <DashboardFilters filters={filters} setFilters={setFilters} cells={cells} />
+              <DashboardFilters filters={filters} setFilters={setFilters} cells={cells} years={availableYears} />
             }
           />
           <div className="flex flex-wrap items-center gap-2.5">
-            <CellReportButton cells={cells} allEntries={all} date={filters.date} />
+            <CellReportButton
+              cells={cells}
+              allEntries={all}
+              date={annualMode ? null : filters.date}
+              periodLabel={annualMode ? `Ano de ${filters.year}` : ''}
+            />
             <ExportMenu entries={filtered} allEntries={all} filters={filters} chartsRef={chartsRef} />
             <DashboardLayoutSettings panels={panels} hidden={hidden} sizes={sizes} toggleHidden={toggleHidden} toggleSize={toggleSize} />
             <Button
@@ -350,10 +449,10 @@ export default function Dashboard({ kioskModeOverride = false }) {
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard index={0} title="Total Produzido" value={totalProduced.toLocaleString('pt-BR')} icon={Package} accent="accent" sub={`${filtered.length} registros`} />
-        <KpiCard index={1} title="Meta Total" value={totalTarget.toLocaleString('pt-BR')} icon={Target} accent="primary" />
+        <KpiCard index={0} title="Total Produzido" value={totalProduced.toLocaleString('pt-BR')} icon={Package} accent="accent" sub={`${annualMode ? `${filters.year} · ` : ''}${filtered.length} registros`} />
+        <KpiCard index={1} title={annualMode ? 'Meta Anual' : 'Meta Total'} value={totalTarget.toLocaleString('pt-BR')} icon={Target} accent="primary" />
         <KpiCard index={2} title="Eficiência" value={eff} unit="%" icon={Gauge} accent={eff >= 90 ? 'accent' : eff >= 70 ? 'warning' : 'danger'} sub={`Refugo ${scrapRate(totalScrap, totalProduced)}%`} />
-        <KpiCard index={3} title="Falhas Críticas" value={critCount} icon={AlertTriangle} accent={critCount ? 'danger' : 'accent'} />
+        <KpiCard index={3} title={annualMode ? 'Falhas Críticas no Ano' : 'Falhas Críticas'} value={critCount} icon={AlertTriangle} accent={critCount ? 'danger' : 'accent'} />
       </div>
 
       <div key="sortable-panels">
