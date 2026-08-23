@@ -1,12 +1,14 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Calendar, ClipboardList, ChevronDown, SlidersHorizontal,
+  Calendar, CalendarRange, ClipboardList, ChevronDown,
   RefreshCw
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuth } from '@/lib/AuthContext';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,8 +17,14 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { buildDailySummary } from '@/lib/dailySummary';
-import { fetchProductionEntriesRange, fetchProductionGoalsRange } from '@/lib/dailySummaryData';
+import { aggregateDailyGoals, buildDailySummary } from '@/lib/dailySummary';
+import {
+  fetchDailySummaryYearBounds,
+  fetchProductionEntriesRange,
+  fetchProductionGoalsRange,
+} from '@/lib/dailySummaryData';
+import { ANNUAL_FILTER_DISABLED, getDailySummaryPeriod } from '@/lib/dailySummaryPeriod';
+import { buildDashboardYearOptions } from '@/lib/dashboardPeriod';
 import { useCells } from '@/hooks/useCells';
 import { useProductionRealtimeSync } from '@/hooks/useProductionRealtimeSync';
 import { getCanonicalCellKey } from '@/lib/productionStagePolicyService';
@@ -42,17 +50,22 @@ function daysBefore(dateStr, amount) {
   return getLocalDateStr(value);
 }
 
+const MONTH_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
 export default function DailySummary() {
   const { user } = useAuth();
   const [date, setDate] = useState(() => getLocalDateStr());
+  const [year, setYear] = useState(ANNUAL_FILTER_DISABLED);
   const [selectedShifts, setSelectedShifts] = useState(['1º Turno', '2º Turno', '3º Turno']);
   const [selectedCells, setSelectedCells] = useState([]);
   const { activeCells } = useCells();
+  const period = useMemo(() => getDailySummaryPeriod(date, year), [date, year]);
+  const { fromDate, toDate, annual: annualMode } = period;
 
   // Ativa sincronização em tempo real via Supabase Realtime
   useProductionRealtimeSync({ enabled: true });
 
-  // 1. Snapshot produtivo do dia atual (Carregamento prioritário na abertura)
+  // 1. Snapshot produtivo do período selecionado (carregamento prioritário)
   const {
     data: entries = [],
     dataUpdatedAt: entriesUpdatedAt,
@@ -60,12 +73,12 @@ export default function DailySummary() {
     isError: entriesError,
     refetch: refetchEntries,
   } = useQuery({
-    queryKey: ['production', date],
-    queryFn: () => fetchProductionEntriesRange(date),
-    initialData: [],
+    queryKey: ['production', 'daily-summary', fromDate, toDate],
+    queryFn: () => fetchProductionEntriesRange(fromDate, toDate),
+    placeholderData: [],
     staleTime: 10_000,
     refetchOnMount: 'always',
-    refetchInterval: 30_000, // Fallback a cada 30 segundos
+    refetchInterval: annualMode ? false : 30_000, // Fallback a cada 30 segundos
   });
 
   const {
@@ -75,15 +88,29 @@ export default function DailySummary() {
     isError: goalsError,
     refetch: refetchGoals,
   } = useQuery({
-    queryKey: ['productionDailyGoals', date],
-    queryFn: () => fetchProductionGoalsRange(date),
-    initialData: [],
+    queryKey: ['productionDailyGoals', fromDate, toDate],
+    queryFn: () => fetchProductionGoalsRange(fromDate, toDate),
+    placeholderData: [],
     staleTime: 10_000,
     refetchOnMount: 'always',
-    refetchInterval: 30_000, // Fallback a cada 30 segundos
+    refetchInterval: annualMode ? false : 30_000, // Fallback a cada 30 segundos
   });
 
-  // 2. Histórico de 7 dias (Carregado SOMENTE depois que os dados principais forem obtidos)
+  const {
+    data: yearBounds,
+    refetch: refetchYearBounds,
+  } = useQuery({
+    queryKey: ['daily-summary-year-bounds'],
+    queryFn: fetchDailySummaryYearBounds,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const availableYears = useMemo(
+    () => buildDashboardYearOptions(yearBounds?.oldestDate, yearBounds?.newestDate),
+    [yearBounds],
+  );
+
+  // 2. Histórico de 7 dias, usado apenas na visualização diária
   const isMainDataLoaded = !isFetchingEntries && !isFetchingGoals;
   const historyStart = useMemo(() => daysBefore(date, 6), [date]);
 
@@ -96,8 +123,8 @@ export default function DailySummary() {
   } = useQuery({
     queryKey: ['daily-summary-history', historyStart, date],
     queryFn: () => fetchProductionEntriesRange(historyStart, date),
-    initialData: [],
-    enabled: isMainDataLoaded,
+    placeholderData: [],
+    enabled: isMainDataLoaded && !annualMode,
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
@@ -108,8 +135,8 @@ export default function DailySummary() {
   } = useQuery({
     queryKey: ['daily-summary-history-goals', historyStart, date],
     queryFn: () => fetchProductionGoalsRange(historyStart, date),
-    initialData: [],
-    enabled: isMainDataLoaded,
+    placeholderData: [],
+    enabled: isMainDataLoaded && !annualMode,
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
@@ -164,15 +191,42 @@ export default function DailySummary() {
     () => (selectedCells.length > 0 ? selectedCells : activeCells.map((cell) => cell.name)),
     [selectedCells, activeCells],
   );
+  const summaryGoals = useMemo(
+    () => annualMode ? aggregateDailyGoals(filteredGoals) : filteredGoals,
+    [annualMode, filteredGoals],
+  );
   const summary = useMemo(
-    () => buildDailySummary(filtered, filteredGoals, {
+    () => buildDailySummary(filtered, summaryGoals, {
       activeCells: summaryCells,
       shifts: selectedShifts,
     }),
-    [filtered, filteredGoals, summaryCells, selectedShifts],
+    [filtered, summaryGoals, summaryCells, selectedShifts],
   );
 
   const evolutionData = useMemo(() => {
+    if (annualMode) {
+      return MONTH_LABELS.map((monthLabel, index) => {
+        const monthPrefix = `${year}-${String(index + 1).padStart(2, '0')}`;
+        const monthEntries = filtered.filter((entry) => entry.date?.startsWith(monthPrefix));
+        const monthGoals = aggregateDailyGoals(
+          filteredGoals.filter((goal) => goal.date?.startsWith(monthPrefix)),
+        );
+        const monthSummary = buildDailySummary(monthEntries, monthGoals, {
+          activeCells: summaryCells,
+          shifts: selectedShifts,
+        });
+        const target = monthSummary.totalsByUnit.reduce((sum, row) => sum + (Number(row.target) || 0), 0);
+        const realized = monthSummary.totalsByUnit.reduce((sum, row) => sum + (Number(row.realized) || 0), 0);
+
+        return {
+          date: monthLabel,
+          rate: target > 0 ? Math.round((realized / target) * 1000) / 10 : 0,
+          target,
+          realized,
+        };
+      });
+    }
+
     return Array.from({ length: 7 }, (_, index) => {
       const day = daysBefore(date, 6 - index);
       const dayEntries = historyEntries.filter((entry) =>
@@ -200,26 +254,34 @@ export default function DailySummary() {
         realized,
       };
     });
-  }, [date, historyEntries, historyGoals, selectedShifts, canonicalSelectedCells, summaryCells]);
+  }, [annualMode, date, filtered, filteredGoals, historyEntries, historyGoals, selectedShifts, canonicalSelectedCells, summaryCells, year]);
 
-  const formattedDateString = useMemo(() => {
+  const formattedPeriodString = useMemo(() => {
+    if (annualMode) return `ano de ${year}`;
     const parts = date.split('-');
     if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
     return date;
-  }, [date]);
+  }, [annualMode, date, year]);
 
   const lastUpdatedAt = Math.max(entriesUpdatedAt || 0, goalsUpdatedAt || 0, historyUpdatedAt || 0);
   const lastUpdatedTime = lastUpdatedAt
     ? new Date(lastUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     : '--:--:--';
-  const isFetching = isFetchingEntries || isFetchingGoals || isFetchingHistory;
-  const hasSyncError = entriesError || goalsError || historyError;
-  const refreshAll = () => Promise.all([
-    refetchEntries(),
-    refetchGoals(),
-    refetchHistory(),
-    refetchHistoryGoals(),
-  ]);
+  const isFetching = isFetchingEntries || isFetchingGoals || (!annualMode && isFetchingHistory);
+  const hasSyncError = entriesError || goalsError || (!annualMode && historyError);
+  const refreshAll = async () => {
+    const refreshers = [refetchEntries, refetchGoals, refetchYearBounds];
+    if (!annualMode) refreshers.push(refetchHistory, refetchHistoryGoals);
+    await Promise.all(refreshers.map((refetch) => refetch({ throwOnError: true })));
+  };
+  const handleRefresh = async () => {
+    try {
+      await refreshAll();
+      toast.success('Dados do resumo atualizados.');
+    } catch (error) {
+      toast.error(error?.message || 'Não foi possível atualizar os dados do resumo.');
+    }
+  };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 bg-background min-h-screen">
@@ -227,7 +289,7 @@ export default function DailySummary() {
       <div className="space-y-4">
         {/* Rótulo superior pequeno */}
         <span className="text-[11px] font-extrabold tracking-wider uppercase text-black dark:text-white block">
-          ACUMULADO POR TURNO, CÉLULA E UNIDADE OPERACIONAL
+          {annualMode ? `METAS E PRODUÇÃO CONSOLIDADAS DE ${year}` : 'ACUMULADO POR TURNO, CÉLULA E UNIDADE OPERACIONAL'}
         </span>
 
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -237,19 +299,43 @@ export default function DailySummary() {
               <ClipboardList className="w-5 h-5" />
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight">
-              Resumo Diário
+              {annualMode ? `Resumo Anual — ${year}` : 'Resumo Diário'}
             </h1>
           </div>
 
           {/* Filtros da Barra Superior */}
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Ano */}
+            <div className={`w-48 rounded-xl shadow-sm ${annualMode ? 'ring-2 ring-indigo-500/25' : ''}`}>
+              <Select value={year} onValueChange={setYear}>
+                <SelectTrigger
+                  aria-label="Ano do resumo"
+                  className="w-full h-9 bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-xl focus:ring-0 focus:ring-offset-0 px-3.5 text-xs font-semibold"
+                >
+                  <CalendarRange className={`mr-2 h-4 w-4 shrink-0 ${annualMode ? 'text-indigo-600' : 'text-muted-foreground'}`} />
+                  <SelectValue placeholder="Selecionar ano" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value={ANNUAL_FILTER_DISABLED}>Visualização diária</SelectItem>
+                  {availableYears.map((availableYear) => (
+                    <SelectItem key={availableYear} value={availableYear}>Ano completo · {availableYear}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Data */}
-            <div className="flex items-center gap-2 bg-card border border-border/80 rounded-xl px-3.5 py-2 shadow-sm text-xs font-semibold text-foreground">
+            <div
+              className={`flex items-center gap-2 bg-card border border-border/80 rounded-xl px-3.5 py-2 shadow-sm text-xs font-semibold text-foreground ${annualMode ? 'opacity-50' : ''}`}
+              title={annualMode ? 'Selecione “Visualização diária” para alterar a data' : 'Selecionar data'}
+            >
               <Calendar className="w-4 h-4 text-muted-foreground" />
               <Input
+                aria-label="Data do resumo"
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
+                disabled={annualMode}
                 className="border-0 p-0 h-auto w-32 focus-visible:ring-0 text-foreground bg-transparent font-semibold focus:outline-none text-xs [color-scheme:light] dark:[color-scheme:dark]"
               />
             </div>
@@ -257,7 +343,7 @@ export default function DailySummary() {
             {/* Turnos */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="h-9 px-3.5 text-xs font-semibold bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-xl shadow-sm gap-2">
+                <Button aria-label="Filtrar por turno" variant="outline" className="h-9 px-3.5 text-xs font-semibold bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-xl shadow-sm gap-2">
                   <span>{shiftTriggerText}</span>
                   <ChevronDown className="w-3.5 h-3.5 opacity-60" />
                 </Button>
@@ -278,7 +364,7 @@ export default function DailySummary() {
             {/* Células */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="h-9 px-3.5 text-xs font-semibold bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-xl shadow-sm gap-2">
+                <Button aria-label="Filtrar por célula" variant="outline" className="h-9 px-3.5 text-xs font-semibold bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-xl shadow-sm gap-2">
                   <span>{cellTriggerText}</span>
                   <ChevronDown className="w-3.5 h-3.5 opacity-60" />
                 </Button>
@@ -298,9 +384,15 @@ export default function DailySummary() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Botão Filtros Escuro */}
-            <Button className="h-9 px-4 text-xs font-bold bg-[#1A2238] hover:bg-[#111728] text-white rounded-xl shadow-sm gap-2">
-              <SlidersHorizontal className="w-3.5 h-3.5" /> Filtros
+            {/* Atualização explícita das consultas do período atual */}
+            <Button
+              type="button"
+              onClick={handleRefresh}
+              disabled={isFetching}
+              className="h-9 px-4 text-xs font-bold bg-[#1A2238] hover:bg-[#111728] text-white rounded-xl shadow-sm gap-2"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+              {isFetching ? 'Atualizando' : 'Atualizar dados'}
             </Button>
           </div>
         </div>
@@ -309,17 +401,26 @@ export default function DailySummary() {
         <div className="flex flex-wrap items-center gap-2.5 pt-1">
           <ExportDailyButton
             date={date}
+            period={{
+              from: fromDate,
+              to: toDate,
+              label: period.label,
+              title: annualMode ? 'Resumo Anual de Produção' : 'Resumo Diário de Produção',
+              filename: annualMode ? `resumo-anual-${year}` : `resumo-diario-${date}`,
+            }}
             shift={selectedShifts}
             cell={selectedCells}
             summary={summary}
             generatedBy={user?.name || user?.email || ''}
             cells={activeCells}
           />
-          <CloseShiftButton
-            date={date}
-            shift={selectedShifts}
-            cell={selectedCells}
-          />
+          {!annualMode && (
+            <CloseShiftButton
+              date={date}
+              shift={selectedShifts}
+              cell={selectedCells}
+            />
+          )}
         </div>
       </div>
 
@@ -336,17 +437,23 @@ export default function DailySummary() {
       </div>
 
       {/* ── GRÁFICOS ANALÍTICOS INFERIORES (3 CARDS) ────────────────────────── */}
-      <DailySummaryCharts summary={summary} entries={filtered} evolutionData={evolutionData} />
+      <DailySummaryCharts
+        summary={summary}
+        entries={filtered}
+        evolutionData={evolutionData}
+        attainmentLabel={annualMode ? `Ano ${year}` : 'Hoje'}
+      />
 
       {/* ── BARRA DE STATUS INFERIOR / RODAPÉ ───────────────────────────────── */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-4 border-t border-border/40 text-xs text-muted-foreground font-medium">
         <div className="flex items-center gap-2">
-          <span>Dados de {formattedDateString} atualizados às {lastUpdatedTime}</span>
+          <span>Dados de {formattedPeriodString} atualizados às {lastUpdatedTime}</span>
           <button
             type="button"
             className="rounded-full p-1 hover:bg-secondary hover:text-foreground transition-colors"
-            onClick={refreshAll}
-            aria-label="Atualizar dados do resumo diário"
+            onClick={handleRefresh}
+            disabled={isFetching}
+            aria-label="Atualizar dados do resumo"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
           </button>

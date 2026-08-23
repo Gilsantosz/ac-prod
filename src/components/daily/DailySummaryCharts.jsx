@@ -14,7 +14,7 @@ import {
 
 const fmt = (n) => (Number(n) || 0).toLocaleString('pt-BR');
 
-export default function DailySummaryCharts({ summary, entries = [], evolutionData = [] }) {
+export default function DailySummaryCharts({ summary, entries = [], evolutionData = [], attainmentLabel = 'Hoje' }) {
   // ── 1. Métricas de Atingimento Geral ─────────────────────────────────────
   const totalTarget = summary?.totalsByUnit?.reduce((sum, row) => sum + (Number(row.target) || 0), 0) || 0;
   const totalRealized = summary?.totalsByUnit?.reduce((sum, row) => sum + (Number(row.realized) || 0), 0) || 0;
@@ -166,7 +166,7 @@ export default function DailySummaryCharts({ summary, entries = [], evolutionDat
           </div>
           <div className="flex items-center justify-end pt-2 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
             <span className="bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800/60">
-              Hoje: {attainmentPct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%
+              {attainmentLabel}: {attainmentPct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%
             </span>
           </div>
         </CardContent>

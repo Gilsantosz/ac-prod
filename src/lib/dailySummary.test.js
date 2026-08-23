@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDailySummary } from '@/lib/dailySummary';
+import { aggregateDailyGoals, buildDailySummary } from '@/lib/dailySummary';
 
 const date = '2026-05-22';
 
@@ -29,6 +29,22 @@ function entry(cell, shift, produced, extra = {}) {
 }
 
 describe('buildDailySummary', () => {
+  it('soma todas as metas efetivas do período anual sem misturar unidades', () => {
+    const goals = aggregateDailyGoals([
+      { ...goal('Furação', '1º Turno', 'pieces', 100, 90), date: '2025-01-02' },
+      { ...goal('Fura', '1º Turno', 'pieces', 120, 110), date: '2025-01-03' },
+      { ...goal('Furação', '1º Turno', 'meters', 50, 40), date: '2025-01-03' },
+      { ...goal('Furação', '2º Turno', 'pieces', 70, 60), date: '2025-01-03' },
+    ]);
+
+    expect(goals).toHaveLength(3);
+    expect(goals).toEqual(expect.arrayContaining([
+      expect.objectContaining({ shift: '1º Turno', metric_unit: 'pieces', capacity: 220, target: 200 }),
+      expect.objectContaining({ shift: '1º Turno', metric_unit: 'meters', capacity: 50, target: 40 }),
+      expect.objectContaining({ shift: '2º Turno', metric_unit: 'pieces', capacity: 70, target: 60 }),
+    ]));
+  });
+
   it('monta a matriz por célula, turno e unidade sem somar unidades diferentes', () => {
     const goals = [
       goal('Seccionadoras', '1º Turno', 'sheets', 150),

@@ -89,3 +89,36 @@ export async function fetchProductionGoalsRange(fromDate, toDate = fromDate) {
     throw error;
   }
 }
+
+async function fetchDateBoundary(table, ascending) {
+  const { data, error } = await supabase
+    .from(table)
+    .select('date')
+    .not('date', 'is', null)
+    .order('date', { ascending })
+    .limit(1);
+
+  if (error) {
+    if (table === 'production_daily_goals' && /schema cache|does not exist|production_daily_goals/i.test(error.message || '')) {
+      return null;
+    }
+    throw error;
+  }
+
+  return data?.[0]?.date || null;
+}
+
+export async function fetchDailySummaryYearBounds() {
+  const [oldestEntry, newestEntry, oldestGoal, newestGoal] = await Promise.all([
+    fetchDateBoundary('production_entries', true),
+    fetchDateBoundary('production_entries', false),
+    fetchDateBoundary('production_daily_goals', true),
+    fetchDateBoundary('production_daily_goals', false),
+  ]);
+  const dates = [oldestEntry, newestEntry, oldestGoal, newestGoal].filter(Boolean).sort();
+
+  return {
+    oldestDate: dates[0],
+    newestDate: dates.at(-1),
+  };
+}

@@ -12,6 +12,20 @@ const SHIFT_HOUR_KEYS = {
   '3º Turno': ['hoursShift3', 'shift3'],
 };
 
+function resolveReportPeriod(date, period) {
+  const from = period?.from || date;
+  const to = period?.to || date;
+  const formattedDate = String(date || '').split('-').reverse().join('/');
+
+  return {
+    from,
+    to,
+    label: period?.label || `Data: ${formattedDate}`,
+    title: period?.title || 'Resumo Diário de Produção',
+    filename: period?.filename || `resumo-diario-${date}`,
+  };
+}
+
 function configuredShiftHours(cell, shift) {
   const [frontendKey, databaseKey] = SHIFT_HOUR_KEYS[shift] || [];
   const configured = frontendKey
@@ -59,7 +73,7 @@ export function calculateDailyReportMetrics(summary, cells = []) {
   return { total, totalsByUnit, totalTarget, totalRealized, totalAttainment, plannedMinutes, availability, performance, quality, oee };
 }
 
-export async function exportDailySummaryPdf({ date, shift, cell, summary, cells = [] }) {
+export async function exportDailySummaryPdf({ date, period, shift, cell, summary, cells = [] }) {
   const doc = new jsPDF();
   const pageW = doc.internal.pageSize.getWidth();
 
@@ -70,14 +84,16 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary, cells 
   const cellStr = Array.isArray(cell)
     ? (cell.length === 0 ? 'Todas' : cell.join(', '))
     : (cell === 'all' ? 'Todas' : cell);
+  const reportPeriod = resolveReportPeriod(date, period);
+  const includeDailyOee = reportPeriod.from === reportPeriod.to;
 
   const { total: t, totalsByUnit, totalAttainment, oee } = calculateDailyReportMetrics(summary, cells);
   let y = await drawBrandedPdfHeader(doc, {
-    title: 'Resumo Diário de Produção',
-    subtitle: `Data: ${date.split('-').reverse().join('/')} | Turnos: ${shiftStr} | Células: ${cellStr}`,
+    title: reportPeriod.title,
+    subtitle: `${reportPeriod.label} | Turnos: ${shiftStr} | Células: ${cellStr}`,
     summary: [
       { label: 'Atingimento', value: `${totalAttainment}%` },
-      { label: 'OEE', value: `${oee}%` },
+      ...(includeDailyOee ? [{ label: 'OEE', value: `${oee}%` }] : []),
       ...totalsByUnit.slice(0, 3).map((row) => ({ label: `Realizado (${row.unitLabel})`, value: fmt(row.realized) })),
       { label: 'Refugo', value: `${fmt(t.scrap)} (${t.scrapRate}%)` },
       { label: 'Paradas (min)', value: fmt(t.downtime) },
@@ -87,7 +103,7 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary, cells 
   // KPIs
   const kpis = [
     ['Atingimento', `${totalAttainment}%`],
-    ['OEE', `${oee}%`],
+    ...(includeDailyOee ? [['OEE', `${oee}%`]] : []),
     ...totalsByUnit.map((row) => [`Realizado (${row.unitLabel})`, fmt(row.realized)]),
     ['Refugo', `${fmt(t.scrap)} (${t.scrapRate}%)`],
     ['Paradas (min)', fmt(t.downtime)],
@@ -324,7 +340,7 @@ export async function exportDailySummaryPdf({ date, shift, cell, summary, cells 
   drawTable('Produção Consolidada por Turno', summary.byShift || [], 'shift', 'Turno');
 
   drawBrandedPdfFooter(doc);
-  doc.save(`resumo-diario-${date}.pdf`);
+  doc.save(`${reportPeriod.filename}.pdf`);
 }
 
 function selectionLabel(value, allLabel) {
@@ -347,8 +363,10 @@ function normalizedSummaryRow(row = {}) {
   };
 }
 
-export function createDailySummaryReport({ date, shift, cell, summary, cells = [], generatedBy = '' }) {
+export function createDailySummaryReport({ date, period, shift, cell, summary, cells = [], generatedBy = '' }) {
   const metrics = calculateDailyReportMetrics(summary, cells);
+  const reportPeriod = resolveReportPeriod(date, period);
+  const includeDailyOee = reportPeriod.from === reportPeriod.to;
   const detailedRows = (summary.byCellShift || []).map(normalizedSummaryRow);
   const totalsByUnit = (summary.totalsByUnit || []).map(normalizedSummaryRow);
   const byCell = (summary.byCell || []).map(normalizedSummaryRow);
@@ -381,15 +399,15 @@ export function createDailySummaryReport({ date, shift, cell, summary, cells = [
 
   return createReportDefinition({
     id: 'resumo-diario',
-    title: 'Resumo Diário de Produção',
-    subtitle: `Produção de ${date.split('-').reverse().join('/')}`,
+    title: reportPeriod.title,
+    subtitle: reportPeriod.label,
     generatedAt: new Date().toISOString(),
     generatedBy,
-    period: { from: date, to: date },
+    period: { from: reportPeriod.from, to: reportPeriod.to },
     filters: { Turnos: selectionLabel(shift, 'Todos'), Células: selectionLabel(cell, 'Todas') },
     summary: [
       { key: 'attainment', label: 'Atingimento', value: metrics.totalAttainment / 100, format: 'percentage' },
-      { key: 'oee', label: 'OEE', value: metrics.oee / 100, format: 'percentage' },
+      ...(includeDailyOee ? [{ key: 'oee', label: 'OEE', value: metrics.oee / 100, format: 'percentage' }] : []),
       { key: 'scrapRate', label: 'Taxa de refugo', value: (Number(metrics.total.scrapRate) || 0) / 100, format: 'percentage' },
       { key: 'downtime', label: 'Paradas', value: Number(metrics.total.downtime) || 0, format: 'duration' },
       ...totalsByUnit.map((row, index) => ({ key: `realized-${index}`, label: `Realizado (${row.unitLabel})`, value: row.realized, format: 'number' })),

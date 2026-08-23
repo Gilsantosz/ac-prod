@@ -73,6 +73,36 @@ export function normalizeProductionQuantity(entry) {
   return normalizeQuantityByUnit(entry, normalizeProductionUnit(entry));
 }
 
+// Metas efetivas de períodos longos chegam materializadas por dia. Antes de
+// consolidar um mês/ano, soma cada combinação de célula, turno e unidade para
+// evitar que a última data substitua as anteriores na matriz.
+export function aggregateDailyGoals(goals = []) {
+  const aggregated = new Map();
+
+  goals.forEach((goal) => {
+    const cell = goal.cell_name || goal.cell || 'Sem célula';
+    const unit = normalizeUnit(goal.metric_unit || goal.metricUnit || goal.unit);
+    const goalKey = key(getCanonicalCellKey(cell), goal.shift || '—', unit);
+    const current = aggregated.get(goalKey);
+
+    if (!current) {
+      aggregated.set(goalKey, {
+        ...goal,
+        cell_name: cell,
+        metric_unit: unit,
+        capacity: number(goal.capacity),
+        target: number(goal.target),
+      });
+      return;
+    }
+
+    current.capacity += number(goal.capacity);
+    current.target += number(goal.target);
+  });
+
+  return [...aggregated.values()];
+}
+
 function applyEntry(bucket, entry, metric) {
   const realized = number(metric.realized_quantity);
   bucket.realized += realized;

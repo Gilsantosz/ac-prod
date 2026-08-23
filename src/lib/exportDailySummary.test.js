@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculatePlannedMinutes } from './exportDailySummary';
+import { calculatePlannedMinutes, createDailySummaryReport } from './exportDailySummary';
 
 const active = (entries = 1) => ({ entries, target: 0, capacity: 0 });
 
@@ -42,5 +42,29 @@ describe('calculatePlannedMinutes', () => {
     };
 
     expect(calculatePlannedMinutes(summary)).toBe(480);
+  });
+});
+
+describe('createDailySummaryReport', () => {
+  it('preserva o intervalo e o título anual sem exibir OEE diário', () => {
+    const report = createDailySummaryReport({
+      date: '2025-01-01',
+      period: {
+        from: '2025-01-01',
+        to: '2025-12-31',
+        label: 'Ano de 2025',
+        title: 'Resumo Anual de Produção',
+      },
+      shift: [],
+      cell: [],
+      summary: { total: {}, totalsByUnit: [], byCellShift: [], byCell: [], byShift: [] },
+    });
+
+    expect(report).toMatchObject({
+      title: 'Resumo Anual de Produção',
+      subtitle: 'Ano de 2025',
+      period: { from: '2025-01-01', to: '2025-12-31' },
+    });
+    expect(report.summary.map((item) => item.key)).not.toContain('oee');
   });
 });
