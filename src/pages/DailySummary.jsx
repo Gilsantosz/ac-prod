@@ -23,7 +23,6 @@ import { getCanonicalCellKey } from '@/lib/productionStagePolicyService';
 import SummaryKpis from '@/components/daily/SummaryKpis';
 import SummaryTable from '@/components/daily/SummaryTable';
 import DailyProductionMatrix from '@/components/daily/DailyProductionMatrix';
-import DailyGoalEditor from '@/components/daily/DailyGoalEditor';
 import DailySummaryCharts from '@/components/daily/DailySummaryCharts';
 import ExportDailyButton from '@/components/daily/ExportDailyButton';
 import CloseShiftButton from '@/components/daily/CloseShiftButton';
@@ -323,11 +322,6 @@ export default function DailySummary() {
           />
         </div>
       </div>
-
-      {/* ── CARD DE EDITOR DE METAS POR CÉLULA E UNIDADE ─────────────────────── */}
-      {user?.role !== 'operator' && (
-        <DailyGoalEditor date={date} activeCells={activeCells} onSaved={refetchGoals} />
-      )}
 
       {/* ── GRADE DE CARDS KPI SUPERIORES (8 CARDS) ─────────────────────────── */}
       <SummaryKpis total={summary.total} summary={summary} />
