@@ -5,6 +5,8 @@
 
 import { supabase } from '@/lib/supabaseClient';
 import { auditLog } from '@/lib/auditLog';
+import { downloadBlob } from '@/lib/reportBranding';
+import { buildRawCsv } from '@/lib/reports/reportDataUtils';
 
 export const SIX_M_CATEGORIES = [
   'Máquina',
@@ -301,6 +303,80 @@ export async function saveQualityAction(action) {
 
 const OPEN_NC_STATUSES = new Set(['open', 'contained', 'analysis', 'action_plan', 'verification']);
 const TERMINAL_QUALITY_STATUSES = new Set(['approved', 'rejected']);
+const QUALITY_PAGE_SIZE = 1_000;
+const QUALITY_MAX_ROWS = 100_000;
+const QUALITY_NC_COLUMNS = [
+  'id', 'nc_code', 'defect_id', 'defect_code', 'defect_name', 'quantity', 'severity',
+  'disposition', 'status', 'lot_code', 'order_number', 'customer_name', 'environment_name',
+  'cell_id', 'cell_name', 'stage_name', 'operator_name', 'detected_at', 'closed_at',
+  'notes', 'created_at',
+].join(', ');
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+}
+
+function normalizeQualityBoundary(value, boundary) {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    if (boundary === 'to') date.setHours(23, 59, 59, 999);
+    return date.toISOString();
+  }
+  return value;
+}
+
+function localDateKey(value) {
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function resolveQualityPeriod({ period = null, dateFrom = null, dateTo = null, now = new Date() } = {}) {
+  let from = normalizeQualityBoundary(dateFrom, 'from');
+  const snapshotAt = new Date(now).toISOString();
+  let to = normalizeQualityBoundary(dateTo, 'to') || snapshotAt;
+
+  if (period && !from) {
+    const current = new Date(now);
+    if (period === 'today') {
+      const todayStart = new Date(current);
+      todayStart.setHours(0, 0, 0, 0);
+      from = todayStart.toISOString();
+    } else if (period === '7d') {
+      from = new Date(current.getTime() - 7 * 86400 * 1000).toISOString();
+    } else if (period === '30d') {
+      from = new Date(current.getTime() - 30 * 86400 * 1000).toISOString();
+    } else if (period === 'month') {
+      from = new Date(current.getFullYear(), current.getMonth(), 1).toISOString();
+    }
+  }
+
+  if (!from) from = new Date(new Date(now).getTime() - 7 * 86400 * 1000).toISOString();
+  if (new Date(to).getTime() > new Date(snapshotAt).getTime()) to = snapshotAt;
+  return { from, to, snapshotAt, display: { from: localDateKey(from), to: localDateKey(to) } };
+}
+
+async function fetchQualityPages(createQuery, label) {
+  const rows = [];
+  for (let offset = 0; offset <= QUALITY_MAX_ROWS; offset += QUALITY_PAGE_SIZE) {
+    const lastIndex = Math.min(offset + QUALITY_PAGE_SIZE - 1, QUALITY_MAX_ROWS);
+    const { data, error } = await createQuery().range(offset, lastIndex);
+    if (error) throw error;
+    const page = data || [];
+    if (offset === QUALITY_MAX_ROWS && page.length > 0) {
+      const limitError = new Error(`${label} excedeu o limite seguro de ${QUALITY_MAX_ROWS.toLocaleString('pt-BR')} registros. Reduza o período ou aplique mais filtros.`);
+      limitError.code = 'QUALITY_REPORT_ROW_LIMIT_EXCEEDED';
+      throw limitError;
+    }
+    rows.push(...page);
+    if (page.length < QUALITY_PAGE_SIZE) return rows;
+  }
+  return rows;
+}
 
 function toPositiveQuantity(value) {
   const quantity = Number(value);
@@ -489,59 +565,55 @@ export function calculateQualityDashboardMetrics({
 /**
  * Dashboard & Estatísticas de Qualidade: Retorna KPIs, Pareto, FPY e Cartas SPC.
  */
-export async function getQualityDashboardMetrics({ cellId = null, dateFrom = null, dateTo = null, period = null } = {}) {
-  let effectiveDateFrom = dateFrom;
-  let effectiveDateTo = dateTo;
+export async function getQualityDashboardMetrics({ cellId = null, cellName = null, dateFrom = null, dateTo = null, period = null } = {}) {
+  const queryPeriod = resolveQualityPeriod({ period, dateFrom, dateTo });
+  const resolvedCellId = isUuid(cellId) ? cellId : null;
+  const resolvedCellName = cellName || (cellId && !resolvedCellId ? cellId : null);
 
-  if (period && !dateFrom) {
-    const now = new Date();
-    if (period === 'today') {
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
-      effectiveDateFrom = todayStart.toISOString();
-    } else if (period === '7d') {
-      effectiveDateFrom = new Date(Date.now() - 7 * 86400 * 1000).toISOString();
-    } else if (period === '30d') {
-      effectiveDateFrom = new Date(Date.now() - 30 * 86400 * 1000).toISOString();
-    } else if (period === 'month') {
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      effectiveDateFrom = startOfMonth.toISOString();
-    }
-  }
+  const createNcQuery = () => {
+    let query = supabase
+      .from('quality_nonconformities')
+      .select(QUALITY_NC_COLUMNS)
+      .gte('created_at', queryPeriod.from)
+      .lte('created_at', queryPeriod.to)
+      .order('created_at', { ascending: true });
+    if (resolvedCellId) query = query.eq('cell_id', resolvedCellId);
+    if (resolvedCellName) query = query.eq('cell_name', resolvedCellName);
+    return query;
+  };
+  const createReadingsQuery = () => {
+    let query = supabase
+      .from('production_stage_readings')
+      .select('id, piece_id, step_name, cell_name, status, quantity, created_at')
+      .in('status', ['approved', 'rejected'])
+      .gte('created_at', queryPeriod.from)
+      .lte('created_at', queryPeriod.to)
+      .order('created_at', { ascending: true });
+    if (resolvedCellId) query = query.eq('cell_id', resolvedCellId);
+    if (resolvedCellName) query = query.eq('cell_name', resolvedCellName);
+    return query;
+  };
 
-  let ncQuery = supabase.from('quality_nonconformities').select('*');
-  let readingsQuery = supabase
-    .from('production_stage_readings')
-    .select('id, piece_id, step_name, cell_name, status, quantity, created_at')
-    .in('status', ['approved', 'rejected']);
-
-  if (cellId) ncQuery = ncQuery.eq('cell_id', cellId);
-  if (effectiveDateFrom) {
-    ncQuery = ncQuery.gte('created_at', effectiveDateFrom);
-    readingsQuery = readingsQuery.gte('created_at', effectiveDateFrom);
-  }
-  if (effectiveDateTo) {
-    ncQuery = ncQuery.lte('created_at', effectiveDateTo);
-    readingsQuery = readingsQuery.lte('created_at', effectiveDateTo);
-  }
-
-  const [ncResult, readingsResult, defectsResult] = await Promise.all([
-    ncQuery,
-    readingsQuery,
+  const [nonconformities, readings, defectsResult] = await Promise.all([
+    fetchQualityPages(createNcQuery, 'A consulta de não conformidades'),
+    fetchQualityPages(createReadingsQuery, 'A consulta de leituras da qualidade'),
     supabase
       .from('quality_defect_catalog')
       .select('id, name, six_m_category'),
   ]);
 
-  if (ncResult.error) throw ncResult.error;
-  if (readingsResult.error) throw readingsResult.error;
   if (defectsResult.error) throw defectsResult.error;
 
-  return calculateQualityDashboardMetrics({
-    nonconformities: ncResult.data || [],
-    readings: readingsResult.data || [],
+  const metrics = calculateQualityDashboardMetrics({
+    nonconformities,
+    readings,
     defectCatalog: defectsResult.data || [],
   });
+  return {
+    ...metrics,
+    period: queryPeriod.display,
+    snapshotAt: queryPeriod.snapshotAt,
+  };
 }
 
 /**
@@ -550,30 +622,28 @@ export async function getQualityDashboardMetrics({ cellId = null, dateFrom = nul
 export function exportNonconformitiesCSV(nonconformities = []) {
   if (!nonconformities.length) return;
 
-  const headers = ['Código NC', 'Defeito', 'Quantidade', 'Severidade', 'Disposição', 'Status', 'Lote', 'Pedido', 'Cliente', 'Célula', 'Data Detecção', 'Observações'];
-  const rows = nonconformities.map(nc => [
-    nc.nc_code || '',
-    nc.defect_name || '',
-    nc.quantity || 1,
-    nc.severity || '',
-    NC_DISPOSITION_LABELS[nc.disposition]?.label || nc.disposition || '',
-    NC_STATUS_LABELS[nc.status]?.label || nc.status || '',
-    nc.lot_code || '',
-    nc.order_number || '',
-    nc.customer_name || '',
-    nc.cell_name || '',
-    nc.detected_at ? new Date(nc.detected_at).toLocaleString('pt-BR') : '',
-    `"${(nc.notes || '').replace(/"/g, '""')}"`
-  ]);
-
-  const csvContent = 'data:text/csv;charset=utf-8,\uFEFF'
-    + [headers.join(';'), ...rows.map(e => e.join(';'))].join('\n');
-
-  const encodedUri = encodeURI(csvContent);
-  const link = document.createElement('a');
-  link.setAttribute('href', encodedUri);
-  link.setAttribute('download', `relatorio_qualidade_${new Date().toISOString().substring(0, 10)}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  const columns = [
+    ['code', 'Código NC'], ['defect', 'Defeito'], ['quantity', 'Quantidade'], ['severity', 'Severidade'],
+    ['disposition', 'Disposição'], ['status', 'Status'], ['lot', 'Lote'], ['order', 'Pedido'],
+    ['customer', 'Cliente'], ['cell', 'Célula'], ['detectedAt', 'Data Detecção'], ['notes', 'Observações'],
+  ].map(([key, label]) => ({ key, label }));
+  const rows = nonconformities.map((nc) => ({
+    code: nc.nc_code || '',
+    defect: nc.defect_name || '',
+    quantity: Number(nc.quantity) || 1,
+    severity: nc.severity || '',
+    disposition: NC_DISPOSITION_LABELS[nc.disposition]?.label || nc.disposition || '',
+    status: NC_STATUS_LABELS[nc.status]?.label || nc.status || '',
+    lot: nc.lot_code || '',
+    order: nc.order_number || '',
+    customer: nc.customer_name || '',
+    cell: nc.cell_name || '',
+    detectedAt: nc.detected_at ? new Date(nc.detected_at).toISOString() : '',
+    notes: nc.notes || '',
+  }));
+  const csv = buildRawCsv({ columns, rows });
+  downloadBlob(
+    new Blob([csv], { type: 'text/csv;charset=utf-8' }),
+    `leo-flow-dados-qualidade-${new Date().toISOString().substring(0, 10)}.csv`,
+  );
 }

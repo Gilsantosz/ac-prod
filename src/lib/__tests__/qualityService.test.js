@@ -4,9 +4,21 @@ import {
   NC_DISPOSITION_LABELS,
   NC_STATUS_LABELS,
   calculateQualityDashboardMetrics,
+  resolveQualityPeriod,
 } from '../qualityService';
 
 describe('qualityService', () => {
+  it('resolve o período no fuso local e fixa um snapshot consistente', () => {
+    const period = resolveQualityPeriod({
+      period: 'today',
+      now: new Date(2026, 7, 23, 20, 30, 0),
+    });
+
+    expect(period.display).toEqual({ from: '2026-08-23', to: '2026-08-23' });
+    expect(new Date(period.from).getHours()).toBe(0);
+    expect(period.to).toBe(period.snapshotAt);
+  });
+
   it('deve contemplar exatamente as 6 categorias de Ishikawa (6M)', () => {
     expect(SIX_M_CATEGORIES).toContain('Máquina');
     expect(SIX_M_CATEGORIES).toContain('Método');
