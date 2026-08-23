@@ -6,9 +6,15 @@ const SHIFTS = ['1º Turno', '2º Turno', '3º Turno'];
 
 // Gera um PDF formatado com o resumo diário de uma célula:
 // eficiência, metas alcançadas e observações por turno.
-export async function exportCellReport(cell, date, entries, filename) {
+export async function exportCellReport(cell, date, entries, filename, periodLabel) {
   const doc = new jsPDF();
   const cellEntries = entries.filter((e) => e.cell === cell && (!date || e.date === date));
+  const periodSlug = String(date || periodLabel || 'geral')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9-]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase();
 
   const totalProduced = sumBy(cellEntries, 'produced');
   const totalTarget = sumBy(cellEntries, 'target');
@@ -18,7 +24,7 @@ export async function exportCellReport(cell, date, entries, filename) {
 
   let y = await drawBrandedPdfHeader(doc, {
     title: 'Relatorio de Producao por Celula',
-    subtitle: `Celula: ${cell} | Data: ${date || 'Todas as datas'}`,
+    subtitle: `Celula: ${cell} | Periodo: ${periodLabel || date || 'Todas as datas'}`,
     summary: [
       { label: 'Produzido', value: totalProduced },
       { label: 'Meta', value: totalTarget },
@@ -93,5 +99,5 @@ export async function exportCellReport(cell, date, entries, filename) {
   });
 
   drawBrandedPdfFooter(doc);
-  doc.save(filename || `relatorio-${cell}-${date || 'geral'}.pdf`);
+  doc.save(filename || `relatorio-${cell}-${periodSlug || 'geral'}.pdf`);
 }

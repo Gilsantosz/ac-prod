@@ -74,6 +74,8 @@ export default function DailyProductionCard({
   filtered = [],
   kiosk = false,
   kioskCell = 'all',
+  periodMode = 'daily',
+  periodLabel = '',
 }) {
   const { activeCells } = useCells();
   const validCellNames = useMemo(() => activeCells.map(c => c.name.trim()), [activeCells]);
@@ -178,6 +180,7 @@ export default function DailyProductionCard({
   const totalScrap = sumBy(filtered, 'scrap');
   const eff = efficiency(totalProduced, totalTarget);
   const scrap = scrapRate(totalScrap, totalProduced);
+  const annualMode = periodMode === 'annual';
   const critCount = filtered.filter((e) => {
     const e_eff = efficiency(Number(e.produced), Number(e.target));
     return e.target > 0 && e_eff < 70;
@@ -204,8 +207,12 @@ export default function DailyProductionCard({
             <Activity className="w-4 h-4 text-sky-500" />
           </div>
           <div>
-            <h3 className="font-semibold leading-tight">Acompanhamento Diário de Produção</h3>
-            <p className="text-xs text-muted-foreground">Visão geral, por célula e por turno</p>
+            <h3 className="font-semibold leading-tight">
+              {annualMode ? `Consolidado Anual de Produção${periodLabel ? ` — ${periodLabel}` : ''}` : 'Acompanhamento Diário de Produção'}
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              {annualMode ? 'Totais do ano por célula e por turno' : 'Visão geral, por célula e por turno'}
+            </p>
           </div>
         </div>
         <Badge

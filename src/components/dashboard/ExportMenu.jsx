@@ -11,11 +11,15 @@ import { Download, FileText, FileSpreadsheet, FileImage } from 'lucide-react';
 import { toast } from 'sonner';
 import { subDays } from 'date-fns';
 import { exportCSV, exportPDF, exportPDFWithCharts } from '@/lib/exportProduction';
+import { isAnnualFilterActive } from '@/lib/dashboardPeriod';
 
 export default function ExportMenu({ entries, allEntries, filters, chartsRef }) {
+  const annualMode = isAnnualFilterActive(filters.year);
   const shiftLabel = filters.shift === 'all' ? 'Todos os turnos' : filters.shift;
   const cellLabel = filters.cell === 'all' ? 'Todas as células' : filters.cell;
-  const subtitle = `${filters.date || 'Todas as datas'} · ${shiftLabel} · ${cellLabel}`;
+  const periodLabel = annualMode ? `Ano de ${filters.year}` : (filters.date || 'Todas as datas');
+  const periodKey = annualMode ? filters.year : filters.date;
+  const subtitle = `${periodLabel} · ${shiftLabel} · ${cellLabel}`;
 
   const run = async (fn, data, name, msg) => {
     if (!data.length) {
@@ -41,7 +45,7 @@ export default function ExportMenu({ entries, allEntries, filters, chartsRef }) 
     });
   };
 
-  const reportMeta = { title: 'Relatório de Produção', subtitle };
+  const reportMeta = { title: annualMode ? 'Resumo Anual de Produção' : 'Relatório de Produção', subtitle };
 
   const runFullReport = async () => {
     if (!entries.length) {
@@ -50,7 +54,12 @@ export default function ExportMenu({ entries, allEntries, filters, chartsRef }) 
     }
     toast.loading('Gerando relatório com gráficos...', { id: 'pdf' });
     try {
-      await exportPDFWithCharts(entries, { ...reportMeta, title: 'Relatório de Produção do Turno' }, chartsRef?.current, `relatorio-${filters.date}.pdf`);
+      await exportPDFWithCharts(
+        entries,
+        { ...reportMeta, title: annualMode ? 'Resumo Anual de Produção' : 'Relatório de Produção do Turno' },
+        chartsRef?.current,
+        `relatorio-${periodKey}.pdf`,
+      );
       toast.success('Relatório PDF gerado', { id: 'pdf' });
     } catch {
       toast.error('Falha ao gerar relatório', { id: 'pdf' });
@@ -71,22 +80,31 @@ export default function ExportMenu({ entries, allEntries, filters, chartsRef }) 
         </DropdownMenuItem>
 
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>Fechamento diário (filtros atuais)</DropdownMenuLabel>
-        <DropdownMenuItem onClick={() => run((d, n) => exportCSV(d, n, reportMeta), entries, `producao-${filters.date}.csv`, 'CSV exportado')}>
+        <DropdownMenuLabel>{annualMode ? 'Resumo anual (filtros atuais)' : 'Fechamento diário (filtros atuais)'}</DropdownMenuLabel>
+        <DropdownMenuItem onClick={() => run((d, n) => exportCSV(d, n, reportMeta), entries, `producao-${periodKey}.csv`, 'CSV exportado')}>
           <FileSpreadsheet className="w-4 h-4 mr-2" /> Exportar CSV
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => run((d, n) => exportPDF(d, { ...reportMeta, title: 'Fechamento Diário' }, n), entries, `producao-${filters.date}.pdf`, 'PDF exportado')}>
+        <DropdownMenuItem onClick={() => run(
+          (d, n) => exportPDF(d, { ...reportMeta, title: annualMode ? 'Resumo Anual' : 'Fechamento Diário' }, n),
+          entries,
+          `producao-${periodKey}.pdf`,
+          'PDF exportado',
+        )}>
           <FileText className="w-4 h-4 mr-2" /> Exportar PDF
         </DropdownMenuItem>
 
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel>Fechamento semanal (7 dias)</DropdownMenuLabel>
-        <DropdownMenuItem onClick={() => run((d, n) => exportCSV(d, n, { title: 'Fechamento Semanal', subtitle: `Semana até ${filters.date}` }), weeklyData(), `semanal-${filters.date}.csv`, 'CSV semanal exportado')}>
-          <FileSpreadsheet className="w-4 h-4 mr-2" /> Exportar CSV
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => run((d, n) => exportPDF(d, { title: 'Fechamento Semanal', subtitle: `Semana até ${filters.date}` }, n), weeklyData(), `semanal-${filters.date}.pdf`, 'PDF semanal exportado')}>
-          <FileText className="w-4 h-4 mr-2" /> Exportar PDF
-        </DropdownMenuItem>
+        {!annualMode && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Fechamento semanal (7 dias)</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => run((d, n) => exportCSV(d, n, { title: 'Fechamento Semanal', subtitle: `Semana até ${filters.date}` }), weeklyData(), `semanal-${filters.date}.csv`, 'CSV semanal exportado')}>
+              <FileSpreadsheet className="w-4 h-4 mr-2" /> Exportar CSV
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => run((d, n) => exportPDF(d, { title: 'Fechamento Semanal', subtitle: `Semana até ${filters.date}` }, n), weeklyData(), `semanal-${filters.date}.pdf`, 'PDF semanal exportado')}>
+              <FileText className="w-4 h-4 mr-2" /> Exportar PDF
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

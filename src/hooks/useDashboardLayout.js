@@ -62,15 +62,25 @@ export function useDashboardLayout(defaultIds) {
   const reorder = useCallback(
     (newVisibleOrder) => {
       setLayout((prev) => {
-        const hiddenIds = (prev.hidden || []).filter((id) => !newVisibleOrder.includes(id));
-        const newOrder = [...newVisibleOrder, ...hiddenIds];
+        // Preserva também painéis temporariamente indisponíveis no modo atual
+        // (ex.: painéis diários ocultados enquanto o resumo anual está ativo).
+        const previousOrder = prev.order?.length ? prev.order : defaultIds;
+        const visibleIds = new Set(newVisibleOrder);
+        let visibleIndex = 0;
+        const newOrder = previousOrder.map((id) => {
+          if (!visibleIds.has(id)) return id;
+          const nextId = newVisibleOrder[visibleIndex];
+          visibleIndex += 1;
+          return nextId || id;
+        });
+        newOrder.push(...newVisibleOrder.slice(visibleIndex));
         const newLayout = { ...prev, order: newOrder };
         saveLayout(newLayout);
         toast.success('Layout salvo');
         return newLayout;
       });
     },
-    [saveLayout]
+    [defaultIds, saveLayout]
   );
 
   // Alterna visibilidade de um painel
