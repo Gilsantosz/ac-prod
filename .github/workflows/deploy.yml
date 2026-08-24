@@ -82,6 +82,9 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # GitHub Pages publica este repositório em /ac-prod/.
+          # O default do Vite agora é / para Cloudflare Pages e domínio próprio.
+          VITE_APP_BASE: /ac-prod/
         run: npm run build
 
       - name: Setup Pages
