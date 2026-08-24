@@ -6,7 +6,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(() => {
   // Default de produção compatível com Cloudflare Pages/custom domains.
   // Hosts que publicam em subpath (ex.: GitHub Pages) devem definir VITE_APP_BASE explicitamente.
   const appBase = process.env.VITE_APP_BASE || '/';
