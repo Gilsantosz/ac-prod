@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const migrationPath = path.join(
   process.cwd(),
-  'supabase/migrations/20260830120000_security_audit_remediation.sql',
+  'supabase/migrations/20260830150210_security_audit_remediation.sql',
 );
 const migration = readFileSync(migrationPath, 'utf8');
 
