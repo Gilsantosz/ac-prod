@@ -266,7 +266,7 @@ Deno.serve(async (req) => {
           combinedHtmlBody += `
             <div style="margin-bottom: 40px; border-bottom: 1px solid #f1f5f9; padding-bottom: 25px;">
               <h2 style="color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 16px; font-family:sans-serif; font-size: 16px;">
-                ${REPORT_TYPE_LABELS[type] || type}
+                ${escapeHtml(REPORT_TYPE_LABELS[type] || type)}
               </h2>
               ${fragmentHtml}
             </div>

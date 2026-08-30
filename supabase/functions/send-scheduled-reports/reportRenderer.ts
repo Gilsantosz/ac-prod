@@ -287,9 +287,9 @@ export function renderReportFragmentHtml(type: string, data: any, cellsData?: an
         <tbody>
           ${lots.map(l => `
             <tr>
-              <td style="padding:8px;border:1px solid #e2e8f0;font-weight:bold;font-family:sans-serif;">${l.lot_code || ''}</td>
-              <td style="padding:8px;border:1px solid #e2e8f0;font-family:sans-serif;">${l.production_orders?.order_code || ''}</td>
-              <td style="padding:8px;border:1px solid #e2e8f0;font-family:sans-serif;"><span style="padding:2px 6px;border-radius:4px;background:#f1f5f9;font-size:11px;">${l.status || ''}</span></td>
+              <td style="padding:8px;border:1px solid #e2e8f0;font-weight:bold;font-family:sans-serif;">${esc(l.lot_code)}</td>
+              <td style="padding:8px;border:1px solid #e2e8f0;font-family:sans-serif;">${esc(l.production_orders?.order_code)}</td>
+              <td style="padding:8px;border:1px solid #e2e8f0;font-family:sans-serif;"><span style="padding:2px 6px;border-radius:4px;background:#f1f5f9;font-size:11px;">${esc(l.status)}</span></td>
               <td style="padding:8px;border:1px solid #e2e8f0;font-family:sans-serif;">${l.delivery_date ? new Date(l.delivery_date).toLocaleDateString('pt-BR') : '-'}</td>
             </tr>
           `).join('') || '<tr><td colspan="4" style="padding:15px;text-align:center;color:#64748b;font-family:sans-serif;">Nenhum lote correspondente encontrado.</td></tr>'}
@@ -314,10 +314,10 @@ export function renderReportFragmentHtml(type: string, data: any, cellsData?: an
         <tbody>
           ${packages.map(p => `
             <tr>
-              <td style="padding:8px;border:1px solid #e2e8f0;font-weight:bold;font-family:sans-serif;">${p.package_code || ''}</td>
-              <td style="padding:8px;border:1px solid #e2e8f0;text-align:right;font-family:sans-serif;">${p.volume_number || 1}</td>
-              <td style="padding:8px;border:1px solid #e2e8f0;font-family:sans-serif;"><span style="padding:2px 6px;border-radius:4px;background:#f1f5f9;font-size:11px;">${p.status || ''}</span></td>
-              <td style="padding:8px;border:1px solid #e2e8f0;font-family:sans-serif;">${p.shipments?.shipment_code || '-'}</td>
+              <td style="padding:8px;border:1px solid #e2e8f0;font-weight:bold;font-family:sans-serif;">${esc(p.package_code)}</td>
+              <td style="padding:8px;border:1px solid #e2e8f0;text-align:right;font-family:sans-serif;">${fmt(p.volume_number || 1)}</td>
+              <td style="padding:8px;border:1px solid #e2e8f0;font-family:sans-serif;"><span style="padding:2px 6px;border-radius:4px;background:#f1f5f9;font-size:11px;">${esc(p.status)}</span></td>
+              <td style="padding:8px;border:1px solid #e2e8f0;font-family:sans-serif;">${esc(p.shipments?.shipment_code || '-')}</td>
               <td style="padding:8px;border:1px solid #e2e8f0;font-family:sans-serif;">${p.created_at ? new Date(p.created_at).toLocaleDateString('pt-BR') : '-'}</td>
             </tr>
           `).join('') || '<tr><td colspan="5" style="padding:15px;text-align:center;color:#64748b;font-family:sans-serif;">Nenhuma embalagem pendente encontrada.</td></tr>'}
@@ -332,17 +332,17 @@ export function renderReportFragmentHtml(type: string, data: any, cellsData?: an
 
     const occurrenceRows = occurrences.map(o => `
       <tr>
-        <td style="padding:6px 10px;border:1px solid #e2e8f0;font-family:sans-serif;font-weight:bold;">${o.cell}</td>
-        <td style="padding:6px 10px;border:1px solid #e2e8f0;font-family:sans-serif;">${o.reason}</td>
-        <td style="padding:6px 10px;border:1px solid #e2e8f0;text-align:right;font-family:sans-serif;">${o.downtime} min</td>
-        <td style="padding:6px 10px;border:1px solid #e2e8f0;font-size:12px;color:#64748b;font-family:sans-serif;">${o.notes || ''}</td>
+        <td style="padding:6px 10px;border:1px solid #e2e8f0;font-family:sans-serif;font-weight:bold;">${esc(o.cell)}</td>
+        <td style="padding:6px 10px;border:1px solid #e2e8f0;font-family:sans-serif;">${esc(o.reason)}</td>
+        <td style="padding:6px 10px;border:1px solid #e2e8f0;text-align:right;font-family:sans-serif;">${fmt(o.downtime)} min</td>
+        <td style="padding:6px 10px;border:1px solid #e2e8f0;font-size:12px;color:#64748b;font-family:sans-serif;">${esc(o.notes)}</td>
       </tr>
     `).join('');
 
     return `
       <div style="background:#f8fafc; border: 1px solid #e2e8f0; padding:15px; border-radius:6px; margin-bottom:20px; font-family:sans-serif;">
         <p style="margin:0 0 6px 0; font-size:14px; font-weight:bold; color:#0f172a;">Lotes em Atraso Ativos</p>
-        <p style="margin:0; font-size:24px; font-weight:bold; color:#dc2626;">${summary.delayedCount}</p>
+        <p style="margin:0; font-size:24px; font-weight:bold; color:#dc2626;">${fmt(summary.delayedCount)}</p>
       </div>
 
       <h3 style="font-family:sans-serif;font-size:14px;color:#0f172a;">Ocorrências Ativas (Em Aberto)</h3>
@@ -364,7 +364,7 @@ export function renderReportFragmentHtml(type: string, data: any, cellsData?: an
 
   return `
     <p style="font-family:sans-serif;font-size:14px;color:#334155;">
-      Este e-mail contém o relatório de <b>${REPORT_TYPE_LABELS[type] || type}</b> solicitado para o período.
+      Este e-mail contém o relatório de <b>${esc(REPORT_TYPE_LABELS[type] || type)}</b> solicitado para o período.
     </p>
     <p style="font-family:sans-serif;font-size:13px;color:#64748b;">
       Caso existam anexos no formato CSV/Excel, verifique a seção de anexos da sua mensagem.
