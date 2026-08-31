@@ -17,6 +17,7 @@ REQUIRED_LEDGER = [
     "20260831052809", "20260831134504", "20260831134819", "20260831134912",
     "20260831134944", "20260831135344", "20260831135630", "20260831142929",
     "20260831143323", "20260831143850", "20260831150725",
+    "20260831170836", "20260831221753", "20260831223614",
 ]
 UNSAFE = {
     "20260831100000_concurrency_batch_lifecycle_operator_shifts.sql",
@@ -112,6 +113,48 @@ def main() -> int:
         "contrato SQL da coleta rápida de 8 dígitos",
     )
 
+    async_sql = read(migrations / "20260831221753_collection_async_inbox_worker_v8_7.sql")
+    require_all(
+        async_sql,
+        (
+            "private.coleta_producao_credentials",
+            "FOR UPDATE SKIP LOCKED",
+            "process_collection_inbox_item",
+            "trg_wake_collection_inbox_worker",
+            "run-process-collection-inbox",
+            "ALTER PUBLICATION supabase_realtime",
+        ),
+        "inbox e worker assíncronos v8.7",
+    )
+    ingress_start = async_sql.find(
+        "CREATE OR REPLACE FUNCTION public.process_coleta_producao_ingress()"
+    )
+    ingress_end = async_sql.find(
+        "CREATE OR REPLACE FUNCTION public.claim_collection_inbox"
+    )
+    if ingress_start < 0 or ingress_end <= ingress_start:
+        fail("função leve de ingresso assíncrono não localizada")
+    if "process_production_reading_v2" in async_sql[ingress_start:ingress_end]:
+        fail("INSERT do inbox ainda executa a regra produtiva de forma síncrona")
+
+    async_release_sql = read(
+        migrations / "20260831223614_collection_async_release_probe_v8_7_1.sql"
+    )
+    require_all(
+        async_release_sql,
+        (
+            "get_public_collection_release()",
+            "collection_async_ingress_is_lightweight",
+            "collection_async_worker_rpcs",
+            "collection_async_session_lock_removed",
+            "collection_async_no_legacy_sync_dependency",
+            "20260831_acprod_collection_async_worker_v8_7_1",
+        ),
+        "marcador assíncrono v8.7.1",
+    )
+    if "get_public_collection_micro_batch_release()" in async_release_sql:
+        fail("marcador v8.7.1 ainda herda flags síncronas obsoletas")
+
     replacement_v82_sql = read(migrations / "20260831135630_finalize_replacement_workflow_v8_2.sql")
     require_all(
         replacement_v82_sql,
@@ -179,6 +222,12 @@ def main() -> int:
             "replacement_force_conflict_safe",
             "get_public_collection_release",
             "DATABASE_RELEASE_OK",
+            'REQUIRED_ASYNC_COLLECTION_MIGRATION_VERSION: "20260831223614"',
+            'REQUIRED_ASYNC_COLLECTION_RELEASE_VERSION: "20260831_acprod_collection_async_worker_v8_7_1"',
+            "get_public_collection_async_release",
+            "ASYNC_COLLECTION_RELEASE_OK",
+            "collection_async_ingress_is_lightweight",
+            "collection_async_worker_rpcs",
             "needs: [database-release]",
             "actions/checkout@v6",
             "actions/setup-node@v6",
@@ -295,9 +344,49 @@ def main() -> int:
             "refreshStatsSafely",
             "fallbackLockRef",
             "const id = await enqueueCollectionEvent(payload)",
+            "subscribeToCollectionInbox",
+            "reconcileServerPending",
+            "SERVER_POLL_INTERVAL_MS = 2_000",
             "não bloqueia o próximo código",
         ),
         "fila rápida e FIFO",
+    )
+
+    batch_service = read(repo / "src" / "lib" / "collectionBatchService.js")
+    require_all(
+        batch_service,
+        (
+            "server_accepted",
+            "fetchProductionCollectionResults",
+            ".insert(rows)",
+        ),
+        "ACK durável do inbox",
+    )
+
+    inbox_monitor = read(repo / "src" / "lib" / "collectionInboxMonitor.js")
+    require_all(
+        inbox_monitor,
+        ("postgres_changes", "coletas_producao", "normalizeCollectionIngressRow"),
+        "monitor Realtime do inbox",
+    )
+
+    queue_panel = read(repo / "src" / "components" / "entry" / "CollectionQueuePanel.jsx")
+    require_all(
+        queue_panel,
+        ("Aguardando envio", "Enviando ao servidor", "No servidor", "Processadas"),
+        "painel de estados assíncronos",
+    )
+
+    worker = read(repo / "supabase" / "functions" / "process-collection-inbox" / "index.ts")
+    require_all(
+        worker,
+        (
+            "claim_collection_inbox",
+            "process_collection_inbox_item",
+            "mapWithConcurrency",
+            "x-cron-secret",
+        ),
+        "Edge Function de processamento do inbox",
     )
 
     realtime = read(repo / "src" / "hooks" / "useProductionRealtimeSync.js")
@@ -376,11 +465,13 @@ def main() -> int:
 
     print("AUDIT_ACPROD_ROLLOUT_OK")
     print(f"ledger_versions={len(REQUIRED_LEDGER)}")
-    print("database_gate=collection_fast8_v8_5_fail_closed")
+    print("database_gate=collection_async_worker_v8_7_1_fail_closed")
+    print("collection_transport=indexeddb_to_durable_server_inbox")
+    print("collection_processing=edge_worker_skip_locked_independent_transactions")
     print("scanner_trigger=immediate_on_eighth_digit")
     print("scanner_input=exactly_8_numeric_digits")
     print("scanner_throughput=non_blocking_capture_fifo_sync")
-    print("collection_rpc=single_round_trip_fast_path")
+    print("collection_rpc=async_ack_then_final_decision")
     print("history_modal=protected")
     print("replacement_flow=v8_4_preserved")
     return 0
