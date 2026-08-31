@@ -20,9 +20,9 @@ describe('AC.Prod2 collection micro-batching v8.6 contract', () => {
     expect(migration).toContain('process_production_reading_v2');
     expect(migration).toContain('trg_process_coleta_producao_ingress');
     expect(migration).toContain("v_sqlstate IN ('40001', '40P01'");
-    expect(migration).toContain(
-      "NEW.payload := v_payload - 'operatorSessionToken'",
-    );
+    expect(migration).toContain('NEW.payload := v_payload');
+    expect(migration).toContain("- 'operatorSessionToken'");
+    expect(migration).toContain("- 'operator_session_token'");
   });
 
   it('envia array por insert e preserva client_event_id para idempotência', () => {
