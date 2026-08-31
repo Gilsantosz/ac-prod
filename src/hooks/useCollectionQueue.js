@@ -247,6 +247,8 @@ export function useCollectionQueue(processFn, options = {}) {
       };
     }
 
+    // A gravação durável no IndexedDB não bloqueia o próximo código; o envio
+    // ao Supabase é agendado separadamente e preserva a ordem FIFO da fila.
     const id = await enqueueCollectionEvent(payload);
     refreshStatsSafely();
 
