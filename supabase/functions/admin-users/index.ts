@@ -12,11 +12,23 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 });
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const ALLOWED_ROLES = new Set(['operator', 'supervisor', 'manager', 'admin', 'viewer']);
+const ALLOWED_ROLES = new Set([
+  'operator',
+  'user',
+  'viewer',
+  'supervisor',
+  'leader',
+  'quality',
+  'quality_manager',
+  'manager',
+  'admin',
+]);
 const ROLE_RANK: Record<string, number> = {
   viewer: 10,
   operator: 10,
   supervisor: 20,
+  quality: 25,
+  quality_manager: 25,
   manager: 30,
   admin: 40,
 };
@@ -30,23 +42,31 @@ type CallerProfile = {
   cell: string | null;
 };
 
+function normalizeRole(value: unknown): string {
+  const role = String(value || 'operator').trim().toLowerCase();
+  if (role === 'quality') return 'quality_manager';
+  if (role === 'leader') return 'supervisor';
+  if (role === 'user') return 'operator';
+  return role;
+}
+
 function authorityRank(caller: CallerProfile): number {
-  const roleRank = ROLE_RANK[caller.role] || 0;
+  const roleRank = ROLE_RANK[normalizeRole(caller.role)] || 0;
   if (caller.permissions?.manage_users === true) return Math.max(roleRank, 20);
   if (caller.permissions?.manage_operators === true) return Math.max(roleRank, 15);
   return roleRank;
 }
 
 function canManageTarget(caller: CallerProfile, targetRole: string): boolean {
-  if (caller.role === 'admin') return true;
-  return (ROLE_RANK[targetRole] || 0) < authorityRank(caller);
+  if (normalizeRole(caller.role) === 'admin') return true;
+  return (ROLE_RANK[normalizeRole(targetRole)] || 0) < authorityRank(caller);
 }
 
 function requestedPermissionEscalations(
   caller: CallerProfile,
   requested: Record<string, unknown>,
 ): string[] {
-  if (caller.role === 'admin') return [];
+  if (normalizeRole(caller.role) === 'admin') return [];
   return Object.entries(requested)
     .filter(([, enabled]) => enabled === true)
     .map(([key]) => key)
@@ -83,18 +103,18 @@ Deno.serve(async (request) => {
       .eq('id', userResult.user.id)
       .maybeSingle() as { data: CallerProfile | null };
 
-    const isAuthorized =
-      caller &&
-      caller.active !== false &&
-      (
-        caller.role === 'admin' ||
-        caller.role === 'manager' ||
-        caller.role === 'supervisor' ||
-        caller.permissions?.manage_users === true ||
-        caller.permissions?.manage_operators === true
-      );
+    const callerRole = normalizeRole(caller?.role);
+    const isAuthorized = Boolean(
+      caller
+      && caller.active !== false
+      && (
+        ['admin', 'manager', 'supervisor'].includes(callerRole)
+        || caller.permissions?.manage_users === true
+        || caller.permissions?.manage_operators === true
+      )
+    );
 
-    if (!isAuthorized) {
+    if (!caller || !isAuthorized) {
       return json({ success: false, error: 'Permissão insuficiente para alterar senhas ou gerenciar colaboradores.' }, 403);
     }
 
@@ -113,7 +133,7 @@ Deno.serve(async (request) => {
         .maybeSingle();
 
       if (!targetProfile) {
-        if (caller.role !== 'admin') {
+        if (callerRole !== 'admin') {
           return json({ success: false, error: 'Somente administradores podem alterar contas sem perfil válido.' }, 403);
         }
       } else if (!canManageTarget(caller, String(targetProfile.role || 'operator'))) {
@@ -149,7 +169,8 @@ Deno.serve(async (request) => {
     const email = String(body.email || '').trim().toLowerCase();
     const password = String(body.password || '');
     const name = String(body.name || '').trim();
-    const role = String(body.role || 'operator').trim().toLowerCase();
+    const requestedRole = String(body.role || 'operator').trim().toLowerCase();
+    const role = normalizeRole(requestedRole);
     const cell = String(body.cell || '').trim();
     const managedCells = Array.from(new Set(
       (Array.isArray(body.managed_cells) ? body.managed_cells : [])
@@ -166,7 +187,9 @@ Deno.serve(async (request) => {
     if (!EMAIL_PATTERN.test(email)) return json({ success: false, error: 'Informe um e-mail válido.' }, 422);
     if (password.length < 8) return json({ success: false, error: 'A senha deve ter pelo menos 8 caracteres.' }, 422);
     if (!name) return json({ success: false, error: 'Informe o nome do colaborador.' }, 422);
-    if (!ALLOWED_ROLES.has(role)) return json({ success: false, error: 'Papel de acesso inválido.' }, 422);
+    if (!ALLOWED_ROLES.has(requestedRole) && !ALLOWED_ROLES.has(role)) {
+      return json({ success: false, error: 'Papel de acesso inválido.' }, 422);
+    }
     if (!canManageTarget(caller, role)) {
       return json({ success: false, error: 'Você não pode criar uma conta com nível igual ou superior ao seu.' }, 403);
     }
@@ -183,29 +206,59 @@ Deno.serve(async (request) => {
       }, 403);
     }
 
+    let canonicalManagedCells: string[] = [];
+    if (managedCells.length > 0) {
+      const { data: allCells, error: cellsError } = await admin
+        .from('cells')
+        .select('id, name, active');
+      if (cellsError) throw cellsError;
+
+      const activeCells = (allCells || []).filter((candidate) => candidate.active !== false);
+      const activeCellLookup = new Map<string, string>();
+      for (const candidate of activeCells) {
+        if (candidate.id) activeCellLookup.set(String(candidate.id).toLowerCase().trim(), String(candidate.name || '').trim());
+        if (candidate.name) {
+          const rawName = String(candidate.name).trim();
+          activeCellLookup.set(rawName.toLowerCase(), rawName);
+          activeCellLookup.set(rawName.toLowerCase().replace(/\s+/g, ' '), rawName);
+        }
+      }
+
+      const invalidCells: string[] = [];
+      const resolvedCells: string[] = [];
+      for (const rawCell of managedCells) {
+        const normalizedKey = String(rawCell || '').toLowerCase().trim().replace(/\s+/g, ' ');
+        if (activeCellLookup.has(normalizedKey)) {
+          resolvedCells.push(activeCellLookup.get(normalizedKey)!);
+        } else {
+          invalidCells.push(rawCell);
+        }
+      }
+
+      if (invalidCells.length > 0) {
+        return json({
+          success: false,
+          error: `Uma ou mais células selecionadas (${invalidCells.join(', ')}) não existem ou estão inativas.`,
+        }, 422);
+      }
+
+      canonicalManagedCells = Array.from(new Set(resolvedCells));
+    }
+
     const callerCells = Array.from(new Set(
       (Array.isArray(caller.managed_cells) && caller.managed_cells.length > 0
         ? caller.managed_cells
         : caller.cell ? [caller.cell] : [])
-        .map((value) => String(value || '').trim())
+        .map((value) => String(value || '').toLowerCase().trim().replace(/\s+/g, ' '))
         .filter(Boolean),
     ));
-    if (caller.role !== 'admin' && callerCells.length > 0) {
-      const outsideCallerScope = managedCells.filter((cellName) => !callerCells.includes(cellName));
+    if (callerRole !== 'admin' && callerCells.length > 0) {
+      const outsideCallerScope = canonicalManagedCells.filter((cellName) => {
+        const normalizedCell = String(cellName).toLowerCase().trim().replace(/\s+/g, ' ');
+        return !callerCells.includes(normalizedCell);
+      });
       if (outsideCallerScope.length > 0) {
         return json({ success: false, error: 'Uma ou mais células estão fora do seu escopo de gestão.' }, 403);
-      }
-    }
-
-    if (managedCells.length > 0) {
-      const { data: validCells, error: cellsError } = await admin
-        .from('cells')
-        .select('name')
-        .in('name', managedCells)
-        .eq('active', true);
-      if (cellsError) throw cellsError;
-      if ((validCells || []).length !== managedCells.length) {
-        return json({ success: false, error: 'Uma ou mais células selecionadas não existem ou estão inativas.' }, 422);
       }
     }
 
@@ -218,31 +271,51 @@ Deno.serve(async (request) => {
       return json({ success: false, error: 'Este e-mail já está cadastrado no sistema.' }, 409);
     }
 
-    let authUser = null;
-    const { data: existingUsers, error: listError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    if (listError) throw listError;
-    authUser = existingUsers.users.find((candidate) => candidate.email?.toLowerCase() === email) || null;
+    const { data: created, error: createError } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { name },
+    });
 
-    if (authUser) {
-      const { data: updated, error: updateError } = await admin.auth.admin.updateUserById(authUser.id, {
+    let authUser = created?.user || null;
+    if (createError) {
+      const isDuplicate =
+        createError.message?.toLowerCase().includes('already been registered')
+        || createError.message?.toLowerCase().includes('already exists')
+        || createError.message?.toLowerCase().includes('duplicate')
+        || (createError as { status?: number })?.status === 422;
+
+      if (!isDuplicate) throw createError;
+
+      const { data: listResult, error: listError } = await admin.auth.admin.listUsers({
+        page: 1,
+        perPage: 50,
+      });
+      const existingAuth = listError
+        ? null
+        : listResult?.users?.find((candidate) => candidate.email?.toLowerCase() === email);
+
+      if (!existingAuth) {
+        return json({
+          success: false,
+          error: 'Este e-mail já possui uma conta de autenticação mas não foi possível recuperá-la. Tente resetar a senha.',
+        }, 409);
+      }
+
+      const { data: updated, error: updateError } = await admin.auth.admin.updateUserById(existingAuth.id, {
         password,
         email_confirm: true,
         user_metadata: { name },
       });
       if (updateError) throw updateError;
       authUser = updated.user;
-    } else {
-      const { data: created, error: createError } = await admin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: { name },
-      });
-      if (createError) throw createError;
-      authUser = created.user;
     }
 
     if (!authUser?.id) throw new Error('A conta de autenticação não foi criada.');
+
+    const reportDeliveryEnabled = Boolean(body.report_delivery_enabled ?? body.report_settings?.report_delivery_enabled);
+    const receivesDailyReport = Boolean(body.receives_daily_report ?? body.report_settings?.receives_daily_report);
 
     const { data: profile, error: profileError } = await admin
       .from('profiles')
@@ -251,15 +324,17 @@ Deno.serve(async (request) => {
         email,
         name,
         role,
-        cell: managedCells[0] || cell,
-        managed_cells: managedCells,
-        access_scope: caller.role === 'admin'
-          ? { ...accessScope, cells: managedCells }
-          : { cells: managedCells, machines: [] },
+        cell: canonicalManagedCells[0] || cell,
+        managed_cells: canonicalManagedCells,
+        access_scope: callerRole === 'admin'
+          ? { ...accessScope, cells: canonicalManagedCells }
+          : { cells: canonicalManagedCells, machines: [] },
         permissions,
         active: true,
+        report_delivery_enabled: reportDeliveryEnabled,
+        receives_daily_report: receivesDailyReport,
       }, { onConflict: 'id' })
-      .select('id, email, name, role, cell, managed_cells, access_scope, permissions, active, report_delivery_enabled')
+      .select('id, email, name, role, cell, managed_cells, access_scope, permissions, active, report_delivery_enabled, receives_daily_report')
       .single();
     if (profileError) throw profileError;
 

@@ -1,46 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  Loader2, UserPlus, LayoutDashboard, PlusCircle, AlertOctagon, Boxes, HardHat, LineChart,
-  Zap, Users, ShieldAlert, BrainCircuit, Plug, GitFork, Box, Truck, BellRing, Layers, Edit3, Check
-} from 'lucide-react';
+import { Check, Loader2, UserPlus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCells } from '@/hooks/useCells';
-import { getDefaultPermissions } from '@/config/appRoutes';
+import { SYSTEM_ROLE_OPTIONS, getRoleDefaultPermissions } from '@/lib/roleProfiles';
 import PageAccessMatrix, { normalizePagePermissions } from '@/components/users/PageAccessMatrix';
-
-
-const PERMISSION_METADATA = [
-  { key: 'view_dashboards', label: 'Visualizar Painéis', desc: 'Painéis, OEE, Tendências e Gamificação.', icon: LayoutDashboard },
-  { key: 'register_production', label: 'Lançar Produção', desc: 'Registrar apontamentos horários.', icon: PlusCircle },
-  { key: 'register_manual_production', label: 'Baixa Manual', desc: 'Registrar baixas produtivas manuais por Lote Geral.', icon: Edit3 },
-  { key: 'manage_occurrences', label: 'Ocorrências e Paradas', desc: 'Registrar e tratar paradas da produção.', icon: AlertOctagon },
-  { key: 'manage_cells', label: 'Células e Metas', desc: 'Cadastrar células de trabalho e metas diárias.', icon: Boxes },
-  { key: 'manage_operators', label: 'Operadores e Equipes', desc: 'Gerenciar cadastro de operadores.', icon: HardHat },
-  { key: 'view_reports', label: 'Relatórios Industriais', desc: 'Acessar e exportar relatórios em PDF.', icon: LineChart },
-  { key: 'ai_operations', label: 'IA Operacional', desc: 'Consultar o Copilot e gerar análises produtivas.', icon: BrainCircuit },
-  { key: 'manage_automations', label: 'Alertas e Automações', desc: 'Configurar automações e regras de alerta.', icon: Zap },
-  { key: 'manage_users', label: 'Gerenciar Usuários', desc: 'Cadastrar usuários e configurar acessos.', icon: Users, warning: true },
-  { key: 'view_pcp', label: 'Visualizar PCP', desc: 'Acessar o portal de PCP e importação de XML/CSV.', icon: Plug },
-  { key: 'manage_pcp', label: 'Gerenciar PCP', desc: 'Gerenciar importações e configurações do PCP.', icon: Plug },
-  { key: 'manage_routes', label: 'Gerenciar Rotas', desc: 'Configurar templates de roteiros produtivos.', icon: GitFork },
-  { key: 'traceability_collect', label: 'Coleta / Bipagem', desc: 'Registrar peças no coletor de código/RFID.', icon: PlusCircle },
-  { key: 'view_traceability', label: 'Rastreabilidade Geral', desc: 'Acessar o Kanban e timeline de peças.', icon: Layers },
-  { key: 'manage_packaging', label: 'Gerenciar Embalagem', desc: 'Criar volumes e bipar peças (Scan-to-Pack).', icon: Box },
-  { key: 'manage_shipping', label: 'Gerenciar Expedição', desc: 'Realizar checklist de remessas e expedição.', icon: Truck },
-  { key: 'view_mes_alerts', label: 'Alertas MES', desc: 'Visualizar atrasos e gargalos no chão de fábrica.', icon: BellRing },
-  // Novas permissões
-  { key: 'send_reports', label: 'Enviar Relatórios', desc: 'Enviar fechamentos e relatórios por e-mail manualmente.', icon: BellRing },
-  { key: 'schedule_reports', label: 'Agendar Relatórios', desc: 'Configurar e-mails automáticos periódicos.', icon: Zap },
-  { key: 'manage_report_recipients', label: 'Gerenciar Destinatários', desc: 'Cadastrar grupos de e-mail e contatos.', icon: Users },
-  { key: 'view_report_delivery_logs', label: 'Histórico de Envios', desc: 'Visualizar logs de e-mails enviados.', icon: LineChart },
-  { key: 'manage_email_settings', label: 'Configurar E-mail', desc: 'Configurar SMTP/Resend e cron (Admin).', icon: Users, warning: true },
-  { key: 'view_audit_logs', label: 'Logs de Auditoria', desc: 'Visualizar logs de auditoria de sistema (Admin).', icon: ShieldAlert, warning: true }
-];
 
 export default function InviteUserForm({ onInvite, saving }) {
   const { activeCells } = useCells();
@@ -49,36 +17,25 @@ export default function InviteUserForm({ onInvite, saving }) {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('operator');
   const [managedCells, setManagedCells] = useState([]);
-  const [permissions, setPermissions] = useState(() => getDefaultPermissions('operator'));
+  const [permissions, setPermissions] = useState(() => getRoleDefaultPermissions('operator'));
   const [reportDeliveryEnabled, setReportDeliveryEnabled] = useState(false);
   const [receivesDailyReport, setReceivesDailyReport] = useState(false);
 
-  // Atualiza as permissões automaticamente quando o papel muda
   useEffect(() => {
-    setPermissions(getDefaultPermissions(role));
+    setPermissions(getRoleDefaultPermissions(role));
   }, [role]);
 
-  const togglePermission = (key) => {
-    setPermissions((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
-  };
-
   const toggleCell = (cellName) => {
-    setManagedCells((current) => (
-      current.includes(cellName)
-        ? current.filter((name) => name !== cellName)
-        : [...current, cellName]
-    ));
+    setManagedCells((current) => current.includes(cellName)
+      ? current.filter((nameValue) => nameValue !== cellName)
+      : [...current, cellName]);
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     if (!name.trim() || !email.trim() || !password.trim()) return;
-
     if (password.trim().length < 8) {
-      alert("A senha de acesso deve ter pelo menos 8 caracteres.");
+      alert('A senha de acesso deve ter pelo menos 8 caracteres.');
       return;
     }
     if (role === 'operator' && managedCells.length === 0) {
@@ -87,7 +44,7 @@ export default function InviteUserForm({ onInvite, saving }) {
     }
 
     await onInvite(
-      email.trim(),
+      email.trim().toLowerCase(),
       role,
       name.trim(),
       password.trim(),
@@ -99,49 +56,44 @@ export default function InviteUserForm({ onInvite, saving }) {
         receives_daily_report: receivesDailyReport,
       },
     );
-    
-    // Limpar campos
+
     setName('');
     setEmail('');
     setPassword('');
     setRole('operator');
     setManagedCells([]);
-    setPermissions(getDefaultPermissions('operator'));
+    setPermissions(getRoleDefaultPermissions('operator'));
     setReportDeliveryEnabled(false);
     setReceivesDailyReport(false);
   };
 
   return (
-    <Card className="p-6 border-border/60 space-y-6 shadow-sm">
+    <Card className="space-y-6 border-border/60 p-6 shadow-sm">
       <div>
-        <h3 className="font-semibold text-lg text-foreground">Criar Novo Usuário</h3>
-        <p className="text-sm text-muted-foreground">Cadastre novos colaboradores e configure permissões granulares de acesso.</p>
+        <h3 className="text-lg font-semibold text-foreground">Criar novo usuário</h3>
+        <p className="text-sm text-muted-foreground">Cadastre colaboradores, incluindo o papel Qualidade, e configure o escopo de acesso.</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="space-y-2 md:col-span-1">
-            <Label htmlFor="name">Nome Completo</Label>
-            <Input id="name" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="ex: Carlos Silva" required />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <div className="space-y-2">
+            <Label htmlFor="invite-name">Nome completo</Label>
+            <Input id="invite-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="ex.: Carlos Silva" required />
           </div>
-          <div className="space-y-2 md:col-span-1">
-            <Label htmlFor="email">E-mail (Login)</Label>
-            <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ex: carlos@empresa.com" required />
+          <div className="space-y-2">
+            <Label htmlFor="invite-email">E-mail de acesso</Label>
+            <Input id="invite-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="ex.: carlos@empresa.com" required />
           </div>
-          <div className="space-y-2 md:col-span-1">
-            <Label htmlFor="password">Senha de Acesso</Label>
-            <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="mínimo 8 caracteres" required />
+          <div className="space-y-2">
+            <Label htmlFor="invite-password">Senha de acesso</Label>
+            <Input id="invite-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="mínimo 8 caracteres" required />
           </div>
-          <div className="space-y-2 md:col-span-1">
-            <Label htmlFor="role">Papel</Label>
+          <div className="space-y-2">
+            <Label htmlFor="invite-role">Papel</Label>
             <Select value={role} onValueChange={setRole}>
-              <SelectTrigger id="role"><SelectValue /></SelectTrigger>
+              <SelectTrigger id="invite-role"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="operator">Operador / Usuário</SelectItem>
-                <SelectItem value="supervisor">Supervisor / Líder</SelectItem>
-                <SelectItem value="manager">Gestor</SelectItem>
-                <SelectItem value="admin">Administrador</SelectItem>
-                <SelectItem value="viewer">Visualizador / Auditor</SelectItem>
+                {SYSTEM_ROLE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -150,24 +102,19 @@ export default function InviteUserForm({ onInvite, saving }) {
         <div className="space-y-3 rounded-xl border border-border/60 p-4">
           <div>
             <Label className="text-sm font-semibold">Células autorizadas</Label>
-            <p className="text-xs text-muted-foreground">
-              Operadores terão acesso somente às células selecionadas. Selecione uma ou várias.
-            </p>
+            <p className="text-xs text-muted-foreground">O escopo também limita decisões de Qualidade e Reposição.</p>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-            {activeCells.map((c) => {
-              const active = managedCells.includes(c.name);
+            {activeCells.map((cell) => {
+              const active = managedCells.includes(cell.name);
               return (
                 <button
                   type="button"
-                  key={c.id}
-                  onClick={() => toggleCell(c.name)}
-                  className={cn(
-                    'flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition-colors',
-                    active ? 'border-primary bg-primary/5 font-semibold text-foreground' : 'border-border/60 text-muted-foreground hover:bg-muted/40',
-                  )}
+                  key={cell.id}
+                  onClick={() => toggleCell(cell.name)}
+                  className={cn('flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition-colors', active ? 'border-primary bg-primary/5 font-semibold text-foreground' : 'border-border/60 text-muted-foreground hover:bg-muted/40')}
                 >
-                  <span>{c.name}</span>
+                  <span>{cell.name}</span>
                   <span className={cn('flex h-4 w-4 items-center justify-center rounded border', active && 'border-primary bg-primary text-primary-foreground')}>
                     {active && <Check className="h-3 w-3" />}
                   </span>
@@ -188,39 +135,20 @@ export default function InviteUserForm({ onInvite, saving }) {
               }}
               className="mt-1 h-4 w-4 rounded border-input text-primary"
             />
-            <span>
-              <span className="block text-sm font-semibold text-foreground">Disponível para e-mails e comandos da IA</span>
-              <span className="block text-xs text-muted-foreground">Permite selecionar este colaborador como destinatário de relatórios.</span>
-            </span>
+            <span><span className="block text-sm font-semibold text-foreground">Disponível para e-mails e comandos da IA</span><span className="block text-xs text-muted-foreground">Permite selecionar este colaborador como destinatário de relatórios.</span></span>
           </label>
           <label className="flex cursor-pointer items-start gap-3">
-            <input
-              type="checkbox"
-              checked={receivesDailyReport}
-              disabled={!reportDeliveryEnabled}
-              onChange={(event) => setReceivesDailyReport(event.target.checked)}
-              className="mt-1 h-4 w-4 rounded border-input text-primary disabled:opacity-50"
-            />
-            <span>
-              <span className="block text-sm font-semibold text-foreground">Destinatário de fechamento produtivo</span>
-              <span className="block text-xs text-muted-foreground">O horário e o conteúdo são definidos na aba Agendamentos.</span>
-            </span>
+            <input type="checkbox" checked={receivesDailyReport} disabled={!reportDeliveryEnabled} onChange={(event) => setReceivesDailyReport(event.target.checked)} className="mt-1 h-4 w-4 rounded border-input text-primary disabled:opacity-50" />
+            <span><span className="block text-sm font-semibold text-foreground">Destinatário de fechamento produtivo</span><span className="block text-xs text-muted-foreground">O horário e o conteúdo são definidos na aba Agendamentos.</span></span>
           </label>
         </div>
 
+        <PageAccessMatrix role={role} permissions={permissions} onChange={setPermissions} disabled={role === 'admin'} />
 
-
-        <PageAccessMatrix
-          role={role}
-          permissions={permissions}
-          onChange={setPermissions}
-          disabled={role === 'admin'}
-        />
-
-        <div className="flex justify-end pt-2 border-t border-border/40">
+        <div className="flex justify-end border-t border-border/40 pt-2">
           <Button type="submit" disabled={saving} className="gap-2 px-6">
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-            Criar Usuário
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+            Criar usuário
           </Button>
         </div>
       </form>
