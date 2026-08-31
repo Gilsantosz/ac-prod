@@ -3,15 +3,24 @@
 BEGIN;
 SET LOCAL statement_timeout='60s';
 DO $test$
-DECLARE v_count bigint:=0; v_definition text; v_release jsonb;
+DECLARE
+  v_count bigint:=0;
+  v_wrapper_definition text;
+  v_impl_definition text;
+  v_release jsonb;
 BEGIN
   IF to_regclass('public.production_cell_lot_states') IS NULL OR to_regclass('public.production_cell_active_contexts') IS NULL THEN RAISE EXCEPTION 'TEST_FAIL: lifecycle/context tables missing'; END IF;
   IF NOT coalesce((SELECT relrowsecurity FROM pg_class WHERE oid='public.production_cell_lot_states'::regclass),false) OR NOT coalesce((SELECT relrowsecurity FROM pg_class WHERE oid='public.production_cell_active_contexts'::regclass),false) THEN RAISE EXCEPTION 'TEST_FAIL: lifecycle/context RLS disabled'; END IF;
-  IF to_regprocedure('public.process_production_reading(jsonb)') IS NULL OR to_regprocedure('public.process_production_reading_v2(jsonb)') IS NULL THEN RAISE EXCEPTION 'TEST_FAIL: collection RPC v2/wrapper missing'; END IF;
+  IF to_regprocedure('public.process_production_reading(jsonb)') IS NULL OR to_regprocedure('public.process_production_reading_v2(jsonb)') IS NULL OR to_regprocedure('public.process_production_reading_impl_v2(jsonb)') IS NULL THEN RAISE EXCEPTION 'TEST_FAIL: collection RPC wrapper/v2/implementation missing'; END IF;
   IF to_regprocedure('public.get_operator_shift_kpis_v2(text,timestamptz)') IS NULL OR to_regprocedure('public.get_operator_shift_kpis_v2(uuid,timestamptz)') IS NULL THEN RAISE EXCEPTION 'TEST_FAIL: shift KPI overloads missing'; END IF;
-  IF has_function_privilege('anon','public.process_production_reading(jsonb)','EXECUTE') OR has_function_privilege('anon','public.process_production_reading_v2(jsonb)','EXECUTE') THEN RAISE EXCEPTION 'TEST_FAIL: anon can execute production collection'; END IF;
-  SELECT pg_get_functiondef(to_regprocedure('public.process_production_reading_v2(jsonb)')) INTO v_definition;
-  IF position('pg_advisory_xact_lock' in v_definition)=0 OR position('validar_fluxo_da_peca' in v_definition)=0 OR position('auth.uid()' in v_definition)=0 OR position('FOR UPDATE' in upper(v_definition))=0 THEN RAISE EXCEPTION 'TEST_FAIL: v2 RPC lacks lock, route validation or auth binding'; END IF;
+  IF has_function_privilege('anon','public.process_production_reading(jsonb)','EXECUTE') OR has_function_privilege('anon','public.process_production_reading_v2(jsonb)','EXECUTE') OR has_function_privilege('anon','public.process_production_reading_impl_v2(jsonb)','EXECUTE') THEN RAISE EXCEPTION 'TEST_FAIL: anon can execute production collection'; END IF;
+
+  SELECT pg_get_functiondef(to_regprocedure('public.process_production_reading_v2(jsonb)')) INTO v_wrapper_definition;
+  SELECT pg_get_functiondef(to_regprocedure('public.process_production_reading_impl_v2(jsonb)')) INTO v_impl_definition;
+
+  IF position('process_production_reading_impl_v2' in v_wrapper_definition)=0 OR position('finalize_collection_realtime' in v_wrapper_definition)=0 THEN RAISE EXCEPTION 'TEST_FAIL: v2 wrapper is not connected to implementation/realtime finalizer'; END IF;
+  IF position('pg_advisory_xact_lock' in v_impl_definition)=0 OR position('validar_fluxo_da_peca' in v_impl_definition)=0 OR position('auth.uid()' in v_impl_definition)=0 OR position('FOR UPDATE' in upper(v_impl_definition))=0 THEN RAISE EXCEPTION 'TEST_FAIL: implementation lacks lock, route validation or auth binding'; END IF;
+
   IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='operators' AND column_name='shift_start_time') OR NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='operators' AND column_name='shift_end_time') OR NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='operators' AND column_name='timezone') THEN RAISE EXCEPTION 'TEST_FAIL: operator shift columns missing'; END IF;
   IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='production_stage_readings' AND column_name='raw_value') OR NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='production_stage_readings' AND column_name='traceability_code') THEN RAISE EXCEPTION 'TEST_FAIL: cached-client history compatibility missing'; END IF;
   SELECT count(*) INTO v_count FROM (SELECT reading.piece_id,public.normalize_route_step_code(reading.step_name),coalesce(reading.production_cycle,1) FROM public.production_stage_readings reading WHERE reading.status='approved' AND reading.piece_id IS NOT NULL GROUP BY reading.piece_id,public.normalize_route_step_code(reading.step_name),coalesce(reading.production_cycle,1) HAVING count(*)>1) duplicated;
