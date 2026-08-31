@@ -58,23 +58,6 @@ async function enrichCollectionRowsWithCurrentPieceStatus(rows, requestedStatus 
   return requestedStatus ? enriched.filter((row) => row.event_status === requestedStatus) : enriched;
 }
 
-async function resolveCellId(cellId, cellName) {
-  const trimmedName = cellName?.trim();
-  if (cellId || !trimmedName) return cellId || null;
-  const { data: cells, error } = await supabase
-    .from('cells')
-    .select('id')
-    .ilike('name', trimmedName)
-    .limit(1);
-  if (error) {
-    console.error('resolveCellId error:', error);
-    throw error;
-  }
-  const result = cells?.[0]?.id || null;
-  console.log('resolveCellId:', { cellName: trimmedName, result });
-  return result;
-}
-
 /**
  * Busca o histórico de coletas usando a RPC otimizada do Supabase.
  */
@@ -92,7 +75,7 @@ export async function getCollectionHistory({
   dateTo = null
 }) {
   const trimmedName = cellName?.trim();
-  const resolvedCellId = await resolveCellId(cellId, trimmedName);
+  const resolvedCellId = cellId || null;
 
   console.log('rpc get_collection_history call:', {
     p_cell_id: resolvedCellId,
@@ -145,7 +128,7 @@ export async function getCollectionHistoryCount({
   dateTo = null
 }) {
   const trimmedName = cellName?.trim();
-  const resolvedCellId = await resolveCellId(cellId, trimmedName);
+  const resolvedCellId = cellId || null;
 
   const { data, error } = await supabase.rpc('get_collection_history_count', {
     p_cell_id: resolvedCellId,
@@ -166,39 +149,30 @@ export async function getCollectionHistoryCount({
 /**
  * Inscreve no Supabase Realtime para escutar alterações de coletas na célula/posto
  */
-export function subscribeToCollectionHistory({ cellName, cellId, callback, onStatus, channelSuffix = '' }) {
+export function subscribeToCollectionHistory({
+  cellName,
+  cellId,
+  callback,
+  onStatus,
+  channelSuffix = '',
+}) {
   const trimmedName = cellName?.trim();
   const uniqueId = Math.random().toString(36).substring(2, 7);
   const suffix = channelSuffix ? `-${channelSuffix}-${uniqueId}` : `-${uniqueId}`;
   const channelName = `collection-history-${trimmedName || cellId || 'all'}${suffix}`;
 
-  const changeConfig = {
-    event: '*',
+  const finalEventConfig = {
+    event: 'INSERT',
     schema: 'public',
     table: 'production_collection_events',
   };
-  if (trimmedName) changeConfig.filter = `cell_name=eq.${trimmedName}`;
-
-  const readingsConfig = {
-    event: '*',
-    schema: 'public',
-    table: 'production_stage_readings',
-  };
-  if (trimmedName) readingsConfig.filter = `cell_name=eq.${trimmedName}`;
+  if (trimmedName) finalEventConfig.filter = `cell_name=eq.${trimmedName}`;
 
   try {
-    const channel = supabase
+    return supabase
       .channel(channelName)
-      .on('postgres_changes', changeConfig, callback)
-      .on('postgres_changes', readingsConfig, callback)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'production_pieces' },
-        callback,
-      )
+      .on('postgres_changes', finalEventConfig, callback)
       .subscribe((status) => onStatus?.(status));
-
-    return channel;
   } catch (err) {
     console.error('Erro ao subscrever ao canal realtime:', err);
     onStatus?.('CHANNEL_ERROR');
@@ -389,7 +363,7 @@ export async function getPieceTraceability(pieceIdOrCode) {
 
   if (!target) throw new Error('Código ou ID da peça é obrigatório.');
 
-  const isUuid = target.length === 36 && target.includes('-');
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(target);
   let piece = null;
   let pcpRowData = null;
 
@@ -434,7 +408,12 @@ export async function getPieceTraceability(pieceIdOrCode) {
             )
           )
         `)
-        .or(`piece_uid.eq.${target},traceability_code.eq.${target},piece_code.eq.${target},id.eq.${target}`)
+        .or([
+          `piece_uid.eq.${target}`,
+          `traceability_code.eq.${target}`,
+          `piece_code.eq.${target}`,
+          ...(isUuid ? [`id.eq.${target}`] : []),
+        ].join(','))
         .maybeSingle();
       if (!error && data) piece = data;
     }

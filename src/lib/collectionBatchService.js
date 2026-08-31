@@ -3,7 +3,9 @@ import { getOperatorSession } from '@/lib/operatorSessionService';
 
 export const COLLECTION_BATCH_SIZE = 50;
 export const COLLECTION_BATCH_MAX_SIZE = 100;
+export const COLLECTION_FINALIZATION_TIMEOUT_MS = 25_000;
 
+const FINAL_STATUSES = new Set(['sincronizada', 'erro']);
 const INGRESS_SELECT = [
   'id',
   'client_event_id',
@@ -15,6 +17,12 @@ const INGRESS_SELECT = [
   'retryable',
   'batch_id',
   'batch_sequence',
+  'server_received_at',
+  'processado_em',
+  'attempt_count',
+  'next_attempt_at',
+  'last_error_code',
+  'queue_delay_ms',
   'processing_duration_ms',
 ].join(',');
 
@@ -36,6 +44,12 @@ function randomUuid() {
     ].join('-');
   }
   throw new Error('Gerador criptográfico de UUID indisponível.');
+}
+
+function sleep(delayMs) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
 }
 
 function wrapSupabaseError(error, fallbackMessage) {
@@ -109,21 +123,28 @@ function buildIngressRows(events, batchId, fallbackSessionToken = null) {
   });
 }
 
-function normalizeIngressResult(row) {
-  const result = row?.resultado || {
+function fallbackResult(row) {
+  return {
     success: false,
     status: 'error',
-    reason_code: 'COLLECTION_INGRESS_EMPTY_RESULT',
-    message: row?.erro || 'O servidor não retornou o resultado da coleta.',
+    reason_code: row?.last_error_code || 'COLLECTION_INGRESS_EMPTY_RESULT',
+    message: row?.erro || 'O servidor não retornou o resultado final da coleta.',
     client_event_id: row?.client_event_id,
+    retryable: row?.retryable === true,
   };
+}
+
+function normalizeIngressResult(row) {
+  const status = row?.status_sincronizacao || 'erro';
+  const isFinal = FINAL_STATUSES.has(status);
 
   return {
     client_event_id: row?.client_event_id,
-    status_sincronizacao: row?.status_sincronizacao || 'erro',
+    status_sincronizacao: status,
+    accepted: !isFinal,
     retryable: row?.retryable === true,
     error: row?.erro || null,
-    result,
+    result: isFinal ? (row?.resultado || fallbackResult(row)) : null,
     ingress: row,
   };
 }
@@ -139,7 +160,7 @@ async function selectExistingRows(clientEventIds) {
   if (error) {
     throw wrapSupabaseError(
       error,
-      'Falha ao consultar leituras já recebidas pelo Supabase.',
+      'Falha ao consultar o estado final das leituras no Supabase.',
     );
   }
 
@@ -168,16 +189,57 @@ async function insertRows(rows, allowDuplicateRecovery = true) {
 
   throw wrapSupabaseError(
     error,
-    'Falha ao enviar o micro-lote de leituras para o Supabase.',
+    'Falha ao persistir o micro-lote de leituras no Supabase.',
   );
 }
 
+async function waitForFinalRows(
+  inputRows,
+  initialRows,
+  timeoutMs = COLLECTION_FINALIZATION_TIMEOUT_MS,
+) {
+  const orderedIds = inputRows.map((row) => row.client_event_id);
+  const rowsById = new Map(
+    (initialRows || []).map((row) => [row.client_event_id, row]),
+  );
+  const deadline = Date.now() + timeoutMs;
+  let pollDelayMs = 120;
+
+  while (orderedIds.some((id) => (
+    !FINAL_STATUSES.has(rowsById.get(id)?.status_sincronizacao)
+  ))) {
+    if (Date.now() >= deadline) {
+      const pendingIds = orderedIds.filter((id) => (
+        !FINAL_STATUSES.has(rowsById.get(id)?.status_sincronizacao)
+      ));
+      const error = new Error(
+        `O servidor aceitou o lote, mas ${pendingIds.length} leitura(s) `
+        + 'ainda não terminaram o processamento.',
+      );
+      error.code = 'COLLECTION_FINALIZATION_TIMEOUT';
+      error.retryable = true;
+      error.pendingClientEventIds = pendingIds;
+      throw error;
+    }
+
+    await sleep(pollDelayMs);
+    const refreshed = await selectExistingRows(orderedIds);
+    for (const row of refreshed) {
+      rowsById.set(row.client_event_id, row);
+    }
+    pollDelayMs = Math.min(1_000, Math.round(pollDelayMs * 1.6));
+  }
+
+  return orderedIds.map((id) => rowsById.get(id));
+}
+
 /**
- * Envia de 1 a 100 leituras em um único POST do PostgREST.
+ * Persiste de 1 a 100 leituras em um único POST e aguarda a decisão final
+ * produzida pelo worker assíncrono.
  *
- * O banco processa cada linha com a mesma RPC transacional já usada pela coleta
- * unitária. Falha de rede/transiente rejeita a Promise para que a fila local
- * recoloque o lote inteiro e tente novamente com o mesmo client_event_id.
+ * A captura física não aguarda esta Promise: ela já foi confirmada pela fila
+ * IndexedDB. O polling ocorre somente no sincronizador em background, mantendo
+ * o scanner livre para o próximo código.
  */
 export async function processProductionCollectionBatch(events = []) {
   if (!Array.isArray(events) || events.length === 0) return [];
@@ -207,24 +269,8 @@ export async function processProductionCollectionBatch(events = []) {
   const operatorSession = getOperatorSession();
   const batchId = randomUuid();
   const rows = buildIngressRows(events, batchId, operatorSession?.token || null);
-  const insertedRows = await insertRows(rows);
-  const byClientEventId = new Map(
-    insertedRows.map((row) => [row.client_event_id, row]),
-  );
+  const acceptedRows = await insertRows(rows);
+  const finalizedRows = await waitForFinalRows(rows, acceptedRows);
 
-  return rows.map((row) => normalizeIngressResult(
-    byClientEventId.get(row.client_event_id) || {
-      client_event_id: row.client_event_id,
-      status_sincronizacao: 'erro',
-      retryable: true,
-      erro: 'O Supabase não confirmou esta leitura no retorno do micro-lote.',
-      resultado: {
-        success: false,
-        status: 'error',
-        reason_code: 'COLLECTION_INGRESS_MISSING_CONFIRMATION',
-        message: 'O Supabase não confirmou esta leitura no retorno do micro-lote.',
-        client_event_id: row.client_event_id,
-      },
-    },
-  ));
+  return finalizedRows.map((row) => normalizeIngressResult(row));
 }

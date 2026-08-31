@@ -416,29 +416,33 @@ export default function TraceabilityCollection({ embedded = false }) {
   ) || activeGeneralLots[0] || null;
   const currentClientLotCode = feedback?.lot?.lot_code || selectedPiece?.lot_code || null;
 
-  const refreshData = useCallback(() => {
+  const refreshKpis = useCallback(() => {
     invalidateAllMesQueries(queryClient);
-    queryClient.invalidateQueries({ queryKey: ['stageReadings', cellName, machine?.id] });
-    setRefreshReadsSignal(prev => prev + 1);
-  }, [queryClient, cellName, machine]);
+    queryClient.invalidateQueries({
+      queryKey: ['stageReadings', cellName, machine?.id],
+    });
+  }, [queryClient, cellName, machine?.id]);
 
-  // Realtime subscription to refresh KPIs and readings on any collection events
+  const refreshData = useCallback(() => {
+    refreshKpis();
+    setRefreshReadsSignal((value) => value + 1);
+  }, [refreshKpis]);
+
+  // Uma decisão final gera apenas uma atualização consolidada dos KPIs.
+  // O painel de histórico possui sua própria assinatura e não é forçado por aqui.
   useEffect(() => {
-    if (!cellName) return;
-    console.log('Subscribing to realtime collection events for parent KPIs in cell:', cellName);
+    if (!cellName) return undefined;
+
     const channel = subscribeToCollectionHistory({
       cellName,
       channelSuffix: 'parent',
-      callback: (payload) => {
-        console.log('Realtime collection event received in parent:', payload);
-        refreshData();
-      }
+      callback: () => refreshKpis(),
     });
+
     return () => {
-      console.log('Unsubscribing from realtime collection events for parent cell:', cellName);
       unsubscribeFromCollectionHistory(channel);
     };
-  }, [cellName, refreshData]);
+  }, [cellName, refreshKpis]);
 
   // Busca silenciosa da timeline da peça ativa
   useEffect(() => {
@@ -532,7 +536,15 @@ export default function TraceabilityCollection({ embedded = false }) {
       try {
         const result = await processNow(clientEventId);
         updateFeedback({ ...result, client_event_id: clientEventId });
-        
+
+        if (result?.pending || result?.status === 'queued') {
+          toast.info(
+            result.message || 'Leitura recebida e aguardando validação.',
+            { id: 'collection-local-accepted' },
+          );
+          return result;
+        }
+
         if (result?.success) {
           toast.success(result.message || 'Leitura aprovada');
           navigator.vibrate?.([70, 40, 70]);

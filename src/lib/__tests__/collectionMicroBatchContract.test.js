@@ -36,14 +36,14 @@ describe('AC.Prod2 collection micro-batching v8.6 contract', () => {
     expect(service).toContain('COLLECTION_BATCH_MAX_SIZE = 100');
   });
 
-  it('escoa a fila a cada cinco segundos sem aguardar o banco em processNow', () => {
+  it('escoa a fila em até um segundo sem bloquear o próximo código', () => {
     const hook = repoFile('src/hooks/useCollectionQueue.js');
     const queue = repoFile('src/lib/collectionMicroBatchQueue.js');
 
-    expect(hook).toContain('(microBatch ? 5000 : 15000)');
+    expect(hook).toMatch(/\(microBatch \? 1_?000 : 15_?000\)/);
     expect(hook).toContain('dispatchCollectionEventBatch');
     expect(hook).toContain("status: 'queued'");
-    expect(hook).toMatch(/não\s+espera o PostgreSQL/);
+    expect(hook).toMatch(/não\s+bloqueia o próximo código/);
     expect(hook).toContain('getOperatorSession');
     expect(hook).toContain('operator_session_token');
     expect(queue).toContain('flushCollectionMicroBatchQueue');

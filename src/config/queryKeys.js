@@ -1,6 +1,8 @@
 /**
- * AC.Prod MES — Constantes Canônicas de Query Keys do TanStack Query
- * Unifica e sincroniza as chaves de cache em todas as telas do sistema.
+ * AC.Prod MES — chaves canônicas do TanStack Query.
+ *
+ * Invalidações Realtime são consolidadas em uma janela curta para impedir que
+ * uma única coleta gere dezenas de refetches concorrentes.
  */
 
 export const MES_QUERY_KEYS = {
@@ -38,15 +40,46 @@ export const MES_QUERY_KEYS = {
   downtimeStats: ['downtimeStats'],
 };
 
-/**
- * Invalida todas as consultas MES após operações transacionais, como
- * reprovação, estorno, leitura de peça ou alteração de lote.
- */
-export function invalidateAllMesQueries(queryClient) {
-  if (!queryClient) return;
+const DEFAULT_INVALIDATION_DELAY_MS = 750;
+const pendingInvalidations = new WeakMap();
 
+function runInvalidation(queryClient) {
   Object.values(MES_QUERY_KEYS).forEach((queryKey) => {
     queryClient.invalidateQueries({ queryKey });
   });
 }
 
+/**
+ * Consolida múltiplos eventos Realtime em uma única rodada de invalidação.
+ */
+export function invalidateAllMesQueries(queryClient, options = {}) {
+  if (!queryClient) return null;
+
+  const existing = pendingInvalidations.get(queryClient);
+  if (existing) return existing;
+
+  const delayMs = Math.max(
+    0,
+    Number(options.delayMs) || DEFAULT_INVALIDATION_DELAY_MS,
+  );
+  const timeout = setTimeout(() => {
+    pendingInvalidations.delete(queryClient);
+    runInvalidation(queryClient);
+  }, delayMs);
+
+  pendingInvalidations.set(queryClient, timeout);
+  return timeout;
+}
+
+/**
+ * Usado por ações manuais que precisam refletir imediatamente no front.
+ */
+export function flushPendingMesInvalidation(queryClient) {
+  if (!queryClient) return;
+  const existing = pendingInvalidations.get(queryClient);
+  if (existing) {
+    clearTimeout(existing);
+    pendingInvalidations.delete(queryClient);
+  }
+  runInvalidation(queryClient);
+}
