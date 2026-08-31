@@ -375,6 +375,8 @@ export default function PcpImportTab({ preselectedFile, clearPreselected }) {
 
     setImporting(true);
     let totalPiecesCreatedAll = 0;
+    let successfulFiles = 0;
+    const failedFiles = [];
     const userRes = await supabase.auth.getUser();
     const userId = userRes.data.user?.id;
 
@@ -395,11 +397,21 @@ export default function PcpImportTab({ preselectedFile, clearPreselected }) {
 
       try {
         if (batchId) {
-          await supabase
+          const { data: existingBatch, error: resetError } = await supabase
             .from('promob_import_batches')
             .update({ status: 'pending', error_message: null })
-            .eq('id', batchId);
-        } else {
+            .eq('id', batchId)
+            .select('id')
+            .maybeSingle();
+
+          if (resetError) throw resetError;
+          if (!existingBatch) {
+            batchId = null;
+            item.preview.import_batch_id = null;
+          }
+        }
+
+        if (!batchId) {
           const { data: batch, error: batchError } = await supabase
             .from("promob_import_batches")
             .insert({
@@ -423,7 +435,7 @@ export default function PcpImportTab({ preselectedFile, clearPreselected }) {
           item.preview.import_batch_id = batchId;
         }
 
-        const chunkSize = 400;
+        const chunkSize = 50;
         const chunks = [];
         for (let index = 0; index < preview.validRows.length; index += chunkSize) {
           chunks.push(preview.validRows.slice(index, index + chunkSize));
@@ -460,8 +472,10 @@ export default function PcpImportTab({ preselectedFile, clearPreselected }) {
         }
 
         totalPiecesCreatedAll += Number(commitRes?.pieces_created || 0);
+        successfulFiles += 1;
         item.preview.committed = true;
         item.preview.import_batch_id = batchId;
+        item.preview.import_error = null;
       } catch (err) {
         if (batchId) {
           await supabase
@@ -470,12 +484,23 @@ export default function PcpImportTab({ preselectedFile, clearPreselected }) {
             .eq('id', batchId);
         }
         item.preview.import_error = err.message;
+        failedFiles.push({ fileName: fileObj.name, message: err.message });
         toast.error(`Erro ao importar arquivo ${fileObj.name}: ${err.message}`);
       }
     }
 
     setImporting(false);
-    toast.success(`Importação em lote concluída com sucesso! ${totalPiecesCreatedAll} peças criadas para produção.`);
+    if (failedFiles.length === 0) {
+      toast.success(`Importação concluída com sucesso! ${totalPiecesCreatedAll} peças criadas para produção.`);
+    } else if (successfulFiles > 0) {
+      toast.warning(
+        `Importação parcial: ${successfulFiles} arquivo(s) concluído(s) e ${failedFiles.length} com erro. ${totalPiecesCreatedAll} peças confirmadas.`
+      );
+    } else {
+      toast.error(
+        `Nenhum arquivo foi importado. Verifique o erro exibido e tente novamente.`
+      );
+    }
     setFileItems([...fileItems]);
   };
 
