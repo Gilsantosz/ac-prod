@@ -12,11 +12,21 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 });
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const ALLOWED_ROLES = new Set(['operator', 'supervisor', 'manager', 'admin', 'viewer']);
+const ALLOWED_ROLES = new Set([
+  'operator',
+  'viewer',
+  'supervisor',
+  'quality',
+  'quality_manager',
+  'manager',
+  'admin',
+]);
 const ROLE_RANK: Record<string, number> = {
   viewer: 10,
   operator: 10,
   supervisor: 20,
+  quality: 25,
+  quality_manager: 25,
   manager: 30,
   admin: 40,
 };
@@ -30,23 +40,31 @@ type CallerProfile = {
   cell: string | null;
 };
 
+function normalizeRole(value: unknown): string {
+  const role = String(value || 'operator').trim().toLowerCase();
+  if (role === 'quality') return 'quality_manager';
+  if (role === 'leader') return 'supervisor';
+  if (role === 'user') return 'operator';
+  return role;
+}
+
 function authorityRank(caller: CallerProfile): number {
-  const roleRank = ROLE_RANK[caller.role] || 0;
+  const roleRank = ROLE_RANK[normalizeRole(caller.role)] || 0;
   if (caller.permissions?.manage_users === true) return Math.max(roleRank, 20);
   if (caller.permissions?.manage_operators === true) return Math.max(roleRank, 15);
   return roleRank;
 }
 
 function canManageTarget(caller: CallerProfile, targetRole: string): boolean {
-  if (caller.role === 'admin') return true;
-  return (ROLE_RANK[targetRole] || 0) < authorityRank(caller);
+  if (normalizeRole(caller.role) === 'admin') return true;
+  return (ROLE_RANK[normalizeRole(targetRole)] || 0) < authorityRank(caller);
 }
 
 function requestedPermissionEscalations(
   caller: CallerProfile,
   requested: Record<string, unknown>,
 ): string[] {
-  if (caller.role === 'admin') return [];
+  if (normalizeRole(caller.role) === 'admin') return [];
   return Object.entries(requested)
     .filter(([, enabled]) => enabled === true)
     .map(([key]) => key)
@@ -83,18 +101,18 @@ Deno.serve(async (request) => {
       .eq('id', userResult.user.id)
       .maybeSingle() as { data: CallerProfile | null };
 
-    const isAuthorized =
-      caller &&
-      caller.active !== false &&
-      (
-        caller.role === 'admin' ||
-        caller.role === 'manager' ||
-        caller.role === 'supervisor' ||
-        caller.permissions?.manage_users === true ||
-        caller.permissions?.manage_operators === true
-      );
+    const callerRole = normalizeRole(caller?.role);
+    const isAuthorized = Boolean(
+      caller
+      && caller.active !== false
+      && (
+        ['admin', 'manager', 'supervisor'].includes(callerRole)
+        || caller.permissions?.manage_users === true
+        || caller.permissions?.manage_operators === true
+      )
+    );
 
-    if (!isAuthorized) {
+    if (!caller || !isAuthorized) {
       return json({ success: false, error: 'Permissão insuficiente para alterar senhas ou gerenciar colaboradores.' }, 403);
     }
 
@@ -113,16 +131,14 @@ Deno.serve(async (request) => {
         .maybeSingle();
 
       if (!targetProfile) {
-        if (caller.role !== 'admin') {
+        if (callerRole !== 'admin') {
           return json({ success: false, error: 'Somente administradores podem alterar contas sem perfil válido.' }, 403);
         }
       } else if (!canManageTarget(caller, String(targetProfile.role || 'operator'))) {
         return json({ success: false, error: 'Você não pode redefinir a senha de uma conta com nível igual ou superior ao seu.' }, 403);
       }
 
-      const { data: updated, error: updateError } = await admin.auth.admin.updateUserById(userId, {
-        password: newPassword,
-      });
+      const { data: updated, error: updateError } = await admin.auth.admin.updateUserById(userId, { password: newPassword });
       if (updateError) throw updateError;
 
       await admin.from('system_audit_logs').insert({
@@ -149,7 +165,8 @@ Deno.serve(async (request) => {
     const email = String(body.email || '').trim().toLowerCase();
     const password = String(body.password || '');
     const name = String(body.name || '').trim();
-    const role = String(body.role || 'operator').trim().toLowerCase();
+    const requestedRole = String(body.role || 'operator').trim().toLowerCase();
+    const role = normalizeRole(requestedRole);
     const cell = String(body.cell || '').trim();
     const managedCells = Array.from(new Set(
       (Array.isArray(body.managed_cells) ? body.managed_cells : [])
@@ -166,7 +183,9 @@ Deno.serve(async (request) => {
     if (!EMAIL_PATTERN.test(email)) return json({ success: false, error: 'Informe um e-mail válido.' }, 422);
     if (password.length < 8) return json({ success: false, error: 'A senha deve ter pelo menos 8 caracteres.' }, 422);
     if (!name) return json({ success: false, error: 'Informe o nome do colaborador.' }, 422);
-    if (!ALLOWED_ROLES.has(role)) return json({ success: false, error: 'Papel de acesso inválido.' }, 422);
+    if (!ALLOWED_ROLES.has(requestedRole) && !ALLOWED_ROLES.has(role)) {
+      return json({ success: false, error: 'Papel de acesso inválido.' }, 422);
+    }
     if (!canManageTarget(caller, role)) {
       return json({ success: false, error: 'Você não pode criar uma conta com nível igual ou superior ao seu.' }, 403);
     }
@@ -190,7 +209,7 @@ Deno.serve(async (request) => {
         .map((value) => String(value || '').trim())
         .filter(Boolean),
     ));
-    if (caller.role !== 'admin' && callerCells.length > 0) {
+    if (callerRole !== 'admin' && callerCells.length > 0) {
       const outsideCallerScope = managedCells.filter((cellName) => !callerCells.includes(cellName));
       if (outsideCallerScope.length > 0) {
         return json({ success: false, error: 'Uma ou mais células estão fora do seu escopo de gestão.' }, 403);
@@ -214,14 +233,11 @@ Deno.serve(async (request) => {
       .select('id')
       .ilike('email', email)
       .maybeSingle();
-    if (existingProfile) {
-      return json({ success: false, error: 'Este e-mail já está cadastrado no sistema.' }, 409);
-    }
+    if (existingProfile) return json({ success: false, error: 'Este e-mail já está cadastrado no sistema.' }, 409);
 
-    let authUser = null;
     const { data: existingUsers, error: listError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
     if (listError) throw listError;
-    authUser = existingUsers.users.find((candidate) => candidate.email?.toLowerCase() === email) || null;
+    let authUser = existingUsers.users.find((candidate) => candidate.email?.toLowerCase() === email) || null;
 
     if (authUser) {
       const { data: updated, error: updateError } = await admin.auth.admin.updateUserById(authUser.id, {
@@ -253,7 +269,7 @@ Deno.serve(async (request) => {
         role,
         cell: managedCells[0] || cell,
         managed_cells: managedCells,
-        access_scope: caller.role === 'admin'
+        access_scope: callerRole === 'admin'
           ? { ...accessScope, cells: managedCells }
           : { cells: managedCells, machines: [] },
         permissions,
