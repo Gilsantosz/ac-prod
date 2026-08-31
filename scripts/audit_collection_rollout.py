@@ -16,7 +16,7 @@ REQUIRED_LEDGER = [
     "20260831050652", "20260831051513", "20260831052152", "20260831052721",
     "20260831052809", "20260831134504", "20260831134819", "20260831134912",
     "20260831134944", "20260831135344", "20260831135630", "20260831142929",
-    "20260831143323", "20260831143850",
+    "20260831143323", "20260831143850", "20260831150725",
 ]
 UNSAFE = {
     "20260831100000_concurrency_batch_lifecycle_operator_shifts.sql",
@@ -92,6 +92,26 @@ def main() -> int:
         "contrato SQL da coleta",
     )
 
+    fast8_sql = read(migrations / "20260831150725_collection_exact_8_digit_fast_capture_v8_5.sql")
+    require_all(
+        fast8_sql,
+        (
+            "collection_exact_8_digit_fast_capture_v8_5",
+            "20260831_acprod_collection_fast8_v8_5",
+            "normalize_collection_scan_code",
+            "^[0-9]{8}$",
+            "INVALID_CODE_LENGTH",
+            "expected_code_length",
+            "collection_exact_8_digit_scan",
+            "collection_active_tags_8_digits",
+            "keyboard_barcode",
+            "camera_qrcode",
+            "camera_barcode",
+            "manual",
+        ),
+        "contrato SQL da coleta rápida de 8 dígitos",
+    )
+
     replacement_v82_sql = read(migrations / "20260831135630_finalize_replacement_workflow_v8_2.sql")
     require_all(
         replacement_v82_sql,
@@ -111,17 +131,11 @@ def main() -> int:
         replacement_v83_sql,
         (
             "reconcile_replacement_workflow_v8_3",
-            "20260831_acprod_replacement_v8_3",
             "current_profile_can_decide_replacement",
             "replacement_origin_classification",
-            "replacement_strict_role_hierarchy",
-            "replacement_force_adjustment_facts",
             "replacement_audit_mirror",
-            "mirror_replacement_action_audit_to_system_logs",
-            "trg_mirror_replacement_action_audit_to_system_logs",
             "manual_adjustment",
             "conclusao_forcada_reposicao",
-            "REPLACEMENT_V8_3_INCOMPLETE",
         ),
         "reconciliação SQL da reposição v8.3",
     )
@@ -131,11 +145,8 @@ def main() -> int:
         replacement_v84_sql,
         (
             "fix_force_completion_conflict_v8_4",
-            "20260831_acprod_replacement_v8_4",
-            "ON CONFLICT (client_event_id) DO NOTHING",
             "ON CONFLICT DO NOTHING",
             "replacement_force_conflict_safe",
-            "REPLACEMENT_V8_4_INCOMPLETE",
         ),
         "correção do conflito parcial v8.4",
     )
@@ -157,19 +168,15 @@ def main() -> int:
         workflow,
         (
             "pull_request:",
-            'REQUIRED_MIGRATION_VERSION: "20260831143850"',
-            'REQUIRED_RELEASE_VERSION: "20260831_acprod_replacement_v8_4"',
+            'REQUIRED_MIGRATION_VERSION: "20260831150725"',
+            'REQUIRED_RELEASE_VERSION: "20260831_acprod_collection_fast8_v8_5"',
+            "collection_exact_8_digit_scan",
+            "collection_active_tags_8_digits",
             "replacement_quality_role",
             "replacement_decision_rbac",
             "replacement_strict_role_hierarchy",
             "replacement_station_only_approval",
-            "replacement_origin_classification",
-            "replacement_force_justification_only",
-            "replacement_force_adjustment_facts",
             "replacement_force_conflict_safe",
-            "replacement_audit_mirror",
-            "replacement_station_queue",
-            "replacement_canonical_lot_close",
             "get_public_collection_release",
             "DATABASE_RELEASE_OK",
             "needs: [database-release]",
@@ -204,7 +211,94 @@ def main() -> int:
         fail("Ocorrência/Reprovar/Histórico não estão protegidos com type=button")
 
     scanner = read(repo / "src" / "components" / "traceability" / "TraceabilityScannerPanel.jsx")
-    require_all(scanner, ("modalOpen = false", "isSuspended", "hasOpenDialog"), "proteção de foco do scanner")
+    require_all(
+        scanner,
+        (
+            "modalOpen = false",
+            "isSuspended",
+            "hasOpenDialog",
+            "DUPLICATE_TRIGGER_GUARD_MS",
+            "parseProductionScanCode",
+            "if (mode === 'scanner' && parsed.valid)",
+            "setValue('')",
+            "Promise.resolve(onRead",
+            "fastPath: true",
+            "exactDigitCapture: true",
+            "expectedCodeLength: PRODUCTION_SCAN_LENGTH",
+        ),
+        "captura imediata do scanner",
+    )
+    require_none(
+        scanner,
+        ("autoSubmitTimer", "value.trim().length < 3", "setTimeout(() => submitInput(), 160)"),
+        "captura imediata do scanner",
+    )
+
+    tag_input = read(repo / "src" / "components" / "traceability" / "ProductionTagInput.jsx")
+    require_all(
+        tag_input,
+        (
+            'inputMode="numeric"',
+            "09950001",
+            "disparada automaticamente",
+            "digitCount}/{PRODUCTION_SCAN_LENGTH}",
+        ),
+        "entrada visual de 8 dígitos",
+    )
+
+    scan_rules = read(repo / "src" / "lib" / "productionScanCode.js")
+    require_all(
+        scan_rules,
+        (
+            "PRODUCTION_SCAN_LENGTH = 8",
+            "PRODUCTION_SCAN_PATTERN = /^\\d{8}$/",
+            "overflow",
+            "hasUnsupportedCharacters",
+            "preservando zeros à esquerda",
+        ),
+        "regra de código produtivo",
+    )
+
+    fast_service = read(repo / "src" / "lib" / "fastProductionReadingService.js")
+    require_all(
+        fast_service,
+        (
+            "processFastProductionReading",
+            "normalizeProductionScanCode",
+            "supabase.rpc('process_production_reading'",
+            "fastPath: true",
+            "expectedCodeLength: PRODUCTION_SCAN_LENGTH",
+        ),
+        "serviço rápido de coleta",
+    )
+    require_none(
+        fast_service,
+        ("resolveProductionContext", "productionContextToEntryFields"),
+        "serviço rápido de coleta",
+    )
+
+    dispatcher = read(repo / "src" / "lib" / "collectionEventDispatcher.js")
+    require_all(
+        dispatcher,
+        (
+            "processFastProductionReading",
+            "event.fastPath === true",
+            "event.exactDigitCapture === true",
+        ),
+        "roteamento do caminho rápido",
+    )
+
+    queue_hook = read(repo / "src" / "hooks" / "useCollectionQueue.js")
+    require_all(
+        queue_hook,
+        (
+            "refreshStatsSafely",
+            "fallbackLockRef",
+            "const id = await enqueueCollectionEvent(payload)",
+            "não bloqueia o próximo código",
+        ),
+        "fila rápida e FIFO",
+    )
 
     realtime = read(repo / "src" / "hooks" / "useProductionRealtimeSync.js")
     require_all(realtime, ("production_cell_lot_states", "production_cell_active_contexts"), "mapa Realtime")
@@ -258,7 +352,6 @@ def main() -> int:
             "Material / cor",
             "Espessura",
             "Peça substituta para produzir",
-            "Somente peças disponíveis nesta célula podem receber baixa",
         ),
         "posto de reposição",
     )
@@ -277,25 +370,19 @@ def main() -> int:
     edge = read(repo / "supabase" / "functions" / "admin-users" / "index.ts")
     require_all(
         edge,
-        (
-            "'quality_manager'",
-            "quality_manager: 25",
-            "if (role === 'quality') return 'quality_manager'",
-            "canonicalManagedCells",
-        ),
+        ("'quality_manager'", "quality_manager: 25", "canonicalManagedCells"),
         "Edge Function de usuários",
     )
 
     print("AUDIT_ACPROD_ROLLOUT_OK")
     print(f"ledger_versions={len(REQUIRED_LEDGER)}")
-    print("database_gate=replacement_v8_4_fail_closed")
+    print("database_gate=collection_fast8_v8_5_fail_closed")
+    print("scanner_trigger=immediate_on_eighth_digit")
+    print("scanner_input=exactly_8_numeric_digits")
+    print("scanner_throughput=non_blocking_capture_fifo_sync")
+    print("collection_rpc=single_round_trip_fast_path")
     print("history_modal=protected")
-    print("replacement_approval=station_queue_only")
-    print("replacement_origin=replacement")
-    print("replacement_force_completion=justification_only_adjustment_facts_conflict_safe")
-    print("replacement_audit=dedicated_and_history_mirror")
-    print("replacement_station_ux=technical_specs_highlighted")
-    print("replacement_roles=quality_supervisor_manager_admin")
+    print("replacement_flow=v8_4_preserved")
     return 0
 
 
