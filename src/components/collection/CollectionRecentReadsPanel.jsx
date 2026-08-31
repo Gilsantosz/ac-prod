@@ -50,67 +50,63 @@ export default function CollectionRecentReadsPanel({
   const [error, setError] = useState(null);
 
   // Filtros Locais adicionais
-  const [period, setPeriod] = useState('7days'); // 24h, 7days, month, all
+  const [period, setPeriod] = useState('24h'); // 24h, 7days, month, all
   const [statusFilter, setStatusFilter] = useState('all'); // all, approved, rejected, blocked
   const [operatorScope, setOperatorScope] = useState('cell'); // cell, mine
-  const [shiftScope, setShiftScope] = useState('all'); // all, current
+  const [shiftScope, setShiftScope] = useState('current'); // all, current
   const [realtimeStatus, setRealtimeStatus] = useState(navigator.onLine ? 'connecting' : 'offline');
   const realtimeRefreshRef = useRef(null);
 
-  const fetchReadings = useCallback(async (showLoading = true) => {
+  const fetchReadings = useCallback(async (
+    showLoading = true,
+    refreshCount = true,
+  ) => {
     if (!cellName) return;
     if (showLoading) setLoading(true);
     setError(null);
     try {
       const { dateFrom, dateTo } = getDateRange(period);
       const activeStatus = statusFilter === 'all' ? null : statusFilter;
-
-      console.log('CollectionRecentReadsPanel Fetching:', {
+      const filters = {
         cellName,
         workstationId: workstationId || null,
         operatorId: operatorScope === 'mine' ? (operatorId || null) : null,
         shift: shiftScope === 'current' ? (shift || null) : null,
         status: activeStatus,
         limit,
+        offset: 0,
         dateFrom,
-        dateTo
-      });
+        dateTo,
+      };
 
-      // Executa a busca e a contagem em paralelo
-      const [data, count] = await Promise.all([
-        getCollectionHistory({
-          cellName,
-          workstationId: workstationId || null,
-          operatorId: operatorScope === 'mine' ? (operatorId || null) : null,
-          shift: shiftScope === 'current' ? (shift || null) : null,
-          status: activeStatus,
-          limit,
-          offset: 0,
-          dateFrom,
-          dateTo
-        }),
-        getCollectionHistoryCount({
-          cellName,
-          workstationId: workstationId || null,
-          operatorId: operatorScope === 'mine' ? (operatorId || null) : null,
-          shift: shiftScope === 'current' ? (shift || null) : null,
-          status: activeStatus,
-          dateFrom,
-          dateTo
-        })
-      ]);
-
-      console.log('CollectionRecentReadsPanel Result:', { dataLength: data?.length, count });
-
-      setReadings(data);
-      setTotalCount(count);
+      if (refreshCount) {
+        const [data, count] = await Promise.all([
+          getCollectionHistory(filters),
+          getCollectionHistoryCount(filters),
+        ]);
+        setReadings(data);
+        setTotalCount(count);
+      } else {
+        const data = await getCollectionHistory(filters);
+        setReadings(data);
+      }
     } catch (e) {
       console.error('CollectionRecentReadsPanel Error:', e);
       setError('Falha ao carregar o histórico de coletas do banco.');
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [cellName, workstationId, operatorId, operatorScope, shift, shiftScope, period, statusFilter, limit]);
+  }, [
+    cellName,
+    workstationId,
+    operatorId,
+    operatorScope,
+    shift,
+    shiftScope,
+    period,
+    statusFilter,
+    limit,
+  ]);
 
   // Recarrega quando filtros, limit ou sinal mudar
   useEffect(() => {
@@ -127,7 +123,9 @@ export default function CollectionRecentReadsPanel({
       channelSuffix: 'panel',
       callback: () => {
         clearTimeout(realtimeRefreshRef.current);
-        realtimeRefreshRef.current = setTimeout(() => fetchReadings(false), 350);
+        realtimeRefreshRef.current = setTimeout(() => {
+          fetchReadings(false, false);
+        }, 1_000);
       },
       onStatus: (status) => {
         if (status === 'SUBSCRIBED') setRealtimeStatus('online');
