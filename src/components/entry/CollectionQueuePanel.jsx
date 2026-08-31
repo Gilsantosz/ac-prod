@@ -39,10 +39,10 @@ export default function CollectionQueuePanel({ stats, flushing, onRetry, online 
             <Pill icon={Clock} label="Pendentes" count={stats.pending} color="text-amber-700 dark:text-amber-400" />
           )}
           {stats.processing > 0 && (
-            <Pill icon={RefreshCw} label="Enviando" count={stats.processing} color="text-sky-700 dark:text-sky-400" spin />
+            <Pill icon={RefreshCw} label="Processando" count={stats.processing} color="text-sky-700 dark:text-sky-400" spin />
           )}
           {stats.synced > 0 && (
-            <Pill icon={CheckCircle2} label="Sincronizados" count={stats.synced} color="text-emerald-700 dark:text-emerald-400" />
+            <Pill icon={CheckCircle2} label="Concluídos" count={stats.synced} color="text-emerald-700 dark:text-emerald-400" />
           )}
           {stats.error > 0 && (
             <Pill icon={AlertTriangle} label="Com erro" count={stats.error} color="text-red-700 dark:text-red-400" />
