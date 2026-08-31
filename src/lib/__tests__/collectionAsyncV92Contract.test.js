@@ -42,7 +42,7 @@ describe('AC.Prod2 asynchronous collection v9.2 contract', () => {
     expect(batchService).toContain("new Set(['sincronizada', 'erro'])");
     expect(batchService).toContain('.insert(rows)');
     expect(queueHook).toContain('flushDebounceMs');
-    expect(queueHook).toContain('(microBatch ? 1000 : 15000)');
+    expect(queueHook).toMatch(/\(microBatch \? 1_?000 : 15_?000\)/);
     expect(queueHook).toContain("status: 'queued'");
   });
 
