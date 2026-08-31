@@ -489,6 +489,46 @@ export default function TraceabilityCollection({ embedded = false }) {
     eventKind: COLLECTION_EVENT_KINDS.PRODUCTION_STAGE,
   });
 
+  // A confirmação final chega depois do ACK do inbox, via Realtime/polling.
+  useEffect(() => {
+    const handleAsyncCollectionResult = (browserEvent) => {
+      const detail = browserEvent?.detail || {};
+      const result = detail.result;
+      if (!detail.final || !result || result.pending) return;
+
+      updateFeedback({
+        ...result,
+        client_event_id: detail.event?.client_event_id || result.client_event_id,
+      });
+
+      if (result.item || result.reading || result.lot || result.order) {
+        const uid = detail.event?.raw_value || detail.event?.rawValue || '';
+        setSelectedPiece({
+          id: result.item?.id || result.reading?.piece_id || null,
+          piece_uid: uid,
+          piece_name: result.item?.name || result.item?.piece_name || 'Peça Lida',
+          lot_id: result.lot?.id || null,
+          lot_code: result.lot?.lot_code || 'LOTE-N/A',
+          order_number: result.order?.order_number || result.order?.order_code || 'N/A',
+          client_name: result.order?.customer_name || 'Cliente não informado',
+          current_stage: result.route?.step_name || result.item?.current_stage || result.item?.current_step,
+          current_stage_name: result.route?.step_name || result.item?.current_stage || result.item?.current_step,
+          operator_name: operator,
+          status: result.status || 'approved',
+          route: [],
+          completedSteps: [],
+        });
+      }
+
+      refreshData();
+    };
+
+    window.addEventListener('collection-batch-result', handleAsyncCollectionResult);
+    return () => {
+      window.removeEventListener('collection-batch-result', handleAsyncCollectionResult);
+    };
+  }, [operator, refreshData, updateFeedback]);
+
   // ─── Handler principal de leitura — enfileira e processa ────────────────────
   const handleRead = useCallback(async (payload) => {
     // Leitores RFID e alguns coletores integrados não disparam eventos de
@@ -532,7 +572,13 @@ export default function TraceabilityCollection({ embedded = false }) {
       try {
         const result = await processNow(clientEventId);
         updateFeedback({ ...result, client_event_id: clientEventId });
-        
+
+        // ACK local/inbox não é aprovação produtiva. A decisão final será
+        // entregue pelo monitor assíncrono sem bloquear a próxima leitura.
+        if (result?.pending || result?.accepted || result?.status === 'queued') {
+          return result;
+        }
+
         if (result?.success) {
           toast.success(result.message || 'Leitura aprovada');
           navigator.vibrate?.([70, 40, 70]);
