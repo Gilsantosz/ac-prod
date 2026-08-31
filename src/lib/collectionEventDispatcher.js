@@ -1,4 +1,5 @@
 import { processProductionReading } from '@/lib/traceabilityService';
+import { processFastProductionReading } from '@/lib/fastProductionReadingService';
 import { collectReplacementStageV2, REPLACEMENT_EVENT_KIND } from '@/lib/replacementService';
 
 export const COLLECTION_EVENT_KINDS = Object.freeze({
@@ -12,6 +13,7 @@ export function resolveCollectionEventKind(event = {}) {
     ? COLLECTION_EVENT_KINDS.REPLACEMENT_STAGE
     : COLLECTION_EVENT_KINDS.PRODUCTION_STAGE;
 }
+
 export async function dispatchCollectionEvent(event) {
   const eventKind = resolveCollectionEventKind(event);
 
@@ -31,7 +33,7 @@ export async function dispatchCollectionEvent(event) {
   }
 
   if (eventKind === COLLECTION_EVENT_KINDS.PRODUCTION_STAGE) {
-    return processProductionReading({
+    const productionPayload = {
       ...event,
       rawValue: event.raw_value || event.rawValue,
       cellName: event.cellName || event.cell_name,
@@ -41,7 +43,18 @@ export async function dispatchCollectionEvent(event) {
       machineName: event.machineName || event.machine_name,
       client_event_id: event.client_event_id,
       readerType: event.readerType || event.reader_type || 'keyboard_barcode',
-    });
+      createdAtClient: event.createdAtClient || event.created_at_client,
+      deviceId: event.deviceId || event.device_id,
+    };
+
+    const useFastPath = event.fastPath === true
+      || event.fast_path === true
+      || event.exactDigitCapture === true
+      || event.exact_digit_capture === true;
+
+    return useFastPath
+      ? processFastProductionReading(productionPayload)
+      : processProductionReading(productionPayload);
   }
 
   const error = new Error(`Tipo de evento de coleta não suportado: ${eventKind}`);

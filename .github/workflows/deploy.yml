@@ -14,8 +14,8 @@ permissions:
 
 env:
   EXPECTED_PROJECT_ID: uozuzdfvnufsjsonswag
-  REQUIRED_MIGRATION_VERSION: "20260831143850"
-  REQUIRED_RELEASE_VERSION: "20260831_acprod_replacement_v8_4"
+  REQUIRED_MIGRATION_VERSION: "20260831150725"
+  REQUIRED_RELEASE_VERSION: "20260831_acprod_collection_fast8_v8_5"
 
 concurrency:
   group: acprod2-${{ github.workflow }}-${{ github.ref }}
@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Auditar migrações, Realtime, reposição e workflow
+      - name: Auditar coleta rápida, Realtime, reposição e workflow
         run: python3 scripts/audit_collection_rollout.py --repo .
 
   quality:
@@ -134,6 +134,8 @@ jobs:
               'active_context',
               'reading_v2',
               'history_compatibility',
+              'collection_exact_8_digit_scan',
+              'collection_active_tags_8_digits',
               'replacement_quality_role',
               'replacement_decision_rbac',
               'replacement_strict_role_hierarchy',

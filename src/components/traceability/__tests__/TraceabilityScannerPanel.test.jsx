@@ -26,24 +26,30 @@ describe('TraceabilityScannerPanel', () => {
     await waitFor(() => expect(screen.getByLabelText('Identificação produtiva')).toHaveFocus());
   });
 
-  it('envia o código ao serviço ao pressionar Enter', async () => {
+  it('registra no 8º dígito e ignora o Enter enviado pelo scanner', async () => {
     const user = userEvent.setup();
     const { onRead } = renderPanel();
     const input = screen.getByLabelText('Identificação produtiva');
-    await user.type(input, 'LSM-TEST-001-P001{Enter}');
+
+    await user.type(input, '09950001{Enter}');
+
     await waitFor(() => expect(onRead).toHaveBeenCalledOnce());
     expect(onRead.mock.calls[0][0]).toMatchObject({
-      rawValue: 'LSM-TEST-001-P001',
+      rawValue: '09950001',
       readerType: 'keyboard_barcode',
       cellName: 'Corte',
+      exactDigitCapture: true,
+      expectedCodeLength: 8,
     });
   });
 
-  it('limpa o campo depois de uma leitura válida', async () => {
+  it('limpa o campo imediatamente depois da captura válida', async () => {
     const user = userEvent.setup();
     renderPanel();
     const input = screen.getByLabelText('Identificação produtiva');
-    await user.type(input, 'LSM-TEST-001-P001{Enter}');
+
+    await user.type(input, '09950001');
+
     await waitFor(() => expect(input).toHaveValue(''));
   });
 
@@ -51,7 +57,9 @@ describe('TraceabilityScannerPanel', () => {
     const user = userEvent.setup();
     renderPanel();
     const input = screen.getByLabelText('Identificação produtiva');
-    await user.type(input, 'LSM-TEST-001-P001{Enter}');
+
+    await user.type(input, '09950001');
+
     await waitFor(() => expect(input).toHaveFocus());
   });
 
@@ -75,7 +83,7 @@ describe('TraceabilityScannerPanel', () => {
     expect(screen.getByRole('status')).toHaveClass('border-red-300');
   });
 
-  it('posiciona o contexto do lote logo após o campo do leitor e antes do botão', () => {
+  it('mantém o contexto do lote dentro do leitor, após o campo e antes do feedback', () => {
     renderPanel({
       readerContext: <div data-testid="reader-context">Lote geral 15587</div>,
       feedback: { success: true, status: 'approved', message: 'Baixa concluída' },
@@ -88,10 +96,8 @@ describe('TraceabilityScannerPanel', () => {
     const siblings = [...reader.parentElement.children];
     const formChildren = [...reader.children];
 
-    expect(formChildren.indexOf(readerContext)).toBe(formChildren.indexOf(inputContainer) + 1);
-    expect(formChildren.indexOf(readerContext)).toBeLessThan(
-      formChildren.indexOf(screen.getByRole('button', { name: 'Processar leitura' }))
-    );
+    expect(reader.contains(readerContext)).toBe(true);
+    expect(formChildren.indexOf(readerContext)).toBeGreaterThan(formChildren.indexOf(inputContainer));
     expect(siblings.indexOf(reader)).toBeLessThan(siblings.indexOf(screen.getByRole('status')));
   });
 
@@ -103,15 +109,20 @@ describe('TraceabilityScannerPanel', () => {
     expect(onRead).not.toHaveBeenCalled();
   });
 
-  it('envia a confirmação explícita na digitação manual', async () => {
+  it('envia a confirmação explícita na digitação manual de 8 dígitos', async () => {
     const user = userEvent.setup();
     const { onRead } = renderPanel({ mode: 'manual' });
-    await user.type(screen.getByLabelText('Identificação produtiva'), 'LSM-TEST-001-P001');
-    await user.click(screen.getByText('Confirmo que conferi a identificação digitada.'));
+
+    await user.type(screen.getByLabelText('Identificação produtiva'), '09950001');
+    await user.click(screen.getByText('Confirmo que conferi os 8 dígitos informados.'));
     await user.click(screen.getByRole('button', { name: 'Confirmar baixa manual' }));
+
+    await waitFor(() => expect(onRead).toHaveBeenCalledOnce());
     expect(onRead).toHaveBeenCalledWith(expect.objectContaining({
+      rawValue: '09950001',
       readerType: 'manual',
       confirmed: true,
+      expectedCodeLength: 8,
     }));
   });
 });
