@@ -103,7 +103,7 @@ def main() -> int:
             "can_force_complete_replacements()",
             "get_replacement_station_queue_v3(text,text)",
             "approval_entry_count = 0",
-            "approved_cells = '[]'::jsonb",
+            "approved_cells = ''[]''::jsonb",
             "REPLACEMENT_V8_2_INCOMPLETE",
             "replacement_station_only_approval",
             "replacement_force_justification_only",
