@@ -3,8 +3,13 @@ import { toast } from 'sonner';
 import {
   enqueueCollectionEvent,
   flushCollectionQueue,
+  getCollectionEvent,
   getQueueStats,
   getQueueStatsByCellMachine,
+  getServerPendingEvents,
+  markEventServerPending,
+  markEventSynced,
+  markEventTerminalError,
   processCollectionEvent,
   retryErrors,
   recoverStaleProcessingEvents,
@@ -15,6 +20,17 @@ import {
   dispatchCollectionEventBatch,
 } from '@/lib/collectionEventDispatcher';
 import { getOperatorSession } from '@/lib/operatorSessionService';
+import {
+  fetchProductionCollectionResults,
+} from '@/lib/collectionBatchService';
+import {
+  isFinalCollectionIngress,
+  subscribeToCollectionInbox,
+} from '@/lib/collectionInboxMonitor';
+
+const SERVER_POLL_INTERVAL_MS = 2_000;
+const FLUSH_DEBOUNCE_MS = 120;
+const SERVER_QUERY_CHUNK = 100;
 
 function emitBatchResult(payload) {
   try {
@@ -26,42 +42,50 @@ function emitBatchResult(payload) {
   }
 }
 
-function notifyBatchResult({
-  result,
-  error,
-  batchIndex = 0,
-  batchCount = 1,
-}) {
+function notifyBatchResult({ result, error }) {
+  if (result?.pending === true || result?.accepted === true) return;
+
   if (error) {
-    toast.error(error.message || 'Falha ao sincronizar leitura.');
+    toast.error(error.message || 'Falha ao processar leitura.', {
+      id: 'collection-final-result',
+    });
     return;
   }
 
   if (result?.success) {
-    if (batchIndex === batchCount - 1) {
-      const message = batchCount > 1
-        ? `${batchCount} leituras sincronizadas com o Supabase.`
-        : (result.message || 'Leitura aprovada.');
-      toast.success(message);
-      navigator.vibrate?.([70, 40, 70]);
-    }
+    toast.success(result.message || 'Leitura aprovada.', {
+      id: 'collection-final-result',
+    });
+    navigator.vibrate?.([70, 40, 70]);
     return;
   }
 
   if (['wrong_step', 'wrong_cell', 'duplicated', 'blocked'].includes(
     result?.status,
   ) || result?.alert_level === 'yellow') {
-    toast.warning(result?.message || 'Leitura bloqueada.');
+    toast.warning(result?.message || 'Leitura bloqueada.', {
+      id: 'collection-final-result',
+    });
     return;
   }
 
-  toast.error(result?.message || 'Leitura não aprovada.');
+  toast.error(result?.message || 'Leitura não aprovada.', {
+    id: 'collection-final-result',
+  });
+}
+
+function chunks(items, size) {
+  const result = [];
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+  return result;
 }
 
 /**
- * Hook que encapsula a fila de eventos de coleta em estado React.
- * @param {function} processFn — função legada que processa um evento individual
- * @param {object} options — filtros e configuração de sincronização
+ * Fila industrial em duas confirmações:
+ * 1. IndexedDB -> inbox durável do Supabase;
+ * 2. inbox -> decisão produtiva do worker assíncrono.
  */
 export function useCollectionQueue(processFn, options = {}) {
   const {
@@ -76,20 +100,24 @@ export function useCollectionQueue(processFn, options = {}) {
   const processBatchFn = options.processBatchFn
     || (microBatch ? dispatchCollectionEventBatch : null);
   const flushIntervalMs = options.flushIntervalMs
-    ?? (microBatch ? 5000 : 15000);
+    ?? (microBatch ? 2_000 : 15_000);
 
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
     processing: 0,
+    serverPending: 0,
     synced: 0,
     error: 0,
+    retryableError: 0,
     hasStalePending: false,
+    hasStaleServerPending: false,
     hasSlowEnqueue: false,
   });
   const [flushing, setFlushing] = useState(false);
   const flushingRef = useRef(false);
   const fallbackLockRef = useRef(Promise.resolve());
+  const flushTimerRef = useRef(null);
   const processFnRef = useRef(processFn);
   const processBatchFnRef = useRef(processBatchFn);
   const onResultRef = useRef(onResult);
@@ -115,8 +143,6 @@ export function useCollectionQueue(processFn, options = {}) {
       return navigator.locks.request('acprod-collection-sync', task);
     }
 
-    // Safari e navegadores antigos: preserva FIFO por uma corrente de Promises,
-    // sem impedir que novos códigos continuem sendo gravados no IndexedDB.
     const currentTask = fallbackLockRef.current.then(task, task);
     fallbackLockRef.current = currentTask.catch(() => undefined);
     return currentTask;
@@ -131,6 +157,73 @@ export function useCollectionQueue(processFn, options = {}) {
     }
   }, []);
 
+  const handleServerEnvelope = useCallback(async (envelope) => {
+    const clientEventId = envelope?.client_event_id;
+    if (!clientEventId) return;
+
+    const event = await getCollectionEvent(clientEventId);
+    if (!event) return;
+    if (event.status === 'synced') return;
+    if (event.status === 'error' && event.retryable === false) return;
+
+    const result = envelope.result ?? envelope.resultado ?? envelope;
+
+    if (!isFinalCollectionIngress(envelope)) {
+      await markEventServerPending(
+        clientEventId,
+        result,
+        envelope.ingress,
+      );
+      refreshStatsSafely();
+      return;
+    }
+
+    if (envelope.status_sincronizacao === 'sincronizada') {
+      await markEventSynced(clientEventId, result, envelope.ingress);
+      handleBatchResult({
+        event,
+        result,
+        error: null,
+        batchIndex: 0,
+        batchCount: 1,
+        final: true,
+      });
+    } else {
+      const error = new Error(
+        envelope.error
+          || result?.message
+          || 'O servidor não conseguiu processar a leitura.',
+      );
+      error.retryable = false;
+      error.result = result;
+      await markEventTerminalError(clientEventId, error, envelope.ingress);
+      handleBatchResult({
+        event,
+        result,
+        error,
+        batchIndex: 0,
+        batchCount: 1,
+        final: true,
+      });
+    }
+
+    refreshStatsSafely();
+  }, [handleBatchResult, refreshStatsSafely]);
+
+  const reconcileServerPending = useCallback(async () => {
+    if (!microBatch || !navigator.onLine) return;
+    const pending = await getServerPendingEvents();
+    if (!pending.length) return;
+
+    const ids = pending.map((event) => event.client_event_id);
+    for (const group of chunks(ids, SERVER_QUERY_CHUNK)) {
+      const envelopes = await fetchProductionCollectionResults(group);
+      for (const envelope of envelopes) {
+        await handleServerEnvelope(envelope);
+      }
+    }
+  }, [handleServerEnvelope, microBatch]);
+
   const flush = useCallback(async () => {
     if (flushingRef.current || !navigator.onLine) return;
 
@@ -139,7 +232,7 @@ export function useCollectionQueue(processFn, options = {}) {
       flushingRef.current = true;
       setFlushing(true);
       try {
-        await recoverStaleProcessingEvents();
+        await recoverStaleProcessingEvents(30_000);
 
         if (microBatch && typeof processBatchFnRef.current === 'function') {
           await flushCollectionMicroBatchQueue(processBatchFnRef.current, {
@@ -163,15 +256,26 @@ export function useCollectionQueue(processFn, options = {}) {
     withQueueLock,
   ]);
 
+  const scheduleFlush = useCallback((delayMs = FLUSH_DEBOUNCE_MS) => {
+    if (!navigator.onLine) return;
+    if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = setTimeout(() => {
+      flushTimerRef.current = null;
+      flush().catch((error) => {
+        console.warn('[CollectionQueue] Flush agendado falhou:', error);
+      });
+    }, Math.max(0, Number(delayMs) || 0));
+  }, [flush]);
+
   useEffect(() => {
     let cancelled = false;
     const intervalMs = Math.max(
-      1000,
-      Number(flushIntervalMs) || (microBatch ? 5000 : 15000),
+      1_000,
+      Number(flushIntervalMs) || (microBatch ? 2_000 : 15_000),
     );
 
     const recoverAndFlush = async () => {
-      await recoverStaleProcessingEvents();
+      await recoverStaleProcessingEvents(30_000);
       if (!cancelled && navigator.onLine) await flush();
     };
 
@@ -180,6 +284,7 @@ export function useCollectionQueue(processFn, options = {}) {
     return () => {
       cancelled = true;
       clearInterval(interval);
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
     };
   }, [flush, flushIntervalMs, microBatch]);
 
@@ -191,10 +296,34 @@ export function useCollectionQueue(processFn, options = {}) {
   }, [refreshStatsSafely]);
 
   useEffect(() => {
+    if (!microBatch) return undefined;
+
+    const unsubscribe = subscribeToCollectionInbox((envelope) => {
+      handleServerEnvelope(envelope).catch((error) => {
+        console.warn('[CollectionQueue] Realtime do inbox falhou:', error);
+      });
+    });
+
+    const reconcile = () => {
+      reconcileServerPending().catch((error) => {
+        console.warn('[CollectionQueue] Poll do inbox falhou:', error);
+      });
+    };
+    reconcile();
+    const interval = setInterval(reconcile, SERVER_POLL_INTERVAL_MS);
+
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
+  }, [handleServerEnvelope, microBatch, reconcileServerPending]);
+
+  useEffect(() => {
     const tryFlush = async () => {
       if (!navigator.onLine) return;
       const currentStats = await getQueueStats();
       if (currentStats.pending > 0) await flush();
+      await reconcileServerPending();
     };
     const onVisibility = () => {
       if (document.visibilityState === 'visible') tryFlush();
@@ -207,12 +336,9 @@ export function useCollectionQueue(processFn, options = {}) {
       window.removeEventListener('focus', tryFlush);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [flush]);
+  }, [flush, reconcileServerPending]);
 
   const enqueue = useCallback(async (payload, enqueueOpts = {}) => {
-    // O retorno acontece logo após a gravação durável no IndexedDB.
-    // A captura local não bloqueia o próximo código; contadores e sincronização
-    // continuam em segundo plano.
     if (microBatch) {
       const operatorSession = getOperatorSession();
       const operatorSessionToken = payload.operatorSessionToken
@@ -232,15 +358,14 @@ export function useCollectionQueue(processFn, options = {}) {
     const shouldFlushImmediately = enqueueOpts.autoFlush === true
       || (!microBatch && enqueueOpts.autoFlush !== false);
     if (navigator.onLine && shouldFlushImmediately) {
-      flush();
+      scheduleFlush(0);
     }
     return id;
-  }, [flush, microBatch, refreshStatsSafely]);
+  }, [microBatch, refreshStatsSafely, scheduleFlush]);
 
   const processNow = useCallback(async (clientEventId) => {
     if (microBatch) {
-      // Compatibilidade: confirma a recepção local, mas não espera o PostgreSQL.
-      // O setInterval fará o envio em lote em até 5s.
+      scheduleFlush(FLUSH_DEBOUNCE_MS);
       refreshStatsSafely();
       return {
         success: true,
@@ -249,7 +374,7 @@ export function useCollectionQueue(processFn, options = {}) {
         status: 'queued',
         alert_level: 'blue',
         client_event_id: clientEventId,
-        message: 'Leitura recebida. Sincronização em micro-lote iniciada.',
+        message: 'Leitura salva localmente. Envio ao servidor iniciado.',
       };
     }
 
@@ -258,14 +383,14 @@ export function useCollectionQueue(processFn, options = {}) {
     ));
     refreshStatsSafely();
     return result;
-  }, [microBatch, refreshStatsSafely, withQueueLock]);
+  }, [microBatch, refreshStatsSafely, scheduleFlush, withQueueLock]);
 
   const retryQueueErrors = useCallback(async () => {
     const count = await retryErrors();
     refreshStatsSafely();
-    if (count > 0 && navigator.onLine) flush();
+    if (count > 0 && navigator.onLine) scheduleFlush(0);
     return count;
-  }, [flush, refreshStatsSafely]);
+  }, [refreshStatsSafely, scheduleFlush]);
 
   return {
     stats,
@@ -274,5 +399,6 @@ export function useCollectionQueue(processFn, options = {}) {
     flush,
     processNow,
     retryQueueErrors,
+    reconcileServerPending,
   };
 }
