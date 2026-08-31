@@ -14,6 +14,8 @@ vi.mock('@/lib/operatorSessionService', () => ({
 
 import {
   COLLECTION_BATCH_MAX_SIZE,
+  fetchProductionCollectionResults,
+  normalizeCollectionIngressRow,
   processProductionCollectionBatch,
 } from '@/lib/collectionBatchService';
 
@@ -23,27 +25,27 @@ function successfulInsert(rows) {
   return { query: { insert }, insert, select };
 }
 
-describe('processProductionCollectionBatch', () => {
+describe('collectionBatchService — inbox assíncrono', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getOperatorSession.mockReturnValue({ token: 'operator-session-token' });
   });
 
-  it('faz um único insert([]), preserva idempotência e propaga a sessão operacional', async () => {
+  it('confirma ACK do inbox como pendente sem fabricar erro', async () => {
     const insertedRows = [
       {
         client_event_id: 'event-a',
         tag_lida: '09950001',
-        status_sincronizacao: 'sincronizada',
+        status_sincronizacao: 'recebida',
         retryable: false,
-        resultado: { success: true, status: 'approved' },
+        resultado: null,
       },
       {
         client_event_id: 'event-b',
         tag_lida: '09950002',
-        status_sincronizacao: 'sincronizada',
+        status_sincronizacao: 'processando',
         retryable: false,
-        resultado: { success: false, status: 'duplicated' },
+        resultado: null,
       },
     ];
     const { query, insert } = successfulInsert(insertedRows);
@@ -76,32 +78,58 @@ describe('processProductionCollectionBatch', () => {
       batch_sequence: 0,
       status_sincronizacao: 'recebida',
     });
-    expect(rows[1]).toMatchObject({
-      client_event_id: 'event-b',
-      tag_lida: '09950002',
-      batch_sequence: 1,
-    });
     expect(rows[0].batch_id).toBe(rows[1].batch_id);
     expect(rows[0].payload).toMatchObject({
       client_event_id: 'event-a',
       rawValue: '09950001',
       operatorSessionToken: 'operator-session-token',
       operator_session_token: 'operator-session-token',
-      microBatch: true,
+      serverAsyncInbox: true,
     });
-    expect(result.map((item) => item.client_event_id)).toEqual([
-      'event-a',
-      'event-b',
-    ]);
+
+    expect(result[0]).toMatchObject({
+      status_sincronizacao: 'recebida',
+      error: null,
+      result: {
+        success: true,
+        accepted: true,
+        pending: true,
+        status: 'server_accepted',
+      },
+    });
+    expect(result[1].result.status).toBe('server_processing');
+  });
+
+  it('normaliza decisão final canônica sem confundir bloqueio com falha de transporte', () => {
+    const envelope = normalizeCollectionIngressRow({
+      client_event_id: 'event-final',
+      status_sincronizacao: 'sincronizada',
+      resultado: {
+        success: false,
+        status: 'blocked',
+        reason_code: 'DUPLICATE_PIECE_STAGE',
+        message: 'Numeração duplicada.',
+      },
+    });
+
+    expect(envelope).toMatchObject({
+      status_sincronizacao: 'sincronizada',
+      error: null,
+      result: {
+        success: false,
+        status: 'blocked',
+        reason_code: 'DUPLICATE_PIECE_STAGE',
+      },
+    });
   });
 
   it('prioriza o token congelado no próprio evento', async () => {
     const insertedRows = [{
       client_event_id: 'event-a',
       tag_lida: '09950001',
-      status_sincronizacao: 'sincronizada',
+      status_sincronizacao: 'recebida',
       retryable: false,
-      resultado: { success: true, status: 'approved' },
+      resultado: null,
     }];
     const { query, insert } = successfulInsert(insertedRows);
     from.mockReturnValue(query);
@@ -131,9 +159,9 @@ describe('processProductionCollectionBatch', () => {
         data: [{
           client_event_id: 'event-a',
           tag_lida: '09950001',
-          status_sincronizacao: 'sincronizada',
+          status_sincronizacao: 'recebida',
           retryable: false,
-          resultado: { success: true, status: 'approved' },
+          resultado: null,
         }],
         error: null,
       }),
@@ -141,9 +169,9 @@ describe('processProductionCollectionBatch', () => {
     const missingInsertRows = [{
       client_event_id: 'event-b',
       tag_lida: '09950002',
-      status_sincronizacao: 'sincronizada',
+      status_sincronizacao: 'recebida',
       retryable: false,
-      resultado: { success: true, status: 'approved' },
+      resultado: null,
     }];
     const missingInsert = successfulInsert(missingInsertRows);
 
@@ -166,14 +194,29 @@ describe('processProductionCollectionBatch', () => {
     ]);
 
     expect(from).toHaveBeenCalledTimes(3);
-    expect(missingInsert.insert).toHaveBeenCalledTimes(1);
     expect(missingInsert.insert.mock.calls[0][0]).toHaveLength(1);
-    expect(missingInsert.insert.mock.calls[0][0][0].client_event_id)
-      .toBe('event-b');
-    expect(result.map((item) => item.client_event_id)).toEqual([
+    expect(result.every((item) => item.result.pending)).toBe(true);
+  });
+
+  it('consulta decisões posteriores em lote', async () => {
+    const inQuery = vi.fn().mockResolvedValue({
+      data: [{
+        client_event_id: 'event-a',
+        status_sincronizacao: 'sincronizada',
+        resultado: { success: true, status: 'approved' },
+      }],
+      error: null,
+    });
+    const select = vi.fn(() => ({ in: inQuery }));
+    from.mockReturnValue({ select });
+
+    const result = await fetchProductionCollectionResults([
       'event-a',
-      'event-b',
+      'event-a',
     ]);
+
+    expect(inQuery).toHaveBeenCalledWith('client_event_id', ['event-a']);
+    expect(result[0].result.status).toBe('approved');
   });
 
   it('propaga falha de rede como retentável para recolocar o lote na fila', async () => {
