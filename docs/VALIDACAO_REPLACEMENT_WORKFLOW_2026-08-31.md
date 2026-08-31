@@ -24,13 +24,24 @@ Projeto: `uozuzdfvnufsjsonswag`
 
 ## Edge Function de usuários
 
-A função `admin-users` foi publicada na versão 8 com:
+A função `admin-users` foi publicada na versão 10 com:
 
 - suporte ao papel `quality_manager`;
-- compatibilidade com o alias legado `quality`;
-- posição hierárquica entre Supervisor/Líder e Gestor;
+- compatibilidade com os aliases legados `quality`, `leader` e `user`;
+- posição hierárquica de Qualidade entre Supervisor/Líder e Gestor;
 - validação de escalonamento de permissões;
+- resolução canônica de células por ID ou nome;
+- preservação das configurações de recebimento de relatórios;
+- recuperação segura de conta já existente no Supabase Auth;
 - `verify_jwt = true`.
+
+Assinatura publicada:
+
+```text
+version = 10
+status = ACTIVE
+sha256 = 6a37ed0e23e23d325b7f1009526f8a2956ba173e5c14bd00cc55b645db919b86
+```
 
 ## Teste de papéis com rollback
 
