@@ -33,16 +33,18 @@ function notifyBatchResult({
   batchCount = 1,
 }) {
   if (error) {
-    toast.error(error.message || 'Falha ao sincronizar leitura.');
+    toast.error(error.message || 'Falha ao sincronizar leitura.', {
+      id: 'collection-sync-error',
+    });
     return;
   }
 
   if (result?.success) {
     if (batchIndex === batchCount - 1) {
       const message = batchCount > 1
-        ? `${batchCount} leituras sincronizadas com o Supabase.`
+        ? `${batchCount} leituras processadas pelo servidor.`
         : (result.message || 'Leitura aprovada.');
-      toast.success(message);
+      toast.success(message, { id: 'collection-sync-success' });
       navigator.vibrate?.([70, 40, 70]);
     }
     return;
@@ -51,17 +53,21 @@ function notifyBatchResult({
   if (['wrong_step', 'wrong_cell', 'duplicated', 'blocked'].includes(
     result?.status,
   ) || result?.alert_level === 'yellow') {
-    toast.warning(result?.message || 'Leitura bloqueada.');
+    toast.warning(result?.message || 'Leitura bloqueada.', {
+      id: 'collection-sync-warning',
+    });
     return;
   }
 
-  toast.error(result?.message || 'Leitura não aprovada.');
+  toast.error(result?.message || 'Leitura não aprovada.', {
+    id: 'collection-sync-error',
+  });
 }
 
 /**
  * Hook que encapsula a fila de eventos de coleta em estado React.
- * @param {function} processFn — função legada que processa um evento individual
- * @param {object} options — filtros e configuração de sincronização
+ * A leitura física termina na gravação IndexedDB; o PostgreSQL é sincronizado
+ * em segundo plano e nunca faz parte do caminho crítico do scanner.
  */
 export function useCollectionQueue(processFn, options = {}) {
   const {
@@ -76,7 +82,11 @@ export function useCollectionQueue(processFn, options = {}) {
   const processBatchFn = options.processBatchFn
     || (microBatch ? dispatchCollectionEventBatch : null);
   const flushIntervalMs = options.flushIntervalMs
-    ?? (microBatch ? 5000 : 15000);
+    ?? (microBatch ? 1_000 : 15_000);
+  const flushDebounceMs = Math.max(
+    100,
+    Number(options.flushDebounceMs) || 250,
+  );
 
   const [stats, setStats] = useState({
     total: 0,
@@ -89,6 +99,7 @@ export function useCollectionQueue(processFn, options = {}) {
   });
   const [flushing, setFlushing] = useState(false);
   const flushingRef = useRef(false);
+  const scheduledFlushRef = useRef(null);
   const fallbackLockRef = useRef(Promise.resolve());
   const processFnRef = useRef(processFn);
   const processBatchFnRef = useRef(processBatchFn);
@@ -115,8 +126,6 @@ export function useCollectionQueue(processFn, options = {}) {
       return navigator.locks.request('acprod-collection-sync', task);
     }
 
-    // Safari e navegadores antigos: preserva FIFO por uma corrente de Promises,
-    // sem impedir que novos códigos continuem sendo gravados no IndexedDB.
     const currentTask = fallbackLockRef.current.then(task, task);
     fallbackLockRef.current = currentTask.catch(() => undefined);
     return currentTask;
@@ -163,11 +172,22 @@ export function useCollectionQueue(processFn, options = {}) {
     withQueueLock,
   ]);
 
+  const scheduleFlush = useCallback(() => {
+    if (!navigator.onLine || scheduledFlushRef.current) return;
+
+    scheduledFlushRef.current = setTimeout(() => {
+      scheduledFlushRef.current = null;
+      flush().catch((error) => {
+        console.warn('[CollectionQueue] Falha no flush agendado:', error);
+      });
+    }, flushDebounceMs);
+  }, [flush, flushDebounceMs]);
+
   useEffect(() => {
     let cancelled = false;
     const intervalMs = Math.max(
-      1000,
-      Number(flushIntervalMs) || (microBatch ? 5000 : 15000),
+      1_000,
+      Number(flushIntervalMs) || (microBatch ? 1_000 : 15_000),
     );
 
     const recoverAndFlush = async () => {
@@ -180,6 +200,10 @@ export function useCollectionQueue(processFn, options = {}) {
     return () => {
       cancelled = true;
       clearInterval(interval);
+      if (scheduledFlushRef.current) {
+        clearTimeout(scheduledFlushRef.current);
+        scheduledFlushRef.current = null;
+      }
     };
   }, [flush, flushIntervalMs, microBatch]);
 
@@ -194,7 +218,7 @@ export function useCollectionQueue(processFn, options = {}) {
     const tryFlush = async () => {
       if (!navigator.onLine) return;
       const currentStats = await getQueueStats();
-      if (currentStats.pending > 0) await flush();
+      if (currentStats.pending > 0) scheduleFlush();
     };
     const onVisibility = () => {
       if (document.visibilityState === 'visible') tryFlush();
@@ -207,12 +231,9 @@ export function useCollectionQueue(processFn, options = {}) {
       window.removeEventListener('focus', tryFlush);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [flush]);
+  }, [scheduleFlush]);
 
   const enqueue = useCallback(async (payload, enqueueOpts = {}) => {
-    // O retorno acontece logo após a gravação durável no IndexedDB.
-    // A captura local não bloqueia o próximo código; contadores e sincronização
-    // continuam em segundo plano.
     if (microBatch) {
       const operatorSession = getOperatorSession();
       const operatorSessionToken = payload.operatorSessionToken
@@ -229,18 +250,25 @@ export function useCollectionQueue(processFn, options = {}) {
     const id = await enqueueCollectionEvent(payload);
     refreshStatsSafely();
 
-    const shouldFlushImmediately = enqueueOpts.autoFlush === true
-      || (!microBatch && enqueueOpts.autoFlush !== false);
-    if (navigator.onLine && shouldFlushImmediately) {
+    if (navigator.onLine && microBatch) {
+      scheduleFlush();
+    } else if (
+      navigator.onLine
+      && (enqueueOpts.autoFlush === true || enqueueOpts.autoFlush !== false)
+    ) {
       flush();
     }
     return id;
-  }, [flush, microBatch, refreshStatsSafely]);
+  }, [
+    flush,
+    microBatch,
+    refreshStatsSafely,
+    scheduleFlush,
+  ]);
 
   const processNow = useCallback(async (clientEventId) => {
     if (microBatch) {
-      // Compatibilidade: confirma a recepção local, mas não espera o PostgreSQL.
-      // O setInterval fará o envio em lote em até 5s.
+      scheduleFlush();
       refreshStatsSafely();
       return {
         success: true,
@@ -249,7 +277,7 @@ export function useCollectionQueue(processFn, options = {}) {
         status: 'queued',
         alert_level: 'blue',
         client_event_id: clientEventId,
-        message: 'Leitura recebida. Sincronização em micro-lote iniciada.',
+        message: 'Leitura recebida localmente. Validação em segundo plano.',
       };
     }
 
@@ -258,14 +286,19 @@ export function useCollectionQueue(processFn, options = {}) {
     ));
     refreshStatsSafely();
     return result;
-  }, [microBatch, refreshStatsSafely, withQueueLock]);
+  }, [
+    microBatch,
+    refreshStatsSafely,
+    scheduleFlush,
+    withQueueLock,
+  ]);
 
   const retryQueueErrors = useCallback(async () => {
     const count = await retryErrors();
     refreshStatsSafely();
-    if (count > 0 && navigator.onLine) flush();
+    if (count > 0 && navigator.onLine) scheduleFlush();
     return count;
-  }, [flush, refreshStatsSafely]);
+  }, [refreshStatsSafely, scheduleFlush]);
 
   return {
     stats,
