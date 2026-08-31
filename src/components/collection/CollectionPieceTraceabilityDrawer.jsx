@@ -62,7 +62,7 @@ export default function CollectionPieceTraceabilityDrawer({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl p-6 bg-card border border-border/60 rounded-2xl shadow-2xl overflow-y-auto max-h-[90vh]">
+      <DialogContent className="w-[95vw] sm:max-w-3xl p-6 bg-card border border-border/60 rounded-2xl shadow-2xl overflow-y-auto max-h-[90vh]">
         
         {/* Cabeçalho */}
         <DialogHeader className="border-b border-border/40 pb-4 flex flex-row items-start justify-between">

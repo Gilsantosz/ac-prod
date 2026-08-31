@@ -249,7 +249,14 @@ export default function Operators() {
                     </div>
                     <div className="flex items-center gap-1.5">
                       <Clock className="w-3.5 h-3.5 text-muted-foreground/75" />
-                      <span>{op.shift || 'Sem Turno'}</span>
+                      <span className="truncate">
+                        {op.shift || 'Sem Turno'}
+                        {op.shift_start_time && op.shift_end_time && (
+                          <span className="text-[10px] text-muted-foreground ml-1">
+                            ({String(op.shift_start_time).slice(0, 5)} - {String(op.shift_end_time).slice(0, 5)})
+                          </span>
+                        )}
+                      </span>
                     </div>
                     <div className="flex items-center gap-1.5 col-span-2">
                       <MapPin className="w-3.5 h-3.5 text-emerald-500" />
@@ -428,6 +435,12 @@ function OperatorFormModal({ operator, activeCells, allMachines, onClose, onSubm
   const [loginName, setLoginName] = useState(operator?.login_name || '');
   const [registration, setRegistration] = useState('');
   const [shift, setShift] = useState(operator?.shift || '1º Turno');
+  const [shiftStartTime, setShiftStartTime] = useState(
+    operator?.shift_start_time ? String(operator.shift_start_time).slice(0, 5) : '06:00'
+  );
+  const [shiftEndTime, setShiftEndTime] = useState(
+    operator?.shift_end_time ? String(operator.shift_end_time).slice(0, 5) : '14:00'
+  );
   const [replacementEnabled, setReplacementEnabled] = useState(operator?.replacement_enabled === true);
   
   // Célula / Máquina Principal
@@ -511,6 +524,8 @@ function OperatorFormModal({ operator, activeCells, allMachines, onClose, onSubm
       login_name: loginNormalized,
       registration: registration.trim(),
       shift,
+      shift_start_time: shiftStartTime ? `${shiftStartTime}:00` : '06:00:00',
+      shift_end_time: shiftEndTime ? `${shiftEndTime}:00` : '14:00:00',
       primary_cell_id: primaryCellId || null,
       primary_machine_id: primaryMachineId || null,
       cell_ids: cellIds,
@@ -580,11 +595,46 @@ function OperatorFormModal({ operator, activeCells, allMachines, onClose, onSubm
               <select
                 id="form-op-shift"
                 value={shift}
-                onChange={(e) => setShift(e.target.value)}
+                onChange={(e) => {
+                  const s = e.target.value;
+                  setShift(s);
+                  if (s === '1º Turno') {
+                    setShiftStartTime('06:00');
+                    setShiftEndTime('14:00');
+                  } else if (s === '2º Turno') {
+                    setShiftStartTime('14:00');
+                    setShiftEndTime('22:00');
+                  } else if (s === '3º Turno') {
+                    setShiftStartTime('22:00');
+                    setShiftEndTime('06:00');
+                  }
+                }}
                 className="w-full h-10 rounded-xl border border-input bg-background/50 focus:bg-background px-3 text-sm font-medium"
               >
                 {['1º Turno', '2º Turno', '3º Turno'].map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="form-op-shift-start" className="text-xs font-bold text-muted-foreground">Horário Início</Label>
+              <Input
+                id="form-op-shift-start"
+                type="time"
+                value={shiftStartTime}
+                onChange={(e) => setShiftStartTime(e.target.value)}
+                className="rounded-xl h-10 bg-background/50 focus:bg-background"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="form-op-shift-end" className="text-xs font-bold text-muted-foreground">Horário Fim</Label>
+              <Input
+                id="form-op-shift-end"
+                type="time"
+                value={shiftEndTime}
+                onChange={(e) => setShiftEndTime(e.target.value)}
+                className="rounded-xl h-10 bg-background/50 focus:bg-background"
+              />
             </div>
           </div>
 

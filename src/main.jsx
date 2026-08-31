@@ -25,6 +25,15 @@ if (typeof window !== 'undefined' && window.Node && window.Node.prototype) {
   };
 }
 
+// Em modo de desenvolvimento, desregistra Service Workers antigos (PWA) para evitar cache stale no localhost
+if (import.meta.env.DEV && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    for (const registration of registrations) {
+      registration.unregister();
+    }
+  });
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <App />
 )

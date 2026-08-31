@@ -50,9 +50,27 @@ function currentShift() {
   return '3º Turno';
 }
 
-function getShiftRange(shift, reference = new Date()) {
+function getShiftRange(shift, reference = new Date(), startTime = null, endTime = null) {
   const start = new Date(reference);
   const end = new Date(reference);
+
+  if (startTime && endTime) {
+    const [sH, sM] = String(startTime).split(':').map(Number);
+    const [eH, eM] = String(endTime).split(':').map(Number);
+    
+    start.setHours(sH || 0, sM || 0, 0, 0);
+    end.setHours(eH || 0, eM || 0, 0, 0);
+
+    // Turnos que viram a noite (ex: 22:00 até 06:00)
+    if (end <= start) {
+      if (reference.getHours() < (eH || 0)) {
+        start.setDate(start.getDate() - 1);
+      } else {
+        end.setDate(end.getDate() + 1);
+      }
+    }
+    return { dateFrom: start.toISOString(), dateTo: end.toISOString() };
+  }
 
   if (shift === '1º Turno') {
     start.setHours(6, 0, 0, 0);
@@ -99,8 +117,10 @@ function mergeCanonicalPiece(previous, traceability) {
 }
 
 function isClosedLotContext(feedback) {
-  const closedStatuses = new Set(['completed', 'shipped', 'cancelled', 'closed']);
-  return closedStatuses.has(feedback?.lot?.current_status) || closedStatuses.has(feedback?.lot?.status);
+  const closedStatuses = new Set(['completed', 'shipped', 'cancelled', 'closed', 'waiting_packaging']);
+  return closedStatuses.has(feedback?.lot?.current_status) ||
+         closedStatuses.has(feedback?.lot?.status) ||
+         (Number(feedback?.lot_progress_percent) >= 100);
 }
 
 export default function TraceabilityCollection({ embedded = false }) {
@@ -234,7 +254,9 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   const [shift, setShift] = useState(() => opSession?.shift || currentShift());
   const [machine, setMachine] = useState(null);
-  const shiftRange = useMemo(() => getShiftRange(shift), [shift]);
+  const shiftRange = useMemo(() => {
+    return getShiftRange(shift, new Date(), opSession?.shift_start_time, opSession?.shift_end_time);
+  }, [shift, opSession?.shift_start_time, opSession?.shift_end_time]);
 
   // Garantir que a célula selecionada esteja na lista de células permitidas do operador
   useEffect(() => {
