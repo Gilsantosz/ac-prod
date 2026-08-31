@@ -27,7 +27,9 @@ export default function GeneralLotProgressPanel() {
     queryKey: ['pcp-batches'],
     queryFn: fetchPcpBatchProgress,
     initialData: [],
-    refetchInterval: 20000,
+    staleTime: 10_000,
+    // As tabelas produtivas invalidam ['pcp-batches'] via Realtime.
+    refetchInterval: 60_000,
   });
 
   const active = batches.filter((batch) => Number(batch.progress_percent || 0) < 100);
