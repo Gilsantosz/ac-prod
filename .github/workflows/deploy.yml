@@ -264,8 +264,9 @@ jobs:
             "run_id": "${GITHUB_RUN_ID}",
             "migration_version": "${REQUIRED_MIGRATION_VERSION}",
             "release_version": "${REQUIRED_RELEASE_VERSION}",
-            "async_collection_migration_version": "${REQUIRED_ASYNC_COLLECTION_MIGRATION_VERSION}",
-            "async_collection_release_version": "${REQUIRED_ASYNC_COLLECTION_RELEASE_VERSION}",
+            "collection_transport": "async",
+            "collection_async_migration_version": "${REQUIRED_ASYNC_COLLECTION_MIGRATION_VERSION}",
+            "collection_async_release_version": "${REQUIRED_ASYNC_COLLECTION_RELEASE_VERSION}",
             "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
           EOF
