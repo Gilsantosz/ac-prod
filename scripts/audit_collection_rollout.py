@@ -15,7 +15,8 @@ REQUIRED_LEDGER = [
     "20260831045000", "20260831045123", "20260831045242", "20260831045514",
     "20260831050652", "20260831051513", "20260831052152", "20260831052721",
     "20260831052809", "20260831134504", "20260831134819", "20260831134912",
-    "20260831134944", "20260831135344", "20260831135630",
+    "20260831134944", "20260831135344", "20260831135630", "20260831142929",
+    "20260831143323", "20260831143850",
 ]
 UNSAFE = {
     "20260831100000_concurrency_batch_lifecycle_operator_shifts.sql",
@@ -91,24 +92,59 @@ def main() -> int:
         "contrato SQL da coleta",
     )
 
-    replacement_sql = read(migrations / "20260831135630_finalize_replacement_workflow_v8_2.sql")
+    replacement_v82_sql = read(migrations / "20260831135630_finalize_replacement_workflow_v8_2.sql")
     require_all(
-        replacement_sql,
+        replacement_v82_sql,
         (
-            "finalize_replacement_workflow_v8_2",
             "20260831_acprod_replacement_v8_2",
             "quality_manager",
-            "force_complete_replacements",
             "can_approve_replacements()",
             "can_force_complete_replacements()",
-            "get_replacement_station_queue_v3(text,text)",
             "approval_entry_count = 0",
-            "approved_cells = ''[]''::jsonb",
-            "REPLACEMENT_V8_2_INCOMPLETE",
             "replacement_station_only_approval",
-            "replacement_force_justification_only",
         ),
-        "contrato SQL da reposição",
+        "baseline SQL da reposição v8.2",
+    )
+
+    replacement_v83_sql = read(migrations / "20260831143323_reconcile_replacement_workflow_v8_3.sql")
+    require_all(
+        replacement_v83_sql,
+        (
+            "reconcile_replacement_workflow_v8_3",
+            "20260831_acprod_replacement_v8_3",
+            "current_profile_can_decide_replacement",
+            "replacement_origin_classification",
+            "replacement_strict_role_hierarchy",
+            "replacement_force_adjustment_facts",
+            "replacement_audit_mirror",
+            "mirror_replacement_action_audit_to_system_logs",
+            "trg_mirror_replacement_action_audit_to_system_logs",
+            "manual_adjustment",
+            "conclusao_forcada_reposicao",
+            "REPLACEMENT_V8_3_INCOMPLETE",
+        ),
+        "reconciliação SQL da reposição v8.3",
+    )
+
+    replacement_v84_sql = read(migrations / "20260831143850_fix_force_completion_conflict_v8_4.sql")
+    require_all(
+        replacement_v84_sql,
+        (
+            "fix_force_completion_conflict_v8_4",
+            "20260831_acprod_replacement_v8_4",
+            "ON CONFLICT (client_event_id) DO NOTHING",
+            "ON CONFLICT DO NOTHING",
+            "replacement_force_conflict_safe",
+            "REPLACEMENT_V8_4_INCOMPLETE",
+        ),
+        "correção do conflito parcial v8.4",
+    )
+
+    concurrent_marker = read(migrations / "20260831142929_replacement_roles_flow_and_audit_v1.sql")
+    require_all(
+        concurrent_marker,
+        ("migration-ledger alignment", "v8.3", "SELECT 1"),
+        "marcador da migração concorrente",
     )
 
     combined_sql = "\n".join(read(path) for path in migrations.glob("20260831*.sql"))
@@ -121,12 +157,17 @@ def main() -> int:
         workflow,
         (
             "pull_request:",
-            'REQUIRED_MIGRATION_VERSION: "20260831135630"',
-            'REQUIRED_RELEASE_VERSION: "20260831_acprod_replacement_v8_2"',
+            'REQUIRED_MIGRATION_VERSION: "20260831143850"',
+            'REQUIRED_RELEASE_VERSION: "20260831_acprod_replacement_v8_4"',
             "replacement_quality_role",
             "replacement_decision_rbac",
+            "replacement_strict_role_hierarchy",
             "replacement_station_only_approval",
+            "replacement_origin_classification",
             "replacement_force_justification_only",
+            "replacement_force_adjustment_facts",
+            "replacement_force_conflict_safe",
+            "replacement_audit_mirror",
             "replacement_station_queue",
             "replacement_canonical_lot_close",
             "get_public_collection_release",
@@ -240,16 +281,19 @@ def main() -> int:
             "'quality_manager'",
             "quality_manager: 25",
             "if (role === 'quality') return 'quality_manager'",
+            "canonicalManagedCells",
         ),
         "Edge Function de usuários",
     )
 
     print("AUDIT_ACPROD_ROLLOUT_OK")
     print(f"ledger_versions={len(REQUIRED_LEDGER)}")
-    print("database_gate=replacement_v8_2_fail_closed")
+    print("database_gate=replacement_v8_4_fail_closed")
     print("history_modal=protected")
     print("replacement_approval=station_queue_only")
-    print("replacement_force_completion=justification_only")
+    print("replacement_origin=replacement")
+    print("replacement_force_completion=justification_only_adjustment_facts_conflict_safe")
+    print("replacement_audit=dedicated_and_history_mirror")
     print("replacement_station_ux=technical_specs_highlighted")
     print("replacement_roles=quality_supervisor_manager_admin")
     return 0

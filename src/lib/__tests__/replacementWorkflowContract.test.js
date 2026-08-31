@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 
 const repoFile = (path) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
-describe('AC.Prod2 replacement workflow v8.2 contract', () => {
+describe('AC.Prod2 replacement workflow v8.4 contract', () => {
   it('aprova diretamente sem modal, senha, justificativa ou células automáticas', () => {
     const modal = repoFile('src/components/replacement/ReplacementApproveModal.jsx');
     const service = repoFile('src/lib/replacementApprovalService.js');
@@ -50,15 +50,41 @@ describe('AC.Prod2 replacement workflow v8.2 contract', () => {
     expect(edge).toContain('quality_manager: 25');
   });
 
-  it('versiona o contrato do banco e bloqueia deploy incompatível', () => {
-    const migration = 'supabase/migrations/20260831135630_finalize_replacement_workflow_v8_2.sql';
+  it('reconcilia a migração concorrente com hierarquia estrita e auditoria dupla', () => {
+    const migration = repoFile('supabase/migrations/20260831143323_reconcile_replacement_workflow_v8_3.sql');
+
+    expect(migration).toContain('current_profile_can_decide_replacement');
+    expect(migration).toContain('replacement_origin_classification');
+    expect(migration).toContain('manual_adjustment');
+    expect(migration).toContain('conclusao_forcada_reposicao');
+    expect(migration).toContain('mirror_replacement_action_audit_to_system_logs');
+    expect(migration).toContain('trg_mirror_replacement_action_audit_to_system_logs');
+  });
+
+  it('corrige o ON CONFLICT incompatível com índice parcial', () => {
+    const migration = repoFile('supabase/migrations/20260831143850_fix_force_completion_conflict_v8_4.sql');
+
+    expect(migration).toContain('ON CONFLICT (client_event_id) DO NOTHING');
+    expect(migration).toContain('ON CONFLICT DO NOTHING');
+    expect(migration).toContain('replacement_force_conflict_safe');
+    expect(migration).toContain('REPLACEMENT_V8_4_INCOMPLETE');
+  });
+
+  it('versiona o contrato v8.4 e bloqueia deploy incompatível', () => {
+    const migration = 'supabase/migrations/20260831143850_fix_force_completion_conflict_v8_4.sql';
+    const concurrentMarker = 'supabase/migrations/20260831142929_replacement_roles_flow_and_audit_v1.sql';
     const workflow = repoFile('.github/workflows/deploy.yml');
 
     expect(existsSync(resolve(process.cwd(), migration))).toBe(true);
-    expect(repoFile(migration)).toContain('20260831_acprod_replacement_v8_2');
-    expect(workflow).toContain('REQUIRED_MIGRATION_VERSION: "20260831135630"');
-    expect(workflow).toContain('REQUIRED_RELEASE_VERSION: "20260831_acprod_replacement_v8_2"');
+    expect(existsSync(resolve(process.cwd(), concurrentMarker))).toBe(true);
+    expect(repoFile(migration)).toContain('20260831_acprod_replacement_v8_4');
+    expect(workflow).toContain('REQUIRED_MIGRATION_VERSION: "20260831143850"');
+    expect(workflow).toContain('REQUIRED_RELEASE_VERSION: "20260831_acprod_replacement_v8_4"');
+    expect(workflow).toContain('replacement_strict_role_hierarchy');
     expect(workflow).toContain('replacement_station_only_approval');
-    expect(workflow).toContain('replacement_force_justification_only');
+    expect(workflow).toContain('replacement_origin_classification');
+    expect(workflow).toContain('replacement_force_adjustment_facts');
+    expect(workflow).toContain('replacement_force_conflict_safe');
+    expect(workflow).toContain('replacement_audit_mirror');
   });
 });
