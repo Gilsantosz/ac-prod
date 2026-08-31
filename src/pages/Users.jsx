@@ -108,8 +108,8 @@ export default function Users() {
 
   // Mutations
   const invite = useMutation({
-    mutationFn: ({ email, role, name, password, permissions, cell, managedCells }) =>
-      base44.users.inviteUser(email, role, name, password, permissions, cell, managedCells),
+    mutationFn: ({ email, role, name, password, permissions, cell, managedCells, reportSettings }) =>
+      base44.users.inviteUser(email, role, name, password, permissions, cell, managedCells, reportSettings),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success('Colaborador cadastrado com sucesso!');
@@ -139,14 +139,7 @@ export default function Users() {
   const handleInvite = async (email, role, name, password, permissions, cell, managedCells = [], reportSettings = {}) => {
     setSaving(true);
     try {
-      const created = await invite.mutateAsync({ email, role, name, password, permissions, cell, managedCells });
-      if (created?.id && reportSettings.report_delivery_enabled) {
-        await base44.users.updateUser(created.id, {
-          report_delivery_enabled: true,
-          receives_daily_report: Boolean(reportSettings.receives_daily_report),
-        });
-        queryClient.invalidateQueries({ queryKey: ['users'] });
-      }
+      const created = await invite.mutateAsync({ email, role, name, password, permissions, cell, managedCells, reportSettings });
       return created;
     } finally {
       setSaving(false);

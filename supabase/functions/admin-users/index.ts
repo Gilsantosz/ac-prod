@@ -183,29 +183,60 @@ Deno.serve(async (request) => {
       }, 403);
     }
 
+    let canonicalManagedCells: string[] = [];
+    if (managedCells.length > 0) {
+      const { data: allCells, error: cellsError } = await admin
+        .from('cells')
+        .select('id, name, active');
+      if (cellsError) throw cellsError;
+
+      const activeCells = (allCells || []).filter((c) => c.active !== false);
+      const activeCellLookup = new Map<string, string>();
+      for (const c of activeCells) {
+        if (c.id) activeCellLookup.set(String(c.id).toLowerCase().trim(), String(c.name || '').trim());
+        if (c.name) {
+          const rawName = String(c.name).trim();
+          activeCellLookup.set(rawName.toLowerCase(), rawName);
+          activeCellLookup.set(rawName.toLowerCase().replace(/\s+/g, ' '), rawName);
+        }
+      }
+
+      const invalidCells: string[] = [];
+      const resolvedCells: string[] = [];
+
+      for (const rawCell of managedCells) {
+        const normKey = String(rawCell || '').toLowerCase().trim().replace(/\s+/g, ' ');
+        if (activeCellLookup.has(normKey)) {
+          resolvedCells.push(activeCellLookup.get(normKey)!);
+        } else {
+          invalidCells.push(rawCell);
+        }
+      }
+
+      if (invalidCells.length > 0) {
+        return json({
+          success: false,
+          error: `Uma ou mais células selecionadas (${invalidCells.join(', ')}) não existem ou estão inativas.`,
+        }, 422);
+      }
+
+      canonicalManagedCells = Array.from(new Set(resolvedCells));
+    }
+
     const callerCells = Array.from(new Set(
       (Array.isArray(caller.managed_cells) && caller.managed_cells.length > 0
         ? caller.managed_cells
         : caller.cell ? [caller.cell] : [])
-        .map((value) => String(value || '').trim())
+        .map((value) => String(value || '').toLowerCase().trim().replace(/\s+/g, ' '))
         .filter(Boolean),
     ));
     if (caller.role !== 'admin' && callerCells.length > 0) {
-      const outsideCallerScope = managedCells.filter((cellName) => !callerCells.includes(cellName));
+      const outsideCallerScope = canonicalManagedCells.filter((cellName) => {
+        const norm = String(cellName).toLowerCase().trim().replace(/\s+/g, ' ');
+        return !callerCells.includes(norm);
+      });
       if (outsideCallerScope.length > 0) {
         return json({ success: false, error: 'Uma ou mais células estão fora do seu escopo de gestão.' }, 403);
-      }
-    }
-
-    if (managedCells.length > 0) {
-      const { data: validCells, error: cellsError } = await admin
-        .from('cells')
-        .select('name')
-        .in('name', managedCells)
-        .eq('active', true);
-      if (cellsError) throw cellsError;
-      if ((validCells || []).length !== managedCells.length) {
-        return json({ success: false, error: 'Uma ou mais células selecionadas não existem ou estão inativas.' }, 422);
       }
     }
 
@@ -244,6 +275,9 @@ Deno.serve(async (request) => {
 
     if (!authUser?.id) throw new Error('A conta de autenticação não foi criada.');
 
+    const reportDeliveryEnabled = Boolean(body.report_delivery_enabled ?? body.report_settings?.report_delivery_enabled);
+    const receivesDailyReport = Boolean(body.receives_daily_report ?? body.report_settings?.receives_daily_report);
+
     const { data: profile, error: profileError } = await admin
       .from('profiles')
       .upsert({
@@ -251,15 +285,17 @@ Deno.serve(async (request) => {
         email,
         name,
         role,
-        cell: managedCells[0] || cell,
-        managed_cells: managedCells,
+        cell: canonicalManagedCells[0] || cell,
+        managed_cells: canonicalManagedCells,
         access_scope: caller.role === 'admin'
-          ? { ...accessScope, cells: managedCells }
-          : { cells: managedCells, machines: [] },
+          ? { ...accessScope, cells: canonicalManagedCells }
+          : { cells: canonicalManagedCells, machines: [] },
         permissions,
         active: true,
+        report_delivery_enabled: reportDeliveryEnabled,
+        receives_daily_report: receivesDailyReport,
       }, { onConflict: 'id' })
-      .select('id, email, name, role, cell, managed_cells, access_scope, permissions, active, report_delivery_enabled')
+      .select('id, email, name, role, cell, managed_cells, access_scope, permissions, active, report_delivery_enabled, receives_daily_report')
       .single();
     if (profileError) throw profileError;
 
