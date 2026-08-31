@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { RadioTower, ScanLine } from 'lucide-react';
@@ -416,26 +416,38 @@ export default function TraceabilityCollection({ embedded = false }) {
   ) || activeGeneralLots[0] || null;
   const currentClientLotCode = feedback?.lot?.lot_code || selectedPiece?.lot_code || null;
 
-  const refreshData = useCallback(() => {
-    invalidateAllMesQueries(queryClient);
-    queryClient.invalidateQueries({ queryKey: ['stageReadings', cellName, machine?.id] });
-    setRefreshReadsSignal(prev => prev + 1);
-  }, [queryClient, cellName, machine]);
+  const mesRefreshTimerRef = useRef(null);
+  const pendingAsyncFeedbackRef = useRef(null);
+  const asyncFeedbackTimerRef = useRef(null);
+
+  const refreshData = useCallback((delayMs = 150) => {
+    if (mesRefreshTimerRef.current) return;
+    mesRefreshTimerRef.current = setTimeout(() => {
+      mesRefreshTimerRef.current = null;
+      invalidateAllMesQueries(queryClient);
+      queryClient.invalidateQueries({
+        queryKey: ['stageReadings', cellName, machine?.id],
+      });
+      setRefreshReadsSignal((previous) => previous + 1);
+    }, Math.max(0, Number(delayMs) || 0));
+  }, [queryClient, cellName, machine?.id]);
+
+  useEffect(() => () => {
+    if (mesRefreshTimerRef.current) clearTimeout(mesRefreshTimerRef.current);
+    if (asyncFeedbackTimerRef.current) clearTimeout(asyncFeedbackTimerRef.current);
+  }, []);
 
   // Realtime subscription to refresh KPIs and readings on any collection events
   useEffect(() => {
     if (!cellName) return;
-    console.log('Subscribing to realtime collection events for parent KPIs in cell:', cellName);
     const channel = subscribeToCollectionHistory({
       cellName,
       channelSuffix: 'parent',
       callback: (payload) => {
-        console.log('Realtime collection event received in parent:', payload);
         refreshData();
       }
     });
     return () => {
-      console.log('Unsubscribing from realtime collection events for parent cell:', cellName);
       unsubscribeFromCollectionHistory(channel);
     };
   }, [cellName, refreshData]);
@@ -490,11 +502,14 @@ export default function TraceabilityCollection({ embedded = false }) {
   });
 
   // A confirmação final chega depois do ACK do inbox, via Realtime/polling.
+  // Rajadas são consolidadas para evitar centenas de renderizações e consultas.
   useEffect(() => {
-    const handleAsyncCollectionResult = (browserEvent) => {
-      const detail = browserEvent?.detail || {};
-      const result = detail.result;
-      if (!detail.final || !result || result.pending) return;
+    const applyAsyncCollectionResult = () => {
+      asyncFeedbackTimerRef.current = null;
+      const detail = pendingAsyncFeedbackRef.current;
+      pendingAsyncFeedbackRef.current = null;
+      const result = detail?.result;
+      if (!result) return;
 
       updateFeedback({
         ...result,
@@ -523,9 +538,41 @@ export default function TraceabilityCollection({ embedded = false }) {
       refreshData();
     };
 
+    const handleAsyncCollectionResult = (browserEvent) => {
+      const detail = browserEvent?.detail || {};
+      const result = detail.result;
+      if (!detail.final || !result || result.pending) return;
+
+      const current = pendingAsyncFeedbackRef.current;
+      const currentPriority = current?.result?.success === false ? 2 : 1;
+      const nextPriority = result.success === false ? 2 : 1;
+      const currentTime = Date.parse(
+        current?.event?.created_at_client || current?.event?.createdAtClient || 0,
+      ) || 0;
+      const nextTime = Date.parse(
+        detail?.event?.created_at_client || detail?.event?.createdAtClient || 0,
+      ) || 0;
+
+      if (!current || nextPriority > currentPriority || (
+        nextPriority === currentPriority && nextTime >= currentTime
+      )) {
+        pendingAsyncFeedbackRef.current = detail;
+      }
+
+      if (asyncFeedbackTimerRef.current) return;
+      asyncFeedbackTimerRef.current = setTimeout(
+        applyAsyncCollectionResult,
+        80,
+      );
+    };
+
     window.addEventListener('collection-batch-result', handleAsyncCollectionResult);
     return () => {
       window.removeEventListener('collection-batch-result', handleAsyncCollectionResult);
+      if (asyncFeedbackTimerRef.current) {
+        clearTimeout(asyncFeedbackTimerRef.current);
+        asyncFeedbackTimerRef.current = null;
+      }
     };
   }, [operator, refreshData, updateFeedback]);
 

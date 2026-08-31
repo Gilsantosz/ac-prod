@@ -34,11 +34,17 @@ export default function TraceabilityScannerPanel({
   const inputRef = useRef(null);
   const lastCaptureRef = useRef({ code: null, at: 0 });
   const mountedRef = useRef(true);
+  const audioContextRef = useRef(null);
   const isSuspended = activeDowntime || modalOpen;
   const contextReady = Boolean(cellName && shift && operator) && !isSuspended;
 
   useEffect(() => () => {
     mountedRef.current = false;
+    const context = audioContextRef.current;
+    audioContextRef.current = null;
+    if (context && typeof context.close === 'function') {
+      Promise.resolve(context.close()).catch(() => undefined);
+    }
   }, []);
 
   const refocus = useCallback(() => {
@@ -194,34 +200,50 @@ export default function TraceabilityScannerPanel({
   }, [activeDowntime, dispatchCapturedReading]);
 
   useEffect(() => {
-    if (!feedback) return;
+    // ACK azul apenas confirma transporte; o bip é reservado à decisão final.
+    if (
+      !feedback
+      || feedback.pending
+      || feedback.accepted
+      || feedback.alert_level === 'blue'
+    ) return;
 
     const playSound = (alertLevel) => {
       try {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (!AudioCtx) return;
-        const ctx = new AudioCtx();
+        let ctx = audioContextRef.current;
+        if (!ctx || ctx.state === 'closed') {
+          ctx = new AudioCtx();
+          audioContextRef.current = ctx;
+        }
+        if (ctx.state === 'suspended') {
+          Promise.resolve(ctx.resume()).catch(() => undefined);
+        }
+
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
 
         if (alertLevel === 'green') {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.connect(gain);
-          gain.connect(ctx.destination);
           osc.type = 'sine';
           osc.frequency.setValueAtTime(880, ctx.currentTime);
           gain.gain.setValueAtTime(0.1, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
+          gain.gain.exponentialRampToValueAtTime(
+            0.01,
+            ctx.currentTime + 0.12,
+          );
           osc.start();
           osc.stop(ctx.currentTime + 0.12);
         } else {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.connect(gain);
-          gain.connect(ctx.destination);
           osc.type = 'triangle';
           osc.frequency.setValueAtTime(659.25, ctx.currentTime);
           gain.gain.setValueAtTime(0.08, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+          gain.gain.exponentialRampToValueAtTime(
+            0.01,
+            ctx.currentTime + 0.35,
+          );
           osc.start();
           osc.stop(ctx.currentTime + 0.35);
         }

@@ -31,6 +31,8 @@ import {
 const SERVER_POLL_INTERVAL_MS = 2_000;
 const FLUSH_DEBOUNCE_MS = 120;
 const SERVER_QUERY_CHUNK = 100;
+const STATS_REFRESH_DEBOUNCE_MS = 80;
+const FINAL_NOTIFICATION_DEBOUNCE_MS = 80;
 
 function emitBatchResult(payload) {
   try {
@@ -118,6 +120,9 @@ export function useCollectionQueue(processFn, options = {}) {
   const flushingRef = useRef(false);
   const fallbackLockRef = useRef(Promise.resolve());
   const flushTimerRef = useRef(null);
+  const statsRefreshTimerRef = useRef(null);
+  const finalNotificationTimerRef = useRef(null);
+  const pendingFinalNotificationRef = useRef(null);
   const processFnRef = useRef(processFn);
   const processBatchFnRef = useRef(processBatchFn);
   const onResultRef = useRef(onResult);
@@ -132,10 +137,14 @@ export function useCollectionQueue(processFn, options = {}) {
     setStats(nextStats);
   }, [cellName, machineId, eventKind]);
 
-  const refreshStatsSafely = useCallback(() => {
-    Promise.resolve(refreshStats()).catch((error) => {
-      console.warn('[CollectionQueue] Falha ao atualizar estatísticas locais:', error);
-    });
+  const refreshStatsSafely = useCallback((delayMs = STATS_REFRESH_DEBOUNCE_MS) => {
+    if (statsRefreshTimerRef.current) return;
+    statsRefreshTimerRef.current = setTimeout(() => {
+      statsRefreshTimerRef.current = null;
+      Promise.resolve(refreshStats()).catch((error) => {
+        console.warn('[CollectionQueue] Falha ao atualizar estatísticas locais:', error);
+      });
+    }, Math.max(0, Number(delayMs) || 0));
   }, [refreshStats]);
 
   const withQueueLock = useCallback(async (task) => {
@@ -152,9 +161,18 @@ export function useCollectionQueue(processFn, options = {}) {
     emitBatchResult(payload);
     if (typeof onResultRef.current === 'function') {
       onResultRef.current(payload);
-    } else {
-      notifyBatchResult(payload);
+      return;
     }
+    if (payload?.result?.pending || payload?.result?.accepted) return;
+
+    pendingFinalNotificationRef.current = payload;
+    if (finalNotificationTimerRef.current) return;
+    finalNotificationTimerRef.current = setTimeout(() => {
+      finalNotificationTimerRef.current = null;
+      const latest = pendingFinalNotificationRef.current;
+      pendingFinalNotificationRef.current = null;
+      if (latest) notifyBatchResult(latest);
+    }, FINAL_NOTIFICATION_DEBOUNCE_MS);
   }, []);
 
   const handleServerEnvelope = useCallback(async (envelope) => {
@@ -287,6 +305,17 @@ export function useCollectionQueue(processFn, options = {}) {
       if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
     };
   }, [flush, flushIntervalMs, microBatch]);
+
+  useEffect(() => () => {
+    if (statsRefreshTimerRef.current) {
+      clearTimeout(statsRefreshTimerRef.current);
+      statsRefreshTimerRef.current = null;
+    }
+    if (finalNotificationTimerRef.current) {
+      clearTimeout(finalNotificationTimerRef.current);
+      finalNotificationTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     const handler = () => refreshStatsSafely();
