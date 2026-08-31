@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { from } = vi.hoisted(() => ({
+const { from, getOperatorSession } = vi.hoisted(() => ({
   from: vi.fn(),
+  getOperatorSession: vi.fn(),
 }));
 
 vi.mock('@/lib/supabaseClient', () => ({
   supabase: { from },
+}));
+vi.mock('@/lib/operatorSessionService', () => ({
+  getOperatorSession,
 }));
 
 import {
@@ -22,9 +26,10 @@ function successfulInsert(rows) {
 describe('processProductionCollectionBatch', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getOperatorSession.mockReturnValue({ token: 'operator-session-token' });
   });
 
-  it('faz um único insert([]) para várias leituras e preserva client_event_id', async () => {
+  it('faz um único insert([]), preserva idempotência e propaga a sessão operacional', async () => {
     const insertedRows = [
       {
         client_event_id: 'event-a',
@@ -80,12 +85,38 @@ describe('processProductionCollectionBatch', () => {
     expect(rows[0].payload).toMatchObject({
       client_event_id: 'event-a',
       rawValue: '09950001',
+      operatorSessionToken: 'operator-session-token',
+      operator_session_token: 'operator-session-token',
       microBatch: true,
     });
     expect(result.map((item) => item.client_event_id)).toEqual([
       'event-a',
       'event-b',
     ]);
+  });
+
+  it('prioriza o token congelado no próprio evento', async () => {
+    const insertedRows = [{
+      client_event_id: 'event-a',
+      tag_lida: '09950001',
+      status_sincronizacao: 'sincronizada',
+      retryable: false,
+      resultado: { success: true, status: 'approved' },
+    }];
+    const { query, insert } = successfulInsert(insertedRows);
+    from.mockReturnValue(query);
+
+    await processProductionCollectionBatch([{
+      client_event_id: 'event-a',
+      raw_value: '09950001',
+      event_kind: 'production_stage',
+      operator_session_token: 'event-session-token',
+    }]);
+
+    expect(insert.mock.calls[0][0][0].payload).toMatchObject({
+      operatorSessionToken: 'event-session-token',
+      operator_session_token: 'event-session-token',
+    });
   });
 
   it('trata resposta perdida após commit recuperando client_event_id existente', async () => {
