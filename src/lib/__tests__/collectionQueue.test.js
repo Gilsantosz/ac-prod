@@ -14,9 +14,12 @@ const mockDb = {
           }, 5);
         },
         get: (key) => {
-          const req = { onsuccess: null };
+          const req = { onsuccess: null, result: undefined };
           setTimeout(() => {
-            if (req.onsuccess) req.onsuccess({ target: { result: store.get(key) } });
+            req.result = store.get(key);
+            if (req.onsuccess) {
+              req.onsuccess({ target: { result: req.result } });
+            }
           }, 5);
           return req;
         },
