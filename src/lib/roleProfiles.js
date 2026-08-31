@@ -70,6 +70,13 @@ const REPLACEMENT_AUTHORITY_PERMISSIONS = Object.freeze({
   force_complete_replacements: true,
 });
 
+const REPLACEMENT_NON_AUTHORITY_PERMISSIONS = Object.freeze({
+  view_replacements: true,
+  manage_replacements: false,
+  approve_replacements: false,
+  force_complete_replacements: false,
+});
+
 export function normalizeSystemRole(role) {
   const normalized = String(role || 'operator').trim().toLowerCase();
   if (normalized === 'quality') return 'quality_manager';
@@ -105,7 +112,7 @@ export function getRoleDefaultPermissions(role) {
 
   return isReplacementAuthorityRole(normalized)
     ? { ...base, ...REPLACEMENT_AUTHORITY_PERMISSIONS }
-    : { ...base, force_complete_replacements: false };
+    : { ...base, ...REPLACEMENT_NON_AUTHORITY_PERMISSIONS };
 }
 
 export function creatorAuthorityRank(creator) {
