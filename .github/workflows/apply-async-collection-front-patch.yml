@@ -18,9 +18,9 @@ jobs:
         with:
           ref: fix/collection-async-worker-v8-7
           fetch-depth: 0
-      - name: Aplicar patch idempotente
+      - name: Aplicar patches idempotentes
         run: python3 scripts/patch_traceability_async_feedback.py
-      - name: Publicar alteração gerada
+      - name: Publicar alterações geradas
         run: |
           if git diff --quiet; then
             echo "PATCH_ALREADY_APPLIED"
@@ -28,6 +28,8 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/pages/TraceabilityCollection.jsx
-          git commit -m "fix(collection): aguarda decisão final do worker assíncrono"
+          git add \
+            src/pages/TraceabilityCollection.jsx \
+            src/lib/collectionEventQueue.js
+          git commit -m "fix(collection): finaliza reconciliação assíncrona da coleta"
           git push origin HEAD:fix/collection-async-worker-v8-7
