@@ -55,10 +55,6 @@ const QUALITY_PERMISSION_OVERRIDES = Object.freeze({
   view_report_delivery_logs: false,
   manage_email_settings: false,
   view_audit_logs: false,
-  view_replacements: true,
-  manage_replacements: true,
-  approve_replacements: true,
-  force_complete_replacements: true,
   view_quality: true,
   manage_quality: true,
   close_quality_nonconformities: true,
@@ -67,8 +63,24 @@ const QUALITY_PERMISSION_OVERRIDES = Object.freeze({
   correct_downtime: true,
 });
 
+const REPLACEMENT_AUTHORITY_PERMISSIONS = Object.freeze({
+  view_replacements: true,
+  manage_replacements: true,
+  approve_replacements: true,
+  force_complete_replacements: true,
+});
+
+export function normalizeSystemRole(role) {
+  const normalized = String(role || 'operator').trim().toLowerCase();
+  if (normalized === 'quality') return 'quality_manager';
+  if (normalized === 'leader') return 'supervisor';
+  if (normalized === 'user') return 'operator';
+  return normalized;
+}
+
 export function getSystemRoleOption(role) {
-  return SYSTEM_ROLE_OPTIONS.find((option) => option.value === role) || null;
+  const normalized = normalizeSystemRole(role);
+  return SYSTEM_ROLE_OPTIONS.find((option) => option.value === normalized) || null;
 }
 
 export function getSystemRoleLabel(role, { short = false } = {}) {
@@ -81,12 +93,19 @@ export function getSystemRoleRank(role) {
   return getSystemRoleOption(role)?.rank || 0;
 }
 
+export function isReplacementAuthorityRole(role) {
+  return ['quality_manager', 'supervisor', 'manager', 'admin'].includes(normalizeSystemRole(role));
+}
+
 export function getRoleDefaultPermissions(role) {
-  if (role !== 'quality_manager') return getDefaultPermissions(role);
-  return {
-    ...getDefaultPermissions('supervisor'),
-    ...QUALITY_PERMISSION_OVERRIDES,
-  };
+  const normalized = normalizeSystemRole(role);
+  const base = normalized === 'quality_manager'
+    ? { ...getDefaultPermissions('supervisor'), ...QUALITY_PERMISSION_OVERRIDES }
+    : getDefaultPermissions(normalized);
+
+  return isReplacementAuthorityRole(normalized)
+    ? { ...base, ...REPLACEMENT_AUTHORITY_PERMISSIONS }
+    : { ...base, force_complete_replacements: false };
 }
 
 export function creatorAuthorityRank(creator) {
@@ -97,10 +116,6 @@ export function creatorAuthorityRank(creator) {
 }
 
 export function canManageSystemRole(currentUser, targetRole) {
-  if (currentUser?.role === 'admin') return true;
+  if (normalizeSystemRole(currentUser?.role) === 'admin') return true;
   return getSystemRoleRank(targetRole) < creatorAuthorityRank(currentUser);
-}
-
-export function isReplacementAuthorityRole(role) {
-  return ['quality_manager', 'supervisor', 'manager', 'admin'].includes(role);
 }
