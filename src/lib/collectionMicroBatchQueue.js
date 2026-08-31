@@ -2,7 +2,9 @@ import {
   getEventsByStatus,
   markEventError,
   markEventProcessing,
+  markEventServerPending,
   markEventSynced,
+  markEventTerminalError,
 } from '@/lib/collectionEventQueue';
 
 const DEFAULT_BATCH_SIZE = 50;
@@ -26,12 +28,9 @@ function envelopeError(envelope, fallbackMessage) {
 }
 
 /**
- * Escoa a fila IndexedDB em micro-lotes, preservando FIFO e client_event_id.
- *
- * Falha de transporte: todo o lote volta para pending com backoff.
- * Falha funcional individual: somente o evento correspondente vai para error.
- * Resultado processado (aprovado, bloqueado ou inválido): marca synced, pois o
- * transporte foi concluído e a decisão canônica já está no PostgreSQL.
+ * Persiste a fila IndexedDB em micro-lotes. O ACK do INSERT transfere a
+ * responsabilidade de retry ao inbox durável do Supabase; a decisão produtiva
+ * final chega depois via Realtime/polling.
  */
 export async function flushCollectionMicroBatchQueue(processBatchFn, opts = {}) {
   if (typeof processBatchFn !== 'function') {
@@ -56,6 +55,7 @@ export async function flushCollectionMicroBatchQueue(processBatchFn, opts = {}) 
     ));
 
   let processed = 0;
+  let accepted = 0;
   let synced = 0;
   let errors = 0;
 
@@ -93,6 +93,7 @@ export async function flushCollectionMicroBatchQueue(processBatchFn, opts = {}) 
         });
         onProgress?.({
           processed,
+          accepted,
           synced,
           errors,
           current: event.client_event_id,
@@ -126,6 +127,7 @@ export async function flushCollectionMicroBatchQueue(processBatchFn, opts = {}) 
         });
         onProgress?.({
           processed,
+          accepted,
           synced,
           errors,
           current: event.client_event_id,
@@ -134,24 +136,30 @@ export async function flushCollectionMicroBatchQueue(processBatchFn, opts = {}) 
       }
 
       const result = envelope.result ?? envelope.resultado ?? envelope;
+      const serverStatus = envelope.status_sincronizacao;
 
-      if (envelope.status_sincronizacao === 'erro') {
-        const error = envelopeError(
-          envelope,
-          'A leitura foi recebida, mas não pôde ser processada.',
+      if (serverStatus === 'recebida' || serverStatus === 'processando') {
+        await markEventServerPending(
+          event.client_event_id,
+          result,
+          envelope.ingress,
         );
-        await markEventError(event.client_event_id, error, maxRetries);
         processed += 1;
-        errors += 1;
+        accepted += 1;
         onResult?.({
           event,
           result,
-          error,
+          error: null,
           batchIndex: index,
           batchCount: batch.length,
+          pending: true,
         });
-      } else {
-        await markEventSynced(event.client_event_id, result);
+      } else if (serverStatus === 'sincronizada') {
+        await markEventSynced(
+          event.client_event_id,
+          result,
+          envelope.ingress,
+        );
         processed += 1;
         synced += 1;
         onResult?.({
@@ -161,10 +169,30 @@ export async function flushCollectionMicroBatchQueue(processBatchFn, opts = {}) 
           batchIndex: index,
           batchCount: batch.length,
         });
+      } else {
+        const error = envelopeError(
+          envelope,
+          'A leitura foi recebida, mas o servidor não pôde processá-la.',
+        );
+        await markEventTerminalError(
+          event.client_event_id,
+          error,
+          envelope.ingress,
+        );
+        processed += 1;
+        errors += 1;
+        onResult?.({
+          event,
+          result,
+          error,
+          batchIndex: index,
+          batchCount: batch.length,
+        });
       }
 
       onProgress?.({
         processed,
+        accepted,
         synced,
         errors,
         current: event.client_event_id,
@@ -174,6 +202,7 @@ export async function flushCollectionMicroBatchQueue(processBatchFn, opts = {}) 
 
   return {
     processed,
+    accepted,
     synced,
     errors,
     batches: Math.ceil(pending.length / safeBatchSize),
