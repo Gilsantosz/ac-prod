@@ -274,6 +274,7 @@ export default function CollectionPieceTraceabilityDrawer({
         <DialogFooter className="gap-2 border-t border-border/40 pt-4">
           {canReject && !isRejected && data?.piece && (
             <Button
+              type="button"
               onClick={() => {
                 onReject(data.piece);
                 onOpenChange(false);

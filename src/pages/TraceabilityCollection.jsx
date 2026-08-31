@@ -38,6 +38,7 @@ import {
   getPieceTraceability,
   rejectPieceFromCollection,
   getCollectionKpis,
+  getOperatorShiftKpisV2,
   requestPieceReplacement,
   subscribeToCollectionHistory,
   unsubscribeFromCollectionHistory
@@ -394,6 +395,13 @@ export default function TraceabilityCollection({ embedded = false }) {
     refetchInterval: 15_000,
   });
 
+  const { data: shiftKpis = {} } = useQuery({
+    queryKey: ['operator-shift-kpis', opSession?.id, shift, shiftRange.dateFrom, shiftRange.dateTo],
+    queryFn: () => getOperatorShiftKpisV2(opSession?.id),
+    enabled: !!opSession?.id,
+    refetchInterval: 15_000,
+  });
+
   const cellStats = {
     expected: Number(kpis.expected) || 0,
     approved: Number(kpis.approved) || 0,
@@ -724,6 +732,8 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   const pageClass = embedded ? 'space-y-5' : 'p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-5 sm:space-y-6';
 
+  const isAnyModalOpen = traceabilityOpen || rejectModalOpen || downtimeDialogOpen || readingOccurrenceOpen || kioskOpen;
+
   const scanner = useMemo(() => (
     <TraceabilityScannerPanel
       mode={mode}
@@ -735,6 +745,7 @@ export default function TraceabilityCollection({ embedded = false }) {
       shift={shift}
       operator={operator}
       machine={machine}
+      modalOpen={isAnyModalOpen}
       onOpenDowntime={() => setDowntimeDialogOpen(true)}
       onToggleKiosk={() => setKioskOpen(true)}
       activeDowntime={activeDowntime}
@@ -925,8 +936,12 @@ export default function TraceabilityCollection({ embedded = false }) {
             </div>
           </div>
 
-          {/* Segunda linha: Leituras hoje, Aprovadas, Reprovadas, Bloqueadas */}
-          <TraceabilityKpiCards kpis={kpis} />
+          {/* Segunda linha: Leituras do Turno, Aprovadas, Reprovadas, Bloqueadas */}
+          <TraceabilityKpiCards kpis={{
+            ...kpis,
+            ...shiftKpis,
+            total: (shiftKpis.approved || 0) + (shiftKpis.rejected || 0) + (shiftKpis.blocked || 0),
+          }} />
         </div>
       )}
 

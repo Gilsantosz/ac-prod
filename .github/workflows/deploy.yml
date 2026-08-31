@@ -1,6 +1,8 @@
-name: Deploy para GitHub Pages
+name: Deploy AC.Prod2 — contrato banco/front no mesmo release
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
   workflow_dispatch:
@@ -10,99 +12,192 @@ permissions:
   pages: write
   id-token: write
 
+env:
+  EXPECTED_PROJECT_ID: uozuzdfvnufsjsonswag
+  REQUIRED_MIGRATION_VERSION: "20260831052809"
+  REQUIRED_RELEASE_VERSION: "20260831_acprod_collection_db_v7"
+
 concurrency:
-  group: pages
+  group: acprod2-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  migrate:
-    name: Database Migrations
+  contract:
+    name: Contrato estático do rollout
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: actions/checkout@v6
         with:
-          version: latest
+          persist-credentials: false
+      - name: Auditar migrações, Realtime, modal e workflow
+        run: python3 scripts/audit_collection_rollout.py --repo .
 
-      - name: Deploy Migrations
-        run: |
-          if [ -n "${{ secrets.SUPABASE_ACCESS_TOKEN }}" ] && [ -n "${{ secrets.SUPABASE_DB_PASSWORD }}" ]; then
-            PROJECT_REF="${{ secrets.SUPABASE_PROJECT_ID }}"
-            if [ -z "$PROJECT_REF" ]; then
-              PROJECT_REF="uozuzdfvnufsjsonswag"
-            fi
-            supabase db push --project-ref "$PROJECT_REF"
-            for function_name in \
-              send-report-email \
-              sendDailyClosure \
-              schedule-report-job \
-              admin-users \
-              promob-parse-order \
-              promob-api-sync \
-              generate-productive-backup \
-              sync-google-drive-archive
-            do
-              supabase functions deploy "$function_name" --project-ref "$PROJECT_REF"
-            done
-            # Estes endpoints possuem autenticação própria: segredo de cron ou
-            # recuperação pública com rate limit e resposta anti-enumeração.
-            for function_name in \
-              send-scheduled-reports \
-              recover-password
-            do
-              supabase functions deploy "$function_name" --no-verify-jwt --project-ref "$PROJECT_REF"
-            done
-          else
-            echo "Aviso: Segredos Supabase (SUPABASE_ACCESS_TOKEN e SUPABASE_DB_PASSWORD) nao configurados no GitHub. Pulando migracao automatica."
-          fi
+  quality:
+    name: Lint, tipos, testes, segurança e build de validação
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [contract]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependências reproduzíveis
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Testes unitários
+        run: npm run test:unit
+      - name: Auditoria de dependências e segredos
+        run: npm run security:check
+      - name: Build de validação
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
+          VITE_APP_BASE: /ac-prod/
+          VITE_APP_COMMIT_SHA: ${{ github.sha }}
+          VITE_APP_BUILD_TIME: ${{ github.run_started_at }}
+        run: npm run build
+
+  database-release:
+    name: Comprovar release do Supabase
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [quality]
+    steps:
+      - name: Validar configuração pública obrigatória
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "${SUPABASE_URL:-}" ] || missing+=(VITE_SUPABASE_URL)
+          [ -n "${SUPABASE_ANON_KEY:-}" ] || missing+=(VITE_SUPABASE_ANON_KEY)
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf 'ERRO: segredos obrigatórios ausentes:' >&2
+            printf ' %s' "${missing[@]}" >&2
+            printf '\nO front-end não será publicado.\n' >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlparse
+          host = (urlparse(os.environ['SUPABASE_URL']).hostname or '').lower()
+          expected = os.environ['EXPECTED_PROJECT_ID'].lower()
+          if host != f'{expected}.supabase.co':
+              raise SystemExit('ERRO: VITE_SUPABASE_URL não pertence ao projeto AC.Prod2 de produção.')
+          PY
+
+      - name: Consultar marcador fail-closed do banco
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "apikey: ${SUPABASE_ANON_KEY}" \
+            --header "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            --header "Content-Type: application/json" \
+            --data '{}' \
+            "${SUPABASE_URL}/rest/v1/rpc/get_public_collection_release" \
+            > "$response_file"
+          python3 - "$response_file" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+          payload = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          if isinstance(payload, list):
+              payload = payload[0] if payload else {}
+          if not isinstance(payload, dict):
+              raise SystemExit('ERRO: marcador do banco retornou formato inválido.')
+          expected_migration = os.environ['REQUIRED_MIGRATION_VERSION']
+          expected_release = os.environ['REQUIRED_RELEASE_VERSION']
+          flags = payload.get('schema_flags') or {}
+          required_flags = ('shift_columns','cell_lifecycle','active_context','reading_v2','history_compatibility')
+          failures = []
+          if payload.get('ready') is not True:
+              failures.append('ready=false')
+          if str(payload.get('migration_version','')) != expected_migration:
+              failures.append(f"migration={payload.get('migration_version')!r}; esperado={expected_migration!r}")
+          if str(payload.get('release_version','')) != expected_release:
+              failures.append(f"release={payload.get('release_version')!r}; esperado={expected_release!r}")
+          for flag in required_flags:
+              if flags.get(flag) is not True:
+                  failures.append(f'{flag}=false')
+          if failures:
+              raise SystemExit('ERRO: Supabase não está no release exigido. ' + '; '.join(failures))
+          print(f'DATABASE_RELEASE_OK migration={expected_migration} release={expected_release}')
+          PY
 
   build:
-    name: Build
+    name: Gerar artefato do release comprovado
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [database-release]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/checkout@v6
         with:
-          node-version: 20
+          persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
           cache: npm
-
-      - name: Install dependencies
+      - name: Instalar dependências
         run: npm ci
-
-      - name: Build
+      - name: Build de produção
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          # GitHub Pages publica este repositório em /ac-prod/.
-          # O default do Vite agora é / para Cloudflare Pages e domínio próprio.
           VITE_APP_BASE: /ac-prod/
+          VITE_APP_COMMIT_SHA: ${{ github.sha }}
+          VITE_APP_BUILD_TIME: ${{ github.run_started_at }}
         run: npm run build
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Registrar versão publicada
+        run: |
+          cat > dist/build-info.json <<EOF
+          {
+            "commit_sha": "${GITHUB_SHA}",
+            "run_id": "${GITHUB_RUN_ID}",
+            "migration_version": "${REQUIRED_MIGRATION_VERSION}",
+            "release_version": "${REQUIRED_RELEASE_VERSION}",
+            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v6
+      - name: Enviar artefato do Pages
+        uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
   deploy:
-    name: Deploy
+    name: Publicar GitHub Pages
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [build]
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: [build, migrate]
     steps:
-      - name: Deploy to GitHub Pages
+      - name: Deploy
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

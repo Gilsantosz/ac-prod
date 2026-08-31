@@ -240,6 +240,32 @@ export async function getCollectionKpis({
     return { total: 0, approved: 0, rejected: 0, blocked: 0, expected: 0, pending: 0, rework: 0, replacement: 0 };
   }
 
+  // Tentar snapshot canônico v2 com isolamento de lote e versão de estado
+  try {
+    const { data: snapshotV2, error: snapV2Err } = await supabase.rpc('get_collection_dashboard_snapshot_v2', {
+      p_cell_name: resolvedCellName,
+      p_workstation_id: workstationId,
+      p_operator_id: operatorId,
+      p_pcp_import_batch_id: pcpImportBatchId,
+      p_lot_id: lotId,
+    });
+    if (!snapV2Err && snapshotV2?.lot_kpis) {
+      const kpis = snapshotV2.lot_kpis;
+      return {
+        expected: Number(kpis.expected) || 0,
+        approved: Number(kpis.approved) || 0,
+        rejected: Number(kpis.rejected) || 0,
+        pending: Number(kpis.pending) || 0,
+        rework: Number(kpis.rework) || 0,
+        replacement: Number(kpis.replacement) || 0,
+        state_version: snapshotV2.state_version,
+        active_context: snapshotV2.active_context,
+      };
+    }
+  } catch (e) {
+    console.warn('[CollectionService] Fallback get_collection_dashboard_snapshot_v2:', e);
+  }
+
   const { data: snapshot, error: snapshotError } = await supabase.rpc('get_collection_cell_snapshot', {
     p_cell_name: resolvedCellName,
     p_workstation_id: workstationId,
@@ -754,6 +780,29 @@ export async function requestPieceReplacement({ pieceId, reason, notes, priority
   );
 
   return data;
+}
+
+export async function getOperatorShiftKpisV2(operatorId, referenceTime = new Date()) {
+  if (!operatorId) return { approved: 0, rejected: 0, blocked: 0 };
+  try {
+    const { data, error } = await supabase.rpc('get_operator_shift_kpis_v2', {
+      p_operator_id: operatorId,
+      p_reference_time: referenceTime instanceof Date ? referenceTime.toISOString() : referenceTime,
+    });
+    if (!error && data) {
+      return {
+        approved: Number(data.approved) || 0,
+        rejected: Number(data.rejected) || 0,
+        blocked: Number(data.blocked) || 0,
+        shift_started_at: data.shift_started_at,
+        shift_ends_at: data.shift_ends_at,
+        shift_work_date: data.shift_work_date,
+      };
+    }
+  } catch (e) {
+    console.warn('[CollectionService] Erro ao buscar KPIs de turno v2:', e);
+  }
+  return { approved: 0, rejected: 0, blocked: 0 };
 }
 
 export const rejectPiece = rejectPieceFromCollection;

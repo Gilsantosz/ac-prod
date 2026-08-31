@@ -19,23 +19,26 @@ export default function TraceabilityScannerPanel({
   onToggleKiosk,
   activeDowntime,
   volumeEntry,
+  modalOpen = false,
 }) {
   const [value, setValue] = useState('');
   const inputRef = useRef(null);
   const submittingRef = useRef(false);
-  const contextReady = Boolean(cellName && shift && operator) && !activeDowntime;
+  const isSuspended = activeDowntime || modalOpen;
+  const contextReady = Boolean(cellName && shift && operator) && !isSuspended;
 
   const refocus = useCallback(() => {
-    if (mode !== 'scanner' || activeDowntime) return;
+    if (mode !== 'scanner' || isSuspended) return;
     setTimeout(() => {
       const activeElement = document.activeElement;
-      const userIsUsingAnotherControl = activeElement
+      const hasOpenDialog = Boolean(document.querySelector('[role="dialog"], [data-state="open"]'));
+      const userIsUsingAnotherControl = (activeElement
         && activeElement !== document.body
         && activeElement !== inputRef.current
-        && ['INPUT', 'SELECT', 'TEXTAREA'].includes(activeElement.tagName);
+        && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(activeElement.tagName)) || hasOpenDialog;
       if (!userIsUsingAnotherControl) inputRef.current?.focus();
     }, 40);
-  }, [mode, activeDowntime]);
+  }, [mode, isSuspended]);
 
   useEffect(() => {
     refocus();
