@@ -90,17 +90,18 @@ describe('AC.Prod2 collection micro-batching v8.6 contract', () => {
     expect(sink).not.toContain('service_role');
   });
 
-  it('impede deploy quando o Supabase não estiver no release v8.6', () => {
+  it('impede deploy quando o Supabase não estiver na coleta assíncrona v8.8', () => {
     const workflow = repoFile('.github/workflows/deploy.yml');
 
     expect(workflow).toContain(
-      'REQUIRED_MICRO_BATCH_MIGRATION_VERSION: "20260831170836"',
+      'REQUIRED_ASYNC_COLLECTION_MIGRATION_VERSION: "v8.8"',
     );
     expect(workflow).toContain(
-      'REQUIRED_MICRO_BATCH_RELEASE_VERSION: "20260831_acprod_collection_micro_batch_v8_6"',
+      'REQUIRED_ASYNC_COLLECTION_RELEASE_VERSION: "20260831_acprod_collection_async_sync_v8_8"',
     );
-    expect(workflow).toContain('get_public_collection_micro_batch_release');
-    expect(workflow).toContain('MICRO_BATCH_RELEASE_OK');
-    expect(workflow).toContain('collection_micro_batch_explicit_grants');
+    expect(workflow).toContain('get_public_collection_async_release');
+    expect(workflow).toContain('ASYNC_COLLECTION_RELEASE_OK');
+    expect(workflow).toContain('collection_async_ingress_is_lightweight');
+    expect(workflow).toContain('collection_async_worker_concurrency_bounded');
   });
 });
