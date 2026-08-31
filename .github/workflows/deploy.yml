@@ -14,8 +14,8 @@ permissions:
 
 env:
   EXPECTED_PROJECT_ID: uozuzdfvnufsjsonswag
-  REQUIRED_MIGRATION_VERSION: "20260831143323"
-  REQUIRED_RELEASE_VERSION: "20260831_acprod_replacement_v8_3"
+  REQUIRED_MIGRATION_VERSION: "20260831143850"
+  REQUIRED_RELEASE_VERSION: "20260831_acprod_replacement_v8_4"
 
 concurrency:
   group: acprod2-${{ github.workflow }}-${{ github.ref }}
@@ -141,6 +141,7 @@ jobs:
               'replacement_origin_classification',
               'replacement_force_justification_only',
               'replacement_force_adjustment_facts',
+              'replacement_force_conflict_safe',
               'replacement_audit_mirror',
               'replacement_station_queue',
               'replacement_canonical_lot_close',
