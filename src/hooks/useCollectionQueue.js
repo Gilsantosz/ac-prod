@@ -338,6 +338,7 @@ export function useCollectionQueue(processFn, options = {}) {
     };
   }, [flush, reconcileServerPending]);
 
+  // A persistência no IndexedDB não bloqueia o próximo código; transporte e decisão final seguem em segundo plano.
   const enqueue = useCallback(async (payload, enqueueOpts = {}) => {
     if (microBatch) {
       const operatorSession = getOperatorSession();
