@@ -15,7 +15,13 @@ const INGRESS_SELECT = [
   'retryable',
   'batch_id',
   'batch_sequence',
+  'attempt_count',
+  'next_attempt_at',
+  'queue_delay_ms',
   'processing_duration_ms',
+  'processado_em',
+  'last_error_code',
+  'updated_at',
 ].join(',');
 
 function randomUuid() {
@@ -100,6 +106,8 @@ function buildIngressRows(events, batchId, fallbackSessionToken = null) {
         operator_session_token: operatorSessionToken,
         microBatch: true,
         micro_batch: true,
+        serverAsyncInbox: true,
+        server_async_inbox: true,
         batchId,
         batch_id: batchId,
         batchSequence: index,
@@ -109,20 +117,69 @@ function buildIngressRows(events, batchId, fallbackSessionToken = null) {
   });
 }
 
-function normalizeIngressResult(row) {
+function pendingResult(row) {
+  const processing = row?.status_sincronizacao === 'processando';
+  return {
+    success: true,
+    accepted: true,
+    pending: true,
+    status: processing ? 'server_processing' : 'server_accepted',
+    alert_level: 'blue',
+    reason_code: processing
+      ? 'COLLECTION_SERVER_PROCESSING'
+      : 'COLLECTION_SERVER_ACCEPTED',
+    message: processing
+      ? 'Leitura recebida e em processamento no servidor.'
+      : 'Leitura recebida pelo servidor e aguardando processamento.',
+    client_event_id: row?.client_event_id,
+  };
+}
+
+export function normalizeCollectionIngressRow(row) {
+  const status = row?.status_sincronizacao || 'erro';
+
+  if (status === 'recebida' || status === 'processando') {
+    return {
+      client_event_id: row?.client_event_id,
+      status_sincronizacao: status,
+      retryable: false,
+      error: null,
+      result: pendingResult(row),
+      ingress: row,
+    };
+  }
+
+  if (status === 'sincronizada') {
+    const result = row?.resultado || {
+      success: false,
+      status: 'error',
+      reason_code: 'COLLECTION_FINAL_RESULT_MISSING',
+      message: 'O servidor concluiu a coleta sem retornar o resultado canônico.',
+      client_event_id: row?.client_event_id,
+    };
+    return {
+      client_event_id: row?.client_event_id,
+      status_sincronizacao: status,
+      retryable: false,
+      error: null,
+      result,
+      ingress: row,
+    };
+  }
+
   const result = row?.resultado || {
     success: false,
     status: 'error',
-    reason_code: 'COLLECTION_INGRESS_EMPTY_RESULT',
-    message: row?.erro || 'O servidor não retornou o resultado da coleta.',
+    reason_code: row?.last_error_code || 'COLLECTION_SERVER_ERROR',
+    message: row?.erro || 'O servidor não conseguiu processar a coleta.',
     client_event_id: row?.client_event_id,
   };
 
   return {
     client_event_id: row?.client_event_id,
-    status_sincronizacao: row?.status_sincronizacao || 'erro',
+    status_sincronizacao: 'erro',
     retryable: row?.retryable === true,
-    error: row?.erro || null,
+    error: row?.erro || result.message || null,
     result,
     ingress: row,
   };
@@ -172,12 +229,18 @@ async function insertRows(rows, allowDuplicateRecovery = true) {
   );
 }
 
+export async function fetchProductionCollectionResults(clientEventIds = []) {
+  const ids = [...new Set(clientEventIds.filter(Boolean))];
+  if (!ids.length) return [];
+  const rows = await selectExistingRows(ids);
+  return rows.map(normalizeCollectionIngressRow);
+}
+
 /**
- * Envia de 1 a 100 leituras em um único POST do PostgREST.
+ * Persiste de 1 a 100 leituras em um único POST do PostgREST.
  *
- * O banco processa cada linha com a mesma RPC transacional já usada pela coleta
- * unitária. Falha de rede/transiente rejeita a Promise para que a fila local
- * recoloque o lote inteiro e tente novamente com o mesmo client_event_id.
+ * O retorno confirma somente que o inbox durável recebeu cada leitura. A regra
+ * produtiva é executada depois pelo worker do Supabase, em transações isoladas.
  */
 export async function processProductionCollectionBatch(events = []) {
   if (!Array.isArray(events) || events.length === 0) return [];
@@ -212,19 +275,13 @@ export async function processProductionCollectionBatch(events = []) {
     insertedRows.map((row) => [row.client_event_id, row]),
   );
 
-  return rows.map((row) => normalizeIngressResult(
+  return rows.map((row) => normalizeCollectionIngressRow(
     byClientEventId.get(row.client_event_id) || {
       client_event_id: row.client_event_id,
       status_sincronizacao: 'erro',
       retryable: true,
       erro: 'O Supabase não confirmou esta leitura no retorno do micro-lote.',
-      resultado: {
-        success: false,
-        status: 'error',
-        reason_code: 'COLLECTION_INGRESS_MISSING_CONFIRMATION',
-        message: 'O Supabase não confirmou esta leitura no retorno do micro-lote.',
-        client_event_id: row.client_event_id,
-      },
+      last_error_code: 'COLLECTION_INGRESS_MISSING_CONFIRMATION',
     },
   ));
 }
