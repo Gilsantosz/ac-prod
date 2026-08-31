@@ -1,8 +1,6 @@
 /**
- * AC.Prod MES — Constantes Canônicas de Query Keys do TanStack Query
- * Unifica e sincroniza as chaves de cache em todas as telas do sistema.
+ * AC.Prod MES — Constantes Canônicas de Query Keys do TanStack Query.
  */
-
 export const MES_QUERY_KEYS = {
   collectionSnapshot: ['collection-snapshot'],
   productionDashboard: ['production-dashboard'],
@@ -38,15 +36,45 @@ export const MES_QUERY_KEYS = {
   downtimeStats: ['downtimeStats'],
 };
 
+const invalidationState = new WeakMap();
+const MES_QUERY_ROOTS = new Set(
+  Object.values(MES_QUERY_KEYS).map((queryKey) => queryKey[0]),
+);
+const INVALIDATION_WINDOW_MS = 750;
+
+function runInvalidation(queryClient, state) {
+  state.lastRunAt = Date.now();
+  state.timer = null;
+  queryClient.invalidateQueries({
+    predicate: (query) => MES_QUERY_ROOTS.has(query.queryKey?.[0]),
+    refetchType: 'active',
+  });
+}
+
 /**
- * Invalida todas as consultas MES após operações transacionais, como
- * reprovação, estorno, leitura de peça ou alteração de lote.
+ * Coalesce rajadas de Realtime. Uma peça pode atualizar eventos, leitura e
+ * estado da peça quase simultaneamente; a UI faz no máximo uma invalidação
+ * ampla por janela de 750 ms, em vez de dezenas de RPCs concorrentes.
  */
 export function invalidateAllMesQueries(queryClient) {
   if (!queryClient) return;
 
-  Object.values(MES_QUERY_KEYS).forEach((queryKey) => {
-    queryClient.invalidateQueries({ queryKey });
-  });
-}
+  let state = invalidationState.get(queryClient);
+  if (!state) {
+    state = { lastRunAt: 0, timer: null };
+    invalidationState.set(queryClient, state);
+  }
 
+  const elapsed = Date.now() - state.lastRunAt;
+  if (elapsed >= INVALIDATION_WINDOW_MS && !state.timer) {
+    runInvalidation(queryClient, state);
+    return;
+  }
+
+  if (!state.timer) {
+    state.timer = setTimeout(
+      () => runInvalidation(queryClient, state),
+      Math.max(0, INVALIDATION_WINDOW_MS - elapsed),
+    );
+  }
+}

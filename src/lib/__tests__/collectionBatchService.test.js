@@ -14,6 +14,7 @@ vi.mock('@/lib/operatorSessionService', () => ({
 
 import {
   COLLECTION_BATCH_MAX_SIZE,
+  COLLECTION_BATCH_SIZE,
   processProductionCollectionBatch,
 } from '@/lib/collectionBatchService';
 
@@ -23,27 +24,32 @@ function successfulInsert(rows) {
   return { query: { insert }, insert, select };
 }
 
-describe('processProductionCollectionBatch', () => {
+describe('processProductionCollectionBatch v8.8', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getOperatorSession.mockReturnValue({ token: 'operator-session-token' });
   });
 
-  it('faz um único insert([]), preserva idempotência e propaga a sessão operacional', async () => {
+  it('usa lote padrão 50 e trata recebida apenas como ACK de transporte', async () => {
+    expect(COLLECTION_BATCH_SIZE).toBe(50);
     const insertedRows = [
       {
+        id: 'ingress-a',
         client_event_id: 'event-a',
         tag_lida: '09950001',
-        status_sincronizacao: 'sincronizada',
+        status_sincronizacao: 'recebida',
         retryable: false,
-        resultado: { success: true, status: 'approved' },
+        resultado: null,
+        server_received_at: '2026-08-31T22:00:00.000Z',
       },
       {
+        id: 'ingress-b',
         client_event_id: 'event-b',
         tag_lida: '09950002',
-        status_sincronizacao: 'sincronizada',
+        status_sincronizacao: 'recebida',
         retryable: false,
-        resultado: { success: false, status: 'duplicated' },
+        resultado: null,
+        server_received_at: '2026-08-31T22:00:00.001Z',
       },
     ];
     const { query, insert } = successfulInsert(insertedRows);
@@ -76,12 +82,7 @@ describe('processProductionCollectionBatch', () => {
       batch_sequence: 0,
       status_sincronizacao: 'recebida',
     });
-    expect(rows[1]).toMatchObject({
-      client_event_id: 'event-b',
-      tag_lida: '09950002',
-      batch_sequence: 1,
-    });
-    expect(rows[0].batch_id).toBe(rows[1].batch_id);
+    expect(rows[1].batch_id).toBe(rows[0].batch_id);
     expect(rows[0].payload).toMatchObject({
       client_event_id: 'event-a',
       rawValue: '09950001',
@@ -89,21 +90,28 @@ describe('processProductionCollectionBatch', () => {
       operator_session_token: 'operator-session-token',
       microBatch: true,
     });
-    expect(result.map((item) => item.client_event_id)).toEqual([
-      'event-a',
-      'event-b',
+    expect(result).toEqual([
+      expect.objectContaining({
+        client_event_id: 'event-a',
+        status_sincronizacao: 'recebida',
+        result: null,
+      }),
+      expect.objectContaining({
+        client_event_id: 'event-b',
+        status_sincronizacao: 'recebida',
+        result: null,
+      }),
     ]);
   });
 
   it('prioriza o token congelado no próprio evento', async () => {
-    const insertedRows = [{
+    const { query, insert } = successfulInsert([{
       client_event_id: 'event-a',
       tag_lida: '09950001',
-      status_sincronizacao: 'sincronizada',
+      status_sincronizacao: 'recebida',
       retryable: false,
-      resultado: { success: true, status: 'approved' },
-    }];
-    const { query, insert } = successfulInsert(insertedRows);
+      resultado: null,
+    }]);
     from.mockReturnValue(query);
 
     await processProductionCollectionBatch([{
@@ -119,7 +127,44 @@ describe('processProductionCollectionBatch', () => {
     });
   });
 
-  it('trata resposta perdida após commit recuperando client_event_id existente', async () => {
+  it('recupera commit confirmado mesmo quando a resposta do INSERT falha', async () => {
+    const failedInsert = vi.fn(() => ({
+      select: vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'PGRST000', message: 'connection reset after commit' },
+      }),
+    }));
+    const selectExisting = vi.fn(() => ({
+      in: vi.fn().mockResolvedValue({
+        data: [{
+          client_event_id: 'event-a',
+          tag_lida: '09950001',
+          status_sincronizacao: 'recebida',
+          retryable: false,
+          resultado: null,
+        }],
+        error: null,
+      }),
+    }));
+
+    from
+      .mockReturnValueOnce({ insert: failedInsert })
+      .mockReturnValueOnce({ select: selectExisting });
+
+    const result = await processProductionCollectionBatch([{
+      client_event_id: 'event-a',
+      raw_value: '09950001',
+      event_kind: 'production_stage',
+    }]);
+
+    expect(result[0]).toMatchObject({
+      client_event_id: 'event-a',
+      status_sincronizacao: 'recebida',
+      result: null,
+    });
+  });
+
+  it('recupera duplicidade parcial sem reenviar a linha já existente', async () => {
     const duplicateInsert = vi.fn(() => ({
       select: vi.fn().mockResolvedValue({
         data: null,
@@ -131,21 +176,20 @@ describe('processProductionCollectionBatch', () => {
         data: [{
           client_event_id: 'event-a',
           tag_lida: '09950001',
-          status_sincronizacao: 'sincronizada',
+          status_sincronizacao: 'recebida',
           retryable: false,
-          resultado: { success: true, status: 'approved' },
+          resultado: null,
         }],
         error: null,
       }),
     }));
-    const missingInsertRows = [{
+    const missingInsert = successfulInsert([{
       client_event_id: 'event-b',
       tag_lida: '09950002',
-      status_sincronizacao: 'sincronizada',
+      status_sincronizacao: 'recebida',
       retryable: false,
-      resultado: { success: true, status: 'approved' },
-    }];
-    const missingInsert = successfulInsert(missingInsertRows);
+      resultado: null,
+    }]);
 
     from
       .mockReturnValueOnce({ insert: duplicateInsert })
@@ -153,37 +197,32 @@ describe('processProductionCollectionBatch', () => {
       .mockReturnValueOnce(missingInsert.query);
 
     const result = await processProductionCollectionBatch([
-      {
-        client_event_id: 'event-a',
-        raw_value: '09950001',
-        event_kind: 'production_stage',
-      },
-      {
-        client_event_id: 'event-b',
-        raw_value: '09950002',
-        event_kind: 'production_stage',
-      },
+      { client_event_id: 'event-a', raw_value: '09950001', event_kind: 'production_stage' },
+      { client_event_id: 'event-b', raw_value: '09950002', event_kind: 'production_stage' },
     ]);
 
-    expect(from).toHaveBeenCalledTimes(3);
     expect(missingInsert.insert).toHaveBeenCalledTimes(1);
     expect(missingInsert.insert.mock.calls[0][0]).toHaveLength(1);
-    expect(missingInsert.insert.mock.calls[0][0][0].client_event_id)
-      .toBe('event-b');
-    expect(result.map((item) => item.client_event_id)).toEqual([
-      'event-a',
-      'event-b',
-    ]);
+    expect(missingInsert.insert.mock.calls[0][0][0].client_event_id).toBe('event-b');
+    expect(result.map((item) => item.client_event_id)).toEqual(['event-a', 'event-b']);
   });
 
-  it('propaga falha de rede como retentável para recolocar o lote na fila', async () => {
+  it('propaga falha sem confirmação como retentável', async () => {
     const insert = vi.fn(() => ({
       select: vi.fn().mockResolvedValue({
         data: null,
         error: { code: 'PGRST000', message: 'network unavailable' },
       }),
     }));
-    from.mockReturnValue({ insert });
+    const select = vi.fn(() => ({
+      in: vi.fn().mockResolvedValue({
+        data: [],
+        error: null,
+      }),
+    }));
+    from
+      .mockReturnValueOnce({ insert })
+      .mockReturnValueOnce({ select });
 
     await expect(processProductionCollectionBatch([{
       client_event_id: 'event-a',

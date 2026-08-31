@@ -8,13 +8,84 @@ import {
   processCollectionEvent,
   retryErrors,
   recoverStaleProcessingEvents,
+  pruneSettledEvents,
 } from '@/lib/collectionEventQueue';
 import { flushCollectionMicroBatchQueue } from '@/lib/collectionMicroBatchQueue';
+import {
+  reconcileAcceptedCollectionEvents,
+  subscribeToCollectionInboxUpdates,
+  unsubscribeFromCollectionInbox,
+} from '@/lib/collectionInboxReconciler';
 import {
   COLLECTION_EVENT_KINDS,
   dispatchCollectionEventBatch,
 } from '@/lib/collectionEventDispatcher';
 import { getOperatorSession } from '@/lib/operatorSessionService';
+
+const notificationBucket = {
+  timer: null,
+  approved: 0,
+  warning: 0,
+  error: 0,
+  lastWarning: null,
+  lastError: null,
+};
+
+function flushNotificationBucket() {
+  const bucket = notificationBucket;
+  bucket.timer = null;
+
+  if (bucket.error > 0) {
+    toast.error(
+      bucket.error === 1
+        ? (bucket.lastError || 'Uma leitura não pôde ser processada.')
+        : `${bucket.error} leituras terminaram com erro. Consulte a fila para detalhes.`,
+    );
+  }
+  if (bucket.warning > 0) {
+    toast.warning(
+      bucket.warning === 1
+        ? (bucket.lastWarning || 'Uma leitura foi bloqueada.')
+        : `${bucket.warning} leituras foram bloqueadas ou duplicadas.`,
+    );
+  }
+  if (bucket.approved > 0) {
+    toast.success(
+      bucket.approved === 1
+        ? 'Leitura aprovada.'
+        : `${bucket.approved} leituras aprovadas pelo servidor.`,
+    );
+    navigator.vibrate?.([70, 40, 70]);
+  }
+
+  bucket.approved = 0;
+  bucket.warning = 0;
+  bucket.error = 0;
+  bucket.lastWarning = null;
+  bucket.lastError = null;
+}
+
+function enqueueFinalNotification({ result, error }) {
+  if (error) {
+    notificationBucket.error += 1;
+    notificationBucket.lastError = error.message;
+  } else if (result?.success) {
+    notificationBucket.approved += 1;
+  } else if (
+    ['wrong_step', 'wrong_cell', 'duplicated', 'blocked'].includes(result?.status)
+    || result?.alert_level === 'yellow'
+  ) {
+    notificationBucket.warning += 1;
+    notificationBucket.lastWarning = result?.message;
+  } else {
+    notificationBucket.error += 1;
+    notificationBucket.lastError = result?.message || 'Leitura não aprovada.';
+  }
+
+  if (!notificationBucket.timer) {
+    notificationBucket.timer = setTimeout(flushNotificationBucket, 350);
+  }
+}
 
 function emitBatchResult(payload) {
   try {
@@ -26,42 +97,31 @@ function emitBatchResult(payload) {
   }
 }
 
-function notifyBatchResult({
-  result,
-  error,
-  batchIndex = 0,
-  batchCount = 1,
-}) {
-  if (error) {
-    toast.error(error.message || 'Falha ao sincronizar leitura.');
+function notifyBatchResult(payload) {
+  const {
+    result,
+    error,
+    batchIndex = 0,
+    batchCount = 1,
+    source,
+  } = payload;
+
+  if (source === 'transport') {
+    if (batchIndex !== batchCount - 1) return;
+    toast.error(
+      batchCount > 1
+        ? `${batchCount} leituras permanecem protegidas na fila local para nova tentativa.`
+        : (error?.message || 'Falha ao enviar a leitura; ela permanece na fila local.'),
+    );
     return;
   }
 
-  if (result?.success) {
-    if (batchIndex === batchCount - 1) {
-      const message = batchCount > 1
-        ? `${batchCount} leituras sincronizadas com o Supabase.`
-        : (result.message || 'Leitura aprovada.');
-      toast.success(message);
-      navigator.vibrate?.([70, 40, 70]);
-    }
-    return;
-  }
-
-  if (['wrong_step', 'wrong_cell', 'duplicated', 'blocked'].includes(
-    result?.status,
-  ) || result?.alert_level === 'yellow') {
-    toast.warning(result?.message || 'Leitura bloqueada.');
-    return;
-  }
-
-  toast.error(result?.message || 'Leitura não aprovada.');
+  enqueueFinalNotification({ result, error });
 }
 
 /**
- * Hook que encapsula a fila de eventos de coleta em estado React.
- * @param {function} processFn — função legada que processa um evento individual
- * @param {object} options — filtros e configuração de sincronização
+ * Hook que encapsula fila local, micro-lote de transporte e reconciliação do
+ * resultado final produzido pelo worker assíncrono do Supabase.
  */
 export function useCollectionQueue(processFn, options = {}) {
   const {
@@ -76,20 +136,27 @@ export function useCollectionQueue(processFn, options = {}) {
   const processBatchFn = options.processBatchFn
     || (microBatch ? dispatchCollectionEventBatch : null);
   const flushIntervalMs = options.flushIntervalMs
-    ?? (microBatch ? 5000 : 15000);
+    ?? (microBatch ? 500 : 15_000);
+  const reconcileIntervalMs = options.reconcileIntervalMs ?? 1000;
 
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
     processing: 0,
+    accepted: 0,
+    serverReceived: 0,
+    serverProcessing: 0,
     synced: 0,
     error: 0,
     hasStalePending: false,
+    hasStaleServer: false,
     hasSlowEnqueue: false,
   });
   const [flushing, setFlushing] = useState(false);
   const flushingRef = useRef(false);
+  const reconcilingRef = useRef(false);
   const fallbackLockRef = useRef(Promise.resolve());
+  const statsRefreshTimerRef = useRef(null);
   const processFnRef = useRef(processFn);
   const processBatchFnRef = useRef(processBatchFn);
   const onResultRef = useRef(onResult);
@@ -104,32 +171,55 @@ export function useCollectionQueue(processFn, options = {}) {
     setStats(nextStats);
   }, [cellName, machineId, eventKind]);
 
-  const refreshStatsSafely = useCallback(() => {
-    Promise.resolve(refreshStats()).catch((error) => {
-      console.warn('[CollectionQueue] Falha ao atualizar estatísticas locais:', error);
-    });
+  const refreshStatsSafely = useCallback((delayMs = 75) => {
+    if (statsRefreshTimerRef.current) return;
+    statsRefreshTimerRef.current = setTimeout(() => {
+      statsRefreshTimerRef.current = null;
+      Promise.resolve(refreshStats()).catch((error) => {
+        console.warn('[CollectionQueue] Falha ao atualizar estatísticas locais:', error);
+      });
+    }, Math.max(0, Number(delayMs) || 0));
   }, [refreshStats]);
+
+  useEffect(() => () => {
+    if (statsRefreshTimerRef.current) {
+      clearTimeout(statsRefreshTimerRef.current);
+      statsRefreshTimerRef.current = null;
+    }
+  }, []);
 
   const withQueueLock = useCallback(async (task) => {
     if (navigator.locks?.request) {
       return navigator.locks.request('acprod-collection-sync', task);
     }
 
-    // Safari e navegadores antigos: preserva FIFO por uma corrente de Promises,
-    // sem impedir que novos códigos continuem sendo gravados no IndexedDB.
     const currentTask = fallbackLockRef.current.then(task, task);
     fallbackLockRef.current = currentTask.catch(() => undefined);
     return currentTask;
   }, []);
 
-  const handleBatchResult = useCallback((payload) => {
+  const handleFinalResult = useCallback((payload) => {
     emitBatchResult(payload);
+    notifyBatchResult(payload);
     if (typeof onResultRef.current === 'function') {
       onResultRef.current(payload);
-    } else {
-      notifyBatchResult(payload);
     }
   }, []);
+
+  const reconcile = useCallback(async () => {
+    if (!microBatch || reconcilingRef.current || !navigator.onLine) return;
+    reconcilingRef.current = true;
+    try {
+      await reconcileAcceptedCollectionEvents({
+        onResult: handleFinalResult,
+      });
+    } catch (error) {
+      console.warn('[CollectionQueue] Reconciliação do inbox adiada:', error);
+    } finally {
+      reconcilingRef.current = false;
+      refreshStatsSafely();
+    }
+  }, [handleFinalResult, microBatch, refreshStatsSafely]);
 
   const flush = useCallback(async () => {
     if (flushingRef.current || !navigator.onLine) return;
@@ -139,12 +229,10 @@ export function useCollectionQueue(processFn, options = {}) {
       flushingRef.current = true;
       setFlushing(true);
       try {
-        await recoverStaleProcessingEvents();
-
         if (microBatch && typeof processBatchFnRef.current === 'function') {
           await flushCollectionMicroBatchQueue(processBatchFnRef.current, {
             batchSize,
-            onResult: handleBatchResult,
+            onResult: handleFinalResult,
           });
         } else {
           await flushCollectionQueue(processFnRef.current);
@@ -157,7 +245,7 @@ export function useCollectionQueue(processFn, options = {}) {
     });
   }, [
     batchSize,
-    handleBatchResult,
+    handleFinalResult,
     microBatch,
     refreshStats,
     withQueueLock,
@@ -166,22 +254,71 @@ export function useCollectionQueue(processFn, options = {}) {
   useEffect(() => {
     let cancelled = false;
     const intervalMs = Math.max(
-      1000,
-      Number(flushIntervalMs) || (microBatch ? 5000 : 15000),
+      250,
+      Number(flushIntervalMs) || (microBatch ? 500 : 15_000),
     );
 
-    const recoverAndFlush = async () => {
-      await recoverStaleProcessingEvents();
+    const tryFlush = async () => {
       if (!cancelled && navigator.onLine) await flush();
     };
 
-    recoverAndFlush();
-    const interval = setInterval(recoverAndFlush, intervalMs);
+    tryFlush();
+    const interval = setInterval(tryFlush, intervalMs);
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
   }, [flush, flushIntervalMs, microBatch]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const recover = async () => {
+      const recovered = await recoverStaleProcessingEvents();
+      if (!cancelled && recovered > 0 && navigator.onLine) await flush();
+    };
+    recover().catch((error) => {
+      console.warn('[CollectionQueue] Recuperação local adiada:', error);
+    });
+    const interval = setInterval(() => {
+      recover().catch((error) => {
+        console.warn('[CollectionQueue] Recuperação local adiada:', error);
+      });
+    }, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [flush]);
+
+  useEffect(() => {
+    if (!microBatch) return undefined;
+    const intervalMs = Math.max(500, Number(reconcileIntervalMs) || 1000);
+    reconcile();
+    const interval = setInterval(reconcile, intervalMs);
+    return () => clearInterval(interval);
+  }, [microBatch, reconcile, reconcileIntervalMs]);
+
+  useEffect(() => {
+    if (!microBatch) return undefined;
+    const channel = subscribeToCollectionInboxUpdates({
+      onResult: handleFinalResult,
+    });
+    return () => {
+      unsubscribeFromCollectionInbox(channel);
+    };
+  }, [handleFinalResult, microBatch]);
+
+  useEffect(() => {
+    const prune = () => pruneSettledEvents({
+      maxAgeMs: 60_000,
+      keepLatest: 500,
+    }).catch((error) => {
+      console.warn('[CollectionQueue] Falha ao compactar fila local:', error);
+    });
+    prune();
+    const interval = setInterval(prune, 30_000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const handler = () => refreshStatsSafely();
@@ -191,28 +328,27 @@ export function useCollectionQueue(processFn, options = {}) {
   }, [refreshStatsSafely]);
 
   useEffect(() => {
-    const tryFlush = async () => {
+    const trySync = async () => {
       if (!navigator.onLine) return;
       const currentStats = await getQueueStats();
       if (currentStats.pending > 0) await flush();
+      if (currentStats.accepted > 0) await reconcile();
     };
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') tryFlush();
+      if (document.visibilityState === 'visible') trySync();
     };
-    window.addEventListener('online', tryFlush);
-    window.addEventListener('focus', tryFlush);
+    window.addEventListener('online', trySync);
+    window.addEventListener('focus', trySync);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
-      window.removeEventListener('online', tryFlush);
-      window.removeEventListener('focus', tryFlush);
+      window.removeEventListener('online', trySync);
+      window.removeEventListener('focus', trySync);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [flush]);
+  }, [flush, reconcile]);
 
   const enqueue = useCallback(async (payload, enqueueOpts = {}) => {
-    // O retorno acontece logo após a gravação durável no IndexedDB.
-    // A captura local não bloqueia o próximo código; contadores e sincronização
-    // continuam em segundo plano.
+    // A persistência local libera o scanner e não bloqueia o próximo código.
     if (microBatch) {
       const operatorSession = getOperatorSession();
       const operatorSessionToken = payload.operatorSessionToken
@@ -231,16 +367,12 @@ export function useCollectionQueue(processFn, options = {}) {
 
     const shouldFlushImmediately = enqueueOpts.autoFlush === true
       || (!microBatch && enqueueOpts.autoFlush !== false);
-    if (navigator.onLine && shouldFlushImmediately) {
-      flush();
-    }
+    if (navigator.onLine && shouldFlushImmediately) flush();
     return id;
   }, [flush, microBatch, refreshStatsSafely]);
 
   const processNow = useCallback(async (clientEventId) => {
     if (microBatch) {
-      // Compatibilidade: confirma a recepção local, mas não espera o PostgreSQL.
-      // O setInterval fará o envio em lote em até 5s.
       refreshStatsSafely();
       return {
         success: true,
@@ -249,7 +381,7 @@ export function useCollectionQueue(processFn, options = {}) {
         status: 'queued',
         alert_level: 'blue',
         client_event_id: clientEventId,
-        message: 'Leitura recebida. Sincronização em micro-lote iniciada.',
+        message: 'Leitura protegida na fila local. Confirmação do servidor em andamento.',
       };
     }
 
@@ -272,6 +404,7 @@ export function useCollectionQueue(processFn, options = {}) {
     flushing,
     enqueue,
     flush,
+    reconcile,
     processNow,
     retryQueueErrors,
   };

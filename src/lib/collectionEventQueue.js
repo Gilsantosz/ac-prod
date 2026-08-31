@@ -1,117 +1,358 @@
 /**
- * AC.Prod — Fila de eventos de coleta durável (IndexedDB)
+ * AC.Prod — Fila durável de coleta em IndexedDB.
  *
- * Garante zero perda de leituras mesmo com falha de rede ou lentidão do Supabase.
- * Cada evento recebe um UUID gerado no cliente (client_event_id) para idempotência.
+ * Estados locais:
+ * - pending: ainda não transportado;
+ * - processing: POST do micro-lote em andamento;
+ * - accepted: inbox do Supabase confirmou persistência, decisão pendente;
+ * - synced: decisão canônica concluída;
+ * - error: falha final.
  */
 
 const DB_NAME = 'acprod_collection_queue';
 const DB_VERSION = 2;
 const STORE = 'events';
-
-// ─── IndexedDB wrapper ────────────────────────────────────────────────────────
+let databasePromise = null;
 
 function openDb() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
+  if (databasePromise) return databasePromise;
+
+  databasePromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = (event) => {
+      const database = event.target.result;
       let store;
-      if (!db.objectStoreNames.contains(STORE)) {
-        store = db.createObjectStore(STORE, { keyPath: 'client_event_id' });
+      if (!database.objectStoreNames.contains(STORE)) {
+        store = database.createObjectStore(STORE, {
+          keyPath: 'client_event_id',
+        });
         store.createIndex('by_status', 'status', { unique: false });
         store.createIndex('by_created', 'created_at_client', { unique: false });
       } else {
-        store = e.target.transaction.objectStore(STORE);
+        store = event.target.transaction.objectStore(STORE);
       }
       if (!store.indexNames.contains('by_next_attempt')) {
         store.createIndex('by_next_attempt', 'next_attempt_at', { unique: false });
       }
     };
-    req.onsuccess = (e) => resolve(e.target.result);
-    req.onerror = (e) => reject(e.target.error);
+    request.onsuccess = (event) => {
+      const database = event.target.result;
+      database.onversionchange = () => {
+        database.close();
+        databasePromise = null;
+      };
+      resolve(database);
+    };
+    request.onerror = (event) => {
+      databasePromise = null;
+      reject(event.target.error);
+    };
+  });
+
+  return databasePromise;
+}
+
+async function dbPutMany(items) {
+  if (!items.length) return items;
+  const database = await openDb();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(STORE, 'readwrite');
+    const store = transaction.objectStore(STORE);
+    items.forEach((item) => store.put(item));
+    transaction.oncomplete = () => resolve(items);
+    transaction.onerror = (event) => reject(event.target.error);
+    transaction.onabort = (event) => reject(event.target.error);
   });
 }
 
 async function dbPut(item) {
-  const db = await openDb();
+  await dbPutMany([item]);
+  return item;
+}
+
+/**
+ * Aplica transições em uma única transação readwrite. Isso impede que um ACK
+ * atrasado sobrescreva uma decisão final recebida pelo Realtime.
+ */
+async function dbTransformMany(items, transform) {
+  if (!items.length) return [];
+  const database = await openDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).put(item);
-    tx.oncomplete = () => resolve(item);
-    tx.onerror = (e) => reject(e.target.error);
+    const transaction = database.transaction(STORE, 'readwrite');
+    const store = transaction.objectStore(STORE);
+    const updates = [];
+
+    items.forEach((item, index) => {
+      const key = item?.client_event_id || item?.event?.client_event_id;
+      if (!key) return;
+
+      const request = store.get(key);
+      request.onsuccess = () => {
+        const update = transform(request.result, item, index);
+        if (!update) return;
+        updates.push(update);
+        store.put(update);
+      };
+      request.onerror = (event) => {
+        try { transaction.abort(); } catch {}
+        reject(event.target.error);
+      };
+    });
+
+    transaction.oncomplete = () => resolve(updates);
+    transaction.onerror = (event) => reject(event.target.error);
+    transaction.onabort = (event) => reject(event.target.error);
+  });
+}
+
+async function dbGetMany(keys) {
+  if (!keys.length) return [];
+  const database = await openDb();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(STORE, 'readonly');
+    const store = transaction.objectStore(STORE);
+    const results = [];
+
+    keys.forEach((key) => {
+      const request = store.get(key);
+      request.onsuccess = () => {
+        if (request.result) results.push(request.result);
+      };
+      request.onerror = (event) => reject(event.target.error);
+    });
+
+    transaction.oncomplete = () => resolve(results);
+    transaction.onerror = (event) => reject(event.target.error);
+    transaction.onabort = (event) => reject(event.target.error);
   });
 }
 
 async function dbGetByIndex(indexName, value) {
-  const db = await openDb();
+  const database = await openDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readonly');
-    const req = tx.objectStore(STORE).index(indexName).getAll(value);
-    req.onsuccess = (e) => resolve(e.target.result);
-    req.onerror = (e) => reject(e.target.error);
+    const transaction = database.transaction(STORE, 'readonly');
+    const request = transaction.objectStore(STORE).index(indexName).getAll(value);
+    request.onsuccess = (event) => resolve(event.target.result);
+    request.onerror = (event) => reject(event.target.error);
   });
 }
 
 async function dbGetAll() {
-  const db = await openDb();
+  const database = await openDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readonly');
-    const req = tx.objectStore(STORE).getAll();
-    req.onsuccess = (e) => resolve(e.target.result);
-    req.onerror = (e) => reject(e.target.error);
+    const transaction = database.transaction(STORE, 'readonly');
+    const request = transaction.objectStore(STORE).getAll();
+    request.onsuccess = (event) => resolve(event.target.result);
+    request.onerror = (event) => reject(event.target.error);
   });
 }
 
 async function dbGet(key) {
-  const db = await openDb();
+  const database = await openDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readonly');
-    const req = tx.objectStore(STORE).get(key);
-    req.onsuccess = (e) => resolve(e.target.result);
-    req.onerror = (e) => reject(e.target.error);
+    const transaction = database.transaction(STORE, 'readonly');
+    const request = transaction.objectStore(STORE).get(key);
+    request.onsuccess = (event) => resolve(event.target.result);
+    request.onerror = (event) => reject(event.target.error);
   });
 }
 
-// ─── Geração de ID de cliente ─────────────────────────────────────────────────
+async function dbDeleteMany(keys) {
+  if (!keys.length) return 0;
+  const database = await openDb();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(STORE, 'readwrite');
+    const store = transaction.objectStore(STORE);
+    keys.forEach((key) => store.delete(key));
+    transaction.oncomplete = () => resolve(keys.length);
+    transaction.onerror = (event) => reject(event.target.error);
+    transaction.onabort = (event) => reject(event.target.error);
+  });
+}
 
 function generateClientEventId() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
   }
-  // Fallback para browsers mais antigos
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+    const random = (Math.random() * 16) | 0;
+    return (character === 'x' ? random : (random & 0x3) | 0x8).toString(16);
   });
 }
-
-// ─── Notificação de UI ────────────────────────────────────────────────────────
 
 function notifyChange() {
   try {
     window.dispatchEvent(new CustomEvent('collection-queue-changed'));
-  } catch (_) { /* ambiente sem window */ }
+  } catch {
+    // Ambiente sem window, como testes unitários.
+  }
 }
 
-// ─── API pública ──────────────────────────────────────────────────────────────
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function monotonicNow() {
+  return typeof performance !== 'undefined' && performance.now
+    ? performance.now()
+    : Date.now();
+}
+
+function eventTimestampMs(event) {
+  return new Date(event.updated_at || event.created_at_client || 0).getTime();
+}
+
+function statsFor(events) {
+  const now = Date.now();
+  const localStaleThreshold = now - 60_000;
+  const serverStaleThreshold = now - 90_000;
+  const pending = events.filter((event) => event.status === 'pending');
+  const processing = events.filter((event) => event.status === 'processing');
+  const accepted = events.filter((event) => event.status === 'accepted');
+  const serverProcessing = accepted.filter(
+    (event) => event.server_status === 'processando',
+  );
+  const serverReceived = accepted.filter(
+    (event) => event.server_status !== 'processando',
+  );
+
+  return {
+    total: events.length,
+    pending: pending.length,
+    processing: processing.length,
+    accepted: accepted.length,
+    serverReceived: serverReceived.length,
+    serverProcessing: serverProcessing.length,
+    synced: events.filter((event) => event.status === 'synced').length,
+    error: events.filter((event) => event.status === 'error').length,
+    hasStalePending: pending.some(
+      (event) => eventTimestampMs(event) < localStaleThreshold,
+    ) || processing.some(
+      (event) => eventTimestampMs(event) < localStaleThreshold,
+    ),
+    hasStaleServer: accepted.some(
+      (event) => eventTimestampMs(event) < serverStaleThreshold,
+    ),
+    hasSlowEnqueue: events.some(
+      (event) => Number(event.enqueue_duration_ms) > 800,
+    ),
+  };
+}
+
+function withProcessingState(event, timestamp = nowIso()) {
+  if (!event || ['synced', 'error', 'accepted'].includes(event.status)) return null;
+  return {
+    ...event,
+    status: 'processing',
+    next_attempt_at: null,
+    sync_started_at: event.sync_started_at || timestamp,
+    updated_at: timestamp,
+  };
+}
+
+function withAcceptedState(event, ingress = {}, timestamp = nowIso()) {
+  if (!event || ['synced', 'error'].includes(event.status)) return null;
+  return {
+    ...event,
+    status: 'accepted',
+    server_status: ingress.status_sincronizacao
+      || event.server_status
+      || 'recebida',
+    server_received_at: ingress.server_received_at
+      || ingress.created_at
+      || event.server_received_at
+      || timestamp,
+    server_updated_at: ingress.updated_at || timestamp,
+    server_attempt_count: Number(ingress.attempt_count || 0),
+    server_queue_delay_ms: ingress.queue_delay_ms ?? null,
+    ingress_id: ingress.id || event.ingress_id || null,
+    next_attempt_at: null,
+    updated_at: timestamp,
+  };
+}
+
+function withoutOperationalSecrets(event) {
+  if (!event) return event;
+  const {
+    operatorSessionToken,
+    operator_session_token,
+    session_token,
+    ...safeEvent
+  } = event;
+  return safeEvent;
+}
+
+function withSyncedState(event, result, ingress = null, timestamp = nowIso()) {
+  if (!event || event.status === 'synced') return null;
+  const syncStartedAt = event.sync_started_at;
+  return {
+    ...withoutOperationalSecrets(event),
+    status: 'synced',
+    server_status: 'sincronizada',
+    next_attempt_at: null,
+    result,
+    ingress: ingress || event.ingress || null,
+    sync_finished_at: timestamp,
+    sync_duration_ms: syncStartedAt
+      ? new Date(timestamp).getTime() - new Date(syncStartedAt).getTime()
+      : event.sync_duration_ms,
+    processed_at: timestamp,
+    updated_at: timestamp,
+  };
+}
+
+function withErrorState(event, error, maxRetries = 8, timestamp = nowIso()) {
+  if (!event || event.status === 'synced') return null;
+  if (event.status === 'error' && error?.retryable === false) return null;
+
+  const retries = (event.retries || 0) + 1;
+  const retryable = error?.retryable !== false;
+  const status = retryable && retries < maxRetries ? 'pending' : 'error';
+  const baseDelayMs = Math.min(
+    300_000,
+    1_000 * (2 ** Math.max(retries - 1, 0)),
+  );
+  const jitterMs = Math.round(baseDelayMs * Math.random() * 0.25);
+  const syncStartedAt = event.sync_started_at;
+
+  const baseEvent = status === 'error' && error?.serverFinal === true
+    ? withoutOperationalSecrets(event)
+    : event;
+
+  return {
+    ...baseEvent,
+    status,
+    server_status: status === 'error' ? 'erro' : null,
+    retries,
+    last_error: error?.message || String(error),
+    last_result: error?.result || null,
+    next_attempt_at: status === 'pending'
+      ? new Date(Date.now() + baseDelayMs + jitterMs).toISOString()
+      : null,
+    sync_finished_at: timestamp,
+    sync_duration_ms: syncStartedAt
+      ? new Date(timestamp).getTime() - new Date(syncStartedAt).getTime()
+      : event.sync_duration_ms,
+    updated_at: timestamp,
+  };
+}
 
 /**
- * Enfileira um evento de coleta.
- * @param {object} payload — dados da leitura (rawValue, cellName, shift, operator, etc.)
- * @returns {string} client_event_id gerado
+ * Persiste primeiro e libera o scanner. A atualização do tempo de gravação é
+ * diagnóstica e ocorre depois, sem adicionar uma segunda espera ao operador.
  */
 export async function enqueueCollectionEvent(payload) {
-  const now = new Date().toISOString();
+  const timestamp = nowIso();
   const clientEventId = payload.client_event_id || generateClientEventId();
   const event = {
     client_event_id: clientEventId,
     status: 'pending',
     retries: 0,
-    created_at_client: now,
-    updated_at: now,
-    event_kind: payload.event_kind || (payload.is_replacement_event ? 'replacement_stage' : 'production_stage'),
-    next_attempt_at: now,
+    created_at_client: timestamp,
+    updated_at: timestamp,
+    event_kind: payload.event_kind
+      || (payload.is_replacement_event ? 'replacement_stage' : 'production_stage'),
+    next_attempt_at: timestamp,
     raw_value: payload.rawValue ?? payload.raw_value ?? '',
     lot_id: payload.lotId ?? payload.lot_id ?? null,
     lot_code: payload.lotCode ?? payload.lot_code ?? null,
@@ -124,204 +365,198 @@ export async function enqueueCollectionEvent(payload) {
     station_name: payload.stationName ?? payload.station_name ?? null,
     enqueue_duration_ms: 0,
     sync_started_at: null,
+    server_received_at: null,
     sync_finished_at: null,
     sync_duration_ms: null,
+    server_status: null,
     ...payload,
     client_event_id: clientEventId,
   };
-  // Idempotência: se já existe, não duplica
+
   const existing = await dbGet(event.client_event_id);
   if (existing) return existing.client_event_id;
 
-  const t0 = performance.now();
+  const startedAt = monotonicNow();
   await dbPut(event);
-  const elapsed = performance.now() - t0;
+  const elapsed = monotonicNow() - startedAt;
 
-  event.enqueue_duration_ms = elapsed;
-  await dbPut(event);
+  // A duração é somente telemetria de console. Uma segunda escrita com o
+  // snapshot antigo poderia sobrescrever o estado processing/accepted.
 
   if (elapsed > 800) {
     console.warn(`[Queue] Local save exceeded 800ms: ${elapsed.toFixed(1)}ms`);
   }
-
   notifyChange();
   return event.client_event_id;
 }
 
-/**
- * Retorna estatísticas atuais da fila.
- */
 export async function getQueueStats() {
-  const all = await dbGetAll();
-  const now = Date.now();
-  const staleThreshold = now - 60000;
-
-  const pending = all.filter((e) => e.status === 'pending');
-  const processing = all.filter((e) => e.status === 'processing');
-
-  const hasStalePending = pending.some(e => new Date(e.created_at_client).getTime() < staleThreshold)
-    || processing.some(e => new Date(e.created_at_client).getTime() < staleThreshold);
-
-  const hasSlowEnqueue = all.some(e => Number(e.enqueue_duration_ms) > 800);
-
-  return {
-    total: all.length,
-    pending: pending.length,
-    processing: processing.length,
-    synced: all.filter((e) => e.status === 'synced').length,
-    error: all.filter((e) => e.status === 'error').length,
-    hasStalePending,
-    hasSlowEnqueue,
-  };
+  return statsFor(await dbGetAll());
 }
 
-/**
- * Retorna estatísticas da fila filtradas por célula e máquina.
- */
-export async function getQueueStatsByCellMachine(cellName, machineId, eventKind = null) {
+export async function getQueueStatsByCellMachine(
+  cellName,
+  machineId,
+  eventKind = null,
+) {
   const all = await dbGetAll();
-  const filtered = all.filter(e =>
-    (!cellName || e.cellName === cellName || e.cell_name === cellName) &&
-    (!machineId || e.machineId === machineId || e.machine_id === machineId) &&
-    (!eventKind || e.event_kind === eventKind)
-  );
-  const now = Date.now();
-  const staleThreshold = now - 60000;
-
-  const pending = filtered.filter((e) => e.status === 'pending');
-  const processing = filtered.filter((e) => e.status === 'processing');
-
-  const hasStalePending = pending.some(e => new Date(e.created_at_client).getTime() < staleThreshold)
-    || processing.some(e => new Date(e.created_at_client).getTime() < staleThreshold);
-
-  const hasSlowEnqueue = filtered.some(e => Number(e.enqueue_duration_ms) > 800);
-
-  return {
-    total: filtered.length,
-    pending: pending.length,
-    processing: processing.length,
-    synced: filtered.filter((e) => e.status === 'synced').length,
-    error: filtered.filter((e) => e.status === 'error').length,
-    hasStalePending,
-    hasSlowEnqueue,
-  };
+  return statsFor(all.filter((event) => (
+    (!cellName || event.cellName === cellName || event.cell_name === cellName)
+    && (!machineId || event.machineId === machineId || event.machine_id === machineId)
+    && (!eventKind || event.event_kind === eventKind)
+  )));
 }
 
-/**
- * Busca eventos com determinado status.
- */
 export async function getEventsByStatus(status) {
   return dbGetByIndex('by_status', status);
 }
 
-/**
- * Recupera eventos processing antigos jogando-os de volta para pending.
- */
-export async function recoverStaleProcessingEvents(maxAgeMs = 120000) {
-  const all = await dbGetAll();
-  const cutoff = Date.now() - maxAgeMs;
-  let count = 0;
-  for (const event of all) {
-    if (event.status === 'processing') {
-      const timestamp = new Date(event.updated_at || event.created_at_client).getTime();
-      if (timestamp < cutoff) {
-        event.status = 'pending';
-        event.retries = 0;
-        event.next_attempt_at = new Date().toISOString();
-        event.updated_at = new Date().toISOString();
-        await dbPut(event);
-        count++;
-      }
-    }
-  }
-  if (count > 0) {
-    console.log(`[Queue] Recovered ${count} stale processing events.`);
-    notifyChange();
-  }
-  return count;
+export async function getCollectionEvent(clientEventId) {
+  return dbGet(clientEventId);
 }
 
-/**
- * Retorna o evento pendente mais antigo.
- */
+export async function getCollectionEvents(clientEventIds = []) {
+  return dbGetMany(Array.from(new Set(clientEventIds.filter(Boolean))));
+}
+
+export async function recoverStaleProcessingEvents(maxAgeMs = 120_000) {
+  const all = await dbGetAll();
+  const cutoff = Date.now() - maxAgeMs;
+  const timestamp = nowIso();
+  const recovered = all
+    .filter((event) => (
+      event.status === 'processing' && eventTimestampMs(event) < cutoff
+    ))
+    .map((event) => ({
+      ...event,
+      status: 'pending',
+      retries: 0,
+      next_attempt_at: timestamp,
+      updated_at: timestamp,
+    }));
+
+  await dbPutMany(recovered);
+  if (recovered.length > 0) {
+    console.log(`[Queue] Recovered ${recovered.length} stale processing events.`);
+    notifyChange();
+  }
+  return recovered.length;
+}
+
 export async function getOldestPendingEvent() {
   const pending = await dbGetByIndex('by_status', 'pending');
-  if (!pending || pending.length === 0) return null;
+  if (!pending?.length) return null;
   const now = Date.now();
-  const due = pending.filter((event) =>
-    !event.next_attempt_at || new Date(event.next_attempt_at).getTime() <= now
-  );
-  due.sort((a, b) => a.created_at_client.localeCompare(b.created_at_client));
+  const due = pending.filter((event) => (
+    !event.next_attempt_at
+    || new Date(event.next_attempt_at).getTime() <= now
+  ));
+  due.sort((left, right) => (
+    left.created_at_client.localeCompare(right.created_at_client)
+  ));
   return due[0] || null;
 }
 
-/**
- * Funções de marcação de status
- */
 export async function markEventPending(clientEventId) {
-  const event = await dbGet(clientEventId);
-  if (!event) return;
-  event.status = 'pending';
-  event.next_attempt_at = new Date().toISOString();
-  event.updated_at = new Date().toISOString();
-  await dbPut(event);
-  notifyChange();
+  const timestamp = nowIso();
+  const updates = await dbTransformMany(
+    [{ client_event_id: clientEventId }],
+    (event) => {
+      if (!event || ['synced', 'error'].includes(event.status)) return null;
+      return {
+        ...event,
+        status: 'pending',
+        server_status: null,
+        next_attempt_at: timestamp,
+        updated_at: timestamp,
+      };
+    },
+  );
+  if (updates.length > 0) notifyChange();
+}
+
+export async function markEventsProcessing(events) {
+  const timestamp = nowIso();
+  const updates = await dbTransformMany(
+    events,
+    (current) => withProcessingState(current, timestamp),
+  );
+  if (updates.length > 0) notifyChange();
+  return updates;
 }
 
 export async function markEventProcessing(clientEventId) {
-  const event = await dbGet(clientEventId);
-  if (!event) return;
-  event.status = 'processing';
-  event.next_attempt_at = null;
-  event.sync_started_at = new Date().toISOString();
-  event.updated_at = new Date().toISOString();
-  await dbPut(event);
-  notifyChange();
+  const updates = await dbTransformMany(
+    [{ client_event_id: clientEventId }],
+    (current) => withProcessingState(current),
+  );
+  if (updates.length > 0) notifyChange();
 }
 
-export async function markEventSynced(clientEventId, result) {
-  const event = await dbGet(clientEventId);
-  if (!event) return;
-  event.status = 'synced';
-  event.next_attempt_at = null;
-  event.result = result;
-  event.sync_finished_at = new Date().toISOString();
-  if (event.sync_started_at) {
-    event.sync_duration_ms = new Date(event.sync_finished_at).getTime() - new Date(event.sync_started_at).getTime();
-  }
-  event.processed_at = new Date().toISOString();
-  event.updated_at = new Date().toISOString();
-  await dbPut(event);
-  notifyChange();
+export async function markEventsAccepted(items) {
+  const timestamp = nowIso();
+  const updates = await dbTransformMany(
+    items,
+    (current, item) => withAcceptedState(current, item.ingress, timestamp),
+  );
+  if (updates.length > 0) notifyChange();
+  return updates;
+}
+
+export async function markEventAccepted(clientEventId, ingress = {}) {
+  const updates = await dbTransformMany(
+    [{ client_event_id: clientEventId, ingress }],
+    (current, item) => withAcceptedState(current, item.ingress),
+  );
+  if (updates.length > 0) notifyChange();
+}
+
+export async function markEventsSynced(items) {
+  const timestamp = nowIso();
+  const updates = await dbTransformMany(
+    items,
+    (current, item) => withSyncedState(
+      current,
+      item.result,
+      item.ingress,
+      timestamp,
+    ),
+  );
+  if (updates.length > 0) notifyChange();
+  return updates;
+}
+
+export async function markEventSynced(clientEventId, result, ingress = null) {
+  const updates = await dbTransformMany(
+    [{ client_event_id: clientEventId, result, ingress }],
+    (current, item) => withSyncedState(current, item.result, item.ingress),
+  );
+  if (updates.length > 0) notifyChange();
+}
+
+export async function markEventsError(items, maxRetries = 8) {
+  const timestamp = nowIso();
+  const updates = await dbTransformMany(
+    items,
+    (current, item) => withErrorState(
+      current,
+      item.error,
+      maxRetries,
+      timestamp,
+    ),
+  );
+  if (updates.length > 0) notifyChange();
+  return updates;
 }
 
 export async function markEventError(clientEventId, error, maxRetries = 8) {
-  const event = await dbGet(clientEventId);
-  if (!event) return;
-  const retries = (event.retries || 0) + 1;
-  const retryable = error?.retryable !== false;
-  event.status = retryable && retries < maxRetries ? 'pending' : 'error';
-  event.retries = retries;
-  event.last_error = error?.message || String(error);
-  event.last_result = error?.result || null;
-  const baseDelayMs = Math.min(300_000, 1_000 * (2 ** Math.max(retries - 1, 0)));
-  const jitterMs = Math.round(baseDelayMs * Math.random() * 0.25);
-  event.next_attempt_at = event.status === 'pending'
-    ? new Date(Date.now() + baseDelayMs + jitterMs).toISOString()
-    : null;
-  event.sync_finished_at = new Date().toISOString();
-  if (event.sync_started_at) {
-    event.sync_duration_ms = new Date(event.sync_finished_at).getTime() - new Date(event.sync_started_at).getTime();
-  }
-  event.updated_at = new Date().toISOString();
-  await dbPut(event);
-  notifyChange();
+  const updates = await dbTransformMany(
+    [{ client_event_id: clientEventId, error }],
+    (current, item) => withErrorState(current, item.error, maxRetries),
+  );
+  if (updates.length > 0) notifyChange();
 }
 
-/**
- * Processa um evento especifico da fila e devolve o resultado persistido.
- * Mantem o evento na fila se houver falha para permitir nova tentativa.
- */
 export async function processCollectionEvent(clientEventId, processFn, opts = {}) {
   const event = await dbGet(clientEventId);
   if (!event) throw new Error('Evento de coleta não localizado na fila local.');
@@ -334,80 +569,92 @@ export async function processCollectionEvent(clientEventId, processFn, opts = {}
     const result = await processFn(processingEvent);
     await markEventSynced(clientEventId, result);
     return result;
-  } catch (err) {
-    await markEventError(clientEventId, err, opts.maxRetries || 8);
-    throw err;
+  } catch (error) {
+    await markEventError(clientEventId, error, opts.maxRetries || 8);
+    throw error;
   }
 }
 
-/**
- * Processa a fila: 1 evento por vez (FIFO), com idempotência garantida por client_event_id.
- * @param {function} processFn — (event) => Promise<result>
- * @param {{ onProgress?: function, maxRetries?: number }} opts
- * @returns {{ processed: number, synced: number, errors: number }}
- */
 export async function flushCollectionQueue(processFn, opts = {}) {
   const { onProgress } = opts;
   const now = Date.now();
-  const pending = (await dbGetByIndex('by_status', 'pending')).filter((event) =>
-    !event.next_attempt_at || new Date(event.next_attempt_at).getTime() <= now
-  );
-  // Ordenar por horário de criação (FIFO)
-  pending.sort((a, b) => a.created_at_client.localeCompare(b.created_at_client));
+  const pending = (await dbGetByIndex('by_status', 'pending'))
+    .filter((event) => (
+      !event.next_attempt_at
+      || new Date(event.next_attempt_at).getTime() <= now
+    ))
+    .sort((left, right) => (
+      left.created_at_client.localeCompare(right.created_at_client)
+    ));
 
   let synced = 0;
   let errors = 0;
-
   for (const event of pending) {
     try {
       await processCollectionEvent(event.client_event_id, processFn, opts);
-      synced++;
-    } catch (err) {
-      errors++;
+      synced += 1;
+    } catch {
+      errors += 1;
     }
-
     onProgress?.({ synced, errors, current: event.client_event_id });
   }
 
   return { processed: pending.length, synced, errors };
 }
 
-/**
- * Recoloca eventos com erro no estado `pending` para reprocessamento.
- */
 export async function retryErrors() {
   const errorEvents = await dbGetByIndex('by_status', 'error');
-  for (const event of errorEvents) {
-    await dbPut({
-      ...event,
-      status: 'pending',
-      retries: 0,
-      next_attempt_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
-  }
-  notifyChange();
-  return errorEvents.length;
+  const timestamp = nowIso();
+  const updates = errorEvents.map((event) => ({
+    ...event,
+    status: 'pending',
+    server_status: null,
+    retries: 0,
+    last_error: null,
+    next_attempt_at: timestamp,
+    updated_at: timestamp,
+  }));
+  await dbPutMany(updates);
+  if (updates.length > 0) notifyChange();
+  return updates.length;
 }
 
-/**
- * Limpa eventos sincronizados com mais de N dias.
- */
 export async function pruneOldSynced(daysOld = 3) {
   const cutoff = new Date(Date.now() - daysOld * 86_400_000).toISOString();
   const all = await dbGetAll();
-  const db = await openDb();
-  let pruned = 0;
-  for (const e of all) {
-    if (e.status === 'synced' && e.processed_at && e.processed_at < cutoff) {
-      await new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE, 'readwrite');
-        tx.objectStore(STORE).delete(e.client_event_id);
-        tx.oncomplete = resolve;
-        tx.onerror = (ev) => reject(ev.target.error);
-      });
-      pruned++;
-    }
-  }
-  return pruned;
+  const keys = all
+    .filter((event) => (
+      event.status === 'synced'
+      && event.processed_at
+      && event.processed_at < cutoff
+    ))
+    .map((event) => event.client_event_id);
+  const removed = await dbDeleteMany(keys);
+  if (removed > 0) notifyChange();
+  return removed;
+}
+
+/**
+ * Mantém a fila operacional pequena mesmo em linhas de alta cadência. O
+ * histórico definitivo continua no PostgreSQL; localmente guardamos apenas os
+ * finalizados recentes necessários para feedback visual.
+ */
+export async function pruneSettledEvents({
+  maxAgeMs = 60_000,
+  keepLatest = 500,
+} = {}) {
+  const all = await dbGetAll();
+  const synced = all
+    .filter((event) => event.status === 'synced')
+    .sort((left, right) => eventTimestampMs(right) - eventTimestampMs(left));
+  const cutoff = Date.now() - Math.max(5_000, Number(maxAgeMs) || 60_000);
+  const keys = synced
+    .filter((event, index) => (
+      index >= Math.max(50, Number(keepLatest) || 500)
+      || eventTimestampMs(event) < cutoff
+    ))
+    .map((event) => event.client_event_id);
+  const removed = await dbDeleteMany(keys);
+  if (removed > 0) notifyChange();
+  return removed;
 }
