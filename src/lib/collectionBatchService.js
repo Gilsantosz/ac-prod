@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
+import { getOperatorSession } from '@/lib/operatorSessionService';
 
 export const COLLECTION_BATCH_SIZE = 50;
 export const COLLECTION_BATCH_MAX_SIZE = 100;
@@ -56,7 +57,7 @@ function eventRawValue(event = {}) {
   ).trim();
 }
 
-function buildIngressRows(events, batchId) {
+function buildIngressRows(events, batchId, fallbackSessionToken = null) {
   return events.map((event, index) => {
     const clientEventId = event.client_event_id || randomUuid();
     const timestamp = event.created_at_client
@@ -68,6 +69,11 @@ function buildIngressRows(events, batchId) {
       || 'keyboard_barcode';
     const deviceId = event.device_id || event.deviceId || null;
     const rawValue = eventRawValue(event);
+    const operatorSessionToken = event.operatorSessionToken
+      || event.operator_session_token
+      || event.session_token
+      || fallbackSessionToken
+      || null;
 
     return {
       client_event_id: clientEventId,
@@ -90,6 +96,8 @@ function buildIngressRows(events, batchId) {
         device_id: deviceId,
         createdAtClient: timestamp,
         created_at_client: timestamp,
+        operatorSessionToken,
+        operator_session_token: operatorSessionToken,
         microBatch: true,
         micro_batch: true,
         batchId,
@@ -196,8 +204,9 @@ export async function processProductionCollectionBatch(events = []) {
     }
   }
 
+  const operatorSession = getOperatorSession();
   const batchId = randomUuid();
-  const rows = buildIngressRows(events, batchId);
+  const rows = buildIngressRows(events, batchId, operatorSession?.token || null);
   const insertedRows = await insertRows(rows);
   const byClientEventId = new Map(
     insertedRows.map((row) => [row.client_event_id, row]),
