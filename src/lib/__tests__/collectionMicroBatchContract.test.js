@@ -6,7 +6,7 @@ const repoFile = (path) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
 describe('AC.Prod2 collection micro-batching v8.6 contract', () => {
   const migrationPath =
-    'supabase/migrations/20260831163500_collection_micro_batch_ingress_v8_6.sql';
+    'supabase/migrations/20260831170836_collection_micro_batch_ingress_v8_6.sql';
 
   it('cria inbox com RLS e reutiliza a RPC transacional existente', () => {
     expect(existsSync(resolve(process.cwd(), migrationPath))).toBe(true);
@@ -94,7 +94,7 @@ describe('AC.Prod2 collection micro-batching v8.6 contract', () => {
     const workflow = repoFile('.github/workflows/deploy.yml');
 
     expect(workflow).toContain(
-      'REQUIRED_MICRO_BATCH_MIGRATION_VERSION: "20260831163500"',
+      'REQUIRED_MICRO_BATCH_MIGRATION_VERSION: "20260831170836"',
     );
     expect(workflow).toContain(
       'REQUIRED_MICRO_BATCH_RELEASE_VERSION: "20260831_acprod_collection_micro_batch_v8_6"',
