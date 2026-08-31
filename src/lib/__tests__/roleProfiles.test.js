@@ -29,9 +29,11 @@ describe('roleProfiles', () => {
     expect(permissions.force_complete_replacements).toBe(true);
   });
 
-  it('mantém operador sem autoridade administrativa de reposição', () => {
-    const permissions = getRoleDefaultPermissions('operator');
-    expect(isReplacementAuthorityRole('operator')).toBe(false);
+  it.each(['operator', 'viewer'])('%s permanece sem autoridade administrativa de reposição', (role) => {
+    const permissions = getRoleDefaultPermissions(role);
+    expect(isReplacementAuthorityRole(role)).toBe(false);
+    expect(permissions.view_replacements).toBe(true);
+    expect(permissions.manage_replacements).toBe(false);
     expect(permissions.approve_replacements).toBe(false);
     expect(permissions.force_complete_replacements).toBe(false);
   });
