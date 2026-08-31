@@ -34,16 +34,24 @@ export default function TraceabilityScannerPanel({
   const inputRef = useRef(null);
   const lastCaptureRef = useRef({ code: null, at: 0 });
   const mountedRef = useRef(true);
+  const refocusTimerRef = useRef(null);
   const isSuspended = activeDowntime || modalOpen;
   const contextReady = Boolean(cellName && shift && operator) && !isSuspended;
 
-  useEffect(() => () => {
-    mountedRef.current = false;
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (refocusTimerRef.current) clearTimeout(refocusTimerRef.current);
+    };
   }, []);
 
   const refocus = useCallback(() => {
     if (mode !== 'scanner' || isSuspended) return;
-    setTimeout(() => {
+    if (refocusTimerRef.current) clearTimeout(refocusTimerRef.current);
+    refocusTimerRef.current = setTimeout(() => {
+      refocusTimerRef.current = null;
+      if (!mountedRef.current || typeof document === 'undefined') return;
       const activeElement = document.activeElement;
       const hasOpenDialog = Boolean(document.querySelector('[role="dialog"], [data-state="open"]'));
       const userIsUsingAnotherControl = (activeElement
