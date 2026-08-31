@@ -209,8 +209,9 @@ export function useCollectionQueue(processFn, options = {}) {
   }, [flush]);
 
   const enqueue = useCallback(async (payload, enqueueOpts = {}) => {
-    // O retorno acontece logo após a gravação durável no IndexedDB. O cálculo
-    // dos contadores e a sincronização não bloqueiam o próximo código.
+    // O retorno acontece logo após a gravação durável no IndexedDB.
+    // A captura local não bloqueia o próximo código; contadores e sincronização
+    // continuam em segundo plano.
     const id = await enqueueCollectionEvent(payload);
     refreshStatsSafely();
 
