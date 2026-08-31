@@ -20,6 +20,12 @@ function wrapError(error, fallback) {
   return wrapped;
 }
 
+function isAuthenticationError(error) {
+  return error?.code === 'PGRST301'
+    || error?.status === 401
+    || /jwt|token|auth/i.test(error?.message || '');
+}
+
 export class SupabaseBatchSink {
   constructor(config) {
     this.config = config;
@@ -36,7 +42,14 @@ export class SupabaseBatchSink {
     );
   }
 
-  async authenticate() {
+  async authenticate({ force = false } = {}) {
+    if (!force) {
+      const { data } = await this.supabase.auth.getSession();
+      if (data?.session) return data.session;
+    } else {
+      await this.supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+    }
+
     const { data, error } = await this.supabase.auth.signInWithPassword({
       email: this.config.edgeEmail,
       password: this.config.edgePassword,
@@ -45,6 +58,8 @@ export class SupabaseBatchSink {
     if (error || !data?.session) {
       throw wrapError(error, 'Falha ao autenticar o coletor Edge.');
     }
+
+    return data.session;
   }
 
   #buildRows(events) {
@@ -71,6 +86,7 @@ export class SupabaseBatchSink {
         deviceId: event.device_id,
         device_id: event.device_id,
         operatorSessionToken: this.config.operatorSessionToken,
+        operator_session_token: this.config.operatorSessionToken,
         cellName: this.config.cellName,
         shift: this.config.shift,
         operator: this.config.operatorName,
@@ -132,7 +148,17 @@ export class SupabaseBatchSink {
     if (!events.length) return [];
 
     const rows = this.#buildRows(events);
-    const confirmed = await this.#insertRows(rows);
+    await this.authenticate();
+
+    let confirmed;
+    try {
+      confirmed = await this.#insertRows(rows);
+    } catch (error) {
+      if (!isAuthenticationError(error)) throw error;
+      await this.authenticate({ force: true });
+      confirmed = await this.#insertRows(rows);
+    }
+
     const confirmedIds = new Set(
       confirmed.map((row) => row.client_event_id),
     );
