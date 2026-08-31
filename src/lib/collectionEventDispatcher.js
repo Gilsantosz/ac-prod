@@ -1,5 +1,6 @@
 import { processProductionReading } from '@/lib/traceabilityService';
 import { processFastProductionReading } from '@/lib/fastProductionReadingService';
+import { processProductionCollectionBatch } from '@/lib/collectionBatchService';
 import { collectReplacementStageV2, REPLACEMENT_EVENT_KIND } from '@/lib/replacementService';
 
 export const COLLECTION_EVENT_KINDS = Object.freeze({
@@ -60,4 +61,71 @@ export async function dispatchCollectionEvent(event) {
   const error = new Error(`Tipo de evento de coleta não suportado: ${eventKind}`);
   error.retryable = false;
   throw error;
+}
+
+function wrapIndividualResult(event, result) {
+  return {
+    client_event_id: event.client_event_id,
+    status_sincronizacao: 'sincronizada',
+    retryable: false,
+    error: null,
+    result,
+  };
+}
+
+function wrapIndividualError(event, error) {
+  return {
+    client_event_id: event.client_event_id,
+    status_sincronizacao: 'erro',
+    retryable: error?.retryable !== false,
+    error: error?.message || String(error),
+    result: error?.result || {
+      success: false,
+      status: 'error',
+      reason_code: error?.code || 'COLLECTION_EVENT_ERROR',
+      message: error?.message || String(error),
+      client_event_id: event.client_event_id,
+    },
+  };
+}
+
+/**
+ * Despacha um micro-lote mantendo a ordem global da fila.
+ *
+ * Eventos produtivos consecutivos usam um único INSERT[] em coletas_producao.
+ * Reposição continua no RPC próprio e nunca é misturada ao gatilho produtivo.
+ */
+export async function dispatchCollectionEventBatch(events = []) {
+  if (!Array.isArray(events) || events.length === 0) return [];
+
+  const results = [];
+  let productionBuffer = [];
+
+  const flushProductionBuffer = async () => {
+    if (!productionBuffer.length) return;
+    const batchResults = await processProductionCollectionBatch(productionBuffer);
+    results.push(...batchResults);
+    productionBuffer = [];
+  };
+
+  for (const event of events) {
+    const eventKind = resolveCollectionEventKind(event);
+
+    if (eventKind === COLLECTION_EVENT_KINDS.PRODUCTION_STAGE) {
+      productionBuffer.push(event);
+      continue;
+    }
+
+    await flushProductionBuffer();
+
+    try {
+      const result = await dispatchCollectionEvent(event);
+      results.push(wrapIndividualResult(event, result));
+    } catch (error) {
+      results.push(wrapIndividualError(event, error));
+    }
+  }
+
+  await flushProductionBuffer();
+  return results;
 }

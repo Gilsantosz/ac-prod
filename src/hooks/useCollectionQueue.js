@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { toast } from 'sonner';
 import {
   enqueueCollectionEvent,
   flushCollectionQueue,
@@ -8,14 +9,75 @@ import {
   retryErrors,
   recoverStaleProcessingEvents,
 } from '@/lib/collectionEventQueue';
+import { flushCollectionMicroBatchQueue } from '@/lib/collectionMicroBatchQueue';
+import {
+  COLLECTION_EVENT_KINDS,
+  dispatchCollectionEventBatch,
+} from '@/lib/collectionEventDispatcher';
+import { getOperatorSession } from '@/lib/operatorSessionService';
+
+function emitBatchResult(payload) {
+  try {
+    window.dispatchEvent(new CustomEvent('collection-batch-result', {
+      detail: payload,
+    }));
+  } catch {
+    // Ambiente sem window, como testes unitários.
+  }
+}
+
+function notifyBatchResult({
+  result,
+  error,
+  batchIndex = 0,
+  batchCount = 1,
+}) {
+  if (error) {
+    toast.error(error.message || 'Falha ao sincronizar leitura.');
+    return;
+  }
+
+  if (result?.success) {
+    if (batchIndex === batchCount - 1) {
+      const message = batchCount > 1
+        ? `${batchCount} leituras sincronizadas com o Supabase.`
+        : (result.message || 'Leitura aprovada.');
+      toast.success(message);
+      navigator.vibrate?.([70, 40, 70]);
+    }
+    return;
+  }
+
+  if (['wrong_step', 'wrong_cell', 'duplicated', 'blocked'].includes(
+    result?.status,
+  ) || result?.alert_level === 'yellow') {
+    toast.warning(result?.message || 'Leitura bloqueada.');
+    return;
+  }
+
+  toast.error(result?.message || 'Leitura não aprovada.');
+}
 
 /**
  * Hook que encapsula a fila de eventos de coleta em estado React.
- * @param {function} processFn — função que processa um evento e o persiste no Supabase
- * @param {object} options — opções de filtro (cellName, machineId)
+ * @param {function} processFn — função legada que processa um evento individual
+ * @param {object} options — filtros e configuração de sincronização
  */
 export function useCollectionQueue(processFn, options = {}) {
-  const { cellName, machineId, eventKind } = options;
+  const {
+    cellName,
+    machineId,
+    eventKind,
+    batchSize = 50,
+    onResult = null,
+  } = options;
+  const microBatch = options.microBatch
+    ?? eventKind === COLLECTION_EVENT_KINDS.PRODUCTION_STAGE;
+  const processBatchFn = options.processBatchFn
+    || (microBatch ? dispatchCollectionEventBatch : null);
+  const flushIntervalMs = options.flushIntervalMs
+    ?? (microBatch ? 5000 : 15000);
+
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
@@ -29,7 +91,11 @@ export function useCollectionQueue(processFn, options = {}) {
   const flushingRef = useRef(false);
   const fallbackLockRef = useRef(Promise.resolve());
   const processFnRef = useRef(processFn);
+  const processBatchFnRef = useRef(processBatchFn);
+  const onResultRef = useRef(onResult);
   processFnRef.current = processFn;
+  processBatchFnRef.current = processBatchFn;
+  onResultRef.current = onResult;
 
   const refreshStats = useCallback(async () => {
     const nextStats = (cellName || machineId || eventKind)
@@ -56,6 +122,15 @@ export function useCollectionQueue(processFn, options = {}) {
     return currentTask;
   }, []);
 
+  const handleBatchResult = useCallback((payload) => {
+    emitBatchResult(payload);
+    if (typeof onResultRef.current === 'function') {
+      onResultRef.current(payload);
+    } else {
+      notifyBatchResult(payload);
+    }
+  }, []);
+
   const flush = useCallback(async () => {
     if (flushingRef.current || !navigator.onLine) return;
 
@@ -65,17 +140,35 @@ export function useCollectionQueue(processFn, options = {}) {
       setFlushing(true);
       try {
         await recoverStaleProcessingEvents();
-        await flushCollectionQueue(processFnRef.current);
+
+        if (microBatch && typeof processBatchFnRef.current === 'function') {
+          await flushCollectionMicroBatchQueue(processBatchFnRef.current, {
+            batchSize,
+            onResult: handleBatchResult,
+          });
+        } else {
+          await flushCollectionQueue(processFnRef.current);
+        }
       } finally {
         flushingRef.current = false;
         setFlushing(false);
         await refreshStats();
       }
     });
-  }, [refreshStats, withQueueLock]);
+  }, [
+    batchSize,
+    handleBatchResult,
+    microBatch,
+    refreshStats,
+    withQueueLock,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
+    const intervalMs = Math.max(
+      1000,
+      Number(flushIntervalMs) || (microBatch ? 5000 : 15000),
+    );
 
     const recoverAndFlush = async () => {
       await recoverStaleProcessingEvents();
@@ -83,12 +176,12 @@ export function useCollectionQueue(processFn, options = {}) {
     };
 
     recoverAndFlush();
-    const interval = setInterval(recoverAndFlush, 15000);
+    const interval = setInterval(recoverAndFlush, intervalMs);
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [flush]);
+  }, [flush, flushIntervalMs, microBatch]);
 
   useEffect(() => {
     const handler = () => refreshStatsSafely();
@@ -117,23 +210,55 @@ export function useCollectionQueue(processFn, options = {}) {
   }, [flush]);
 
   const enqueue = useCallback(async (payload, enqueueOpts = {}) => {
-    // O retorno acontece logo após a gravação durável no IndexedDB. O cálculo
-    // dos contadores é assíncrono e não bloqueia o próximo código do coletor.
+    // O retorno acontece logo após a gravação durável no IndexedDB.
+    // A captura local não bloqueia o próximo código; contadores e sincronização
+    // continuam em segundo plano.
+    if (microBatch) {
+      const operatorSession = getOperatorSession();
+      const operatorSessionToken = payload.operatorSessionToken
+        || payload.operator_session_token
+        || operatorSession?.token
+        || null;
+      payload = {
+        ...payload,
+        operatorSessionToken,
+        operator_session_token: operatorSessionToken,
+      };
+    }
+
     const id = await enqueueCollectionEvent(payload);
     refreshStatsSafely();
-    if (navigator.onLine && enqueueOpts.autoFlush !== false) {
+
+    const shouldFlushImmediately = enqueueOpts.autoFlush === true
+      || (!microBatch && enqueueOpts.autoFlush !== false);
+    if (navigator.onLine && shouldFlushImmediately) {
       flush();
     }
     return id;
-  }, [flush, refreshStatsSafely]);
+  }, [flush, microBatch, refreshStatsSafely]);
 
   const processNow = useCallback(async (clientEventId) => {
+    if (microBatch) {
+      // Compatibilidade: confirma a recepção local, mas não espera o PostgreSQL.
+      // O setInterval fará o envio em lote em até 5s.
+      refreshStatsSafely();
+      return {
+        success: true,
+        accepted: true,
+        pending: true,
+        status: 'queued',
+        alert_level: 'blue',
+        client_event_id: clientEventId,
+        message: 'Leitura recebida. Sincronização em micro-lote iniciada.',
+      };
+    }
+
     const result = await withQueueLock(() => (
       processCollectionEvent(clientEventId, processFnRef.current)
     ));
     refreshStatsSafely();
     return result;
-  }, [refreshStatsSafely, withQueueLock]);
+  }, [microBatch, refreshStatsSafely, withQueueLock]);
 
   const retryQueueErrors = useCallback(async () => {
     const count = await retryErrors();
@@ -142,5 +267,12 @@ export function useCollectionQueue(processFn, options = {}) {
     return count;
   }, [flush, refreshStatsSafely]);
 
-  return { stats, flushing, enqueue, flush, processNow, retryQueueErrors };
+  return {
+    stats,
+    flushing,
+    enqueue,
+    flush,
+    processNow,
+    retryQueueErrors,
+  };
 }

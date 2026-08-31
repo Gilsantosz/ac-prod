@@ -1,0 +1,191 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const store = new Map();
+
+const mockDb = {
+  transaction: () => {
+    const tx = {
+      objectStore: () => ({
+        put: (item) => {
+          store.set(item.client_event_id, item);
+          setTimeout(() => tx.oncomplete?.(), 1);
+        },
+        get: (key) => {
+          const request = { onsuccess: null };
+          setTimeout(() => {
+            request.onsuccess?.({
+              target: { result: store.get(key) },
+            });
+          }, 1);
+          return request;
+        },
+        getAll: () => {
+          const request = { onsuccess: null };
+          setTimeout(() => {
+            request.onsuccess?.({
+              target: { result: Array.from(store.values()) },
+            });
+          }, 1);
+          return request;
+        },
+        index: (indexName) => ({
+          getAll: (value) => {
+            const request = { onsuccess: null };
+            setTimeout(() => {
+              const result = Array.from(store.values()).filter((item) => (
+                indexName === 'by_status' && item.status === value
+              ));
+              request.onsuccess?.({ target: { result } });
+            }, 1);
+            return request;
+          },
+        }),
+        delete: (key) => {
+          store.delete(key);
+          setTimeout(() => tx.oncomplete?.(), 1);
+        },
+      }),
+      oncomplete: null,
+      onerror: null,
+    };
+    return tx;
+  },
+};
+
+globalThis.indexedDB = {
+  open: () => {
+    const request = {
+      onsuccess: null,
+      onerror: null,
+      onupgradeneeded: null,
+    };
+    setTimeout(() => {
+      request.onsuccess?.({ target: { result: mockDb } });
+    }, 1);
+    return request;
+  },
+};
+
+import { enqueueCollectionEvent } from '@/lib/collectionEventQueue';
+import { flushCollectionMicroBatchQueue } from '@/lib/collectionMicroBatchQueue';
+
+describe('flushCollectionMicroBatchQueue', () => {
+  beforeEach(() => {
+    store.clear();
+  });
+
+  it('processa várias leituras em uma única chamada e marca todas como synced', async () => {
+    for (let index = 1; index <= 3; index += 1) {
+      await enqueueCollectionEvent({
+        client_event_id: `event-${index}`,
+        rawValue: `0995000${index}`,
+        event_kind: 'production_stage',
+      });
+    }
+
+    const processBatchFn = vi.fn(async (events) => (
+      events.map((event) => ({
+        client_event_id: event.client_event_id,
+        status_sincronizacao: 'sincronizada',
+        retryable: false,
+        result: { success: true, status: 'approved' },
+      }))
+    ));
+
+    const summary = await flushCollectionMicroBatchQueue(processBatchFn, {
+      batchSize: 50,
+    });
+
+    expect(processBatchFn).toHaveBeenCalledTimes(1);
+    expect(processBatchFn.mock.calls[0][0]).toHaveLength(3);
+    expect(summary).toMatchObject({
+      processed: 3,
+      synced: 3,
+      errors: 0,
+      batches: 1,
+    });
+    expect(Array.from(store.values()).every((event) => (
+      event.status === 'synced'
+    ))).toBe(true);
+  });
+
+  it('recoloca o lote inteiro em pending quando a rede falha', async () => {
+    for (let index = 1; index <= 2; index += 1) {
+      await enqueueCollectionEvent({
+        client_event_id: `event-${index}`,
+        rawValue: `0995000${index}`,
+        event_kind: 'production_stage',
+      });
+    }
+
+    const networkError = Object.assign(
+      new Error('internet indisponível'),
+      { retryable: true },
+    );
+    const processBatchFn = vi.fn().mockRejectedValue(networkError);
+
+    const summary = await flushCollectionMicroBatchQueue(processBatchFn);
+
+    expect(summary).toMatchObject({
+      processed: 2,
+      synced: 0,
+      errors: 2,
+    });
+    for (const event of store.values()) {
+      expect(event).toMatchObject({
+        status: 'pending',
+        retries: 1,
+      });
+      expect(event.next_attempt_at).toBeTruthy();
+    }
+  });
+
+  it('isola falha funcional sem reenviar eventos já sincronizados', async () => {
+    await enqueueCollectionEvent({
+      client_event_id: 'event-ok',
+      rawValue: '09950001',
+      event_kind: 'production_stage',
+    });
+    await enqueueCollectionEvent({
+      client_event_id: 'event-error',
+      rawValue: '09950002',
+      event_kind: 'production_stage',
+    });
+
+    const processBatchFn = vi.fn().mockResolvedValue([
+      {
+        client_event_id: 'event-ok',
+        status_sincronizacao: 'sincronizada',
+        retryable: false,
+        result: { success: true, status: 'approved' },
+      },
+      {
+        client_event_id: 'event-error',
+        status_sincronizacao: 'erro',
+        retryable: false,
+        error: 'sessão operacional inválida',
+        result: {
+          success: false,
+          status: 'error',
+          reason_code: '42501',
+          message: 'sessão operacional inválida',
+        },
+      },
+    ]);
+
+    const summary = await flushCollectionMicroBatchQueue(processBatchFn);
+
+    expect(summary).toMatchObject({
+      processed: 2,
+      synced: 1,
+      errors: 1,
+    });
+    expect(store.get('event-ok').status).toBe('synced');
+    expect(store.get('event-error')).toMatchObject({
+      status: 'error',
+      last_result: {
+        reason_code: '42501',
+      },
+    });
+  });
+});
