@@ -143,9 +143,10 @@ export default function RealtimeCellProgressPanel({ date, kioskCell = 'all', fil
   const { data: rows = [] } = useQuery({
     queryKey: ['realtimeCounters', 'cell', today],
     queryFn: () => fetchCellCounters(today),
-    staleTime: 0,
+    staleTime: 10_000,
     refetchOnMount: true,
-    refetchInterval: 15_000, // atualiza a cada 15s
+    // production_realtime_counters já invalida este cache via Realtime.
+    refetchInterval: 60_000,
   });
 
   const cells = useMemo(() => {
