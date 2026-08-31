@@ -1,7 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/lib/localDb';
-import { supabase } from '@/lib/supabaseClient';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Package, Target, Gauge, AlertTriangle, Monitor, Minimize2, LayoutDashboard, Sun, Moon } from 'lucide-react';
@@ -48,58 +47,15 @@ import AnnualProductionSummary from '@/components/dashboard/AnnualProductionSumm
 import {
   ANNUAL_FILTER_DISABLED,
   buildDashboardYearOptions,
-  getDashboardPeriodRange,
   isAnnualFilterActive,
   matchesDashboardPeriod,
 } from '@/lib/dashboardPeriod';
+import {
+  fetchDashboardProductionEntries,
+  fetchDashboardYearBounds,
+} from '@/lib/dashboardData';
 
 const PANEL_IDS = ['realtimeProgress', 'generalLotProgress', 'monthlyTracker', 'dailyProduction', 'charts', 'weeklyRanking', 'effDrop', 'goalProgress', 'goalProjection', 'weeklyTrend', 'highPerformers'];
-
-async function fetchDashboardProductionEntries(referenceDate, year) {
-  const { startDate, endDate } = getDashboardPeriodRange(referenceDate, year);
-  const pageSize = 1000;
-  const rows = [];
-
-  for (let offset = 0; ; offset += pageSize) {
-    const { data, error } = await supabase
-      .from('production_entries')
-      .select('*')
-      .gte('date', startDate)
-      .lt('date', endDate)
-      .order('date', { ascending: false })
-      .order('created_at', { ascending: false })
-      .range(offset, offset + pageSize - 1);
-    if (error) throw error;
-    rows.push(...(data || []));
-    if (!data || data.length < pageSize) break;
-  }
-
-  return rows.map(row => ({ ...row, created_date: row.created_at }));
-}
-
-async function fetchDashboardYearBounds() {
-  const [oldestResult, newestResult] = await Promise.all([
-    supabase
-      .from('production_entries')
-      .select('date')
-      .not('date', 'is', null)
-      .order('date', { ascending: true })
-      .limit(1),
-    supabase
-      .from('production_entries')
-      .select('date')
-      .not('date', 'is', null)
-      .order('date', { ascending: false })
-      .limit(1),
-  ]);
-
-  if (oldestResult.error) throw oldestResult.error;
-  if (newestResult.error) throw newestResult.error;
-  return {
-    oldestDate: oldestResult.data?.[0]?.date,
-    newestDate: newestResult.data?.[0]?.date,
-  };
-}
 
 export default function Dashboard({ kioskModeOverride = false }) {
   const navigate = useNavigate();
@@ -117,9 +73,10 @@ export default function Dashboard({ kioskModeOverride = false }) {
     queryKey: ['production', 'dashboard', filters.date, filters.year],
     queryFn: () => fetchDashboardProductionEntries(filters.date, filters.year),
     initialData: [],
-    staleTime: 0,
+    staleTime: 10_000,
     refetchOnMount: true,
-    refetchInterval: annualMode ? false : 10000,
+    // Realtime invalida ['production']; o intervalo é apenas contingência.
+    refetchInterval: annualMode ? false : 60_000,
   });
 
   const { data: goals = [] } = useQuery({
