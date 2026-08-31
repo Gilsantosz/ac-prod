@@ -14,6 +14,7 @@ import {
   COLLECTION_EVENT_KINDS,
   dispatchCollectionEventBatch,
 } from '@/lib/collectionEventDispatcher';
+import { getOperatorSession } from '@/lib/operatorSessionService';
 
 function emitBatchResult(payload) {
   try {
@@ -212,6 +213,19 @@ export function useCollectionQueue(processFn, options = {}) {
     // O retorno acontece logo após a gravação durável no IndexedDB.
     // A captura local não bloqueia o próximo código; contadores e sincronização
     // continuam em segundo plano.
+    if (microBatch) {
+      const operatorSession = getOperatorSession();
+      const operatorSessionToken = payload.operatorSessionToken
+        || payload.operator_session_token
+        || operatorSession?.token
+        || null;
+      payload = {
+        ...payload,
+        operatorSessionToken,
+        operator_session_token: operatorSessionToken,
+      };
+    }
+
     const id = await enqueueCollectionEvent(payload);
     refreshStatsSafely();
 

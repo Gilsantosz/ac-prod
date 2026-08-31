@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { performance } from 'node:perf_hooks';
 import { loadConfig } from './config.mjs';
@@ -93,12 +94,34 @@ function sendJson(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
+function headerValue(value) {
+  return Array.isArray(value) ? value[0] : String(value || '');
+}
+
+function secureEquals(left, right) {
+  const leftBuffer = Buffer.from(String(left || ''), 'utf8');
+  const rightBuffer = Buffer.from(String(right || ''), 'utf8');
+  return leftBuffer.length === rightBuffer.length
+    && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function isAuthorized(request) {
+  if (!config.ingestToken) return true;
+
+  const authorization = headerValue(request.headers.authorization);
+  const bearer = authorization.startsWith('Bearer ')
+    ? authorization.slice('Bearer '.length).trim()
+    : '';
+  const headerToken = headerValue(request.headers['x-edge-token']).trim();
+  return secureEquals(headerToken || bearer, config.ingestToken);
+}
+
 const server = createServer(async (request, response) => {
   try {
     if (request.method === 'GET' && request.url === '/health') {
       sendJson(response, 200, {
         ok: true,
-        online: true,
+        accepting_readings: true,
         flushing,
         queue_size: queue.size,
         flush_interval_ms: config.flushIntervalMs,
@@ -108,6 +131,14 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === 'POST' && request.url === '/readings') {
+      if (!isAuthorized(request)) {
+        sendJson(response, 401, {
+          accepted: false,
+          error: 'Token local do equipamento inválido.',
+        });
+        return;
+      }
+
       const body = await readJson(request);
       const result = await enqueueReading(
         body.tag_lida ?? body.tag ?? body.code,
@@ -130,8 +161,13 @@ const server = createServer(async (request, response) => {
 
 async function simulate() {
   for (let index = 0; index < config.simulateCount; index += 1) {
-    const tag = String(9950001 + index).padStart(8, '0');
-    const result = await enqueueReading(tag, { simulated: true });
+    // Código intencionalmente inválido (7 dígitos): valida transporte, fila,
+    // bulk insert e retorno sem dar baixa em uma peça real de produção.
+    const tag = String(9_000_001 + (index % 999_998)).padStart(7, '0');
+    const result = await enqueueReading(tag, {
+      simulated: true,
+      simulation_scope: 'transport_only_no_production_mutation',
+    });
     console.log(JSON.stringify({
       event: 'hardware_ack',
       tag,
@@ -159,17 +195,36 @@ async function shutdown(signal) {
 }
 
 const recovered = await queue.init();
-await sink.authenticate();
 
-server.listen(config.port, () => {
+server.on('error', (error) => {
+  console.error(JSON.stringify({
+    event: 'edge_worker_server_error',
+    error: error.message,
+    code: error.code || null,
+  }));
+  process.exitCode = 1;
+});
+
+server.listen(config.port, config.host, () => {
   console.log(JSON.stringify({
     event: 'edge_worker_ready',
+    host: config.host,
     port: config.port,
     recovered,
     flush_interval_ms: config.flushIntervalMs,
     max_batch_size: config.maxBatchSize,
+    local_auth_enabled: Boolean(config.ingestToken),
   }));
 });
+
+// A indisponibilidade do Supabase na inicialização nunca impede a coleta local.
+// O próprio insertBatch repetirá a autenticação em cada tentativa de flush.
+sink.authenticate()
+  .then(() => console.log(JSON.stringify({ event: 'edge_worker_authenticated' })))
+  .catch((error) => console.error(JSON.stringify({
+    event: 'edge_worker_auth_deferred',
+    error: error.message,
+  })));
 
 const flushTimer = setInterval(() => {
   flushQueue().catch((error) => {

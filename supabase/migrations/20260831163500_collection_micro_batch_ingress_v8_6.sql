@@ -127,7 +127,11 @@ BEGIN
     'batchSequence', NEW.batch_sequence,
     'batch_sequence', NEW.batch_sequence
   );
-  NEW.payload := v_payload;
+  -- O token é usado somente durante a validação e nunca permanece no inbox.
+  NEW.payload := v_payload
+    - 'operatorSessionToken'
+    - 'operator_session_token'
+    - 'session_token';
 
   BEGIN
     v_result := public.process_production_reading_v2(v_payload);
