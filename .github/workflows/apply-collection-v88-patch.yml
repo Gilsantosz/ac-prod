@@ -21,14 +21,14 @@ jobs:
           fetch-depth: 0
       - name: Apply deterministic patch
         run: python3 scripts/apply_collection_v88_patch.py
-      - name: Commit patched files
+      - name: Commit patched source files
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src .github/workflows/deploy.yml
+          git add src
           if git diff --cached --quiet; then
-            echo "No patch changes were produced."
+            echo "No source patch changes were produced."
             exit 0
           fi
           git commit -m "fix(collection): conclui sincronismo assíncrono v8.8"
