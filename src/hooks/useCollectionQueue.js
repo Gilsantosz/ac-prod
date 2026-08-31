@@ -27,6 +27,7 @@ export function useCollectionQueue(processFn, options = {}) {
   });
   const [flushing, setFlushing] = useState(false);
   const flushingRef = useRef(false);
+  const fallbackLockRef = useRef(Promise.resolve());
   const processFnRef = useRef(processFn);
   processFnRef.current = processFn;
 
@@ -47,7 +48,12 @@ export function useCollectionQueue(processFn, options = {}) {
     if (navigator.locks?.request) {
       return navigator.locks.request('acprod-collection-sync', task);
     }
-    return task();
+
+    // Safari e navegadores antigos: preserva FIFO por uma corrente de Promises,
+    // sem impedir que novos códigos continuem sendo gravados no IndexedDB.
+    const currentTask = fallbackLockRef.current.then(task, task);
+    fallbackLockRef.current = currentTask.catch(() => undefined);
+    return currentTask;
   }, []);
 
   const flush = useCallback(async () => {
