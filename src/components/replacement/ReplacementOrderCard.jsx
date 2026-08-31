@@ -1,9 +1,21 @@
-import React, { useState, Fragment } from 'react';
+import { Fragment, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  RotateCcw, CheckCircle2, Play, Clock,
-  ChevronDown, ChevronUp, Box, ShieldAlert, ArrowRight, GitCommit, Layers,
-  Printer, FileText, Download, History
+  ArrowRight,
+  Box,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Download,
+  FileText,
+  GitCommit,
+  History,
+  Layers,
+  Play,
+  Printer,
+  RotateCcw,
+  ShieldAlert,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,9 +25,19 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger
+  DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { REPLACEMENT_STATUS_LABELS, REPLACEMENT_PRIORITY_LABELS, formatStageName } from '@/lib/replacementService';
+import {
+  REPLACEMENT_PRIORITY_LABELS,
+  REPLACEMENT_STATUS_LABELS,
+  formatStageName,
+} from '@/lib/replacementService';
+
+const CLOSED_STATUSES = new Set(['completed', 'cancelled', 'Finalizada', 'Cancelada']);
+
+function normalizeList(values = []) {
+  return values.map((value) => formatStageName(value).toLocaleLowerCase('pt-BR'));
+}
 
 export default function ReplacementOrderCard({
   order,
@@ -28,405 +50,276 @@ export default function ReplacementOrderCard({
   onToggleSelect = () => {},
   onOpenLabelModal = () => {},
   onOpenPdfReport = () => {},
-  onOpenHistoryModal = () => {}
+  onOpenHistoryModal = () => {},
 }) {
   const [expanded, setExpanded] = useState(false);
 
-  const statusConfig = REPLACEMENT_STATUS_LABELS[order.status] || { label: order.status, color: 'bg-slate-500/10 text-slate-600' };
-  const priorityConfig = REPLACEMENT_PRIORITY_LABELS[order.priority] || { label: order.priority, color: '' };
+  const statusConfig = REPLACEMENT_STATUS_LABELS[order.status] || {
+    label: order.status,
+    color: 'bg-slate-500/10 text-slate-600 border-slate-500/20',
+  };
+  const priorityConfig = REPLACEMENT_PRIORITY_LABELS[order.priority] || {
+    label: order.priority || 'Normal',
+    color: 'text-slate-600 dark:text-slate-400',
+  };
 
-  const canApprove = (order.status === 'requested' || order.status === 'under_review') && (userPermissions.approve_replacements || userPermissions.admin);
-  const canRelease = (order.status === 'approved') && (userPermissions.manage_replacements || userPermissions.admin);
-  const canComplete = (order.status === 'in_production' || order.status === 'released') && (userPermissions.manage_replacements || userPermissions.admin);
-  const canCancel = !['completed', 'cancelled'].includes(order.status) && (userPermissions.manage_replacements || userPermissions.admin);
+  const canApprove = ['requested', 'under_review', 'Reposição solicitada'].includes(order.status)
+    && (userPermissions.approve_replacements || userPermissions.admin);
+  const canRelease = order.status === 'approved'
+    && (userPermissions.manage_replacements || userPermissions.admin);
+  const canForceComplete = !CLOSED_STATUSES.has(order.status)
+    && (
+      userPermissions.force_complete_replacements
+      || userPermissions.approve_replacements
+      || userPermissions.admin
+    );
+  const canCancel = !CLOSED_STATUSES.has(order.status)
+    && (userPermissions.manage_replacements || userPermissions.admin);
 
   const createdAt = new Date(order.created_at);
-  const ageHours = Math.floor((new Date() - createdAt) / (1000 * 60 * 60));
-
-  const clientLot = order.resolved_client_lot || order.lot_code || order.original_piece?.lot_code || order.original_piece?.lot?.lot_code || 'LOTE N/A';
-  const generalLot = order.resolved_general_lot || order.general_lot_code || order.original_piece?.general_lot_code || order.original_piece?.lot?.general_lot_code || null;
+  const ageHours = Math.max(Math.floor((Date.now() - createdAt.getTime()) / 3_600_000), 0);
+  const clientLot = order.resolved_client_lot
+    || order.lot_code
+    || order.original_piece?.lot_code
+    || order.original_piece?.lot?.lot_code
+    || 'LOTE N/A';
+  const generalLot = order.resolved_general_lot
+    || order.general_lot_code
+    || order.original_piece?.general_lot_code
+    || order.original_piece?.lot?.general_lot_code
+    || null;
   const orderNumber = order.order_number || order.original_piece?.order_number || '';
   const customerName = order.customer_name || order.original_piece?.customer_name || '';
-  const environmentName = order.environment_name || order.original_piece?.environment || order.original_piece?.environment_name || 'Geral / Produção';
+  const environmentName = order.environment_name
+    || order.original_piece?.environment
+    || order.original_piece?.environment_name
+    || 'Geral / Produção';
+
   const storedStage = String(order.rejection_stage || '').trim();
-  const rawRejectionStage = storedStage && !['n/a', 'concluída', 'concluida', 'completed', 'created'].includes(storedStage.toLowerCase())
+  const rawRejectionStage = storedStage
+    && !['n/a', 'concluída', 'concluida', 'completed', 'created'].includes(storedStage.toLocaleLowerCase('pt-BR'))
     ? storedStage
-    : (order.original_piece?.current_stage && !['created', 'completed', 'concluída', 'concluida'].includes(String(order.original_piece.current_stage).toLowerCase()) ? order.original_piece.current_stage : 'Corte');
+    : order.original_piece?.current_stage || 'Corte';
   const rejectionStage = formatStageName(rawRejectionStage);
+  const originCell = order.origin_cell_name && order.origin_cell_name !== 'Célula de Origem'
+    ? order.origin_cell_name
+    : `Célula de ${rejectionStage}`;
+  const operatorName = order.operator_name || order.original_piece?.operator_name || 'Operador da coleta';
 
-  const originCell = (order.origin_cell_name && order.origin_cell_name !== 'Célula de Origem') ? order.origin_cell_name : `Célula de ${rejectionStage}`;
-  const operatorName = order.operator_name || order.original_piece?.operator_name || 'Operador da Coleta';
-
-  const originalPieceUid = order.original_piece?.piece_uid 
-    || order.original_piece?.traceability_code 
-    || order.original_piece?.piece_code 
+  const originalPieceUid = order.original_piece?.piece_uid
+    || order.original_piece?.traceability_code
+    || order.original_piece?.piece_code
     || order.original_piece_id
-    || (order.replacement_code ? `PÇA-${order.replacement_code.replace('REP-', '')}` : `PÇA-${order.id.substring(0, 8)}`);
+    || (order.replacement_code
+      ? `PÇA-${order.replacement_code.replace('REP-', '')}`
+      : `PÇA-${String(order.id || '').substring(0, 8)}`);
+  const originalPieceName = order.original_piece?.piece_name
+    || order.original_piece?.description
+    || order.original_piece?.module_name
+    || 'Peça de produção';
 
-  const originalPieceName = order.original_piece?.piece_name 
-    || order.original_piece?.description 
-    || order.original_piece?.module_name 
-    || 'Peça de Produção';
-
-  // Destino pós-aprovação (Para onde a peça vai após aprovação)
-  const firstRouteStep = order.original_piece?.route_steps?.[0] || 'Corte (1ª Etapa)';
-  const destinationStage = formatStageName(
-    order.replacement_piece?.current_stage
-      ? order.replacement_piece.current_stage
-      : firstRouteStep
-  );
+  const routeSteps = Array.isArray(order.route_steps) ? order.route_steps : [];
+  const firstRouteStep = routeSteps[0] || order.original_piece?.route_steps?.[0] || 'Corte';
+  const destinationStage = formatStageName(order.replacement_piece?.current_stage || firstRouteStep);
+  const orderCompleted = ['completed', 'Finalizada'].includes(order.status) || order.replacement_completed === true;
+  const completedLabels = normalizeList(orderCompleted
+    ? routeSteps
+    : [
+      ...(order.replacement_piece?.completed_steps || []),
+      ...(order.completed_steps || []),
+    ]);
+  let highestCompletedIndex = -1;
+  routeSteps.forEach((step, index) => {
+    if (completedLabels.includes(formatStageName(step).toLocaleLowerCase('pt-BR'))) {
+      highestCompletedIndex = Math.max(highestCompletedIndex, index);
+    }
+  });
 
   return (
-    <div className={`bg-card border ${isSelected ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-border/80'} rounded-2xl p-4 shadow-sm hover:shadow-md transition-all space-y-3`}>
-      {/* Cabeçalho */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-border/40">
-        <div className="flex items-center gap-3">
+    <article className={`space-y-4 rounded-3xl border bg-card p-4 shadow-sm transition-all hover:shadow-md md:p-5 ${
+      isSelected ? 'border-amber-500 ring-2 ring-amber-500/15' : 'border-border/80'
+    }`}>
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border/40 pb-3">
+        <div className="flex min-w-0 items-start gap-3">
           <Checkbox
             checked={isSelected}
             onCheckedChange={onToggleSelect}
-            className="w-4 h-4 rounded-md border-border text-amber-500 focus:ring-amber-500"
+            className="mt-1 h-4 w-4 rounded-md border-border text-amber-500 focus:ring-amber-500"
           />
-          <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold">
-            <RotateCcw className="w-4 h-4" />
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600">
+            <RotateCcw className="h-5 w-5" />
           </div>
-          <div>
-            <p className="text-xs font-mono font-extrabold text-foreground flex items-center gap-1.5">
-              <span>{order.replacement_code || `ORD-${order.id.substring(0, 8)}`}</span>
-              <Badge variant="outline" className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${statusConfig.color}`}>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-sm font-black text-foreground">
+                {order.replacement_code || `ORD-${String(order.id || '').substring(0, 8)}`}
+              </span>
+              <Badge variant="outline" className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${statusConfig.color}`}>
                 {statusConfig.label}
               </Badge>
-            </p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
-              Criado há {ageHours}h ({createdAt.toLocaleDateString('pt-BR')} às {createdAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Criada há {ageHours}h · {Number.isNaN(createdAt.getTime())
+                ? 'data indisponível'
+                : `${createdAt.toLocaleDateString('pt-BR')} às ${createdAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <span className={`text-xs ${priorityConfig.color}`}>
-            Prioridade: <strong>{priorityConfig.label}</strong>
-          </span>
+          <span className={`text-xs ${priorityConfig.color}`}>Prioridade: <strong>{priorityConfig.label}</strong></span>
           <Button
+            type="button"
             variant="ghost"
             size="sm"
-            onClick={() => setExpanded(!expanded)}
-            className="h-8 w-8 p-0 rounded-lg text-muted-foreground"
+            onClick={() => setExpanded((current) => !current)}
+            className="h-8 w-8 rounded-lg p-0 text-muted-foreground"
+            aria-label={expanded ? 'Ocultar detalhes' : 'Exibir detalhes'}
           >
-            {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
         </div>
-      </div>
+      </header>
 
-      {/* Conteúdo Principal */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-        {/* Motivo e Defeito */}
-        <div className="bg-secondary/30 p-2.5 rounded-xl space-y-1">
-          <p className="text-muted-foreground font-semibold flex items-center gap-1">
-            <ShieldAlert className="w-3.5 h-3.5 text-rose-500" />
-            Motivo / Defeito:
-          </p>
+      <div className="grid gap-3 text-xs md:grid-cols-3">
+        <SummaryBlock icon={ShieldAlert} iconClass="text-rose-500" title="Motivo / defeito">
           <p className="font-bold text-foreground">{order.reason || 'Não informado'}</p>
-          {order.defect_name && (
-            <p className="text-[11px] text-muted-foreground">Catálogo: {order.defect_name}</p>
-          )}
-        </div>
-
-        {/* Lote Geral, Lote Cliente e Pedido */}
-        <div className="bg-secondary/30 p-2.5 rounded-xl space-y-1">
-          <p className="text-muted-foreground font-semibold flex items-center gap-1">
-            <Box className="w-3.5 h-3.5 text-blue-500" />
-            Lotes & Pedido:
-          </p>
-          <div className="space-y-0.5">
-            {generalLot && (
-              <p className="text-[11px] font-mono font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                <span className="text-muted-foreground font-normal">Lote Geral:</span>
-                <span>{generalLot}</span>
-              </p>
-            )}
-            <p className="text-xs font-mono font-bold text-foreground flex items-center gap-1">
-              <span className="text-muted-foreground font-normal">Lote Cliente:</span>
-              <span>{clientLot}</span>
-            </p>
-          </div>
-          <p className="text-[11px] text-muted-foreground pt-0.5">
-            {orderNumber ? `Pedido: ${orderNumber}` : ''} {customerName ? `• ${customerName}` : ''}
-          </p>
-        </div>
-
-        {/* Célula e Etapa de Origem */}
-        <div className="bg-secondary/30 p-2.5 rounded-xl space-y-1">
-          <p className="text-muted-foreground font-semibold flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5 text-indigo-500" />
-            Origem da Reprovação:
-          </p>
+          {order.defect_name && <p className="text-[11px] text-muted-foreground">Catálogo: {order.defect_name}</p>}
+        </SummaryBlock>
+        <SummaryBlock icon={Box} iconClass="text-blue-500" title="Lotes e pedido">
+          {generalLot && <p><span className="text-muted-foreground">Lote geral:</span> <strong className="font-mono text-blue-600 dark:text-blue-400">{generalLot}</strong></p>}
+          <p><span className="text-muted-foreground">Lote cliente:</span> <strong className="font-mono">{clientLot}</strong></p>
+          <p className="text-[11px] text-muted-foreground">{orderNumber ? `Pedido: ${orderNumber}` : 'Pedido não informado'}{customerName ? ` · ${customerName}` : ''}</p>
+        </SummaryBlock>
+        <SummaryBlock icon={Clock} iconClass="text-indigo-500" title="Origem da reprovação">
           <p className="font-bold text-foreground">{originCell}</p>
           <p className="text-[11px] text-muted-foreground">Etapa reprovada: <strong className="text-rose-600 dark:text-rose-400">{rejectionStage}</strong></p>
-        </div>
+        </SummaryBlock>
       </div>
 
-      {/* Relação entre Peça Original, Substituta e Destino Pós-Aprovação */}
-      <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-3 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="space-y-1">
-          <p className="text-[11px] text-amber-700 dark:text-amber-300 font-bold uppercase tracking-wider">
-            Peça Original (Reprovada em {rejectionStage})
-          </p>
-          <div className="flex flex-wrap items-center gap-1.5 font-mono">
-            <span className="font-extrabold text-foreground text-xs">{originalPieceUid}</span>
-            {order.original_piece?.piece_code && order.original_piece.piece_code !== originalPieceUid && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-500/10 text-amber-700 dark:text-amber-300 font-mono font-bold border-amber-500/30">
-                Cód: {order.original_piece.piece_code}
-              </Badge>
-            )}
-            {order.original_piece?.traceability_code && order.original_piece.traceability_code !== originalPieceUid && order.original_piece.traceability_code !== order.original_piece?.piece_code && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-secondary/80 text-muted-foreground font-mono">
-                Tag / Rastreio: {order.original_piece.traceability_code}
-              </Badge>
-            )}
-          </div>
-          <p className="text-muted-foreground font-semibold">{originalPieceName}</p>
-          {(order.original_piece?.material || order.original_piece?.color || order.original_piece?.thickness) && (
-            <p className="text-[10px] text-muted-foreground/80">
-              {[
-                order.original_piece.material,
-                order.original_piece.color,
-                order.original_piece.thickness ? `${order.original_piece.thickness}mm` : null,
-                order.original_piece.length && order.original_piece.width ? `${order.original_piece.length}x${order.original_piece.width}mm` : null
-              ].filter(Boolean).join(' • ')}
-            </p>
-          )}
+      <section className="flex flex-col gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 space-y-1">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">Peça original reprovada</p>
+          <p className="break-all font-mono text-sm font-black text-foreground">{originalPieceUid}</p>
+          <p className="font-semibold text-muted-foreground">{originalPieceName}</p>
         </div>
-
-        <ArrowRight className="w-5 h-5 text-amber-500 shrink-0 hidden sm:block" />
-
-        <div className="space-y-0.5 sm:text-right">
-          <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-bold uppercase tracking-wider">Peça Substituta & Destino Pós-Aprovação</p>
-          <p className="font-mono font-bold text-foreground">
-            {order.replacement_piece?.piece_uid ? (
-              <span className="text-emerald-600 dark:text-emerald-400">{order.replacement_piece.piece_uid}</span>
-            ) : (
-              <span className="text-muted-foreground italic">Aguardando aprovação</span>
-            )}
+        <ArrowRight className="hidden h-5 w-5 shrink-0 text-amber-500 sm:block" />
+        <div className="min-w-0 space-y-1 sm:text-right">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Peça substituta e destino</p>
+          <p className="break-all font-mono text-sm font-black text-foreground">
+            {order.replacement_piece?.piece_uid
+              ? <span className="text-emerald-600 dark:text-emerald-400">{order.replacement_piece.piece_uid}</span>
+              : <span className="italic text-muted-foreground">Aguardando aprovação</span>}
           </p>
-          <p className="text-muted-foreground flex items-center sm:justify-end gap-1">
-            <span>Vai para:</span>
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border-emerald-500/30">
+          <p className="flex items-center gap-1 text-muted-foreground sm:justify-end">
+            Vai para:
+            <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
               {destinationStage}
             </Badge>
           </p>
         </div>
-      </div>
+      </section>
 
-      {/* Sequenciamento da Rota Produtiva e Linha do Tempo Interativa MES */}
-      {order.route_steps && order.route_steps.length > 0 && (
-        <div className="bg-secondary/20 border border-border/40 rounded-xl p-3 text-xs space-y-2">
-          <p className="text-[11px] text-muted-foreground font-semibold flex items-center justify-between">
-            <span className="flex items-center gap-1">
-              <GitCommit className="w-3.5 h-3.5 text-blue-500" />
-              Linha do Tempo da Rota Real MES:
-            </span>
-            <span className="text-[10px] text-muted-foreground">Clique para detalhes</span>
-          </p>
-
+      {routeSteps.length > 0 && (
+        <section className="space-y-2 rounded-2xl border border-border/40 bg-secondary/20 p-3 text-xs">
+          <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-muted-foreground">
+            <span className="flex items-center gap-1.5"><GitCommit className="h-3.5 w-3.5 text-blue-500" /> Rota produtiva da reposição</span>
+            <span className="text-[10px]">A substituta reinicia na primeira etapa</span>
+          </div>
           <div className="flex flex-wrap items-center gap-1.5 pt-1">
-            {(() => {
-              const isOrderCompleted = order.status === 'completed' || order.replacement_completed === true;
-
-              // CORRECAO: para pecas de reposicao, a trilha reinicia do zero no Corte
-              // Usar APENAS completed_steps da peca de reposicao — nao herdar da peca original
-              // A peca original tem status 'replaced' e sua trilha e historica, nao da reposicao
-              const rawCompletedList = isOrderCompleted
-                ? (order.route_steps || []).map(s => formatStageName(s))  // toda rota concluida
-                : [
-                    ...(order.replacement_piece?.completed_steps || []),
-                    ...(order.completed_steps || [])
-                    // NAO incluir order.original_piece?.completed_steps aqui!
-                  ].map(s => formatStageName(s));
-
-              // Identificar a etapa mais avançada que foi concluída na rota
-              let highestCompletedIndex = -1;
-              (order.route_steps || []).forEach((step, index) => {
-                const formatted = formatStageName(step);
-                if (rawCompletedList.some(cs => cs.toLowerCase() === formatted.toLowerCase())) {
-                  highestCompletedIndex = Math.max(highestCompletedIndex, index);
-                }
-              });
-
-              // Primeira etapa pendente após a mais avançada concluída
-              const nextPendingStepInRoute = isOrderCompleted ? null : (order.route_steps || [])
-                .map(s => formatStageName(s))
-                .find((_, index) => index > highestCompletedIndex);
-
-              return order.route_steps.map((step, idx) => {
-                const formattedStep = formatStageName(step);
-
-                // Uma etapa e concluida se a ordem esta marcada como concluida, ou esta explicitamente na lista, ou e anterior/igual a etapa mais avancada concluida
-                const isCompleted = isOrderCompleted || idx <= highestCompletedIndex || rawCompletedList.some(cs => cs.toLowerCase() === formattedStep.toLowerCase());
-
-                const isCurrent = !isCompleted && nextPendingStepInRoute && nextPendingStepInRoute.toLowerCase() === formattedStep.toLowerCase();
-
-                let badgeStyle = 'bg-slate-500/10 text-slate-500 border-slate-500/20';
-                let icon = '🔒';
-
-                if (isCompleted) {
-                  badgeStyle = 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30';
-                  icon = '✓';
-                } else if (isCurrent) {
-                  badgeStyle = 'bg-cyan-500/10 text-cyan-600 border-cyan-500/40 ring-1 ring-cyan-500/30 animate-pulse';
-                  icon = '●';
-                } else {
-                  badgeStyle = 'bg-slate-500/10 text-slate-500 border-slate-500/20';
-                  icon = '🔒';
-                }
-
-                return (
-                  <Fragment key={idx}>
-                    {idx > 0 && <span className="text-muted-foreground text-[10px]">➔</span>}
-                    <Badge
-                      variant="outline"
-                      className={`text-[11px] px-2.5 py-1 font-bold cursor-pointer hover:opacity-80 transition-all ${badgeStyle}`}
-                      title={`Etapa: ${formattedStep} (${isCompleted ? 'Concluída (Verde)' : isCurrent ? 'Destrancada / Em Produção (Aguardando Coleta)' : 'Bloqueada (Aguardando etapas anteriores)'})`}
-                    >
-                      <span className="mr-1">{icon}</span>
-                      {formattedStep}
-                    </Badge>
-                  </Fragment>
-                );
-              });
-            })()}
-
+            {routeSteps.map((step, index) => {
+              const label = formatStageName(step);
+              const completed = orderCompleted || index <= highestCompletedIndex;
+              const current = !completed && index === highestCompletedIndex + 1;
+              const style = completed
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600'
+                : current
+                  ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-600 ring-1 ring-cyan-500/20'
+                  : 'border-border bg-background/50 text-muted-foreground';
+              return (
+                <Fragment key={`${step}-${index}`}>
+                  {index > 0 && <span className="text-[10px] text-muted-foreground">➔</span>}
+                  <Badge variant="outline" className={`px-2.5 py-1 text-[11px] font-bold ${style}`}>
+                    <span className="mr-1">{completed ? '✓' : current ? '●' : '○'}</span>{label}
+                  </Badge>
+                </Fragment>
+              );
+            })}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* Expansão com Detalhes Adicionais */}
       {expanded && (
-        <div className="pt-2 border-t border-border/40 space-y-2 text-xs text-muted-foreground animate-in fade-in duration-200">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <p><span className="font-semibold">Solicitante:</span> {operatorName}</p>
-            <p><span className="font-semibold">Ambiente:</span> {environmentName}</p>
-            <p><span className="font-semibold">Aprovado em:</span> {order.approved_at ? new Date(order.approved_at).toLocaleDateString('pt-BR') : 'Pendente'}</p>
-            <p><span className="font-semibold">Concluído em:</span> {order.completed_at ? new Date(order.completed_at).toLocaleDateString('pt-BR') : 'Em andamento'}</p>
-          </div>
-          {order.notes && (
-            <div className="bg-secondary/40 p-2 rounded-lg border border-border/30 text-[11px]">
-              <strong className="text-foreground">Observações:</strong> {order.notes}
-            </div>
-          )}
-        </div>
+        <section className="grid gap-2 border-t border-border/40 pt-3 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
+          <p><span className="font-semibold text-foreground">Solicitante:</span> {operatorName}</p>
+          <p><span className="font-semibold text-foreground">Ambiente:</span> {environmentName}</p>
+          <p><span className="font-semibold text-foreground">Aprovada em:</span> {order.approved_at ? new Date(order.approved_at).toLocaleString('pt-BR') : 'Pendente'}</p>
+          <p><span className="font-semibold text-foreground">Concluída em:</span> {order.completed_at ? new Date(order.completed_at).toLocaleString('pt-BR') : 'Em andamento'}</p>
+          {order.notes && <p className="sm:col-span-2 lg:col-span-4"><span className="font-semibold text-foreground">Observações:</span> {order.notes}</p>}
+        </section>
       )}
 
-      {/* Ações da Ordem conforme perfil */}
-      <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-border/40">
+      <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-border/40 pt-3">
         {originalPieceUid && (
-          <Button
-            type="button"
-            asChild
-            variant="outline"
-            size="sm"
-            className="h-9 text-xs font-bold border-border/60 hover:bg-secondary/40 text-foreground rounded-xl flex items-center gap-1.5"
-          >
-            <Link to={`/rastreabilidade?tab=kanban`}>
-              <Layers className="w-3.5 h-3.5 text-[#2d9c4a]" />
-              Rastreabilidade
-            </Link>
+          <Button asChild type="button" variant="outline" size="sm" className="h-9 rounded-xl text-xs font-bold">
+            <Link to="/rastreabilidade?tab=kanban"><Layers className="mr-1.5 h-3.5 w-3.5 text-[#2d9c4a]" /> Rastreabilidade</Link>
           </Button>
         )}
 
-        {/* Novo Botão Imprimir com DropdownMenu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-9 text-xs font-bold border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 rounded-xl flex items-center gap-1.5 shadow-sm"
-            >
-              <Printer className="w-3.5 h-3.5 text-amber-500" />
-              Imprimir
-              <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+            <Button type="button" variant="outline" size="sm" className="h-9 rounded-xl border-amber-500/40 text-xs font-bold text-amber-600 hover:bg-amber-500/10 dark:text-amber-400">
+              <Printer className="mr-1.5 h-3.5 w-3.5" /> Imprimir <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56 rounded-2xl p-1.5 border-border shadow-xl text-xs">
-            <DropdownMenuItem onClick={() => onOpenPdfReport(order)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2">
-              <FileText className="w-4 h-4 text-blue-500" />
-              <span>Visualizar relatório</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onOpenPdfReport(order)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2">
-              <Download className="w-4 h-4 text-emerald-500" />
-              <span>Baixar relatório PDF</span>
-            </DropdownMenuItem>
+          <DropdownMenuContent align="end" className="w-60 rounded-2xl p-1.5 text-xs">
+            <DropdownMenuItem onClick={() => onOpenPdfReport(order)} className="cursor-pointer rounded-xl py-2"><FileText className="mr-2 h-4 w-4 text-blue-500" /> Visualizar relatório</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onOpenPdfReport(order)} className="cursor-pointer rounded-xl py-2"><Download className="mr-2 h-4 w-4 text-emerald-500" /> Baixar relatório PDF</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onOpenLabelModal(order)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2">
-              <Printer className="w-4 h-4 text-amber-500" />
-              <span>Visualizar etiqueta</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onOpenLabelModal(order)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2 font-bold text-foreground">
-              <Printer className="w-4 h-4 text-amber-500" />
-              <span>Imprimir etiqueta</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onOpenLabelModal(order)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2">
-              <RotateCcw className="w-4 h-4 text-indigo-500" />
-              <span>Reimprimir etiqueta</span>
-            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onOpenLabelModal(order)} className="cursor-pointer rounded-xl py-2 font-bold"><Printer className="mr-2 h-4 w-4 text-amber-500" /> Imprimir etiqueta</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onOpenLabelModal(order)} className="cursor-pointer rounded-xl py-2"><RotateCcw className="mr-2 h-4 w-4 text-indigo-500" /> Reimprimir etiqueta</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onOpenHistoryModal(order)} className="cursor-pointer rounded-xl flex items-center gap-2 py-2 text-muted-foreground">
-              <History className="w-4 h-4 text-slate-500" />
-              <span>Consultar histórico de impressão</span>
-            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onOpenHistoryModal(order)} className="cursor-pointer rounded-xl py-2 text-muted-foreground"><History className="mr-2 h-4 w-4" /> Histórico de impressão</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
         {canApprove && (
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => onApprove(order)}
-            className="h-9 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl flex items-center gap-1.5"
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            Aprovar Reposição
+          <Button type="button" size="sm" onClick={() => onApprove(order)} className="h-9 rounded-xl bg-blue-600 text-xs font-bold text-white hover:bg-blue-700">
+            <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Aprovar Reposição
           </Button>
         )}
-
         {canRelease && (
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => onRelease(order)}
-            className="h-9 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl flex items-center gap-1.5"
-          >
-            <Play className="w-3.5 h-3.5" />
-            Liberar Fabricação
+          <Button type="button" size="sm" onClick={() => onRelease(order)} className="h-9 rounded-xl bg-indigo-600 text-xs font-bold text-white hover:bg-indigo-700">
+            <Play className="mr-1.5 h-3.5 w-3.5" /> Liberar fabricação
           </Button>
         )}
-
-        {/* Conclusão forçada restrita a Administrador */}
-        {userPermissions.admin && !['completed', 'cancelled'].includes(order.status) && (
+        {canForceComplete && (
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={() => onComplete(order)}
-            className="h-9 text-xs font-bold border-rose-500/30 text-rose-600 hover:bg-rose-500/10 rounded-xl"
-            title="Conclusão excepcional forçada protegida por senha e auditoria"
+            className="h-9 rounded-xl border-rose-500/30 text-xs font-bold text-rose-600 hover:bg-rose-500/10"
+            title="Conclusão excepcional com justificativa e auditoria"
           >
             Concluir Forçada
           </Button>
         )}
-
         {canCancel && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => onCancel(order)}
-            className="h-9 text-xs font-bold border-rose-500/40 text-rose-600 hover:bg-rose-500/10 rounded-xl"
-          >
+          <Button type="button" variant="outline" size="sm" onClick={() => onCancel(order)} className="h-9 rounded-xl border-rose-500/40 text-xs font-bold text-rose-600 hover:bg-rose-500/10">
             Cancelar
           </Button>
         )}
-      </div>
+      </footer>
+    </article>
+  );
+}
+
+function SummaryBlock({ icon: Icon, iconClass, title, children }) {
+  return (
+    <div className="space-y-1 rounded-2xl bg-secondary/30 p-3">
+      <p className="flex items-center gap-1.5 font-semibold text-muted-foreground"><Icon className={`h-3.5 w-3.5 ${iconClass}`} /> {title}</p>
+      {children}
     </div>
   );
 }
