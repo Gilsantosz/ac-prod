@@ -30,6 +30,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
             src/pages/TraceabilityCollection.jsx \
-            src/lib/collectionEventQueue.js
-          git commit -m "fix(collection): finaliza reconciliação assíncrona da coleta"
+            src/lib/collectionEventQueue.js \
+            scripts/audit_collection_rollout.py
+          git commit -m "fix(collection): finaliza contrato assíncrono da coleta"
           git push origin HEAD:fix/collection-async-worker-v8-7
