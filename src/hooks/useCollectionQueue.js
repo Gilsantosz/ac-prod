@@ -239,8 +239,8 @@ export function useCollectionQueue(processFn, options = {}) {
 
   const processNow = useCallback(async (clientEventId) => {
     if (microBatch) {
-      // Compatibilidade com a tela atual: confirma a recepção local, mas não
-      // espera o PostgreSQL. O setInterval fará o envio em lote em até 5s.
+      // Compatibilidade: confirma a recepção local, mas não espera o PostgreSQL.
+      // O setInterval fará o envio em lote em até 5s.
       refreshStatsSafely();
       return {
         success: true,
