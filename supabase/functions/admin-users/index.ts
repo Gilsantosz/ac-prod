@@ -250,26 +250,52 @@ Deno.serve(async (request) => {
     }
 
     let authUser = null;
-    const { data: existingUsers, error: listError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    if (listError) throw listError;
-    authUser = existingUsers.users.find((candidate) => candidate.email?.toLowerCase() === email) || null;
 
-    if (authUser) {
-      const { data: updated, error: updateError } = await admin.auth.admin.updateUserById(authUser.id, {
-        password,
-        email_confirm: true,
-        user_metadata: { name },
-      });
-      if (updateError) throw updateError;
-      authUser = updated.user;
+    // Tenta criar diretamente — se já existir, o Supabase retorna erro com user_id
+    const { data: created, error: createError } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { name },
+    });
+
+    if (createError) {
+      // Se o erro indica que o e-mail já existe no Auth, recupera e atualiza
+      const isDuplicate =
+        createError.message?.toLowerCase().includes('already been registered') ||
+        createError.message?.toLowerCase().includes('already exists') ||
+        createError.message?.toLowerCase().includes('duplicate') ||
+        (createError as any)?.status === 422;
+
+      if (isDuplicate) {
+        // Busca o usuário existente pelo e-mail via admin API
+        const { data: listResult, error: listErr } = await admin.auth.admin.listUsers({
+          page: 1,
+          perPage: 50,
+        });
+        const existingAuth = listErr
+          ? null
+          : listResult?.users?.find((u) => u.email?.toLowerCase() === email);
+
+        if (!existingAuth) {
+          // Fallback: tenta criar de novo ou retorna erro amigável
+          return json({
+            success: false,
+            error: 'Este e-mail já possui uma conta de autenticação mas não foi possível recuperá-la. Tente resetar a senha.',
+          }, 409);
+        }
+
+        const { data: updated, error: updateError } = await admin.auth.admin.updateUserById(existingAuth.id, {
+          password,
+          email_confirm: true,
+          user_metadata: { name },
+        });
+        if (updateError) throw updateError;
+        authUser = updated.user;
+      } else {
+        throw createError;
+      }
     } else {
-      const { data: created, error: createError } = await admin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: { name },
-      });
-      if (createError) throw createError;
       authUser = created.user;
     }
 
