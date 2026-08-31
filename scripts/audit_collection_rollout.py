@@ -170,6 +170,8 @@ def main() -> int:
             "pull_request:",
             'REQUIRED_MIGRATION_VERSION: "20260831150725"',
             'REQUIRED_RELEASE_VERSION: "20260831_acprod_collection_fast8_v8_5"',
+            'REQUIRED_ASYNC_COLLECTION_MIGRATION_VERSION: "v8.8"',
+            'REQUIRED_ASYNC_COLLECTION_RELEASE_VERSION: "20260831_acprod_collection_async_sync_v8_8"',
             "collection_exact_8_digit_scan",
             "collection_active_tags_8_digits",
             "replacement_quality_role",
@@ -179,6 +181,21 @@ def main() -> int:
             "replacement_force_conflict_safe",
             "get_public_collection_release",
             "DATABASE_RELEASE_OK",
+            "get_public_collection_async_release",
+            "ASYNC_COLLECTION_RELEASE_OK",
+            "collection_async_ingress_is_lightweight",
+            "collection_async_private_credentials",
+            "collection_async_vault_secrets",
+            "collection_async_worker_rpcs",
+            "collection_async_realtime",
+            "collection_async_wakeup_trigger",
+            "collection_async_fallback_cron",
+            "collection_async_inbox_columns",
+            "collection_async_session_lock_removed",
+            "collection_event_payload_sanitizer",
+            "collection_dashboard_state_cache",
+            "collection_shift_kpis_direct_stage_index",
+            "collection_async_worker_concurrency_bounded",
             "needs: [database-release]",
             "actions/checkout@v6",
             "actions/setup-node@v6",
@@ -190,6 +207,17 @@ def main() -> int:
     for unsafe_marker in ("Pulando migracao", "Skipping database migrations"):
         if unsafe_marker in workflow:
             fail(f"workflow permite falso positivo: {unsafe_marker}")
+    require_none(
+        workflow,
+        (
+            "REQUIRED_MICRO_BATCH_MIGRATION_VERSION",
+            "REQUIRED_MICRO_BATCH_RELEASE_VERSION",
+            "get_public_collection_micro_batch_release",
+            "MICRO_BATCH_RELEASE_OK",
+            "collection_micro_batch_explicit_grants",
+        ),
+        "workflow",
+    )
 
     collection_service = read(repo / "src" / "lib" / "collectionService.js")
     require_all(
@@ -376,7 +404,7 @@ def main() -> int:
 
     print("AUDIT_ACPROD_ROLLOUT_OK")
     print(f"ledger_versions={len(REQUIRED_LEDGER)}")
-    print("database_gate=collection_fast8_v8_5_fail_closed")
+    print("database_gate=collection_fast8_v8_5+async_v8_8_fail_closed")
     print("scanner_trigger=immediate_on_eighth_digit")
     print("scanner_input=exactly_8_numeric_digits")
     print("scanner_throughput=non_blocking_capture_fifo_sync")
