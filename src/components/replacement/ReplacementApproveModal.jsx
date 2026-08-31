@@ -5,7 +5,7 @@ import { formatStageName } from '@/lib/replacementService';
 
 /**
  * A aprovação é uma autorização de produção, não uma baixa produtiva.
- * Por isso a ação é direta: não solicita senha, justificativa ou células.
+ * Por isso a ação é direta e não abre formulário ou seleção de células.
  */
 export default function ReplacementApproveModal({
   open = false,
