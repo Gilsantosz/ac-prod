@@ -3,6 +3,13 @@ import { Info, Lock } from 'lucide-react';
 import ProductionTagInput from './ProductionTagInput';
 import ScannerModeSelector from './ScannerModeSelector';
 import MobileCameraScanner from './MobileCameraScanner';
+import {
+  getProductionScanCodeError,
+  parseProductionScanCode,
+  PRODUCTION_SCAN_LENGTH,
+} from '@/lib/productionScanCode';
+
+const DUPLICATE_TRIGGER_GUARD_MS = 250;
 
 export default function TraceabilityScannerPanel({
   mode,
@@ -22,10 +29,17 @@ export default function TraceabilityScannerPanel({
   modalOpen = false,
 }) {
   const [value, setValue] = useState('');
+  const [scanError, setScanError] = useState(null);
+  const [capturedCount, setCapturedCount] = useState(0);
   const inputRef = useRef(null);
-  const submittingRef = useRef(false);
+  const lastCaptureRef = useRef({ code: null, at: 0 });
+  const mountedRef = useRef(true);
   const isSuspended = activeDowntime || modalOpen;
   const contextReady = Boolean(cellName && shift && operator) && !isSuspended;
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+  }, []);
 
   const refocus = useCallback(() => {
     if (mode !== 'scanner' || isSuspended) return;
@@ -37,66 +51,157 @@ export default function TraceabilityScannerPanel({
         && activeElement !== inputRef.current
         && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(activeElement.tagName)) || hasOpenDialog;
       if (!userIsUsingAnotherControl) inputRef.current?.focus();
-    }, 40);
+    }, 20);
   }, [mode, isSuspended]);
 
   useEffect(() => {
     refocus();
   }, [mode, refocus]);
 
-  const submitInput = useCallback(async ({ confirmed = mode !== 'manual' } = {}) => {
-    const rawValue = value;
-    if (!String(rawValue || '').trim() || !contextReady || loading || submittingRef.current || activeDowntime) return;
-    submittingRef.current = true;
-    try {
-      await onRead({
-        rawValue,
-        readerType: mode === 'manual' ? 'manual' : 'keyboard_barcode',
-        readerName: mode === 'manual' ? 'Digitação Manual' : 'Scanner Teclado',
-        mode,
-        confirmed,
-        cellName,
-        stationName: cellName,
-        operator,
-        shift,
-        machineId: machine?.id || null,
-        machineName: machine?.name || null,
-      });
-      setValue('');
-    } finally {
-      submittingRef.current = false;
-      if (mode === 'scanner') setTimeout(() => inputRef.current?.focus(), 40);
-    }
-  }, [cellName, contextReady, loading, mode, onRead, operator, shift, value, machine, activeDowntime]);
-
   useEffect(() => {
-    if (mode !== 'scanner' || !contextReady || loading || value.trim().length < 3 || activeDowntime) return undefined;
-    const autoSubmitTimer = setTimeout(() => submitInput(), 160);
-    return () => clearTimeout(autoSubmitTimer);
-  }, [contextReady, loading, mode, submitInput, value, activeDowntime]);
+    if (feedback) setScanError(null);
+  }, [feedback]);
 
-  const submitCamera = useCallback((cameraReading) => {
-    if (activeDowntime) return;
-    onRead({
-      ...cameraReading,
+  const dispatchCapturedReading = useCallback((code, options = {}) => {
+    if (!contextReady || activeDowntime) {
+      setScanError('A coleta está bloqueada até que a célula, o turno e o operador estejam disponíveis.');
+      return false;
+    }
+
+    const parsed = parseProductionScanCode(code);
+    if (!parsed.valid) {
+      setScanError(getProductionScanCodeError(code));
+      return false;
+    }
+
+    const now = performance.now();
+    if (
+      lastCaptureRef.current.code === parsed.value
+      && now - lastCaptureRef.current.at < DUPLICATE_TRIGGER_GUARD_MS
+    ) {
+      return false;
+    }
+    lastCaptureRef.current = { code: parsed.value, at: now };
+
+    // Libera o campo antes de qualquer acesso ao IndexedDB ou à rede. Assim o
+    // próximo código já pode ser recebido enquanto o anterior sincroniza.
+    setValue('');
+    setScanError(null);
+    setCapturedCount((current) => current + 1);
+
+    const readerType = options.readerType
+      || (mode === 'manual' ? 'manual' : 'keyboard_barcode');
+    const readerName = options.readerName
+      || (mode === 'manual' ? 'Digitação Manual' : 'Scanner Teclado');
+    const capturedAtClient = new Date().toISOString();
+
+    Promise.resolve(onRead({
+      ...(options.extraPayload || {}),
+      rawValue: parsed.value,
+      readerType,
+      readerName,
+      mode: options.mode || mode,
+      confirmed: options.confirmed ?? (mode !== 'manual'),
       cellName,
-      stationName: '',
+      stationName: options.stationName ?? cellName,
       operator,
       shift,
       machineId: machine?.id || null,
       machineName: machine?.name || null,
+      fastPath: true,
+      exactDigitCapture: true,
+      expectedCodeLength: PRODUCTION_SCAN_LENGTH,
+      capturedAtClient,
+    }))
+      .catch((error) => {
+        console.error('Falha ao encaminhar leitura capturada:', error);
+        if (mountedRef.current) {
+          setScanError(error?.message || 'A leitura foi capturada, mas houve falha ao iniciar a sincronização.');
+        }
+      })
+      .finally(() => {
+        if (!mountedRef.current) return;
+        setCapturedCount((current) => Math.max(0, current - 1));
+        refocus();
+      });
+
+    refocus();
+    return true;
+  }, [activeDowntime, cellName, contextReady, machine, mode, onRead, operator, refocus, shift]);
+
+  const handleValueChange = useCallback((rawValue) => {
+    const parsed = parseProductionScanCode(rawValue);
+
+    if (parsed.hasUnsupportedCharacters || parsed.overflow) {
+      setValue('');
+      setScanError(getProductionScanCodeError(rawValue));
+      refocus();
+      return;
+    }
+
+    setValue(parsed.value);
+    setScanError(null);
+
+    if (mode === 'scanner' && parsed.valid) {
+      dispatchCapturedReading(parsed.value, {
+        readerType: 'keyboard_barcode',
+        readerName: 'Scanner Teclado',
+        mode: 'scanner',
+        confirmed: true,
+      });
+    }
+  }, [dispatchCapturedReading, mode, refocus]);
+
+  const submitInput = useCallback(({ confirmed = mode !== 'manual' } = {}) => {
+    const parsed = parseProductionScanCode(value);
+    if (!parsed.valid) {
+      setScanError(getProductionScanCodeError(value));
+      return;
+    }
+    if (mode === 'manual' && !confirmed) {
+      setScanError('Confirme que os 8 dígitos foram conferidos antes da baixa manual.');
+      return;
+    }
+
+    dispatchCapturedReading(parsed.value, {
+      readerType: mode === 'manual' ? 'manual' : 'keyboard_barcode',
+      readerName: mode === 'manual' ? 'Digitação Manual' : 'Scanner Teclado',
+      mode,
+      confirmed,
     });
-  }, [onRead, cellName, operator, shift, machine, activeDowntime]);
+  }, [dispatchCapturedReading, mode, value]);
+
+  const submitCamera = useCallback((cameraReading) => {
+    if (activeDowntime) return;
+    const rawValue = cameraReading?.rawValue
+      ?? cameraReading?.raw_value
+      ?? cameraReading?.tagValue
+      ?? '';
+    const parsed = parseProductionScanCode(rawValue);
+    if (!parsed.valid) {
+      setScanError(getProductionScanCodeError(rawValue));
+      return;
+    }
+
+    dispatchCapturedReading(parsed.value, {
+      readerType: cameraReading?.readerType || 'camera_barcode',
+      readerName: cameraReading?.readerName || 'Câmera do celular',
+      mode: 'camera',
+      confirmed: true,
+      stationName: '',
+      extraPayload: cameraReading,
+    });
+  }, [activeDowntime, dispatchCapturedReading]);
 
   useEffect(() => {
     if (!feedback) return;
-    
+
     const playSound = (alertLevel) => {
       try {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (!AudioCtx) return;
         const ctx = new AudioCtx();
-        
+
         if (alertLevel === 'green') {
           const osc = ctx.createOscillator();
           const gain = ctx.createGain();
@@ -130,16 +235,16 @@ export default function TraceabilityScannerPanel({
   }, [feedback]);
 
   return (
-    <div className="bg-card border border-border rounded-md p-4 sm:p-5 space-y-5">
+    <div className="space-y-5 rounded-md border border-border bg-card p-4 sm:p-5">
       <ScannerModeSelector value={mode} onChange={onModeChange} onOpenDowntime={onOpenDowntime} onToggleKiosk={onToggleKiosk} />
 
       {activeDowntime ? (
-        <div className="rounded-2xl border-2 border-amber-600/60 bg-amber-500/10 p-5 text-amber-900 dark:text-amber-200 space-y-2 shadow-md animate-in fade-in duration-200">
-          <div className="flex items-center gap-2.5 font-black text-sm uppercase tracking-wider text-amber-700 dark:text-amber-300">
-            <Lock className="w-5 h-5 text-amber-600 animate-pulse shrink-0" />
+        <div className="space-y-2 rounded-2xl border-2 border-amber-600/60 bg-amber-500/10 p-5 text-amber-900 shadow-md animate-in fade-in duration-200 dark:text-amber-200">
+          <div className="flex items-center gap-2.5 text-sm font-black uppercase tracking-wider text-amber-700 dark:text-amber-300">
+            <Lock className="h-5 w-5 shrink-0 animate-pulse text-amber-600" />
             <span>SISTEMA DE COLETA BLOQUEADO POR PARADA EM ANDAMENTO</span>
           </div>
-          <p className="text-xs leading-relaxed font-medium">
+          <p className="text-xs font-medium leading-relaxed">
             Parada ativa: <strong className="font-bold text-foreground">{activeDowntime.reason || 'Parada Operacional'}</strong>. A baixa e leitura de peças ficam travadas até que o cronômetro da parada seja encerrado no painel acima.
           </p>
         </div>
@@ -162,12 +267,14 @@ export default function TraceabilityScannerPanel({
               ref={inputRef}
               mode={mode}
               value={value}
-              onChange={setValue}
+              onChange={handleValueChange}
               onSubmit={submitInput}
               onBlur={refocus}
               loading={loading}
               ready={contextReady}
               afterInput={readerContext}
+              scanError={scanError}
+              capturedCount={capturedCount}
             />
           )}
 
@@ -179,7 +286,7 @@ export default function TraceabilityScannerPanel({
         <div
           role="status"
           data-status={feedback.status}
-          className={`rounded-xl border p-4 shadow-md transition-all flex flex-col gap-1.5 ${
+          className={`flex flex-col gap-1.5 rounded-xl border p-4 shadow-md transition-all ${
             feedback.alert_level === 'red' || ['rejected', 'blocked', 'error'].includes(feedback.status)
               ? 'border-red-300 border-red-500/30 bg-red-500/5 text-red-600 dark:bg-red-950/10 dark:text-red-400'
               : feedback.alert_level === 'yellow' || feedback.status === 'duplicated' || feedback.status === 'warning' || feedback.status === 'wrong_step'
@@ -189,59 +296,32 @@ export default function TraceabilityScannerPanel({
                   : 'border-emerald-300 border-emerald-500/30 bg-emerald-500/5 text-emerald-600 dark:bg-emerald-950/10 dark:text-emerald-400'
           }`}
         >
-          <div className="flex items-center gap-2 font-bold text-base uppercase tracking-wide">
+          <div className="flex items-center gap-2 text-base font-bold uppercase tracking-wide">
             {feedback.alert_level === 'red' || ['rejected', 'blocked', 'error'].includes(feedback.status) ? (
-              <>
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping shrink-0" />
-                ENTRADA BLOQUEADA
-              </>
+              <><span className="h-2.5 w-2.5 shrink-0 animate-ping rounded-full bg-red-500" />ENTRADA BLOQUEADA</>
             ) : feedback.alert_level === 'yellow' || feedback.status === 'duplicated' || feedback.status === 'warning' ? (
-              <>
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
-                ATENÇÃO DO OPERADOR
-              </>
+              <><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500" />ATENÇÃO DO OPERADOR</>
             ) : feedback.alert_level === 'blue' ? (
-              <>
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" />
-                INFORMAÇÃO DO FLUXO
-              </>
+              <><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-blue-500" />INFORMAÇÃO DO FLUXO</>
             ) : (
-              <>
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
-                PEÇA LIBERADA — OK
-              </>
+              <><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500" />PEÇA LIBERADA — OK</>
             )}
           </div>
           <p className="text-sm font-medium leading-relaxed">{feedback.message}</p>
           {(feedback.item || feedback.lot || feedback.order) && (
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 pt-2 mt-1 border-t border-current/15 text-xs">
-              <div>
-                <span className="block opacity-70">Peça</span>
-                <strong className="font-mono break-all">{feedback.item?.traceability_code || feedback.item?.piece_uid || feedback.reading?.tag_value || '—'}</strong>
-              </div>
-              <div>
-                <span className="block opacity-70">Lote cliente</span>
-                <strong>{feedback.lot?.lot_code || '—'}</strong>
-              </div>
-              <div>
-                <span className="block opacity-70">Pedido / OP</span>
-                <strong>{feedback.order?.order_number || feedback.order?.order_code || '—'}</strong>
-              </div>
-              <div>
-                <span className="block opacity-70">Cliente</span>
-                <strong>{feedback.order?.customer_name || '—'}</strong>
-              </div>
-              <div>
-                <span className="block opacity-70">Andamento do lote</span>
-                <strong>{Number(feedback.lot_progress_percent ?? feedback.lot?.progress_percent ?? 0).toFixed(1)}%</strong>
-              </div>
+            <div className="mt-1 grid grid-cols-2 gap-2 border-t border-current/15 pt-2 text-xs lg:grid-cols-5">
+              <div><span className="block opacity-70">Peça</span><strong className="break-all font-mono">{feedback.item?.traceability_code || feedback.item?.piece_uid || feedback.reading?.tag_value || '—'}</strong></div>
+              <div><span className="block opacity-70">Lote cliente</span><strong>{feedback.lot?.lot_code || '—'}</strong></div>
+              <div><span className="block opacity-70">Pedido / OP</span><strong>{feedback.order?.order_number || feedback.order?.order_code || '—'}</strong></div>
+              <div><span className="block opacity-70">Cliente</span><strong>{feedback.order?.customer_name || '—'}</strong></div>
+              <div><span className="block opacity-70">Andamento do lote</span><strong>{Number(feedback.lot_progress_percent ?? feedback.lot?.progress_percent ?? 0).toFixed(1)}%</strong></div>
             </div>
           )}
         </div>
       )}
 
-      <div className="flex items-start gap-2 text-xs text-muted-foreground border-t border-border pt-3">
-        <Info className="w-4 h-4 shrink-0" />
+      <div className="flex items-start gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
+        <Info className="h-4 w-4 shrink-0" />
         <span>Célula: <strong className="text-foreground">{cellName || 'não selecionada'}</strong>{machine && <> · Máquina: <strong className="text-foreground">{machine.name}</strong></>} · Turno: <strong className="text-foreground">{shift || 'não informado'}</strong> · Operador: <strong className="text-foreground">{operator || 'não informado'}</strong></span>
       </div>
     </div>
