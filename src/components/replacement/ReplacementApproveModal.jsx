@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
-import { approveReplacementWithCells } from '@/lib/replacementApprovalService';
+import { approveReplacement } from '@/lib/replacementApprovalService';
 import { formatStageName } from '@/lib/replacementService';
 
 /**
- * Mantém a assinatura histórica do componente para não quebrar a página de gestão,
- * mas executa a aprovação de forma direta, sem modal, justificativa ou baixa automática.
+ * A aprovação é uma autorização de produção, não uma baixa produtiva.
+ * Por isso a ação é direta: não solicita senha, justificativa ou células.
  */
 export default function ReplacementApproveModal({
   open = false,
@@ -14,6 +14,11 @@ export default function ReplacementApproveModal({
   onApproved = null,
 }) {
   const startedOrderRef = useRef(null);
+  const callbacksRef = useRef({ onOpenChange, onApproved });
+
+  useEffect(() => {
+    callbacksRef.current = { onOpenChange, onApproved };
+  }, [onOpenChange, onApproved]);
 
   useEffect(() => {
     if (!open || !orderId) {
@@ -21,38 +26,35 @@ export default function ReplacementApproveModal({
       return undefined;
     }
     if (startedOrderRef.current === orderId) return undefined;
-    startedOrderRef.current = orderId;
-    let active = true;
-    const toastId = toast.loading('Aprovando reposição e enviando para a fila produtiva...');
 
-    approveReplacementWithCells(orderId, {
-      priority: null,
-      notes: '',
-      selectedCells: [],
-    })
+    startedOrderRef.current = orderId;
+    let cancelled = false;
+    const toastId = toast.loading('Aprovando reposição e enviando a peça substituta para a fila produtiva...');
+
+    approveReplacement(orderId)
       .then((result) => {
-        if (!active) return;
-        const nextStage = result?.next_step ? formatStageName(result.next_step) : null;
+        if (cancelled) return;
+        const nextStage = result?.next_step_label || (result?.next_step ? formatStageName(result.next_step) : null);
         toast.success(
           nextStage
-            ? `Reposição aprovada. A peça substituta já está disponível no posto de ${nextStage}.`
+            ? `Reposição aprovada. A peça está disponível no posto de ${nextStage}.`
             : 'Reposição aprovada e enviada ao posto produtivo correspondente.',
           { id: toastId },
         );
-        onApproved?.(result);
-        onOpenChange?.(false);
+        callbacksRef.current.onApproved?.(result);
+        callbacksRef.current.onOpenChange?.(false);
       })
       .catch((error) => {
-        if (!active) return;
+        if (cancelled) return;
         console.error('Erro ao aprovar reposição:', error);
         toast.error(error.message || 'Falha ao aprovar a reposição.', { id: toastId });
-        onOpenChange?.(false);
+        callbacksRef.current.onOpenChange?.(false);
       });
 
     return () => {
-      active = false;
+      cancelled = true;
     };
-  }, [open, orderId, onApproved, onOpenChange]);
+  }, [open, orderId]);
 
   return null;
 }
