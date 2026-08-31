@@ -57,6 +57,12 @@ jobs:
         run: npm run lint
       - name: Typecheck
         run: npm run typecheck
+      - name: Validar sintaxe do worker Edge
+        run: |
+          node --check edge-worker/src/config.mjs
+          node --check edge-worker/src/durableMemoryQueue.mjs
+          node --check edge-worker/src/supabaseBatchSink.mjs
+          node --check edge-worker/src/index.mjs
       - name: Testes unitários
         run: npm run test:unit
       - name: Auditoria de dependências e segredos
