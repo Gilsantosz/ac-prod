@@ -16,6 +16,8 @@ env:
   EXPECTED_PROJECT_ID: uozuzdfvnufsjsonswag
   REQUIRED_MIGRATION_VERSION: "20260831150725"
   REQUIRED_RELEASE_VERSION: "20260831_acprod_collection_fast8_v8_5"
+  REQUIRED_MICRO_BATCH_MIGRATION_VERSION: "20260831163500"
+  REQUIRED_MICRO_BATCH_RELEASE_VERSION: "20260831_acprod_collection_micro_batch_v8_6"
 
 concurrency:
   group: acprod2-${{ github.workflow }}-${{ github.ref }}
@@ -163,6 +165,59 @@ jobs:
           print(f'DATABASE_RELEASE_OK migration={expected_migration} release={expected_release}')
           PY
 
+      - name: Consultar marcador do micro-batching v8.6
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "apikey: ${SUPABASE_ANON_KEY}" \
+            --header "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            --header "Content-Type: application/json" \
+            --data '{}' \
+            "${SUPABASE_URL}/rest/v1/rpc/get_public_collection_micro_batch_release" \
+            > "$response_file"
+          python3 - "$response_file" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+          payload = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          if isinstance(payload, list):
+              payload = payload[0] if payload else {}
+          if not isinstance(payload, dict):
+              raise SystemExit('ERRO: marcador do micro-batching retornou formato inválido.')
+          expected_migration = os.environ['REQUIRED_MICRO_BATCH_MIGRATION_VERSION']
+          expected_release = os.environ['REQUIRED_MICRO_BATCH_RELEASE_VERSION']
+          flags = payload.get('schema_flags') or {}
+          required_flags = (
+              'collection_micro_batch_ingress_table',
+              'collection_micro_batch_trigger',
+              'collection_micro_batch_reuses_transactional_rpc',
+              'collection_micro_batch_retry_contract',
+              'collection_micro_batch_rls',
+              'collection_micro_batch_explicit_grants',
+              'collection_manual_tags_excluded_from_fast8_gate',
+          )
+          failures = []
+          if payload.get('ready') is not True:
+              failures.append('ready=false')
+          if str(payload.get('migration_version','')) != expected_migration:
+              failures.append(f"migration={payload.get('migration_version')!r}; esperado={expected_migration!r}")
+          if str(payload.get('release_version','')) != expected_release:
+              failures.append(f"release={payload.get('release_version')!r}; esperado={expected_release!r}")
+          for flag in required_flags:
+              if flags.get(flag) is not True:
+                  failures.append(f'{flag}=false')
+          if failures:
+              raise SystemExit('ERRO: micro-batching Supabase incompatível. ' + '; '.join(failures))
+          print(f'MICRO_BATCH_RELEASE_OK migration={expected_migration} release={expected_release}')
+          PY
+
   build:
     name: Gerar artefato do release comprovado
     if: github.event_name != 'pull_request'
@@ -197,6 +252,8 @@ jobs:
             "run_id": "${GITHUB_RUN_ID}",
             "migration_version": "${REQUIRED_MIGRATION_VERSION}",
             "release_version": "${REQUIRED_RELEASE_VERSION}",
+            "micro_batch_migration_version": "${REQUIRED_MICRO_BATCH_MIGRATION_VERSION}",
+            "micro_batch_release_version": "${REQUIRED_MICRO_BATCH_RELEASE_VERSION}",
             "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
           EOF

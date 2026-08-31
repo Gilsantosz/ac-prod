@@ -1,0 +1,16 @@
+{
+  "name": "@acprod/edge-collector",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node --env-file=.env src/index.mjs",
+    "simulate": "node --env-file=.env src/index.mjs --simulate"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.106.2"
+  }
+}
