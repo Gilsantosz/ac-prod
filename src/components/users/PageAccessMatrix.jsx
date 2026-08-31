@@ -1,11 +1,13 @@
 import { Eye, Pencil, ShieldCheck } from 'lucide-react';
-import { pageAccessCatalog, routeGroups, getDefaultPermissions } from '@/config/appRoutes';
+import { pageAccessCatalog, routeGroups } from '@/config/appRoutes';
+import { getRoleDefaultPermissions, normalizeSystemRole } from '@/lib/roleProfiles';
 import { cn } from '@/lib/utils';
 
 const checked = (permissions, role, page, mode) => {
+  const normalizedRole = normalizeSystemRole(role);
   const permission = mode === 'view' ? page.viewPermission : page.editPermission;
   if (!permission) return false;
-  if (role === 'admin') return true;
+  if (normalizedRole === 'admin') return true;
   if (permissions?.[permission] !== undefined) return permissions[permission] === true;
 
   const fallback = mode === 'view'
@@ -13,17 +15,18 @@ const checked = (permissions, role, page, mode) => {
     : null;
   if (fallback && permissions?.[fallback] !== undefined) return permissions[fallback] === true;
 
-  const defaults = getDefaultPermissions(role);
+  const defaults = getRoleDefaultPermissions(normalizedRole);
   if (defaults[permission] !== undefined) return defaults[permission] === true;
   return fallback ? defaults[fallback] === true : false;
 };
 
 export function normalizePagePermissions(permissions, role) {
-  const normalized = { ...getDefaultPermissions(role), ...(permissions || {}) };
+  const normalizedRole = normalizeSystemRole(role);
+  const normalized = { ...getRoleDefaultPermissions(normalizedRole), ...(permissions || {}) };
   pageAccessCatalog.forEach((page) => {
-    normalized[page.viewPermission] = checked(normalized, role, page, 'view');
+    normalized[page.viewPermission] = checked(normalized, normalizedRole, page, 'view');
     if (page.editPermission) {
-      normalized[page.editPermission] = checked(normalized, role, page, 'edit');
+      normalized[page.editPermission] = checked(normalized, normalizedRole, page, 'edit');
       if (normalized[page.editPermission]) normalized[page.viewPermission] = true;
     }
   });
@@ -31,7 +34,8 @@ export function normalizePagePermissions(permissions, role) {
 }
 
 export default function PageAccessMatrix({ role, permissions, onChange, disabled = false }) {
-  const normalized = normalizePagePermissions(permissions, role);
+  const normalizedRole = normalizeSystemRole(role);
+  const normalized = normalizePagePermissions(permissions, normalizedRole);
 
   const setMode = (page, mode, value) => {
     if (disabled) return;
@@ -74,8 +78,8 @@ export default function PageAccessMatrix({ role, permissions, onChange, disabled
               </div>
               {pages.map((page) => {
                 const Icon = page.icon;
-                const canView = checked(normalized, role, page, 'view');
-                const canEdit = checked(normalized, role, page, 'edit');
+                const canView = checked(normalized, normalizedRole, page, 'view');
+                const canEdit = checked(normalized, normalizedRole, page, 'edit');
                 return (
                   <div
                     key={page.path}
@@ -91,7 +95,7 @@ export default function PageAccessMatrix({ role, permissions, onChange, disabled
                     <AccessToggle
                       label={`Visualizar ${page.label}`}
                       active={canView}
-                      disabled={disabled || (page.adminOnly && role !== 'admin')}
+                      disabled={disabled || (page.adminOnly && normalizedRole !== 'admin')}
                       icon={Eye}
                       onClick={() => setMode(page, 'view', !canView)}
                     />
@@ -99,7 +103,7 @@ export default function PageAccessMatrix({ role, permissions, onChange, disabled
                       <AccessToggle
                         label={`Editar ${page.label}`}
                         active={canEdit}
-                        disabled={disabled || (page.adminOnly && role !== 'admin')}
+                        disabled={disabled || (page.adminOnly && normalizedRole !== 'admin')}
                         icon={Pencil}
                         onClick={() => setMode(page, 'edit', !canEdit)}
                       />
