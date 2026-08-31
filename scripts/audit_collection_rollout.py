@@ -16,7 +16,7 @@ REQUIRED_LEDGER = [
     "20260831050652", "20260831051513", "20260831052152", "20260831052721",
     "20260831052809", "20260831134504", "20260831134819", "20260831134912",
     "20260831134944", "20260831135344", "20260831135630", "20260831142929",
-    "20260831143323",
+    "20260831143323", "20260831143850",
 ]
 UNSAFE = {
     "20260831100000_concurrency_batch_lifecycle_operator_shifts.sql",
@@ -126,6 +126,20 @@ def main() -> int:
         "reconciliação SQL da reposição v8.3",
     )
 
+    replacement_v84_sql = read(migrations / "20260831143850_fix_force_completion_conflict_v8_4.sql")
+    require_all(
+        replacement_v84_sql,
+        (
+            "fix_force_completion_conflict_v8_4",
+            "20260831_acprod_replacement_v8_4",
+            "ON CONFLICT (client_event_id) DO NOTHING",
+            "ON CONFLICT DO NOTHING",
+            "replacement_force_conflict_safe",
+            "REPLACEMENT_V8_4_INCOMPLETE",
+        ),
+        "correção do conflito parcial v8.4",
+    )
+
     concurrent_marker = read(migrations / "20260831142929_replacement_roles_flow_and_audit_v1.sql")
     require_all(
         concurrent_marker,
@@ -143,8 +157,8 @@ def main() -> int:
         workflow,
         (
             "pull_request:",
-            'REQUIRED_MIGRATION_VERSION: "20260831143323"',
-            'REQUIRED_RELEASE_VERSION: "20260831_acprod_replacement_v8_3"',
+            'REQUIRED_MIGRATION_VERSION: "20260831143850"',
+            'REQUIRED_RELEASE_VERSION: "20260831_acprod_replacement_v8_4"',
             "replacement_quality_role",
             "replacement_decision_rbac",
             "replacement_strict_role_hierarchy",
@@ -152,6 +166,7 @@ def main() -> int:
             "replacement_origin_classification",
             "replacement_force_justification_only",
             "replacement_force_adjustment_facts",
+            "replacement_force_conflict_safe",
             "replacement_audit_mirror",
             "replacement_station_queue",
             "replacement_canonical_lot_close",
@@ -273,11 +288,11 @@ def main() -> int:
 
     print("AUDIT_ACPROD_ROLLOUT_OK")
     print(f"ledger_versions={len(REQUIRED_LEDGER)}")
-    print("database_gate=replacement_v8_3_fail_closed")
+    print("database_gate=replacement_v8_4_fail_closed")
     print("history_modal=protected")
     print("replacement_approval=station_queue_only")
     print("replacement_origin=replacement")
-    print("replacement_force_completion=justification_only_adjustment_facts")
+    print("replacement_force_completion=justification_only_adjustment_facts_conflict_safe")
     print("replacement_audit=dedicated_and_history_mirror")
     print("replacement_station_ux=technical_specs_highlighted")
     print("replacement_roles=quality_supervisor_manager_admin")
