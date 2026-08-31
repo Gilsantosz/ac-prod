@@ -16,8 +16,8 @@ env:
   EXPECTED_PROJECT_ID: uozuzdfvnufsjsonswag
   REQUIRED_MIGRATION_VERSION: "20260831150725"
   REQUIRED_RELEASE_VERSION: "20260831_acprod_collection_fast8_v8_5"
-  REQUIRED_MICRO_BATCH_MIGRATION_VERSION: "20260831170836"
-  REQUIRED_MICRO_BATCH_RELEASE_VERSION: "20260831_acprod_collection_micro_batch_v8_6"
+  REQUIRED_ASYNC_COLLECTION_MIGRATION_VERSION: "20260831223614"
+  REQUIRED_ASYNC_COLLECTION_RELEASE_VERSION: "20260831_acprod_collection_async_worker_v8_7_1"
 
 concurrency:
   group: acprod2-${{ github.workflow }}-${{ github.ref }}
@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Auditar coleta rápida, Realtime, reposição e workflow
+      - name: Auditar coleta rápida, Realtime, worker e reposição
         run: python3 scripts/audit_collection_rollout.py --repo .
 
   quality:
@@ -57,12 +57,19 @@ jobs:
         run: npm run lint
       - name: Typecheck
         run: npm run typecheck
-      - name: Validar sintaxe do worker Edge
+      - name: Validar sintaxe do worker Edge local
         run: |
           node --check edge-worker/src/config.mjs
           node --check edge-worker/src/durableMemoryQueue.mjs
           node --check edge-worker/src/supabaseBatchSink.mjs
           node --check edge-worker/src/index.mjs
+      - name: Validar contrato do worker Supabase
+        run: |
+          test -f supabase/functions/process-collection-inbox/index.ts
+          test -f supabase/functions/process-collection-inbox/deno.json
+          grep -q 'claim_collection_inbox' supabase/functions/process-collection-inbox/index.ts
+          grep -q 'process_collection_inbox_item' supabase/functions/process-collection-inbox/index.ts
+          grep -q 'mapWithConcurrency' supabase/functions/process-collection-inbox/index.ts
       - name: Testes unitários
         run: npm run test:unit
       - name: Auditoria de dependências e segredos
@@ -107,7 +114,7 @@ jobs:
               raise SystemExit('ERRO: VITE_SUPABASE_URL não pertence ao projeto AC.Prod2 de produção.')
           PY
 
-      - name: Consultar marcador fail-closed do banco
+      - name: Consultar marcador canônico da coleta
         env:
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
@@ -167,11 +174,11 @@ jobs:
               if flags.get(flag) is not True:
                   failures.append(f'{flag}=false')
           if failures:
-              raise SystemExit('ERRO: Supabase não está no release exigido. ' + '; '.join(failures))
+              raise SystemExit('ERRO: coleta canônica incompatível. ' + '; '.join(failures))
           print(f'DATABASE_RELEASE_OK migration={expected_migration} release={expected_release}')
           PY
 
-      - name: Consultar marcador do micro-batching v8.6
+      - name: Consultar marcador da coleta assíncrona v8.7.1
         env:
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
@@ -185,7 +192,7 @@ jobs:
             --header "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
             --header "Content-Type: application/json" \
             --data '{}' \
-            "${SUPABASE_URL}/rest/v1/rpc/get_public_collection_micro_batch_release" \
+            "${SUPABASE_URL}/rest/v1/rpc/get_public_collection_async_release" \
             > "$response_file"
           python3 - "$response_file" <<'PY'
           import json
@@ -196,18 +203,21 @@ jobs:
           if isinstance(payload, list):
               payload = payload[0] if payload else {}
           if not isinstance(payload, dict):
-              raise SystemExit('ERRO: marcador do micro-batching retornou formato inválido.')
-          expected_migration = os.environ['REQUIRED_MICRO_BATCH_MIGRATION_VERSION']
-          expected_release = os.environ['REQUIRED_MICRO_BATCH_RELEASE_VERSION']
+              raise SystemExit('ERRO: marcador assíncrono retornou formato inválido.')
+          expected_migration = os.environ['REQUIRED_ASYNC_COLLECTION_MIGRATION_VERSION']
+          expected_release = os.environ['REQUIRED_ASYNC_COLLECTION_RELEASE_VERSION']
           flags = payload.get('schema_flags') or {}
           required_flags = (
-              'collection_micro_batch_ingress_table',
-              'collection_micro_batch_trigger',
-              'collection_micro_batch_reuses_transactional_rpc',
-              'collection_micro_batch_retry_contract',
-              'collection_micro_batch_rls',
-              'collection_micro_batch_explicit_grants',
-              'collection_manual_tags_excluded_from_fast8_gate',
+              'collection_async_inbox_columns',
+              'collection_async_ingress_is_lightweight',
+              'collection_async_private_credentials',
+              'collection_async_worker_rpcs',
+              'collection_async_session_lock_removed',
+              'collection_async_realtime',
+              'collection_async_wakeup_trigger',
+              'collection_async_fallback_cron',
+              'collection_async_vault_secrets',
+              'collection_async_no_legacy_sync_dependency',
           )
           failures = []
           if payload.get('ready') is not True:
@@ -220,8 +230,8 @@ jobs:
               if flags.get(flag) is not True:
                   failures.append(f'{flag}=false')
           if failures:
-              raise SystemExit('ERRO: micro-batching Supabase incompatível. ' + '; '.join(failures))
-          print(f'MICRO_BATCH_RELEASE_OK migration={expected_migration} release={expected_release}')
+              raise SystemExit('ERRO: coleta assíncrona Supabase incompatível. ' + '; '.join(failures))
+          print(f'ASYNC_COLLECTION_RELEASE_OK migration={expected_migration} release={expected_release}')
           PY
 
   build:
@@ -258,8 +268,8 @@ jobs:
             "run_id": "${GITHUB_RUN_ID}",
             "migration_version": "${REQUIRED_MIGRATION_VERSION}",
             "release_version": "${REQUIRED_RELEASE_VERSION}",
-            "micro_batch_migration_version": "${REQUIRED_MICRO_BATCH_MIGRATION_VERSION}",
-            "micro_batch_release_version": "${REQUIRED_MICRO_BATCH_RELEASE_VERSION}",
+            "async_collection_migration_version": "${REQUIRED_ASYNC_COLLECTION_MIGRATION_VERSION}",
+            "async_collection_release_version": "${REQUIRED_ASYNC_COLLECTION_RELEASE_VERSION}",
             "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
           EOF
