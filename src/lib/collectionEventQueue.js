@@ -285,6 +285,10 @@ export async function markEventServerPending(
 ) {
   const event = await dbGet(clientEventId);
   if (!event) return;
+  if (
+    event.status === 'synced'
+    || (event.status === 'error' && event.retryable === false)
+  ) return;
   const now = new Date().toISOString();
   event.status = 'server_pending';
   event.retryable = false;
