@@ -31,11 +31,17 @@ export function useCollectionQueue(processFn, options = {}) {
   processFnRef.current = processFn;
 
   const refreshStats = useCallback(async () => {
-    const s = (cellName || machineId || eventKind)
+    const nextStats = (cellName || machineId || eventKind)
       ? await getQueueStatsByCellMachine(cellName, machineId, eventKind)
       : await getQueueStats();
-    setStats(s);
+    setStats(nextStats);
   }, [cellName, machineId, eventKind]);
+
+  const refreshStatsSafely = useCallback(() => {
+    Promise.resolve(refreshStats()).catch((error) => {
+      console.warn('[CollectionQueue] Falha ao atualizar estatísticas locais:', error);
+    });
+  }, [refreshStats]);
 
   const withQueueLock = useCallback(async (task) => {
     if (navigator.locks?.request) {
@@ -62,8 +68,6 @@ export function useCollectionQueue(processFn, options = {}) {
     });
   }, [refreshStats, withQueueLock]);
 
-  // Recupera eventos interrompidos e tenta sincronizar também quando a página
-  // já é aberta online (não apenas após um evento offline -> online).
   useEffect(() => {
     let cancelled = false;
 
@@ -80,20 +84,18 @@ export function useCollectionQueue(processFn, options = {}) {
     };
   }, [flush]);
 
-  // Escuta eventos de mudança da fila
   useEffect(() => {
-    const handler = () => refreshStats();
+    const handler = () => refreshStatsSafely();
     window.addEventListener('collection-queue-changed', handler);
-    refreshStats(); // estado inicial
+    refreshStatsSafely();
     return () => window.removeEventListener('collection-queue-changed', handler);
-  }, [refreshStats]);
+  }, [refreshStatsSafely]);
 
-  // Flush automático ao reconectar, voltar para a aba ou focar a janela.
   useEffect(() => {
     const tryFlush = async () => {
       if (!navigator.onLine) return;
-      const s = await getQueueStats();
-      if (s.pending > 0) await flush();
+      const currentStats = await getQueueStats();
+      if (currentStats.pending > 0) await flush();
     };
     const onVisibility = () => {
       if (document.visibilityState === 'visible') tryFlush();
@@ -109,28 +111,30 @@ export function useCollectionQueue(processFn, options = {}) {
   }, [flush]);
 
   const enqueue = useCallback(async (payload, enqueueOpts = {}) => {
+    // O retorno acontece logo após a gravação durável no IndexedDB. O cálculo
+    // dos contadores é assíncrono e não bloqueia o próximo código do coletor.
     const id = await enqueueCollectionEvent(payload);
-    await refreshStats();
+    refreshStatsSafely();
     if (navigator.onLine && enqueueOpts.autoFlush !== false) {
       flush();
     }
     return id;
-  }, [flush, refreshStats]);
+  }, [flush, refreshStatsSafely]);
 
   const processNow = useCallback(async (clientEventId) => {
     const result = await withQueueLock(() => (
       processCollectionEvent(clientEventId, processFnRef.current)
     ));
-    await refreshStats();
+    refreshStatsSafely();
     return result;
-  }, [refreshStats, withQueueLock]);
+  }, [refreshStatsSafely, withQueueLock]);
 
   const retryQueueErrors = useCallback(async () => {
     const count = await retryErrors();
-    await refreshStats();
+    refreshStatsSafely();
     if (count > 0 && navigator.onLine) flush();
     return count;
-  }, [refreshStats, flush]);
+  }, [flush, refreshStatsSafely]);
 
   return { stats, flushing, enqueue, flush, processNow, retryQueueErrors };
 }
