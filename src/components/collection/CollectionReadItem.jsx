@@ -146,6 +146,7 @@ export default function CollectionReadItem({
       <div className="flex flex-wrap gap-2 pt-1.5" onClick={(e) => e.stopPropagation()}>
         {onCreateOccurrence && read.event_status !== 'processing' && (
           <Button
+            type="button"
             size="sm"
             variant="outline"
             onClick={() => onCreateOccurrence(read)}
@@ -156,6 +157,7 @@ export default function CollectionReadItem({
         )}
         {canReject && isApproved && read.piece_id && (
           <Button
+            type="button"
             size="sm"
             variant="outline"
             onClick={() => onReject(read)}
@@ -166,6 +168,7 @@ export default function CollectionReadItem({
         )}
         {read.piece_id && (
           <Button
+            type="button"
             size="sm"
             variant="outline"
             onClick={() => onOpenTraceability(read)}

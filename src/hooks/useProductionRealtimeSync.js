@@ -138,6 +138,22 @@ const TABLE_TO_QUERY_KEYS = {
     ['production-lots'],
     ['trace-search'],
   ],
+  production_cell_lot_states: [
+    ['collection-kpis'],
+    ['production-lots'],
+    ['cell-lot-state'],
+    ['cell-detailed-stats'],
+    ['mes-hub-kpis'],
+    ['cellKpis'],
+  ],
+  production_cell_active_contexts: [
+    ['collection-kpis'],
+    ['production-lots'],
+    ['cell-active-context'],
+    ['cell-detailed-stats'],
+    ['mes-hub-kpis'],
+    ['cellKpis'],
+  ],
   shipments: [['shipments']],
   shipment_items: [['shipments']],
   replacement_orders: [

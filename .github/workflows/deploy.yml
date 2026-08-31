@@ -15,55 +15,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  migrate:
-    name: Database Migrations
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
-        with:
-          version: latest
-
-      - name: Deploy Migrations
-        run: |
-          if [ -n "${{ secrets.SUPABASE_ACCESS_TOKEN }}" ] && [ -n "${{ secrets.SUPABASE_DB_PASSWORD }}" ]; then
-            PROJECT_REF="${{ secrets.SUPABASE_PROJECT_ID }}"
-            if [ -z "$PROJECT_REF" ]; then
-              PROJECT_REF="uozuzdfvnufsjsonswag"
-            fi
-            supabase db push --project-ref "$PROJECT_REF"
-            for function_name in \
-              send-report-email \
-              sendDailyClosure \
-              schedule-report-job \
-              admin-users \
-              promob-parse-order \
-              promob-api-sync \
-              generate-productive-backup \
-              sync-google-drive-archive
-            do
-              supabase functions deploy "$function_name" --project-ref "$PROJECT_REF"
-            done
-            # Estes endpoints possuem autenticação própria: segredo de cron ou
-            # recuperação pública com rate limit e resposta anti-enumeração.
-            for function_name in \
-              send-scheduled-reports \
-              recover-password
-            do
-              supabase functions deploy "$function_name" --no-verify-jwt --project-ref "$PROJECT_REF"
-            done
-          else
-            echo "Aviso: Segredos Supabase (SUPABASE_ACCESS_TOKEN e SUPABASE_DB_PASSWORD) nao configurados no GitHub. Pulando migracao automatica."
-          fi
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-
-  build:
-    name: Build
+  quality:
+    name: Quality & Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -78,13 +31,110 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
+      - name: Run Tests
+        run: npm test -- --run
+
+      - name: Validate Build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
+          VITE_APP_BASE: /ac-prod/
+        run: npm run build
+
+  migrate:
+    name: Database Migrations
+    runs-on: ubuntu-latest
+    needs: [quality]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Required Secrets
+        run: |
+          MISSING_SECRETS=""
+          if [ -z "${{ secrets.SUPABASE_ACCESS_TOKEN }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS SUPABASE_ACCESS_TOKEN"
+          fi
+          if [ -z "${{ secrets.SUPABASE_DB_PASSWORD }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS SUPABASE_DB_PASSWORD"
+          fi
+          if [ -z "${{ secrets.VITE_SUPABASE_URL }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS VITE_SUPABASE_URL"
+          fi
+          if [ -z "${{ secrets.VITE_SUPABASE_ANON_KEY }}" ]; then
+            MISSING_SECRETS="$MISSING_SECRETS VITE_SUPABASE_ANON_KEY"
+          fi
+
+          if [ -n "$MISSING_SECRETS" ]; then
+            echo "❌ ERRO CRÍTICO DE CI/CD: Segredos obrigatórios ausentes no repositório GitHub:$MISSING_SECRETS"
+            echo "O deploy de produção foi abortado por segurança para impedir front-end sem migrações aplicadas."
+            exit 1
+          fi
+          echo "✅ Todos os segredos obrigatórios de migração e ambiente estão configurados."
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy Migrations & Edge Functions
+        run: |
+          PROJECT_REF="${{ secrets.SUPABASE_PROJECT_ID }}"
+          if [ -z "$PROJECT_REF" ]; then
+            PROJECT_REF="uozuzdfvnufsjsonswag"
+          fi
+          echo "Aplicando migrações para o projeto Supabase: $PROJECT_REF"
+          supabase db push --project-ref "$PROJECT_REF"
+
+          echo "Publicando Edge Functions..."
+          for function_name in \
+            send-report-email \
+            sendDailyClosure \
+            schedule-report-job \
+            admin-users \
+            promob-parse-order \
+            promob-api-sync \
+            generate-productive-backup \
+            sync-google-drive-archive
+          do
+            supabase functions deploy "$function_name" --project-ref "$PROJECT_REF"
+          done
+
+          # Endpoints com autenticação própria ou chaves dedicadas
+          for function_name in \
+            send-scheduled-reports \
+            recover-password
+          do
+            supabase functions deploy "$function_name" --no-verify-jwt --project-ref "$PROJECT_REF"
+          done
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [migrate]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Production Bundle
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          # GitHub Pages publica este repositório em /ac-prod/.
-          # O default do Vite agora é / para Cloudflare Pages e domínio próprio.
           VITE_APP_BASE: /ac-prod/
+          VITE_APP_COMMIT_SHA: ${{ github.sha }}
+          VITE_APP_BUILD_TIME: ${{ github.event.head_commit.timestamp || '' }}
         run: npm run build
 
       - name: Setup Pages
@@ -101,7 +151,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    needs: [build, migrate]
+    needs: [build]
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
