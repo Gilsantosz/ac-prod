@@ -59,7 +59,7 @@ describe('AC.Prod2 collection async worker v8.7.1 contract', () => {
     expect(service).toContain('server_accepted');
     expect(service).toContain('fetchProductionCollectionResults');
     expect(service).toContain('COLLECTION_BATCH_MAX_SIZE = 100');
-    expect(queue).toContain("status: 'server_pending'");
+    expect(queue).toContain("event.status = 'server_pending'");
     expect(queue).toContain('markEventTerminalError');
     expect(queue).toContain("event.status === 'synced'");
     expect(batchQueue).toContain("serverStatus === 'recebida'");
