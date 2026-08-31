@@ -43,7 +43,7 @@ describe('AC.Prod2 collection micro-batching v8.6 contract', () => {
     expect(hook).toContain('(microBatch ? 5000 : 15000)');
     expect(hook).toContain('dispatchCollectionEventBatch');
     expect(hook).toContain("status: 'queued'");
-    expect(hook).toContain('não espera o PostgreSQL');
+    expect(hook).toMatch(/não\s+espera o PostgreSQL/);
     expect(hook).toContain('getOperatorSession');
     expect(hook).toContain('operator_session_token');
     expect(queue).toContain('flushCollectionMicroBatchQueue');
