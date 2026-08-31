@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 
 const repoFile = (path) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
-describe('AC.Prod2 replacement workflow v8.4 contract', () => {
+describe('AC.Prod2 replacement workflow v8.4 dentro do release de coleta v8.5', () => {
   it('aprova diretamente sem modal, senha, justificativa ou células automáticas', () => {
     const modal = repoFile('src/components/replacement/ReplacementApproveModal.jsx');
     const service = repoFile('src/lib/replacementApprovalService.js');
@@ -70,16 +70,21 @@ describe('AC.Prod2 replacement workflow v8.4 contract', () => {
     expect(migration).toContain('REPLACEMENT_V8_4_INCOMPLETE');
   });
 
-  it('versiona o contrato v8.4 e bloqueia deploy incompatível', () => {
-    const migration = 'supabase/migrations/20260831143850_fix_force_completion_conflict_v8_4.sql';
+  it('preserva o contrato v8.4 e exige o release de coleta v8.5', () => {
+    const replacementMigration = 'supabase/migrations/20260831143850_fix_force_completion_conflict_v8_4.sql';
     const concurrentMarker = 'supabase/migrations/20260831142929_replacement_roles_flow_and_audit_v1.sql';
+    const fastCaptureMigration = 'supabase/migrations/20260831150725_collection_exact_8_digit_fast_capture_v8_5.sql';
     const workflow = repoFile('.github/workflows/deploy.yml');
 
-    expect(existsSync(resolve(process.cwd(), migration))).toBe(true);
+    expect(existsSync(resolve(process.cwd(), replacementMigration))).toBe(true);
     expect(existsSync(resolve(process.cwd(), concurrentMarker))).toBe(true);
-    expect(repoFile(migration)).toContain('20260831_acprod_replacement_v8_4');
-    expect(workflow).toContain('REQUIRED_MIGRATION_VERSION: "20260831143850"');
-    expect(workflow).toContain('REQUIRED_RELEASE_VERSION: "20260831_acprod_replacement_v8_4"');
+    expect(existsSync(resolve(process.cwd(), fastCaptureMigration))).toBe(true);
+    expect(repoFile(replacementMigration)).toContain('20260831_acprod_replacement_v8_4');
+    expect(repoFile(fastCaptureMigration)).toContain('20260831_acprod_collection_fast8_v8_5');
+    expect(workflow).toContain('REQUIRED_MIGRATION_VERSION: "20260831150725"');
+    expect(workflow).toContain('REQUIRED_RELEASE_VERSION: "20260831_acprod_collection_fast8_v8_5"');
+    expect(workflow).toContain('collection_exact_8_digit_scan');
+    expect(workflow).toContain('collection_active_tags_8_digits');
     expect(workflow).toContain('replacement_strict_role_hierarchy');
     expect(workflow).toContain('replacement_station_only_approval');
     expect(workflow).toContain('replacement_origin_classification');
