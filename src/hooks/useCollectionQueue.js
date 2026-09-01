@@ -697,21 +697,21 @@ export function useCollectionQueue(processFn, options = {}) {
     };
   }, [scheduleFlush]);
 
-  const enqueue = useCallback(async (payload, enqueueOpts = {}) => {
+  const enqueue = useCallback(async (inputPayload, enqueueOpts = {}) => {
     const operatorSession = microBatch ? getOperatorSession() : null;
-    const safePayload = microBatch
+    const payload = microBatch
       ? {
-        ...payload,
-        operator_session_id: payload.operator_session_id
-          || payload.operatorSessionId
+        ...inputPayload,
+        operator_session_id: inputPayload.operator_session_id
+          || inputPayload.operatorSessionId
           || operatorSession?.session_id
           || null,
       }
-      : payload;
+      : inputPayload;
 
     // A gravação durável no IndexedDB não bloqueia o próximo código; o envio
     // ao Supabase é agendado separadamente e preserva a ordem FIFO da fila.
-    const id = await enqueueCollectionEvent(safePayload);
+    const id = await enqueueCollectionEvent(payload);
     refreshStatsSafely();
 
     if (navigator.onLine && microBatch) {
