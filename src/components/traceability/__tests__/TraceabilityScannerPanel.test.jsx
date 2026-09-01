@@ -78,6 +78,21 @@ describe('TraceabilityScannerPanel', () => {
     expect(screen.getByRole('status')).toHaveClass('border-emerald-300');
   });
 
+  it('mantém ACK do banco neutro mesmo se um payload legado trouxer success', () => {
+    renderPanel({
+      feedback: {
+        success: true,
+        status: 'database_acknowledged',
+        collection_state: 'DATABASE_ACKNOWLEDGED',
+        message: 'Recebida no banco',
+      },
+    });
+    const feedback = screen.getByRole('status');
+    expect(feedback).toHaveClass('border-blue-500/30');
+    expect(feedback).not.toHaveClass('border-emerald-300');
+    expect(screen.queryByText('PEÇA LIBERADA — OK')).not.toBeInTheDocument();
+  });
+
   it('mostra feedback vermelho para leitura rejeitada', () => {
     renderPanel({ feedback: { success: false, status: 'rejected', message: 'Peça reprovada' } });
     expect(screen.getByRole('status')).toHaveClass('border-red-300');
