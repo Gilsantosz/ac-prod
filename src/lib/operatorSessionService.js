@@ -13,6 +13,30 @@ const SESSION_KEY = 'acprod_operator_session';
 let _memorySession = null;
 let _memoryDeviceId = null;
 
+function generateDeviceUuid() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0'));
+  return [
+    hex.slice(0, 4).join(''),
+    hex.slice(4, 6).join(''),
+    hex.slice(6, 8).join(''),
+    hex.slice(8, 10).join(''),
+    hex.slice(10, 16).join(''),
+  ].join('-');
+}
+
 /**
  * Obtém ou gera um ID de dispositivo persistente para fins de auditoria e rate limit.
  */
@@ -20,17 +44,13 @@ export function getDeviceId() {
   try {
     let devId = localStorage.getItem('acprod_device_id');
     if (!devId) {
-      devId = typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID() 
-        : 'dev-' + Math.random().toString(36).slice(2, 11);
+      devId = generateDeviceUuid();
       localStorage.setItem('acprod_device_id', devId);
     }
     return devId;
   } catch (_) {
     if (!_memoryDeviceId) {
-      _memoryDeviceId = typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : 'dev-' + Math.random().toString(36).slice(2, 11);
+      _memoryDeviceId = generateDeviceUuid();
     }
     return _memoryDeviceId;
   }
@@ -86,6 +106,7 @@ export async function loginOperator(loginName, registration, { purpose = 'produc
     expires_at: new Date(expires_at).getTime(),
     logged_at: new Date().toISOString(),
     purpose: data.scope || purpose,
+    device_id: deviceId,
   };
 
   try {

@@ -2,6 +2,7 @@ import { processProductionReading } from '@/lib/traceabilityService';
 import { processFastProductionReading } from '@/lib/fastProductionReadingService';
 import { processProductionCollectionBatch } from '@/lib/collectionBatchService';
 import { collectReplacementStageV2, REPLACEMENT_EVENT_KIND } from '@/lib/replacementService';
+import { getOperatorSession } from '@/lib/operatorSessionService';
 
 export const COLLECTION_EVENT_KINDS = Object.freeze({
   PRODUCTION_STAGE: 'production_stage',
@@ -17,10 +18,12 @@ export function resolveCollectionEventKind(event = {}) {
 
 export async function dispatchCollectionEvent(event) {
   const eventKind = resolveCollectionEventKind(event);
+  const currentSession = getOperatorSession();
 
   if (eventKind === COLLECTION_EVENT_KINDS.REPLACEMENT_STAGE) {
     return collectReplacementStageV2({
-      sessionToken: event.session_token,
+      // Fallback V2: a credencial corrente é obtida somente na fronteira RPC.
+      sessionToken: currentSession?.token || null,
       barcode: event.raw_value || event.rawValue,
       clientEventId: event.client_event_id,
       deviceId: event.device_id,
@@ -46,6 +49,7 @@ export async function dispatchCollectionEvent(event) {
       readerType: event.readerType || event.reader_type || 'keyboard_barcode',
       createdAtClient: event.createdAtClient || event.created_at_client,
       deviceId: event.deviceId || event.device_id,
+      operatorSessionToken: currentSession?.token || null,
     };
 
     const useFastPath = event.fastPath === true
