@@ -130,8 +130,24 @@ describe('collectionEventDispatcher', () => {
         expect.objectContaining({ client_event_id: 'event-a' }),
         expect.objectContaining({ client_event_id: 'event-b' }),
       ]),
+      {},
     );
     expect(result).toHaveLength(2);
+  });
+
+  it('encaminha a confirmação progressiva do lote ao transporte assíncrono', async () => {
+    const onFinalized = vi.fn();
+
+    await dispatchCollectionEventBatch([{
+      event_kind: COLLECTION_EVENT_KINDS.PRODUCTION_STAGE,
+      raw_value: '09950001',
+      client_event_id: 'event-progressive',
+    }], { onFinalized });
+
+    expect(processProductionCollectionBatch).toHaveBeenCalledWith(
+      [expect.objectContaining({ client_event_id: 'event-progressive' })],
+      { onFinalized },
+    );
   });
 
   it('não mistura reposição dentro do INSERT produtivo', async () => {

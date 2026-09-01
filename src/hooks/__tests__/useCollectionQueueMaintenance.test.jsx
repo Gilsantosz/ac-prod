@@ -269,4 +269,31 @@ describe('useCollectionQueue maintenance scheduling', () => {
     unmount();
     warn.mockRestore();
   });
+
+  it('consolida rajadas de mudanças locais em uma única leitura de estatísticas', async () => {
+    const { unmount } = renderHook(() => useCollectionQueue(vi.fn(), {
+      eventKind: 'production_stage',
+      flushIntervalMs: MAINTENANCE_INTERVAL_MS + 60_000,
+    }));
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    mocks.getQueueStatsByCellMachine.mockClear();
+
+    act(() => {
+      for (let index = 0; index < 25; index += 1) {
+        window.dispatchEvent(new CustomEvent('collection-queue-changed'));
+      }
+    });
+    expect(mocks.getQueueStatsByCellMachine).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(mocks.getQueueStatsByCellMachine).toHaveBeenCalledTimes(1);
+
+    unmount();
+  });
 });

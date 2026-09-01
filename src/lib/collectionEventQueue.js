@@ -309,6 +309,10 @@ function notifyChange() {
   } catch (_) { /* ambiente sem window */ }
 }
 
+export function notifyCollectionQueueChange() {
+  notifyChange();
+}
+
 // ─── API pública ──────────────────────────────────────────────────────────────
 
 /**
@@ -575,7 +579,7 @@ export async function markEventPending(clientEventId) {
   notifyChange();
 }
 
-export async function markEventProcessing(clientEventId) {
+export async function markEventProcessing(clientEventId, options = {}) {
   const event = await dbGet(clientEventId);
   if (!event) return;
   event.status = 'processing';
@@ -583,10 +587,10 @@ export async function markEventProcessing(clientEventId) {
   event.sync_started_at = new Date().toISOString();
   event.updated_at = new Date().toISOString();
   await dbPut(event);
-  notifyChange();
+  if (options.notify !== false) notifyChange();
 }
 
-export async function markEventSynced(clientEventId, result) {
+export async function markEventSynced(clientEventId, result, options = {}) {
   const event = await dbGet(clientEventId);
   if (!event) return;
   event.status = 'synced';
@@ -599,10 +603,15 @@ export async function markEventSynced(clientEventId, result) {
   event.processed_at = new Date().toISOString();
   event.updated_at = new Date().toISOString();
   await dbPut(event);
-  notifyChange();
+  if (options.notify !== false) notifyChange();
 }
 
-export async function markEventError(clientEventId, error, maxRetries = 8) {
+export async function markEventError(
+  clientEventId,
+  error,
+  maxRetries = 8,
+  options = {},
+) {
   const event = await dbGet(clientEventId);
   if (!event) return;
   const retries = (event.retries || 0) + 1;
@@ -622,7 +631,7 @@ export async function markEventError(clientEventId, error, maxRetries = 8) {
   }
   event.updated_at = new Date().toISOString();
   await dbPut(event);
-  notifyChange();
+  if (options.notify !== false) notifyChange();
 }
 
 /**

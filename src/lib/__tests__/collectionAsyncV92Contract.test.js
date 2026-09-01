@@ -147,7 +147,8 @@ describe('AC.Prod2 asynchronous collection v9.2.3 contract', () => {
     expect(worker).toContain('verify_collection_worker_cron_secret');
     expect(worker).toContain('claim_collection_inbox');
     expect(worker).toContain('process_collection_inbox_item');
-    expect(worker).toContain('clampInteger(body.concurrency, 4, 1, 8)');
+    expect(worker).toContain('MAX_SAFE_PROCESSING_CONCURRENCY = 2');
+    expect(worker).toContain('body.concurrency,');
     expect(worker).toContain('mapWithConcurrency');
     expect(worker).toContain('UNAUTHORIZED_COLLECTION_WORKER');
   });
@@ -156,7 +157,8 @@ describe('AC.Prod2 asynchronous collection v9.2.3 contract', () => {
     const batchService = readRepoFile('src/lib/collectionBatchService.js');
     const queueHook = readRepoFile('src/hooks/useCollectionQueue.js');
 
-    expect(batchService).toContain('COLLECTION_FINALIZATION_TIMEOUT_MS = 90_000');
+    expect(batchService).toContain('COLLECTION_FINALIZATION_TIMEOUT_MS = 15_000');
+    expect(batchService).toContain('error.finalizedEnvelopes');
     expect(batchService).toContain('COLLECTION_FINALIZATION_POLL_MAX_MS = 5_000');
     expect(batchService).toContain('getCollectionFinalizationPollDelayMs');
     expect(batchService).toContain('deterministicJitterUnit');

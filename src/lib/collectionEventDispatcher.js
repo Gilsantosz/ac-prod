@@ -95,7 +95,7 @@ function wrapIndividualError(event, error) {
  * Eventos produtivos consecutivos usam um único INSERT[] em coletas_producao.
  * Reposição continua no RPC próprio e nunca é misturada ao gatilho produtivo.
  */
-export async function dispatchCollectionEventBatch(events = []) {
+export async function dispatchCollectionEventBatch(events = [], options = {}) {
   if (!Array.isArray(events) || events.length === 0) return [];
 
   const results = [];
@@ -103,7 +103,10 @@ export async function dispatchCollectionEventBatch(events = []) {
 
   const flushProductionBuffer = async () => {
     if (!productionBuffer.length) return;
-    const batchResults = await processProductionCollectionBatch(productionBuffer);
+    const batchResults = await processProductionCollectionBatch(
+      productionBuffer,
+      options,
+    );
     results.push(...batchResults);
     productionBuffer = [];
   };

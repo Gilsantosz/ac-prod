@@ -175,4 +175,141 @@ describe('collectionBatchService asynchronous finalization', () => {
       result: { status: 'duplicated' },
     });
   });
+
+  it('publica cada item finalizado sem aguardar o mais lento do lote', async () => {
+    vi.useFakeTimers();
+
+    const acceptedA = {
+      id: 'inbox-a',
+      client_event_id: 'event-a',
+      status_sincronizacao: 'recebida',
+      retryable: false,
+      resultado: null,
+    };
+    const acceptedB = {
+      id: 'inbox-b',
+      client_event_id: 'event-b',
+      status_sincronizacao: 'recebida',
+      retryable: false,
+      resultado: null,
+    };
+    const finalA = {
+      ...acceptedA,
+      status_sincronizacao: 'sincronizada',
+      resultado: { success: true, status: 'approved' },
+    };
+    const finalB = {
+      ...acceptedB,
+      status_sincronizacao: 'sincronizada',
+      resultado: { success: true, status: 'approved' },
+    };
+    const insertQuery = insertResponse([acceptedA, acceptedB]);
+    const inFilter = vi.fn()
+      .mockResolvedValueOnce({ data: [finalA, acceptedB], error: null })
+      .mockResolvedValueOnce({ data: [finalA, finalB], error: null });
+    const selectFinal = vi.fn(() => ({ in: inFilter }));
+    const onFinalized = vi.fn().mockResolvedValue(undefined);
+
+    from
+      .mockReturnValueOnce({ insert: insertQuery.insert })
+      .mockReturnValue({ select: selectFinal });
+
+    const promise = processProductionCollectionBatch([
+      {
+        client_event_id: 'event-a',
+        raw_value: '09950001',
+        event_kind: 'production_stage',
+      },
+      {
+        client_event_id: 'event-b',
+        raw_value: '09950002',
+        event_kind: 'production_stage',
+      },
+    ], { onFinalized });
+
+    await vi.advanceTimersByTimeAsync(150);
+    expect(onFinalized).toHaveBeenCalledTimes(1);
+    expect(onFinalized.mock.calls[0][0]).toEqual([
+      expect.objectContaining({ client_event_id: 'event-a' }),
+    ]);
+
+    await vi.runAllTimersAsync();
+    await expect(promise).resolves.toHaveLength(2);
+    expect(onFinalized).toHaveBeenCalledTimes(2);
+    expect(onFinalized.mock.calls[1][0]).toEqual([
+      expect.objectContaining({ client_event_id: 'event-b' }),
+    ]);
+    expect(inFilter).toHaveBeenNthCalledWith(
+      1,
+      'client_event_id',
+      ['event-a', 'event-b'],
+    );
+    expect(inFilter).toHaveBeenNthCalledWith(
+      2,
+      'client_event_id',
+      ['event-b'],
+    );
+  });
+
+  it('anexa os itens já finalizados quando a fatia ativa expira', async () => {
+    vi.useFakeTimers();
+
+    const acceptedA = {
+      id: 'inbox-a',
+      client_event_id: 'event-a',
+      status_sincronizacao: 'recebida',
+      retryable: false,
+      resultado: null,
+    };
+    const acceptedB = {
+      id: 'inbox-b',
+      client_event_id: 'event-b',
+      status_sincronizacao: 'recebida',
+      retryable: false,
+      resultado: null,
+    };
+    const finalA = {
+      ...acceptedA,
+      status_sincronizacao: 'sincronizada',
+      resultado: { success: true, status: 'approved' },
+    };
+    const insertQuery = insertResponse([acceptedA, acceptedB]);
+    const inFilter = vi.fn().mockResolvedValue({
+      data: [finalA, acceptedB],
+      error: null,
+    });
+    const selectFinal = vi.fn(() => ({ in: inFilter }));
+
+    from
+      .mockReturnValueOnce({ insert: insertQuery.insert })
+      .mockReturnValue({ select: selectFinal });
+
+    const outcome = processProductionCollectionBatch([
+      {
+        client_event_id: 'event-a',
+        raw_value: '09950001',
+        event_kind: 'production_stage',
+      },
+      {
+        client_event_id: 'event-b',
+        raw_value: '09950002',
+        event_kind: 'production_stage',
+      },
+    ]).catch((error) => error);
+
+    await vi.runAllTimersAsync();
+    const error = await outcome;
+
+    expect(error).toMatchObject({
+      code: 'COLLECTION_FINALIZATION_TIMEOUT',
+      retryable: true,
+      pendingClientEventIds: ['event-b'],
+    });
+    expect(error.finalizedEnvelopes).toEqual([
+      expect.objectContaining({ client_event_id: 'event-a' }),
+    ]);
+    expect(inFilter.mock.calls.slice(1).every(([, ids]) => (
+      ids.length === 1 && ids[0] === 'event-b'
+    ))).toBe(true);
+  });
 });
