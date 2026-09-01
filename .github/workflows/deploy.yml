@@ -18,6 +18,8 @@ env:
   REQUIRED_RELEASE_VERSION: "20260831_acprod_collection_fast8_v8_5"
   REQUIRED_ASYNC_COLLECTION_MIGRATION_VERSION: "v8.8"
   REQUIRED_ASYNC_COLLECTION_RELEASE_VERSION: "20260831_acprod_collection_async_sync_v8_8"
+  REQUIRED_RUNTIME_COLLECTION_MIGRATION_VERSION: "v9.2.3"
+  REQUIRED_RUNTIME_COLLECTION_RELEASE_VERSION: "20260901_acprod_collection_runtime_health_security_v9_2_3"
 
 concurrency:
   group: acprod2-${{ github.workflow }}-${{ github.ref }}
@@ -230,6 +232,84 @@ jobs:
           print(f'ASYNC_COLLECTION_RELEASE_OK migration={expected_migration} release={expected_release}')
           PY
 
+      - name: Recalcular saúde real da coleta v9.2.3
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "apikey: ${SUPABASE_ANON_KEY}" \
+            --header "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            --header "Content-Type: application/json" \
+            --data '{}' \
+            "${SUPABASE_URL}/rest/v1/rpc/get_public_collection_runtime_health" \
+            > "$response_file"
+          python3 - "$response_file" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+          payload = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          if isinstance(payload, list):
+              payload = payload[0] if payload else {}
+          if not isinstance(payload, dict):
+              raise SystemExit('ERRO: marcador consolidado da coleta retornou formato inválido.')
+          expected_migration = os.environ['REQUIRED_RUNTIME_COLLECTION_MIGRATION_VERSION']
+          expected_release = os.environ['REQUIRED_RUNTIME_COLLECTION_RELEASE_VERSION']
+          flags = payload.get('schema_flags') or {}
+          required_flags = (
+              'collection_sync_async_base_ready',
+              'collection_runtime_snapshot_independent',
+              'collection_runtime_inbox_rls',
+              'collection_runtime_ingress_trigger',
+              'collection_runtime_worker_secret_verifier',
+              'collection_runtime_worker_timeout_30s',
+              'collection_async_ingress_is_lightweight',
+              'collection_async_private_credentials',
+              'collection_async_vault_secrets',
+              'collection_async_worker_rpcs',
+              'collection_async_realtime',
+              'collection_async_wakeup_trigger',
+              'collection_async_fallback_cron',
+              'collection_async_inbox_columns',
+              'collection_async_session_lock_removed',
+              'collection_event_payload_sanitizer',
+              'collection_dashboard_state_cache',
+              'collection_async_worker_concurrency_bounded',
+              'collection_sync_operator_kpis_event_ledger',
+              'collection_sync_operator_covering_index',
+              'collection_sync_manual_stage_index',
+              'collection_sync_worker_claim_index',
+              'collection_sync_worker_five_rounds',
+              'collection_sync_idle_wakeup_guard',
+              'collection_sync_fallback_fifteen_seconds',
+              'collection_sync_shift_window_constant_time',
+              'collection_sync_async_idle_flag',
+              'collection_sync_async_fallback_15s_flag',
+          )
+          failures = []
+          if payload.get('ready') is not True:
+              failures.append('ready=false')
+          if str(payload.get('migration_version','')) != expected_migration:
+              failures.append(f"migration={payload.get('migration_version')!r}; esperado={expected_migration!r}")
+          if str(payload.get('release_version','')) != expected_release:
+              failures.append(f"release={payload.get('release_version')!r}; esperado={expected_release!r}")
+          if payload.get('health_source') != 'runtime_catalog':
+              failures.append(f"health_source={payload.get('health_source')!r}; esperado='runtime_catalog'")
+          if payload.get('snapshot_used') is not False:
+              failures.append(f"snapshot_used={payload.get('snapshot_used')!r}; esperado=false")
+          for flag in required_flags:
+              if flags.get(flag) is not True:
+                  failures.append(f'{flag}=false')
+          if failures:
+              raise SystemExit('ERRO: coleta consolidada Supabase incompatível. ' + '; '.join(failures))
+          print(f'RUNTIME_COLLECTION_HEALTH_OK migration={expected_migration} release={expected_release}')
+          PY
+
   build:
     name: Gerar artefato do release comprovado
     if: github.event_name != 'pull_request'
@@ -267,6 +347,9 @@ jobs:
             "collection_transport": "async",
             "collection_async_migration_version": "${REQUIRED_ASYNC_COLLECTION_MIGRATION_VERSION}",
             "collection_async_release_version": "${REQUIRED_ASYNC_COLLECTION_RELEASE_VERSION}",
+            "collection_runtime_migration_version": "${REQUIRED_RUNTIME_COLLECTION_MIGRATION_VERSION}",
+            "collection_runtime_release_version": "${REQUIRED_RUNTIME_COLLECTION_RELEASE_VERSION}",
+            "collection_health_probe": "runtime_catalog",
             "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
           EOF

@@ -14,6 +14,10 @@ vi.mock('@/lib/operatorSessionService', () => ({
 
 import {
   COLLECTION_BATCH_MAX_SIZE,
+  COLLECTION_FINALIZATION_POLL_INITIAL_MS,
+  COLLECTION_FINALIZATION_POLL_MAX_MS,
+  COLLECTION_FINALIZATION_TIMEOUT_MS,
+  getCollectionFinalizationPollDelayMs,
   processProductionCollectionBatch,
 } from '@/lib/collectionBatchService';
 
@@ -27,6 +31,31 @@ describe('processProductionCollectionBatch', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getOperatorSession.mockReturnValue({ token: 'operator-session-token' });
+  });
+
+  it('aguarda até 90 segundos pela finalização assíncrona do worker', () => {
+    expect(COLLECTION_FINALIZATION_TIMEOUT_MS).toBe(90_000);
+  });
+
+  it('usa backoff progressivo com teto alto e jitter determinístico por lote', () => {
+    const clientEventIds = ['event-a', 'event-b'];
+    const delays = Array.from(
+      { length: 12 },
+      (_, attempt) => getCollectionFinalizationPollDelayMs(attempt, clientEventIds),
+    );
+
+    expect(delays[0]).toBe(COLLECTION_FINALIZATION_POLL_INITIAL_MS);
+    expect(delays.every((delay) => delay <= COLLECTION_FINALIZATION_POLL_MAX_MS))
+      .toBe(true);
+    expect(delays.every((delay, index) => index === 0 || delay >= delays[index - 1]))
+      .toBe(true);
+    expect(delays[delays.length - 1]).toBeGreaterThan(4_000);
+    expect(Array.from(
+      { length: 12 },
+      (_, attempt) => getCollectionFinalizationPollDelayMs(attempt, clientEventIds),
+    )).toEqual(delays);
+    expect(getCollectionFinalizationPollDelayMs(11, ['event-c']))
+      .not.toBe(delays[delays.length - 1]);
   });
 
   it('faz um único insert([]), preserva idempotência e propaga a sessão operacional', async () => {

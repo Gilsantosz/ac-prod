@@ -22,7 +22,6 @@ vi.mock('@/hooks/useCells', () => ({
   }),
 }));
 
-vi.mock('@/hooks/useProductionRealtimeSync', () => ({ useProductionRealtimeSync: vi.fn() }));
 vi.mock('@/lib/dailySummaryData', () => ({
   fetchDailySummaryYearBounds: vi.fn(),
   fetchProductionEntriesRange: vi.fn(),

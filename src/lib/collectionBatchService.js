@@ -3,7 +3,12 @@ import { getOperatorSession } from '@/lib/operatorSessionService';
 
 export const COLLECTION_BATCH_SIZE = 50;
 export const COLLECTION_BATCH_MAX_SIZE = 100;
-export const COLLECTION_FINALIZATION_TIMEOUT_MS = 25_000;
+export const COLLECTION_FINALIZATION_TIMEOUT_MS = 90_000;
+export const COLLECTION_FINALIZATION_POLL_INITIAL_MS = 120;
+export const COLLECTION_FINALIZATION_POLL_MAX_MS = 5_000;
+
+const COLLECTION_FINALIZATION_POLL_GROWTH = 1.8;
+const COLLECTION_FINALIZATION_POLL_JITTER_FLOOR = 0.85;
 
 const FINAL_STATUSES = new Set(['sincronizada', 'erro']);
 const INGRESS_SELECT = [
@@ -50,6 +55,44 @@ function sleep(delayMs) {
   return new Promise((resolve) => {
     setTimeout(resolve, delayMs);
   });
+}
+
+function deterministicJitterUnit(seed) {
+  let hash = 2_166_136_261;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return (hash >>> 0) / 0xffff_ffff;
+}
+
+export function getCollectionFinalizationPollDelayMs(
+  attempt,
+  clientEventIds = [],
+) {
+  const numericAttempt = Number(attempt);
+  const safeAttempt = Number.isFinite(numericAttempt) && numericAttempt > 0
+    ? Math.floor(numericAttempt)
+    : 0;
+
+  if (safeAttempt === 0) return COLLECTION_FINALIZATION_POLL_INITIAL_MS;
+
+  const seed = clientEventIds.map((value) => String(value ?? '')).join('|');
+  const jitterFactor = COLLECTION_FINALIZATION_POLL_JITTER_FLOOR
+    + deterministicJitterUnit(seed)
+      * (1 - COLLECTION_FINALIZATION_POLL_JITTER_FLOOR);
+  const exponentialDelay = Math.min(
+    COLLECTION_FINALIZATION_POLL_MAX_MS,
+    Math.round(
+      COLLECTION_FINALIZATION_POLL_INITIAL_MS
+        * (COLLECTION_FINALIZATION_POLL_GROWTH ** safeAttempt),
+    ),
+  );
+
+  return Math.max(
+    COLLECTION_FINALIZATION_POLL_INITIAL_MS,
+    Math.round(exponentialDelay * jitterFactor),
+  );
 }
 
 function wrapSupabaseError(error, fallbackMessage) {
@@ -203,7 +246,7 @@ async function waitForFinalRows(
     (initialRows || []).map((row) => [row.client_event_id, row]),
   );
   const deadline = Date.now() + timeoutMs;
-  let pollDelayMs = 120;
+  let pollAttempt = 0;
 
   while (orderedIds.some((id) => (
     !FINAL_STATUSES.has(rowsById.get(id)?.status_sincronizacao)
@@ -222,12 +265,17 @@ async function waitForFinalRows(
       throw error;
     }
 
-    await sleep(pollDelayMs);
+    const pollDelayMs = getCollectionFinalizationPollDelayMs(
+      pollAttempt,
+      orderedIds,
+    );
+    const remainingMs = Math.max(0, deadline - Date.now());
+    await sleep(Math.min(pollDelayMs, remainingMs));
     const refreshed = await selectExistingRows(orderedIds);
     for (const row of refreshed) {
       rowsById.set(row.client_event_id, row);
     }
-    pollDelayMs = Math.min(1_000, Math.round(pollDelayMs * 1.6));
+    pollAttempt += 1;
   }
 
   return orderedIds.map((id) => rowsById.get(id));

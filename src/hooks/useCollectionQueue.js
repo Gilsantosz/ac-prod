@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import {
+  COLLECTION_QUEUE_MAINTENANCE_COOLDOWN_MS,
   enqueueCollectionEvent,
   flushCollectionQueue,
   getQueueStats,
   getQueueStatsByCellMachine,
   processCollectionEvent,
   retryErrors,
-  recoverStaleProcessingEvents,
+  runCollectionQueueMaintenance,
+  runStaleProcessingRecovery,
 } from '@/lib/collectionEventQueue';
 import { flushCollectionMicroBatchQueue } from '@/lib/collectionMicroBatchQueue';
 import {
@@ -15,6 +17,8 @@ import {
   dispatchCollectionEventBatch,
 } from '@/lib/collectionEventDispatcher';
 import { getOperatorSession } from '@/lib/operatorSessionService';
+
+const QUEUE_MAINTENANCE_IDLE_TIMEOUT_MS = 5_000;
 
 function emitBatchResult(payload) {
   try {
@@ -148,7 +152,13 @@ export function useCollectionQueue(processFn, options = {}) {
       flushingRef.current = true;
       setFlushing(true);
       try {
-        await recoverStaleProcessingEvents();
+        try {
+          await runStaleProcessingRecovery();
+        } catch (error) {
+          // Recuperar itens órfãos é manutenção defensiva; uma falha aqui não
+          // pode impedir o envio dos eventos pending já prontos para o servidor.
+          console.warn('[CollectionQueue] Falha ao recuperar eventos travados:', error);
+        }
 
         if (microBatch && typeof processBatchFnRef.current === 'function') {
           await flushCollectionMicroBatchQueue(processBatchFnRef.current, {
@@ -190,13 +200,12 @@ export function useCollectionQueue(processFn, options = {}) {
       Number(flushIntervalMs) || (microBatch ? 1_000 : 15_000),
     );
 
-    const recoverAndFlush = async () => {
-      await recoverStaleProcessingEvents();
+    const flushIfOnline = async () => {
       if (!cancelled && navigator.onLine) await flush();
     };
 
-    recoverAndFlush();
-    const interval = setInterval(recoverAndFlush, intervalMs);
+    flushIfOnline();
+    const interval = setInterval(flushIfOnline, intervalMs);
     return () => {
       cancelled = true;
       clearInterval(interval);
@@ -206,6 +215,57 @@ export function useCollectionQueue(processFn, options = {}) {
       }
     };
   }, [flush, flushIntervalMs, microBatch]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let idleHandle = null;
+    let timeoutHandle = null;
+
+    const runMaintenance = () => {
+      idleHandle = null;
+      timeoutHandle = null;
+      if (cancelled) return;
+      Promise.resolve(runCollectionQueueMaintenance())
+        .then((result) => {
+          if (!cancelled && result?.hasMore) scheduleMaintenance();
+        })
+        .catch((error) => {
+          console.warn('[CollectionQueue] Falha na manutenção da fila local:', error);
+        });
+    };
+
+    const scheduleMaintenance = () => {
+      if (cancelled || idleHandle !== null || timeoutHandle !== null) return;
+
+      if (typeof window.requestIdleCallback === 'function') {
+        idleHandle = window.requestIdleCallback(runMaintenance, {
+          timeout: QUEUE_MAINTENANCE_IDLE_TIMEOUT_MS,
+        });
+      } else {
+        timeoutHandle = window.setTimeout(
+          runMaintenance,
+          QUEUE_MAINTENANCE_IDLE_TIMEOUT_MS,
+        );
+      }
+    };
+
+    scheduleMaintenance();
+    const interval = window.setInterval(
+      scheduleMaintenance,
+      COLLECTION_QUEUE_MAINTENANCE_COOLDOWN_MS,
+    );
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      if (idleHandle !== null) {
+        window.cancelIdleCallback?.(idleHandle);
+      }
+      if (timeoutHandle !== null) {
+        window.clearTimeout(timeoutHandle);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const handler = () => refreshStatsSafely();

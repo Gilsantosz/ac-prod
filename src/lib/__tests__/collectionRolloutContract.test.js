@@ -31,6 +31,20 @@ describe('AC.Prod2 collection rollout contract', () => {
     expect(realtime).toContain('production_cell_lot_states');
     expect(realtime).toContain('production_cell_active_contexts');
   });
+  it('mounts exactly one global realtime synchronizer above every authenticated route', () => {
+    const app = repoFile('src/App.jsx');
+    const layout = repoFile('src/components/layout/AppLayout.jsx');
+    const dailySummary = repoFile('src/pages/DailySummary.jsx');
+    const routeTree = [app, layout, dailySummary].join('\n');
+    const synchronizerCalls = routeTree.match(/\buse(?:ProductionRealtime|Realtime)Sync\s*\(/g) || [];
+
+    expect(synchronizerCalls).toEqual(['useProductionRealtimeSync(']);
+    expect(app).toContain('useProductionRealtimeSync({ enabled: !!user && !isLoadingAuth && !authError });');
+    expect(app).toContain('<Route element={<AppLayout />}>');
+    expect(app).toContain('<Route path="/resumo-diario" element={<DailySummary />} />');
+    expect(layout).not.toMatch(/use(?:ProductionRealtime|Realtime)Sync/);
+    expect(dailySummary).not.toContain('useProductionRealtimeSync');
+  });
   it('archives superseded migrations and tracks the v7 release marker', () => {
     expect(existsSync(resolve(process.cwd(), 'supabase/migrations/20260831100000_concurrency_batch_lifecycle_operator_shifts.sql'))).toBe(false);
     expect(existsSync(resolve(process.cwd(), 'supabase/migrations/20260831120000_fix_collection_lifecycle_realtime_shifts_v2.sql'))).toBe(false);

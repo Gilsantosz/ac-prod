@@ -29,17 +29,37 @@ O ledger de produção foi conferido antes da implantação da captura automáti
 
 A versão `20260831142929` não deve ser substituída no diretório ativo pelo SQL remoto nem reaplicada. O marcador local mantém a equivalência de versão sem provocar duplicação de funções, políticas, gatilhos ou registros de auditoria já existentes no banco.
 
+## Coleta assíncrona v8.7–v9.2.3
+
+O histórico remoto confirmou que as versões abaixo já estão aplicadas em produção. Os cinco arquivos que formam a base assíncrona foram recuperados diretamente do ledger do projeto vinculado e agora permanecem versionados para alinhar o repositório ao ledger e preservar a cadeia usada pelas migrações posteriores:
+
+- `20260831221753`: inbox com lease, claim `SKIP LOCKED`, processamento idempotente, wakeup e cron;
+- `20260831223614`: primeiro marcador público do release assíncrono;
+- `20260831224808`: sanitização de payload e estado cache-first do dashboard;
+- `20260831224837`: KPIs e contenção de concorrência do worker;
+- `20260831225000`: marcador fail-closed v8.8.
+
+As versões `20260831225902`, `20260831230439`, `20260831232032` e `20260831234332` consolidam, respectivamente, reconciliação/KPIs pelo ledger canônico, janela de turno em tempo constante, wakeup sem chamadas ociosas com fallback de 15 segundos e o release público v9.2.1.
+
+A versão `20260901025000` acrescenta `get_public_collection_runtime_health()` e alinha o timeout HTTP assíncrono do wakeup a 30 segundos. Esse RPC não lê a fotografia de `app_schema_releases`: a cada chamada ele recalcula a saúde real de funções, privilégios, triggers, RLS, publication, Vault, cron e índices, inclusive validando o timeout de 30 segundos. Os probes legados v8.8/v9.2.1 permanecem inalterados para compatibilidade durante o rollout.
+
+A versão incremental `20260901032000` endurece o mesmo probe para validar as duas policies do inbox por comando, role e expressão efetiva, além de conferir o corpo canônico do verificador do segredo (Vault e digest SHA-256) e seus grants. Ela não redefine o worker nem os wrappers legados.
+
+Esse alinhamento não substitui uma baseline completa do schema: migrações históricas anteriores ainda incluem marcadores de reconciliação. Portanto, a reconstrução integral de um banco vazio deve partir de um schema dump validado, seguido pelo ledger incremental.
+
 ## Gate de publicação atual
 
-O workflow de produção só gera o artefato depois de consultar `get_public_collection_release()` e comprovar simultaneamente:
+O workflow de produção só gera o artefato depois de consultar os três marcadores públicos e comprovar simultaneamente:
 
 - `migration_version = 20260831150725`;
 - `release_version = 20260831_acprod_collection_fast8_v8_5`;
 - `ready = true`;
 - os flags `collection_exact_8_digit_scan` e `collection_active_tags_8_digits` em `true`;
 - todos os flags anteriores de turnos, lotes, Realtime, Histórico e reposição ainda em `true`.
+- `get_public_collection_async_release()`: `migration_version = v8.8`, release assíncrono esperado e todos os flags do inbox/worker em `true`;
+- `get_public_collection_runtime_health()`: `migration_version = v9.2.3`, `release_version = 20260901_acprod_collection_runtime_health_security_v9_2_3`, `health_source = runtime_catalog`, `snapshot_used = false`, `ready = true` e todos os flags reais de inbox, policies RLS, verificador do segredo, worker, Realtime, KPIs, índices, turnos, claim, wakeup e fallback em `true`.
 
-Assim, o front-end de captura rápida não pode ser publicado contra um banco antigo ou parcialmente migrado.
+Assim, o front-end de captura rápida não pode ser publicado contra um banco antigo, parcialmente migrado ou cuja arquitetura tenha sofrido deriva depois da aplicação das migrações.
 
 ## Arquivos retirados do diretório ativo
 
