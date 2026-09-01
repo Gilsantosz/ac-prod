@@ -94,6 +94,63 @@ describe('collectionBatchService asynchronous finalization', () => {
     ]);
   });
 
+  it('reduz a frequência de polling durante uma finalização degradada', async () => {
+    vi.useFakeTimers();
+
+    const acceptedRow = {
+      id: 'inbox-slow',
+      client_event_id: 'event-slow',
+      tag_lida: '09950002',
+      status_sincronizacao: 'recebida',
+      retryable: false,
+      resultado: null,
+    };
+    const finalRow = {
+      ...acceptedRow,
+      status_sincronizacao: 'sincronizada',
+      resultado: {
+        success: true,
+        status: 'approved',
+        client_event_id: 'event-slow',
+      },
+    };
+    const pollTimes = [];
+    const insertQuery = insertResponse([acceptedRow]);
+    const inFilter = vi.fn().mockImplementation(async () => {
+      pollTimes.push(Date.now());
+      return {
+        data: [pollTimes.length >= 8 ? finalRow : acceptedRow],
+        error: null,
+      };
+    });
+    const selectFinal = vi.fn(() => ({ in: inFilter }));
+
+    from
+      .mockReturnValueOnce({ insert: insertQuery.insert })
+      .mockReturnValue({ select: selectFinal });
+
+    const promise = processProductionCollectionBatch([{
+      client_event_id: 'event-slow',
+      raw_value: '09950002',
+      event_kind: 'production_stage',
+    }]);
+
+    await vi.runAllTimersAsync();
+    const result = await promise;
+    const gaps = pollTimes.map((time, index) => (
+      index === 0 ? time - pollTimes[0] : time - pollTimes[index - 1]
+    )).slice(1);
+
+    expect(inFilter).toHaveBeenCalledTimes(8);
+    expect(gaps.every((gap, index) => index === 0 || gap >= gaps[index - 1]))
+      .toBe(true);
+    expect(Math.max(...gaps)).toBeGreaterThan(1_000);
+    expect(result[0]).toMatchObject({
+      client_event_id: 'event-slow',
+      status_sincronizacao: 'sincronizada',
+    });
+  });
+
   it('não faz polling quando o registro já retorna final por idempotência', async () => {
     const finalRow = {
       id: 'inbox-a',

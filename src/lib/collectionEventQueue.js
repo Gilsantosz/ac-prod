@@ -9,11 +9,116 @@ const DB_NAME = 'acprod_collection_queue';
 const DB_VERSION = 2;
 const STORE = 'events';
 
+export const COLLECTION_QUEUE_RETENTION_DAYS = 3;
+export const COLLECTION_QUEUE_PRUNE_BATCH_SIZE = 100;
+export const COLLECTION_QUEUE_RECOVERY_BATCH_SIZE = 50;
+export const COLLECTION_QUEUE_MAINTENANCE_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+export const COLLECTION_QUEUE_RECOVERY_COOLDOWN_MS = 60 * 1000;
+
+const COLLECTION_QUEUE_MAX_PRUNE_BATCH_SIZE = 250;
+const COLLECTION_QUEUE_MAX_RECOVERY_BATCH_SIZE = 100;
+const COLLECTION_QUEUE_DB_OPEN_TIMEOUT_MS = 5_000;
+
+const MAINTENANCE_LOCK_NAME = 'acprod-collection-queue-maintenance';
+const MAINTENANCE_LAST_RUN_KEY = 'acprod_collection_queue_last_maintenance_at';
+const MAINTENANCE_CURSOR_KEY = 'acprod_collection_queue_maintenance_cursor';
+const RECOVERY_CURSOR_KEY = 'acprod_collection_queue_recovery_cursor';
+
+let maintenanceInFlight = null;
+let lastMaintenanceAt = 0;
+let maintenanceChangedSinceLastCompletion = false;
+let recoveryInFlight = null;
+let lastRecoveryAt = 0;
+let recoveryChangedSinceLastCompletion = false;
+let cachedDb = null;
+let dbOpenPromise = null;
+let maintenanceCursor = null;
+let recoveryCursor = null;
+
+function normalizeNonNegativeNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function normalizePruneBatchSize(value) {
+  const parsed = Math.floor(Number(value));
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return COLLECTION_QUEUE_PRUNE_BATCH_SIZE;
+  }
+  return Math.min(parsed, COLLECTION_QUEUE_MAX_PRUNE_BATCH_SIZE);
+}
+
+function normalizeRecoveryBatchSize(value) {
+  const parsed = Math.floor(Number(value));
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return COLLECTION_QUEUE_RECOVERY_BATCH_SIZE;
+  }
+  return Math.min(parsed, COLLECTION_QUEUE_MAX_RECOVERY_BATCH_SIZE);
+}
+
+function isWithinCooldown(now, lastRun, cooldownMs) {
+  return lastRun > 0
+    && lastRun <= now
+    && now - lastRun < cooldownMs;
+}
+
 // ─── IndexedDB wrapper ────────────────────────────────────────────────────────
 
+function createDatabaseOpenError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  error.retryable = true;
+  return error;
+}
+
+function reportDatabaseOpenIssue(error) {
+  console.warn('[CollectionQueue] Fila local indisponível:', error);
+  try {
+    window.dispatchEvent(new CustomEvent('collection-queue-database-error', {
+      detail: { code: error.code, message: error.message },
+    }));
+  } catch {
+    // Ambiente sem window, como testes unitários.
+  }
+}
+
+function releaseCachedDb(db) {
+  if (cachedDb === db) cachedDb = null;
+  try {
+    db.close();
+  } catch {
+    // A conexão pode já ter sido encerrada pelo navegador.
+  }
+}
+
 function openDb() {
-  return new Promise((resolve, reject) => {
+  if (cachedDb) return Promise.resolve(cachedDb);
+  if (dbOpenPromise) return dbOpenPromise;
+
+  dbOpenPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
+    let settled = false;
+    const timeoutHandle = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      dbOpenPromise = null;
+      const error = createDatabaseOpenError(
+        'COLLECTION_QUEUE_DB_OPEN_TIMEOUT',
+        'A fila local não abriu em 5 segundos. Recarregue esta página e feche '
+          + 'outras abas antigas do AC.Prod antes de tentar a leitura novamente.',
+      );
+      reportDatabaseOpenIssue(error);
+      reject(error);
+    }, COLLECTION_QUEUE_DB_OPEN_TIMEOUT_MS);
+
+    const rejectOpen = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutHandle);
+      dbOpenPromise = null;
+      reject(error);
+    };
+
     req.onupgradeneeded = (e) => {
       const db = e.target.result;
       let store;
@@ -28,9 +133,36 @@ function openDb() {
         store.createIndex('by_next_attempt', 'next_attempt_at', { unique: false });
       }
     };
-    req.onsuccess = (e) => resolve(e.target.result);
-    req.onerror = (e) => reject(e.target.error);
+    req.onsuccess = (e) => {
+      const db = e.target.result;
+      if (settled) {
+        releaseCachedDb(db);
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timeoutHandle);
+      dbOpenPromise = null;
+      cachedDb = db;
+      db.onversionchange = () => releaseCachedDb(db);
+      db.onclose = () => {
+        if (cachedDb === db) cachedDb = null;
+      };
+      resolve(db);
+    };
+    req.onerror = (e) => rejectOpen(e.target.error);
+    req.onblocked = () => {
+      const error = createDatabaseOpenError(
+        'COLLECTION_QUEUE_DB_UPGRADE_BLOCKED',
+        'Outra aba antiga do AC.Prod está bloqueando a atualização da fila '
+          + 'local. Feche ou recarregue as outras abas e tente a leitura novamente.',
+      );
+      reportDatabaseOpenIssue(error);
+      rejectOpen(error);
+    };
   });
+
+  return dbOpenPromise;
 }
 
 async function dbPut(item) {
@@ -41,6 +173,89 @@ async function dbPut(item) {
     tx.oncomplete = () => resolve(item);
     tx.onerror = (e) => reject(e.target.error);
   });
+}
+
+async function dbProcessCursorSlice(checkpoint, batchSize, processRecord) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    const objectStore = tx.objectStore(STORE);
+    const range = checkpoint === null
+      ? undefined
+      : IDBKeyRange.lowerBound(checkpoint, true);
+    const request = objectStore.openCursor(range);
+    let examined = 0;
+    let changed = 0;
+    let lastPrimaryKey = checkpoint;
+
+    request.onsuccess = (event) => {
+      const cursor = event.target.result;
+      if (!cursor || examined >= batchSize) return;
+
+      examined += 1;
+      lastPrimaryKey = cursor.primaryKey;
+      if (processRecord(cursor.value, cursor.primaryKey, objectStore)) {
+        changed += 1;
+      }
+      if (examined < batchSize) cursor.continue();
+    };
+    request.onerror = (event) => reject(event.target.error);
+    tx.oncomplete = () => resolve({
+      changed,
+      examined,
+      // Uma fatia cheia agenda outra; uma fatia extra confirma o fim do cursor.
+      hasMore: examined === batchSize,
+      nextCheckpoint: examined === batchSize ? lastPrimaryKey : null,
+    });
+    tx.onerror = (e) => reject(tx.error || e.target.error);
+    tx.onabort = (e) => reject(tx.error || e.target.error);
+  });
+}
+
+async function dbDeleteExpiredSyncedBatch(cutoff, requestedBatchSize, checkpoint) {
+  const batchSize = normalizePruneBatchSize(requestedBatchSize);
+  const result = await dbProcessCursorSlice(
+    checkpoint,
+    batchSize,
+    (event, primaryKey, objectStore) => {
+      if (event.status !== 'synced' || !event.processed_at || event.processed_at >= cutoff) {
+        return false;
+      }
+      objectStore.delete(primaryKey);
+      return true;
+    },
+  );
+  return { ...result, pruned: result.changed };
+}
+
+async function dbRecoverStaleProcessingBatch(
+  cutoff,
+  requestedBatchSize,
+  checkpoint,
+) {
+  const batchSize = normalizeRecoveryBatchSize(requestedBatchSize);
+  const now = new Date().toISOString();
+  const result = await dbProcessCursorSlice(
+    checkpoint,
+    batchSize,
+    (event, _primaryKey, objectStore) => {
+      const eventTimestamp = new Date(
+        event.updated_at || event.created_at_client,
+      ).getTime();
+      if (event.status !== 'processing' || !(eventTimestamp < cutoff)) {
+        return false;
+      }
+      objectStore.put({
+        ...event,
+        status: 'pending',
+        retries: 0,
+        next_attempt_at: now,
+        updated_at: now,
+      });
+      return true;
+    },
+  );
+  return { ...result, recovered: result.changed };
 }
 
 async function dbGetByIndex(indexName, value) {
@@ -214,31 +429,123 @@ export async function getEventsByStatus(status) {
   return dbGetByIndex('by_status', status);
 }
 
-/**
- * Recupera eventos processing antigos jogando-os de volta para pending.
- */
-export async function recoverStaleProcessingEvents(maxAgeMs = 120000) {
-  const all = await dbGetAll();
-  const cutoff = Date.now() - maxAgeMs;
-  let count = 0;
-  for (const event of all) {
-    if (event.status === 'processing') {
-      const timestamp = new Date(event.updated_at || event.created_at_client).getTime();
-      if (timestamp < cutoff) {
-        event.status = 'pending';
-        event.retries = 0;
-        event.next_attempt_at = new Date().toISOString();
-        event.updated_at = new Date().toISOString();
-        await dbPut(event);
-        count++;
-      }
-    }
+function readSharedCursor(storageKey, memoryCursor) {
+  try {
+    const storage = globalThis.localStorage;
+    if (!storage) return memoryCursor;
+    return storage.getItem(storageKey) || null;
+  } catch {
+    return memoryCursor;
   }
-  if (count > 0) {
-    console.log(`[Queue] Recovered ${count} stale processing events.`);
+}
+
+function rememberSharedCursor(storageKey, checkpoint) {
+  try {
+    if (checkpoint === null) {
+      globalThis.localStorage?.removeItem(storageKey);
+    } else {
+      globalThis.localStorage?.setItem(storageKey, String(checkpoint));
+    }
+  } catch {
+    // Ambientes privados podem bloquear localStorage; o cursor em memória basta.
+  }
+}
+
+function readMaintenanceCursor() {
+  maintenanceCursor = readSharedCursor(MAINTENANCE_CURSOR_KEY, maintenanceCursor);
+  return maintenanceCursor;
+}
+
+function rememberMaintenanceCursor(checkpoint) {
+  maintenanceCursor = checkpoint;
+  rememberSharedCursor(MAINTENANCE_CURSOR_KEY, checkpoint);
+}
+
+function readRecoveryCursor() {
+  recoveryCursor = readSharedCursor(RECOVERY_CURSOR_KEY, recoveryCursor);
+  return recoveryCursor;
+}
+
+function rememberRecoveryCursor(checkpoint) {
+  recoveryCursor = checkpoint;
+  rememberSharedCursor(RECOVERY_CURSOR_KEY, checkpoint);
+}
+
+async function recoverStaleProcessingSlice(
+  maxAgeMs = 120000,
+  batchSize = COLLECTION_QUEUE_RECOVERY_BATCH_SIZE,
+) {
+  const staleAgeMs = normalizeNonNegativeNumber(maxAgeMs, 120000);
+  const cutoff = Date.now() - staleAgeMs;
+  const result = await dbRecoverStaleProcessingBatch(
+    cutoff,
+    batchSize,
+    readRecoveryCursor(),
+  );
+  rememberRecoveryCursor(result.nextCheckpoint);
+  return { recovered: result.recovered, hasMore: result.hasMore };
+}
+
+/**
+ * Recupera uma fatia limitada de eventos processing antigos para pending.
+ */
+export async function recoverStaleProcessingEvents(
+  maxAgeMs = 120000,
+  batchSize = COLLECTION_QUEUE_RECOVERY_BATCH_SIZE,
+) {
+  const result = await recoverStaleProcessingSlice(maxAgeMs, batchSize);
+  if (result.recovered > 0) {
+    console.log(`[Queue] Recovered ${result.recovered} stale processing events.`);
     notifyChange();
   }
-  return count;
+  return result.recovered;
+}
+
+/**
+ * Evita varrer a fila de processing em cada tick de flush. Chamadas concorrentes
+ * compartilham a mesma Promise e uma falha não fecha a janela de recuperação.
+ */
+export function runStaleProcessingRecovery(options = {}) {
+  const {
+    maxAgeMs = 120000,
+    batchSize = COLLECTION_QUEUE_RECOVERY_BATCH_SIZE,
+    cooldownMs = COLLECTION_QUEUE_RECOVERY_COOLDOWN_MS,
+    force = false,
+  } = options;
+  const now = Date.now();
+  const normalizedCooldownMs = normalizeNonNegativeNumber(
+    cooldownMs,
+    COLLECTION_QUEUE_RECOVERY_COOLDOWN_MS,
+  );
+
+  if (recoveryInFlight) return recoveryInFlight;
+  if (!force && isWithinCooldown(now, lastRecoveryAt, normalizedCooldownMs)) {
+    return Promise.resolve(0);
+  }
+
+  const task = Promise.resolve().then(() => (
+    recoverStaleProcessingSlice(maxAgeMs, batchSize)
+  ));
+  recoveryInFlight = task
+    .then((result) => {
+      if (result.recovered > 0) {
+        recoveryChangedSinceLastCompletion = true;
+        console.log(`[Queue] Recovered ${result.recovered} stale processing events.`);
+      }
+      if (!result.hasMore) {
+        lastRecoveryAt = Date.now();
+        if (recoveryChangedSinceLastCompletion) {
+          recoveryChangedSinceLastCompletion = false;
+          notifyChange();
+        }
+      }
+      return result.recovered;
+    })
+    .finally(() => {
+      recoveryInFlight = null;
+    });
+
+  return recoveryInFlight;
 }
 
 /**
@@ -391,23 +698,109 @@ export async function retryErrors() {
 }
 
 /**
- * Limpa eventos sincronizados com mais de N dias.
+ * Limpa uma fatia limitada de eventos sincronizados com mais de N dias.
  */
-export async function pruneOldSynced(daysOld = 3) {
-  const cutoff = new Date(Date.now() - daysOld * 86_400_000).toISOString();
-  const all = await dbGetAll();
-  const db = await openDb();
-  let pruned = 0;
-  for (const e of all) {
-    if (e.status === 'synced' && e.processed_at && e.processed_at < cutoff) {
-      await new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE, 'readwrite');
-        tx.objectStore(STORE).delete(e.client_event_id);
-        tx.oncomplete = resolve;
-        tx.onerror = (ev) => reject(ev.target.error);
-      });
-      pruned++;
-    }
+async function pruneOldSyncedSlice(
+  daysOld = COLLECTION_QUEUE_RETENTION_DAYS,
+  batchSize = COLLECTION_QUEUE_PRUNE_BATCH_SIZE,
+) {
+  const retentionDays = normalizeNonNegativeNumber(
+    daysOld,
+    COLLECTION_QUEUE_RETENTION_DAYS,
+  );
+  const cutoff = new Date(Date.now() - retentionDays * 86_400_000).toISOString();
+  const result = await dbDeleteExpiredSyncedBatch(
+    cutoff,
+    batchSize,
+    readMaintenanceCursor(),
+  );
+  rememberMaintenanceCursor(result.nextCheckpoint);
+  return { pruned: result.pruned, hasMore: result.hasMore };
+}
+
+export async function pruneOldSynced(
+  daysOld = COLLECTION_QUEUE_RETENTION_DAYS,
+  batchSize = COLLECTION_QUEUE_PRUNE_BATCH_SIZE,
+) {
+  const result = await pruneOldSyncedSlice(daysOld, batchSize);
+  if (result.pruned > 0) notifyChange();
+  return result.pruned;
+}
+
+function readSharedMaintenanceTimestamp() {
+  try {
+    const stored = Number(globalThis.localStorage?.getItem(MAINTENANCE_LAST_RUN_KEY));
+    return Number.isFinite(stored) ? stored : 0;
+  } catch {
+    return 0;
   }
-  return pruned;
+}
+
+function rememberMaintenanceTimestamp(timestamp) {
+  lastMaintenanceAt = timestamp;
+  try {
+    globalThis.localStorage?.setItem(MAINTENANCE_LAST_RUN_KEY, String(timestamp));
+  } catch {
+    // Ambientes privados podem bloquear localStorage; o cooldown em memória basta.
+  }
+}
+
+async function pruneWithOptionalCrossTabLock(retentionDays, batchSize) {
+  if (globalThis.navigator?.locks?.request) {
+    return globalThis.navigator.locks.request(
+      MAINTENANCE_LOCK_NAME,
+      { ifAvailable: true },
+      (lock) => (lock ? pruneOldSyncedSlice(retentionDays, batchSize) : null),
+    );
+  }
+  return pruneOldSyncedSlice(retentionDays, batchSize);
+}
+
+/**
+ * Manutenção fria da fila. Não deve ser aguardada pelo caminho de captura.
+ * O timestamp em localStorage coordena o cooldown entre abas e Web Locks evita
+ * duas limpezas simultâneas quando o navegador oferece esse recurso.
+ */
+export function runCollectionQueueMaintenance(options = {}) {
+  const {
+    retentionDays = COLLECTION_QUEUE_RETENTION_DAYS,
+    batchSize = COLLECTION_QUEUE_PRUNE_BATCH_SIZE,
+    cooldownMs = COLLECTION_QUEUE_MAINTENANCE_COOLDOWN_MS,
+    force = false,
+  } = options;
+  const now = Date.now();
+  const lastRun = Math.max(lastMaintenanceAt, readSharedMaintenanceTimestamp());
+  const normalizedCooldownMs = normalizeNonNegativeNumber(
+    cooldownMs,
+    COLLECTION_QUEUE_MAINTENANCE_COOLDOWN_MS,
+  );
+
+  if (maintenanceInFlight) return maintenanceInFlight;
+  if (!force && isWithinCooldown(now, lastRun, normalizedCooldownMs)) {
+    return Promise.resolve({ pruned: 0, hasMore: false, skipped: true });
+  }
+
+  const task = Promise.resolve().then(() => (
+    pruneWithOptionalCrossTabLock(retentionDays, batchSize)
+  ));
+  maintenanceInFlight = task
+    .then((result) => {
+      if (result === null) {
+        return { pruned: 0, hasMore: false, skipped: true };
+      }
+      if (result.pruned > 0) maintenanceChangedSinceLastCompletion = true;
+      if (!result.hasMore) {
+        rememberMaintenanceTimestamp(Date.now());
+        if (maintenanceChangedSinceLastCompletion) {
+          maintenanceChangedSinceLastCompletion = false;
+          notifyChange();
+        }
+      }
+      return { ...result, skipped: false };
+    })
+    .finally(() => {
+      maintenanceInFlight = null;
+    });
+
+  return maintenanceInFlight;
 }

@@ -104,4 +104,35 @@ describe('AC.Prod2 collection micro-batching v8.6 contract', () => {
     expect(workflow).toContain('collection_async_ingress_is_lightweight');
     expect(workflow).toContain('collection_async_worker_concurrency_bounded');
   });
+
+  it('impede deploy quando a saúde dinâmica da coleta não estiver na v9.2.3', () => {
+    const workflow = repoFile('.github/workflows/deploy.yml');
+
+    expect(workflow).toContain(
+      'REQUIRED_RUNTIME_COLLECTION_MIGRATION_VERSION: "v9.2.3"',
+    );
+    expect(workflow).toContain(
+      'REQUIRED_RUNTIME_COLLECTION_RELEASE_VERSION: "20260901_acprod_collection_runtime_health_security_v9_2_3"',
+    );
+    expect(workflow).toContain('get_public_collection_runtime_health');
+    expect(workflow).toContain('RUNTIME_COLLECTION_HEALTH_OK');
+    expect(workflow).toContain('collection_runtime_snapshot_independent');
+    expect(workflow).toContain('collection_runtime_inbox_rls');
+    expect(workflow).toContain('collection_runtime_ingress_trigger');
+    expect(workflow).toContain('collection_runtime_worker_secret_verifier');
+    expect(workflow).toContain('collection_runtime_worker_timeout_30s');
+    expect(workflow).toContain('collection_sync_operator_kpis_event_ledger');
+    expect(workflow).toContain('collection_sync_idle_wakeup_guard');
+    expect(workflow).toContain('collection_sync_fallback_fifteen_seconds');
+    expect(workflow).toContain('collection_sync_shift_window_constant_time');
+    expect(workflow).toContain("payload.get('health_source') != 'runtime_catalog'");
+    expect(workflow).toContain("payload.get('snapshot_used') is not False");
+    expect(workflow).toContain('"collection_runtime_migration_version"');
+    expect(workflow).toContain('"collection_runtime_release_version"');
+    expect(workflow).not.toContain('REQUIRED_SYNC_COLLECTION_MIGRATION_VERSION');
+    expect(workflow).not.toContain('REQUIRED_SYNC_COLLECTION_RELEASE_VERSION');
+    expect(workflow).not.toContain('"collection_sync_migration_version"');
+    expect(workflow).not.toContain('"collection_sync_release_version"');
+    expect(workflow).toContain('"collection_health_probe": "runtime_catalog"');
+  });
 });

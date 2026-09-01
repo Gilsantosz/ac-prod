@@ -82,8 +82,8 @@ const MissingSupabaseConfiguration = () => (
 
 
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, authError, navigateToLogin } = useAuth();
-  useProductionRealtimeSync({ enabled: !isLoadingAuth && !authError });
+  const { user, isLoadingAuth, authError, navigateToLogin } = useAuth();
+  useProductionRealtimeSync({ enabled: !!user && !isLoadingAuth && !authError });
 
   // Show loading spinner while checking auth
   if (isLoadingAuth) {

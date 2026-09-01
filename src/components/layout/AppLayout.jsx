@@ -5,7 +5,6 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { KioskProvider, useKiosk } from '@/lib/KioskContext';
 import { useAuth } from '@/lib/AuthContext';
-import { useRealtimeSync } from '@/hooks/useRealtimeSync';
 import { useTheme } from '@/hooks/useTheme';
 import LeoLogo from '@/components/ui/LeoLogo';
 import NotificationCenter from '@/components/layout/NotificationCenter';
@@ -45,8 +44,6 @@ function AppShell() {
   const sidebarRef = useRef(null);
   const pointerInsideRef = useRef(false);
   const closeTimerRef = useRef(null);
-
-  useRealtimeSync(!!user);
 
   useEffect(() => {
     const media = window.matchMedia(DESKTOP_POINTER_QUERY);

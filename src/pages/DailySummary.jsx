@@ -26,7 +26,6 @@ import {
 import { ANNUAL_FILTER_DISABLED, getDailySummaryPeriod } from '@/lib/dailySummaryPeriod';
 import { buildDashboardYearOptions } from '@/lib/dashboardPeriod';
 import { useCells } from '@/hooks/useCells';
-import { useProductionRealtimeSync } from '@/hooks/useProductionRealtimeSync';
 import { getCanonicalCellKey } from '@/lib/productionStagePolicyService';
 import SummaryKpis from '@/components/daily/SummaryKpis';
 import SummaryTable from '@/components/daily/SummaryTable';
@@ -61,9 +60,6 @@ export default function DailySummary() {
   const { activeCells } = useCells();
   const period = useMemo(() => getDailySummaryPeriod(date, year), [date, year]);
   const { fromDate, toDate, annual: annualMode } = period;
-
-  // Ativa sincronização em tempo real via Supabase Realtime
-  useProductionRealtimeSync({ enabled: true });
 
   // 1. Snapshot produtivo do período selecionado (carregamento prioritário)
   const {

@@ -16,7 +16,10 @@ REQUIRED_LEDGER = [
     "20260831050652", "20260831051513", "20260831052152", "20260831052721",
     "20260831052809", "20260831134504", "20260831134819", "20260831134912",
     "20260831134944", "20260831135344", "20260831135630", "20260831142929",
-    "20260831143323", "20260831143850", "20260831150725",
+    "20260831143323", "20260831143850", "20260831150725", "20260831170836",
+    "20260831221753", "20260831223614", "20260831224529", "20260831224808",
+    "20260831224837", "20260831225000", "20260831225902", "20260831230439",
+    "20260831232032", "20260831234332", "20260901025000", "20260901032000",
 ]
 UNSAFE = {
     "20260831100000_concurrency_batch_lifecycle_operator_shifts.sql",
@@ -112,6 +115,207 @@ def main() -> int:
         "contrato SQL da coleta rápida de 8 dígitos",
     )
 
+    async_worker_sql = read(migrations / "20260831221753_collection_async_inbox_worker_v8_7.sql")
+    require_all(
+        async_worker_sql,
+        (
+            "ADD COLUMN IF NOT EXISTS lease_expires_at",
+            "CREATE OR REPLACE FUNCTION public.claim_collection_inbox",
+            "CREATE OR REPLACE FUNCTION public.process_collection_inbox_item",
+            "FOR UPDATE SKIP LOCKED",
+            "private.coleta_producao_credentials",
+            "private.wake_collection_inbox_worker",
+        ),
+        "baseline SQL do worker assíncrono",
+    )
+
+    async_probe_sql = read(migrations / "20260831223614_collection_async_release_probe_v8_7_1.sql")
+    require_all(
+        async_probe_sql,
+        (
+            "CREATE OR REPLACE FUNCTION public.get_public_collection_async_release",
+            "collection_async_worker_rpcs",
+            "collection_async_realtime",
+            "collection_async_wakeup_trigger",
+        ),
+        "marcador SQL da coleta assíncrona",
+    )
+
+    async_payload_sql = read(migrations / "20260831224808_collection_async_payload_dashboard_v8_8.sql")
+    require_all(
+        async_payload_sql,
+        (
+            "private.sanitize_collection_event_payload",
+            "get_collection_dashboard_snapshot_v3",
+            "production_cell_lot_states",
+        ),
+        "sanitização e cache do dashboard assíncrono",
+    )
+
+    async_kpis_sql = read(migrations / "20260831224837_collection_async_kpis_worker_v8_8.sql")
+    require_all(
+        async_kpis_sql,
+        (
+            "get_operator_shift_kpis_v2",
+            "idx_stage_readings_operator_created_status",
+            "private.wake_collection_inbox_worker",
+            "'concurrency', 4",
+        ),
+        "KPIs e contenção do worker assíncrono",
+    )
+
+    async_release_sql = read(migrations / "20260831225000_collection_async_sync_v8_8.sql")
+    require_all(
+        async_release_sql,
+        (
+            "20260831_acprod_collection_async_sync_v8_8",
+            "migration_version",
+            "collection_async_ingress_is_lightweight",
+            "collection_async_worker_concurrency_bounded",
+        ),
+        "release SQL da coleta assíncrona v8.8",
+    )
+
+    sync_release_sql = read(migrations / "20260831234332_collection_sync_release_v9_2_1.sql")
+    require_all(
+        sync_release_sql,
+        (
+            "CREATE OR REPLACE FUNCTION public.get_public_collection_sync_release",
+            "20260831_acprod_collection_sync_v9_2_1",
+            "collection_sync_operator_kpis_event_ledger",
+            "collection_sync_idle_wakeup_guard",
+            "collection_sync_fallback_fifteen_seconds",
+            "collection_sync_shift_window_constant_time",
+        ),
+        "release SQL consolidado v9.2.1",
+    )
+
+    runtime_health_sql = read(
+        migrations / "20260901025000_collection_runtime_health_v9_2_2.sql"
+    )
+    require_all(
+        runtime_health_sql,
+        (
+            "CREATE OR REPLACE FUNCTION private.wake_collection_inbox_worker",
+            "CREATE OR REPLACE FUNCTION public.get_public_collection_runtime_health",
+            "20260901_acprod_collection_runtime_health_v9_2_2",
+            "timeout_milliseconds := 30000",
+            "health_source', 'runtime_catalog'",
+            "'snapshot_used', false",
+            "pg_get_functiondef",
+            "pg_get_triggerdef",
+            "has_function_privilege",
+            "has_table_privilege",
+            "pg_publication_tables",
+            "vault.decrypted_secrets",
+            "cron.job",
+            "pg_index",
+            "collection_runtime_snapshot_independent",
+            "collection_runtime_inbox_rls",
+            "collection_runtime_ingress_trigger",
+            "collection_runtime_worker_secret_verifier",
+            "collection_runtime_worker_timeout_30s",
+            "REVOKE ALL ON FUNCTION private.wake_collection_inbox_worker(text, integer)",
+            "GRANT EXECUTE ON FUNCTION private.wake_collection_inbox_worker(text, integer)",
+            "TO postgres, service_role",
+        ),
+        "probe dinâmico de saúde v9.2.2",
+    )
+    runtime_probe_definition = runtime_health_sql.split(
+        "CREATE OR REPLACE FUNCTION public.get_public_collection_runtime_health", 1
+    )[1].split("$runtime_health$;", 1)[0]
+    require_none(
+        runtime_probe_definition,
+        (
+            "from public.app_schema_releases",
+            "select public.get_public_collection_async_release",
+        ),
+        "definição dinâmica do probe v9.2.2",
+    )
+    require_none(
+        runtime_health_sql,
+        (
+            "TRUNCATE ",
+            "DROP TABLE ",
+            "DELETE FROM public.production_",
+            "timeout_milliseconds := 2000",
+        ),
+        "migração de saúde v9.2.2",
+    )
+    require_none(
+        runtime_health_sql,
+        (
+            "CREATE OR REPLACE FUNCTION public.get_public_collection_async_release",
+            "CREATE OR REPLACE FUNCTION public.get_public_collection_sync_release",
+        ),
+        "compatibilidade dos probes legados",
+    )
+
+    runtime_security_sql = read(
+        migrations / "20260901032000_collection_runtime_health_security_v9_2_3.sql"
+    )
+    require_all(
+        runtime_security_sql,
+        (
+            "CREATE OR REPLACE FUNCTION public.get_public_collection_runtime_health",
+            "20260901_acprod_collection_runtime_health_security_v9_2_3",
+            "'migration_version', 'v9.2.3'",
+            "policy.policyname = 'coletas_producao_insert_own'",
+            "policy.policyname = 'coletas_producao_select_own'",
+            "SELECT count(*) = 2",
+            "policy.permissive = 'PERMISSIVE'",
+            "policy.cmd = 'INSERT'",
+            "policy.cmd = 'SELECT'",
+            "policy.roles = ARRAY['authenticated'::name]",
+            "policy.qual IS NULL",
+            "policy.with_check IS NULL",
+            "lower(coalesce(policy.with_check, ''))",
+            "lower(coalesce(policy.qual, ''))",
+            "= '(auth_user_id=auth.uid())'",
+            "lower(function_row.prosrc)",
+            "AS verify_secret_source",
+            "function_row.prosecdef IS TRUE",
+            "function_row.provolatile = 's'",
+            "definitions.verify_secret_source =",
+            "fromvault.decrypted_secrets",
+            "acprod_collection_worker_secret",
+            "extensions.digest(secret.decrypted_secret,''sha256'')",
+            "extensions.digest(coalesce(p_secret,''''),''sha256'')",
+            "has_function_privilege",
+            "'service_role'",
+            "'authenticated'",
+            "'anon'",
+        ),
+        "endurecimento dinâmico de saúde v9.2.3",
+    )
+    if runtime_security_sql.count("CREATE OR REPLACE FUNCTION") != 1:
+        fail("migração v9.2.3 deve redefinir somente o probe runtime")
+    runtime_security_probe = runtime_security_sql.split(
+        "CREATE OR REPLACE FUNCTION public.get_public_collection_runtime_health", 1
+    )[1].split("$runtime_health$;", 1)[0]
+    require_none(
+        runtime_security_probe,
+        (
+            "from public.app_schema_releases",
+            "select public.get_public_collection_async_release",
+            "select true",
+            "return true",
+        ),
+        "definição endurecida do probe v9.2.3",
+    )
+    require_none(
+        runtime_security_sql,
+        (
+            "CREATE OR REPLACE FUNCTION private.wake_collection_inbox_worker",
+            "CREATE OR REPLACE FUNCTION public.get_public_collection_async_release",
+            "CREATE OR REPLACE FUNCTION public.get_public_collection_sync_release",
+            "TRUNCATE ",
+            "DROP TABLE ",
+            "DELETE FROM public.production_",
+        ),
+        "migração incremental de segurança v9.2.3",
+    )
+
     replacement_v82_sql = read(migrations / "20260831135630_finalize_replacement_workflow_v8_2.sql")
     require_all(
         replacement_v82_sql,
@@ -172,6 +376,8 @@ def main() -> int:
             'REQUIRED_RELEASE_VERSION: "20260831_acprod_collection_fast8_v8_5"',
             'REQUIRED_ASYNC_COLLECTION_MIGRATION_VERSION: "v8.8"',
             'REQUIRED_ASYNC_COLLECTION_RELEASE_VERSION: "20260831_acprod_collection_async_sync_v8_8"',
+            'REQUIRED_RUNTIME_COLLECTION_MIGRATION_VERSION: "v9.2.3"',
+            'REQUIRED_RUNTIME_COLLECTION_RELEASE_VERSION: "20260901_acprod_collection_runtime_health_security_v9_2_3"',
             "collection_exact_8_digit_scan",
             "collection_active_tags_8_digits",
             "replacement_quality_role",
@@ -196,9 +402,31 @@ def main() -> int:
             "collection_dashboard_state_cache",
             "collection_shift_kpis_direct_stage_index",
             "collection_async_worker_concurrency_bounded",
+            "get_public_collection_runtime_health",
+            "RUNTIME_COLLECTION_HEALTH_OK",
+            "health_source",
+            "runtime_catalog",
+            "snapshot_used",
+            "collection_sync_async_base_ready",
+            "collection_runtime_snapshot_independent",
+            "collection_runtime_inbox_rls",
+            "collection_runtime_ingress_trigger",
+            "collection_runtime_worker_secret_verifier",
+            "collection_runtime_worker_timeout_30s",
+            "collection_sync_operator_kpis_event_ledger",
+            "collection_sync_operator_covering_index",
+            "collection_sync_manual_stage_index",
+            "collection_sync_worker_claim_index",
+            "collection_sync_worker_five_rounds",
+            "collection_sync_idle_wakeup_guard",
+            "collection_sync_fallback_fifteen_seconds",
+            "collection_sync_shift_window_constant_time",
             '"collection_transport": "async"',
             '"collection_async_migration_version"',
             '"collection_async_release_version"',
+            '"collection_runtime_migration_version"',
+            '"collection_runtime_release_version"',
+            '"collection_health_probe": "runtime_catalog"',
             "needs: [database-release]",
             "actions/checkout@v6",
             "actions/setup-node@v6",
@@ -215,6 +443,10 @@ def main() -> int:
         (
             "REQUIRED_MICRO_BATCH_MIGRATION_VERSION",
             "REQUIRED_MICRO_BATCH_RELEASE_VERSION",
+            "REQUIRED_SYNC_COLLECTION_MIGRATION_VERSION",
+            "REQUIRED_SYNC_COLLECTION_RELEASE_VERSION",
+            '"collection_sync_migration_version"',
+            '"collection_sync_release_version"',
             "get_public_collection_micro_batch_release",
             "MICRO_BATCH_RELEASE_OK",
             "collection_micro_batch_explicit_grants",
@@ -334,6 +566,24 @@ def main() -> int:
     realtime = read(repo / "src" / "hooks" / "useProductionRealtimeSync.js")
     require_all(realtime, ("production_cell_lot_states", "production_cell_active_contexts"), "mapa Realtime")
 
+    app = read(repo / "src" / "App.jsx")
+    app_layout = read(repo / "src" / "components" / "layout" / "AppLayout.jsx")
+    daily_summary = read(repo / "src" / "pages" / "DailySummary.jsx")
+    realtime_mounts = sum(
+        content.count("useProductionRealtimeSync(") + content.count("useRealtimeSync(")
+        for content in (app, app_layout, daily_summary)
+    )
+    if realtime_mounts != 1 or "useProductionRealtimeSync(" not in app:
+        fail(f"Realtime global deve ter exatamente um proprietário; encontrado={realtime_mounts}")
+    require_all(
+        app,
+        (
+            "const { user, isLoadingAuth, authError, navigateToLogin } = useAuth();",
+            "useProductionRealtimeSync({ enabled: !!user && !isLoadingAuth && !authError });",
+        ),
+        "Realtime condicionado à sessão autenticada",
+    )
+
     approval_modal = read(repo / "src" / "components" / "replacement" / "ReplacementApproveModal.jsx")
     require_all(
         approval_modal,
@@ -407,7 +657,7 @@ def main() -> int:
 
     print("AUDIT_ACPROD_ROLLOUT_OK")
     print(f"ledger_versions={len(REQUIRED_LEDGER)}")
-    print("database_gate=collection_fast8_v8_5+async_v8_8_fail_closed")
+    print("database_gate=collection_fast8_v8_5+async_v8_8+runtime_v9_2_3_security_fail_closed")
     print("scanner_trigger=immediate_on_eighth_digit")
     print("scanner_input=exactly_8_numeric_digits")
     print("scanner_throughput=non_blocking_capture_fifo_sync")
