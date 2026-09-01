@@ -33,8 +33,8 @@ describe('processProductionCollectionBatch', () => {
     getOperatorSession.mockReturnValue({ token: 'operator-session-token' });
   });
 
-  it('aguarda até 90 segundos pela finalização assíncrona do worker', () => {
-    expect(COLLECTION_FINALIZATION_TIMEOUT_MS).toBe(90_000);
+  it('limita a reconciliação ativa a 15 segundos para liberar o próximo lote', () => {
+    expect(COLLECTION_FINALIZATION_TIMEOUT_MS).toBe(15_000);
   });
 
   it('usa backoff progressivo com teto alto e jitter determinístico por lote', () => {

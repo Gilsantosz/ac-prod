@@ -77,20 +77,6 @@ export async function getCollectionHistory({
   const trimmedName = cellName?.trim();
   const resolvedCellId = cellId || null;
 
-  console.log('rpc get_collection_history call:', {
-    p_cell_id: resolvedCellId,
-    p_workstation_id: workstationId,
-    p_operator_id: operatorId,
-    p_shift: shift,
-    p_status: status,
-    p_lot_id: lotId,
-    p_limit: limit,
-    p_offset: offset,
-    p_date_from: dateFrom,
-    p_date_to: dateTo,
-    p_cell_name: trimmedName
-  });
-
   const { data, error } = await supabase.rpc('get_collection_history', {
     p_cell_id: resolvedCellId,
     p_workstation_id: workstationId,
@@ -109,7 +95,6 @@ export async function getCollectionHistory({
     console.error('rpc get_collection_history error:', error);
     throw error;
   }
-  console.log('rpc get_collection_history response length:', data?.length);
   return enrichCollectionRowsWithCurrentPieceStatus(data || [], status);
 }
 

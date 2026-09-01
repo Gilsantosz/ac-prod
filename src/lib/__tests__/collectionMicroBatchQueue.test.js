@@ -188,4 +188,49 @@ describe('flushCollectionMicroBatchQueue', () => {
       },
     });
   });
+
+  it('não devolve ao pending itens já finalizados quando só parte do lote expira', async () => {
+    await enqueueCollectionEvent({
+      client_event_id: 'event-finalized',
+      rawValue: '09950001',
+      event_kind: 'production_stage',
+    });
+    await enqueueCollectionEvent({
+      client_event_id: 'event-slow',
+      rawValue: '09950002',
+      event_kind: 'production_stage',
+    });
+
+    const finalizedEnvelope = {
+      client_event_id: 'event-finalized',
+      status_sincronizacao: 'sincronizada',
+      retryable: false,
+      result: { success: true, status: 'approved' },
+    };
+    const processBatchFn = vi.fn(async (_events, { onFinalized }) => {
+      await onFinalized([finalizedEnvelope]);
+      const timeout = Object.assign(
+        new Error('uma leitura ainda não terminou'),
+        {
+          code: 'COLLECTION_FINALIZATION_TIMEOUT',
+          retryable: true,
+          pendingClientEventIds: ['event-slow'],
+          finalizedEnvelopes: [finalizedEnvelope],
+        },
+      );
+      throw timeout;
+    });
+
+    const summary = await flushCollectionMicroBatchQueue(processBatchFn);
+
+    expect(summary).toMatchObject({ processed: 2, synced: 1, errors: 1 });
+    expect(store.get('event-finalized')).toMatchObject({
+      status: 'synced',
+      retries: 0,
+    });
+    expect(store.get('event-slow')).toMatchObject({
+      status: 'pending',
+      retries: 1,
+    });
+  });
 });

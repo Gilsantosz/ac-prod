@@ -9,6 +9,9 @@ import {
 } from '@/lib/collectionService';
 import CollectionReadItem from './CollectionReadItem';
 
+const REALTIME_HISTORY_REFRESH_WINDOW_MS = 5_000;
+const REALTIME_HISTORY_REFRESH_MIN_DELAY_MS = 250;
+
 function getDateRange(selectedPeriod) {
   const now = new Date();
   let dateFrom = null;
@@ -55,13 +58,15 @@ export default function CollectionRecentReadsPanel({
   const [operatorScope, setOperatorScope] = useState('cell'); // cell, mine
   const [shiftScope, setShiftScope] = useState('current'); // all, current
   const [realtimeStatus, setRealtimeStatus] = useState(navigator.onLine ? 'connecting' : 'offline');
-  const realtimeRefreshRef = useRef(null);
+  const fetchSequenceRef = useRef(0);
 
   const fetchReadings = useCallback(async (
     showLoading = true,
     refreshCount = true,
   ) => {
     if (!cellName) return;
+    const fetchSequence = fetchSequenceRef.current + 1;
+    fetchSequenceRef.current = fetchSequence;
     if (showLoading) setLoading(true);
     setError(null);
     try {
@@ -84,17 +89,21 @@ export default function CollectionRecentReadsPanel({
           getCollectionHistory(filters),
           getCollectionHistoryCount(filters),
         ]);
-        setReadings(data);
-        setTotalCount(count);
+        if (fetchSequence === fetchSequenceRef.current) {
+          setReadings(data);
+          setTotalCount(count);
+        }
       } else {
         const data = await getCollectionHistory(filters);
-        setReadings(data);
+        if (fetchSequence === fetchSequenceRef.current) setReadings(data);
       }
     } catch (e) {
       console.error('CollectionRecentReadsPanel Error:', e);
-      setError('Falha ao carregar o histórico de coletas do banco.');
+      if (fetchSequence === fetchSequenceRef.current) {
+        setError('Falha ao carregar o histórico de coletas do banco.');
+      }
     } finally {
-      if (showLoading) setLoading(false);
+      if (fetchSequence === fetchSequenceRef.current) setLoading(false);
     }
   }, [
     cellName,
@@ -117,16 +126,43 @@ export default function CollectionRecentReadsPanel({
   useEffect(() => {
     if (!cellName) return;
 
+    let disposed = false;
+    let refreshTimer = null;
+    let refreshInFlight = false;
+    let refreshPending = false;
+    let lastRefreshAt = 0;
+
+    const scheduleRealtimeRefresh = () => {
+      if (disposed) return;
+      refreshPending = true;
+      if (refreshTimer !== null || refreshInFlight) return;
+
+      const elapsed = Date.now() - lastRefreshAt;
+      const delay = Math.max(
+        REALTIME_HISTORY_REFRESH_MIN_DELAY_MS,
+        REALTIME_HISTORY_REFRESH_WINDOW_MS - elapsed,
+      );
+      refreshTimer = window.setTimeout(async () => {
+        refreshTimer = null;
+        if (disposed || !refreshPending) return;
+
+        refreshPending = false;
+        refreshInFlight = true;
+        lastRefreshAt = Date.now();
+        try {
+          await fetchReadings(false, false);
+        } finally {
+          refreshInFlight = false;
+          if (refreshPending) scheduleRealtimeRefresh();
+        }
+      }, delay);
+    };
+
     setRealtimeStatus(navigator.onLine ? 'connecting' : 'offline');
     const channel = subscribeToCollectionHistory({
       cellName,
       channelSuffix: 'panel',
-      callback: () => {
-        clearTimeout(realtimeRefreshRef.current);
-        realtimeRefreshRef.current = setTimeout(() => {
-          fetchReadings(false, false);
-        }, 1_000);
-      },
+      callback: scheduleRealtimeRefresh,
       onStatus: (status) => {
         if (status === 'SUBSCRIBED') setRealtimeStatus('online');
         else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') setRealtimeStatus('offline');
@@ -140,7 +176,8 @@ export default function CollectionRecentReadsPanel({
     window.addEventListener('online', onOnline);
 
     return () => {
-      clearTimeout(realtimeRefreshRef.current);
+      disposed = true;
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
       window.removeEventListener('offline', onOffline);
       window.removeEventListener('online', onOnline);
       unsubscribeFromCollectionHistory(channel);

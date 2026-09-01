@@ -3,7 +3,10 @@ import { getOperatorSession } from '@/lib/operatorSessionService';
 
 export const COLLECTION_BATCH_SIZE = 50;
 export const COLLECTION_BATCH_MAX_SIZE = 100;
-export const COLLECTION_FINALIZATION_TIMEOUT_MS = 90_000;
+// Esta é uma fatia ativa de reconciliação, não o prazo do servidor. Depois dela
+// somente os IDs ainda abertos voltam ao backoff local, liberando o próximo
+// micro-lote sem duplicar os itens já finalizados no PostgreSQL.
+export const COLLECTION_FINALIZATION_TIMEOUT_MS = 15_000;
 export const COLLECTION_FINALIZATION_POLL_INITIAL_MS = 120;
 export const COLLECTION_FINALIZATION_POLL_MAX_MS = 5_000;
 
@@ -240,13 +243,33 @@ async function waitForFinalRows(
   inputRows,
   initialRows,
   timeoutMs = COLLECTION_FINALIZATION_TIMEOUT_MS,
+  onFinalized = null,
 ) {
   const orderedIds = inputRows.map((row) => row.client_event_id);
   const rowsById = new Map(
     (initialRows || []).map((row) => [row.client_event_id, row]),
   );
+  const reportedFinalIds = new Set();
   const deadline = Date.now() + timeoutMs;
   let pollAttempt = 0;
+
+  const publishNewFinalRows = async () => {
+    if (typeof onFinalized !== 'function') return;
+
+    const newFinalRows = orderedIds
+      .map((id) => rowsById.get(id))
+      .filter((row) => (
+        row
+        && FINAL_STATUSES.has(row.status_sincronizacao)
+        && !reportedFinalIds.has(row.client_event_id)
+      ));
+
+    if (!newFinalRows.length) return;
+    await onFinalized(newFinalRows.map((row) => normalizeIngressResult(row)));
+    newFinalRows.forEach((row) => reportedFinalIds.add(row.client_event_id));
+  };
+
+  await publishNewFinalRows();
 
   while (orderedIds.some((id) => (
     !FINAL_STATUSES.has(rowsById.get(id)?.status_sincronizacao)
@@ -262,6 +285,10 @@ async function waitForFinalRows(
       error.code = 'COLLECTION_FINALIZATION_TIMEOUT';
       error.retryable = true;
       error.pendingClientEventIds = pendingIds;
+      error.finalizedEnvelopes = orderedIds
+        .map((id) => rowsById.get(id))
+        .filter((row) => FINAL_STATUSES.has(row?.status_sincronizacao))
+        .map((row) => normalizeIngressResult(row));
       throw error;
     }
 
@@ -271,10 +298,14 @@ async function waitForFinalRows(
     );
     const remainingMs = Math.max(0, deadline - Date.now());
     await sleep(Math.min(pollDelayMs, remainingMs));
-    const refreshed = await selectExistingRows(orderedIds);
+    const unresolvedIds = orderedIds.filter((id) => (
+      !FINAL_STATUSES.has(rowsById.get(id)?.status_sincronizacao)
+    ));
+    const refreshed = await selectExistingRows(unresolvedIds);
     for (const row of refreshed) {
       rowsById.set(row.client_event_id, row);
     }
+    await publishNewFinalRows();
     pollAttempt += 1;
   }
 
@@ -289,7 +320,7 @@ async function waitForFinalRows(
  * IndexedDB. O polling ocorre somente no sincronizador em background, mantendo
  * o scanner livre para o próximo código.
  */
-export async function processProductionCollectionBatch(events = []) {
+export async function processProductionCollectionBatch(events = [], options = {}) {
   if (!Array.isArray(events) || events.length === 0) return [];
   if (events.length > COLLECTION_BATCH_MAX_SIZE) {
     const error = new Error(
@@ -318,7 +349,12 @@ export async function processProductionCollectionBatch(events = []) {
   const batchId = randomUuid();
   const rows = buildIngressRows(events, batchId, operatorSession?.token || null);
   const acceptedRows = await insertRows(rows);
-  const finalizedRows = await waitForFinalRows(rows, acceptedRows);
+  const finalizedRows = await waitForFinalRows(
+    rows,
+    acceptedRows,
+    COLLECTION_FINALIZATION_TIMEOUT_MS,
+    options.onFinalized,
+  );
 
   return finalizedRows.map((row) => normalizeIngressResult(row));
 }

@@ -19,6 +19,7 @@ import {
 import { getOperatorSession } from '@/lib/operatorSessionService';
 
 const QUEUE_MAINTENANCE_IDLE_TIMEOUT_MS = 5_000;
+const QUEUE_STATS_REFRESH_DEBOUNCE_MS = 100;
 
 function emitBatchResult(payload) {
   try {
@@ -104,6 +105,9 @@ export function useCollectionQueue(processFn, options = {}) {
   const [flushing, setFlushing] = useState(false);
   const flushingRef = useRef(false);
   const scheduledFlushRef = useRef(null);
+  const scheduledStatsRefreshRef = useRef(null);
+  const statsRefreshInFlightRef = useRef(false);
+  const statsRefreshQueuedRef = useRef(false);
   const fallbackLockRef = useRef(Promise.resolve());
   const processFnRef = useRef(processFn);
   const processBatchFnRef = useRef(processBatchFn);
@@ -119,11 +123,43 @@ export function useCollectionQueue(processFn, options = {}) {
     setStats(nextStats);
   }, [cellName, machineId, eventKind]);
 
-  const refreshStatsSafely = useCallback(() => {
-    Promise.resolve(refreshStats()).catch((error) => {
-      console.warn('[CollectionQueue] Falha ao atualizar estatísticas locais:', error);
-    });
+  const runStatsRefresh = useCallback(async () => {
+    if (statsRefreshInFlightRef.current) {
+      statsRefreshQueuedRef.current = true;
+      return;
+    }
+
+    statsRefreshInFlightRef.current = true;
+    try {
+      do {
+        statsRefreshQueuedRef.current = false;
+        try {
+          await refreshStats();
+        } catch (error) {
+          console.warn('[CollectionQueue] Falha ao atualizar estatísticas locais:', error);
+        }
+      } while (statsRefreshQueuedRef.current);
+    } finally {
+      statsRefreshInFlightRef.current = false;
+    }
   }, [refreshStats]);
+
+  const refreshStatsSafely = useCallback((immediate = false) => {
+    if (scheduledStatsRefreshRef.current !== null) {
+      clearTimeout(scheduledStatsRefreshRef.current);
+      scheduledStatsRefreshRef.current = null;
+    }
+
+    if (immediate) {
+      runStatsRefresh();
+      return;
+    }
+
+    scheduledStatsRefreshRef.current = setTimeout(() => {
+      scheduledStatsRefreshRef.current = null;
+      runStatsRefresh();
+    }, QUEUE_STATS_REFRESH_DEBOUNCE_MS);
+  }, [runStatsRefresh]);
 
   const withQueueLock = useCallback(async (task) => {
     if (navigator.locks?.request) {
@@ -270,8 +306,14 @@ export function useCollectionQueue(processFn, options = {}) {
   useEffect(() => {
     const handler = () => refreshStatsSafely();
     window.addEventListener('collection-queue-changed', handler);
-    refreshStatsSafely();
-    return () => window.removeEventListener('collection-queue-changed', handler);
+    refreshStatsSafely(true);
+    return () => {
+      window.removeEventListener('collection-queue-changed', handler);
+      if (scheduledStatsRefreshRef.current !== null) {
+        clearTimeout(scheduledStatsRefreshRef.current);
+        scheduledStatsRefreshRef.current = null;
+      }
+    };
   }, [refreshStatsSafely]);
 
   useEffect(() => {

@@ -3,6 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const MAX_SAFE_PROCESSING_CONCURRENCY = 2;
 
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
   throw new Error("Supabase worker environment is incomplete.");
@@ -119,7 +120,15 @@ Deno.serve(async (req: Request) => {
   }
 
   const limitPerRound = clampInteger(body.limit, 40, 1, 100);
-  const concurrency = clampInteger(body.concurrency, 4, 1, 8);
+  // O hotpath atualiza agregados compartilhados por célula/lote. Rajadas com
+  // oito transações paralelas provocavam lock timeout e retries exponenciais;
+  // duas mantêm o throughput sem transformar contenção em atraso de minutos.
+  const concurrency = clampInteger(
+    body.concurrency,
+    MAX_SAFE_PROCESSING_CONCURRENCY,
+    1,
+    MAX_SAFE_PROCESSING_CONCURRENCY,
+  );
   const maxRounds = clampInteger(body.max_rounds, 4, 1, 6);
   const invocationId = crypto.randomUUID();
   const startedAt = performance.now();
@@ -198,6 +207,8 @@ Deno.serve(async (req: Request) => {
       retries_scheduled: retriesScheduled,
       already_final: alreadyFinal,
       failed_calls: failedCalls,
+      concurrency,
+      limit_per_round: limitPerRound,
       duration_ms: durationMs,
     }));
 
@@ -210,6 +221,8 @@ Deno.serve(async (req: Request) => {
       retries_scheduled: retriesScheduled,
       already_final: alreadyFinal,
       failed_calls: failedCalls,
+      concurrency,
+      limit_per_round: limitPerRound,
       failures: failures.slice(0, 20),
       duration_ms: durationMs,
     });
