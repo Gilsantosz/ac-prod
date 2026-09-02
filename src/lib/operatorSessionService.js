@@ -6,6 +6,7 @@
  */
 
 import { supabase } from '@/lib/supabaseClient';
+import { createAuthCorrelationId, measureAuthStep } from '@/lib/authTelemetry';
 
 const SESSION_KEY = 'acprod_operator_session';
 
@@ -75,11 +76,14 @@ export async function loginOperator(loginName, registration, { purpose = 'produc
     ? 'replacement_operator_login_v2'
     : 'operator_login_v2';
 
-  const { data, error } = await supabase.rpc(rpcName, {
-    p_login_name: loginName.trim(),
-    p_registration: registration.trim(),
-    p_device_id: deviceId
-  });
+  const correlationId = createAuthCorrelationId();
+  const { data, error } = await measureAuthStep(correlationId, rpcName, () => (
+    supabase.rpc(rpcName, {
+      p_login_name: loginName.trim(),
+      p_registration: registration.trim(),
+      p_device_id: deviceId
+    })
+  ));
 
   if (error) {
     throw new Error(`Falha ao conectar: ${error.message}`);
@@ -126,12 +130,15 @@ export async function setOperatorSessionContext(cellId, machineId = null, statio
   const session = getOperatorSession();
   if (!session?.token) throw new Error('Nenhuma sessão ativa encontrada.');
 
-  const { data, error } = await supabase.rpc('set_operator_session_context', {
-    p_session_token: session.token,
-    p_cell_id: cellId,
-    p_machine_id: machineId,
-    p_station_name: stationName
-  });
+  const correlationId = createAuthCorrelationId();
+  const { data, error } = await measureAuthStep(correlationId, 'set_operator_session_context', () => (
+    supabase.rpc('set_operator_session_context', {
+      p_session_token: session.token,
+      p_cell_id: cellId,
+      p_machine_id: machineId,
+      p_station_name: stationName
+    })
+  ));
 
   if (error) throw error;
   if (!data?.success) throw new Error(data?.error || 'Falha ao definir posto operacional.');
