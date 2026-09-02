@@ -6,6 +6,8 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
 const CLAIM_RPC = "claim_collection_batch_v3";
 const PROCESS_RPC = "process_collection_batch_v3";
+const ACQUIRE_LEASE_RPC = "acquire_collection_worker_lease_v3";
+const RELEASE_LEASE_RPC = "release_collection_worker_lease_v3";
 const MIN_BATCH_SIZE = 5;
 const DEFAULT_BATCH_SIZE = 10;
 const MAX_BATCH_SIZE = 25;
@@ -128,13 +130,32 @@ Deno.serve(async (req: Request) => {
     MAX_ROUNDS,
   );
   const invocationId = crypto.randomUUID();
+  const requestedLeaseOwner = typeof body.lease_owner === "string"
+    && /^[a-zA-Z0-9:_-]{1,160}$/.test(body.lease_owner)
+    ? body.lease_owner
+    : `edge:${invocationId}`;
   const startedAt = performance.now();
 
   let rounds = 0;
   let batchesProcessed = 0;
   let totalClaimed = 0;
+  let leaseAcquired = false;
 
   try {
+    const { data: acquired, error: leaseError } = await admin.rpc(
+      ACQUIRE_LEASE_RPC,
+      { p_worker_kind: "decision", p_lease_owner: requestedLeaseOwner, p_ttl_seconds: 45 },
+    );
+    if (leaseError) throw new WorkerFailure("LEASE_ACQUIRE_FAILED", safeDatabaseCode(leaseError));
+    if (acquired !== true) {
+      return jsonResponse(202, {
+        ok: true,
+        coalesced: true,
+        invocation_id: invocationId,
+      });
+    }
+    leaseAcquired = true;
+
     for (let round = 0; round < maxRounds; round += 1) {
       const workerId = `decision-v3:${invocationId}:${round}`;
       const { data: claimData, error: claimError } = await admin.rpc(
@@ -206,5 +227,19 @@ Deno.serve(async (req: Request) => {
       invocation_id: invocationId,
       error: failure.publicCode,
     });
+  } finally {
+    if (leaseAcquired) {
+      const { error: releaseError } = await admin.rpc(RELEASE_LEASE_RPC, {
+        p_worker_kind: "decision",
+        p_lease_owner: requestedLeaseOwner,
+      });
+      if (releaseError) {
+        console.error(JSON.stringify({
+          event: "collection_v3_decision_lease_release_failed",
+          invocation_id: invocationId,
+          database_code: safeDatabaseCode(releaseError),
+        }));
+      }
+    }
   }
 });

@@ -74,9 +74,21 @@ describe('Collection Fabric V3 Edge workers contract', () => {
     expect(source).toContain('p_worker_id: workerId');
     expect(source).toContain('p_limit: limit');
     expect(source).toContain('p_items: items');
-    expect(occurrences(source, 'await admin.rpc(')).toBe(3);
+    expect(occurrences(source, 'await admin.rpc(')).toBe(5);
     expect(occurrences(source, 'await admin.rpc(\n        CLAIM_RPC,')).toBe(1);
     expect(occurrences(source, 'await admin.rpc(\n        PROCESS_RPC,')).toBe(1);
+  });
+
+  it.each(WORKERS)('$label worker uses a distributed lease and always releases it', ({ path, label }) => {
+    const source = readWorker(path);
+
+    expect(source).toContain('const ACQUIRE_LEASE_RPC = "acquire_collection_worker_lease_v3"');
+    expect(source).toContain('const RELEASE_LEASE_RPC = "release_collection_worker_lease_v3"');
+    expect(source).toContain(`p_worker_kind: "${label}"`);
+    expect(source).toContain('coalesced: true');
+    expect(source).toContain('} finally {');
+    expect(source.indexOf('ACQUIRE_LEASE_RPC')).toBeLessThan(source.indexOf('for (let round'));
+    expect(source.indexOf('} finally {')).toBeLessThan(source.lastIndexOf('RELEASE_LEASE_RPC'));
   });
 
   it.each(WORKERS)('$label worker enforces 5-25 items and at most five sequential rounds', ({ path }) => {
