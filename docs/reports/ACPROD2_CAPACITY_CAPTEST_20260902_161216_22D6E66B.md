@@ -145,9 +145,18 @@ frontend candidato permanece em branch de correção e não deve ser mesclado em
 `main` nem publicado enquanto os gates acima estiverem pendentes. Para nova
 rodada, seguir o runbook de implantação e manter o rollback por flags pronto.
 
+A branch foi publicada na PR 63. Os checks GitHub de contrato, segurança,
+validação e build passaram, mas o check externo `Workers Builds: ac-prod2`
+falhou no Build ID `c4281e56-033e-4bd7-bd3c-b5406e9cffa6`. O mesmo check já
+falhava instantaneamente em commits anteriores cujos pipelines GitHub passaram.
+Como `npm ci`, o build Vite e o dry-run do Wrangler passaram localmente, a
+investigação deve continuar na integração/configuração Cloudflare conforme
+[cloudflare-ac-prod2-build.md](../runbooks/cloudflare-ac-prod2-build.md). Essa
+falha impede atualizar o frontend Cloudflare, mas não substitui nem derruba a
+versão anterior.
+
 ## Artefatos
 
 - `artifacts/capacity/CAPTEST_20260902_161216_22D6E66B/auth-results.json`
 - `artifacts/capacity/CAPTEST_20260902_161216_22D6E66B/k6-smoke.json`
 - `artifacts/capacity/CAPTEST_20260902_161216_22D6E66B/k6-smoke-2.json`
-
