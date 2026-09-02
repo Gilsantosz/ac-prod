@@ -114,7 +114,7 @@ BEGIN
     body := jsonb_build_object(
       'source', coalesce(nullif(btrim(p_source), ''), 'database'),
       'limit', greatest(1, least(coalesce(p_limit, 60), 100)),
-      'concurrency', 2,
+      'concurrency', 8,
       'max_rounds', 5
     ),
     headers := jsonb_build_object(

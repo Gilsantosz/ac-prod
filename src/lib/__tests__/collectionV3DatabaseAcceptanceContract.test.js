@@ -100,6 +100,8 @@ describe('Collection Fabric v3 database acceptance contract', () => {
     expect(migrations).toMatch(
       /claim_collection_inbox[\s\S]*?returns table\s*\(\s*coleta_id uuid/i,
     );
+    expect(migrations).toContain("'concurrency', 8");
+    expect(migrations).not.toContain("'concurrency', 2");
   });
 
   it('projects authoritative corrections without double-counting approved entries', () => {
