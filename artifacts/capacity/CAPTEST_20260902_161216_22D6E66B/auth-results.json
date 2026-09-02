@@ -1,0 +1,214 @@
+{
+  "run_id": "CAPTEST_20260902_161216_22D6E66B",
+  "started_users": 8,
+  "simultaneous_sessions": 16,
+  "successful_logins": 16,
+  "sessions_preserved": 8,
+  "login_ms": {
+    "p50": 1670.815,
+    "p95": 1720.196,
+    "p99": 1720.196,
+    "max": 1720.196
+  },
+  "profile_ms": {
+    "p50": 402.726,
+    "p95": 410.983,
+    "p99": 410.983,
+    "max": 410.983
+  },
+  "attempts": [
+    {
+      "user_slot": 1,
+      "device_a": {
+        "status": 200,
+        "duration_ms": 1720.196
+      },
+      "device_b": {
+        "status": 200,
+        "duration_ms": 1673.657
+      },
+      "profiles": [
+        {
+          "status": 200,
+          "duration_ms": 400.757,
+          "active": true
+        },
+        {
+          "status": 200,
+          "duration_ms": 389.215,
+          "active": true
+        }
+      ],
+      "sessions_preserved": true
+    },
+    {
+      "user_slot": 2,
+      "device_a": {
+        "status": 200,
+        "duration_ms": 1670.815
+      },
+      "device_b": {
+        "status": 200,
+        "duration_ms": 1670.493
+      },
+      "profiles": [
+        {
+          "status": 200,
+          "duration_ms": 410.894,
+          "active": true
+        },
+        {
+          "status": 200,
+          "duration_ms": 407.79,
+          "active": true
+        }
+      ],
+      "sessions_preserved": true
+    },
+    {
+      "user_slot": 3,
+      "device_a": {
+        "status": 200,
+        "duration_ms": 1674.498
+      },
+      "device_b": {
+        "status": 200,
+        "duration_ms": 1668.365
+      },
+      "profiles": [
+        {
+          "status": 200,
+          "duration_ms": 407.487,
+          "active": true
+        },
+        {
+          "status": 200,
+          "duration_ms": 405.99,
+          "active": true
+        }
+      ],
+      "sessions_preserved": true
+    },
+    {
+      "user_slot": 4,
+      "device_a": {
+        "status": 200,
+        "duration_ms": 1671.539
+      },
+      "device_b": {
+        "status": 200,
+        "duration_ms": 1669.886
+      },
+      "profiles": [
+        {
+          "status": 200,
+          "duration_ms": 407.449,
+          "active": true
+        },
+        {
+          "status": 200,
+          "duration_ms": 402.344,
+          "active": true
+        }
+      ],
+      "sessions_preserved": true
+    },
+    {
+      "user_slot": 5,
+      "device_a": {
+        "status": 200,
+        "duration_ms": 1671.374
+      },
+      "device_b": {
+        "status": 200,
+        "duration_ms": 1669.949
+      },
+      "profiles": [
+        {
+          "status": 200,
+          "duration_ms": 393.518,
+          "active": true
+        },
+        {
+          "status": 200,
+          "duration_ms": 387.522,
+          "active": true
+        }
+      ],
+      "sessions_preserved": true
+    },
+    {
+      "user_slot": 6,
+      "device_a": {
+        "status": 200,
+        "duration_ms": 1672.156
+      },
+      "device_b": {
+        "status": 200,
+        "duration_ms": 1671.071
+      },
+      "profiles": [
+        {
+          "status": 200,
+          "duration_ms": 403.373,
+          "active": true
+        },
+        {
+          "status": 200,
+          "duration_ms": 403.935,
+          "active": true
+        }
+      ],
+      "sessions_preserved": true
+    },
+    {
+      "user_slot": 7,
+      "device_a": {
+        "status": 200,
+        "duration_ms": 1672.143
+      },
+      "device_b": {
+        "status": 200,
+        "duration_ms": 1670.733
+      },
+      "profiles": [
+        {
+          "status": 200,
+          "duration_ms": 402.726,
+          "active": true
+        },
+        {
+          "status": 200,
+          "duration_ms": 410.983,
+          "active": true
+        }
+      ],
+      "sessions_preserved": true
+    },
+    {
+      "user_slot": 8,
+      "device_a": {
+        "status": 200,
+        "duration_ms": 1669.808
+      },
+      "device_b": {
+        "status": 200,
+        "duration_ms": 1665.659
+      },
+      "profiles": [
+        {
+          "status": 200,
+          "duration_ms": 387.016,
+          "active": true
+        },
+        {
+          "status": 200,
+          "duration_ms": 393.974,
+          "active": true
+        }
+      ],
+      "sessions_preserved": true
+    }
+  ],
+  "finished_at": "2026-09-02T16:59:29.303Z"
+}

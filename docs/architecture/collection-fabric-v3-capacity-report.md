@@ -2,9 +2,12 @@
 
 Status: **CAPACIDADE NÃO VALIDADA**.
 
-Nenhum teste k6 do v3 foi executado como parte desta alteração. Não existe neste
-documento uma alegação de throughput sustentável, quantidade suportada de
-equipamentos ou SLO atingido. Preencha o relatório somente com artefatos medidos
+Uma rodada real foi executada em 2026-09-02 e interrompida no smoke por violação
+de SLO, sem perda ou duplicação. Evidência e decisão NO-GO:
+[ACPROD2_CAPACITY_CAPTEST_20260902_161216_22D6E66B.md](../reports/ACPROD2_CAPACITY_CAPTEST_20260902_161216_22D6E66B.md).
+
+O smoke executado não autoriza alegação de throughput sustentável, quantidade
+suportada de equipamentos ou SLO atingido. Preencha o relatório somente com artefatos medidos
 no compute real/representativo do alvo. Um smoke, revisão de código ou resultado
 do pipeline v2 não valida a capacidade v3.
 

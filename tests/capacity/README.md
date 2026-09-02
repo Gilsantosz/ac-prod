@@ -9,7 +9,9 @@ directory with mode `0600`; they must never be committed or copied into reports.
 1. Generate the seed SQL with `node tests/capacity/seed-capacity-fixture.mjs <run_id> 500`.
 2. Apply that generated SQL with the linked Supabase CLI.
 3. Pipe `supabase projects api-keys --reveal --output json` into
-   `prepare-auth-fixture.mjs`; this keeps the server key out of files and logs.
+   `prepare-auth-fixture.mjs`; this keeps the server key out of files and logs. The
+   script also calls `prepare_capacity_atomic_contexts_v3` so all eight selected
+   operators are authorized for the shared atomic-test context.
 4. Run smoke, contention, route, burst and endurance profiles with k6.
 5. Reconcile before cleanup. Archive the anonymized metrics only.
 6. Pipe the API key list into `cleanup-capacity-fixture.mjs`, invoke

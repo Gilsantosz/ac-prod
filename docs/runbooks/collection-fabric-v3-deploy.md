@@ -1,8 +1,10 @@
 # Runbook de implantação — Collection Fabric v3
 
-Status: **implantação técnica executada em 2026-09-02 no AC.Prod autorizado como
-ambiente `test-production`; capacidade k6 e homologação operacional permanecem
-pendentes**.
+Status: **rollout contido em 2026-09-02; capacidade não homologada e quatro flags
+v3 desligadas após falha de SLO no smoke real**.
+
+O relatório da rodada e a evidência de limpeza estão em
+[ACPROD2_CAPACITY_CAPTEST_20260902_161216_22D6E66B.md](../reports/ACPROD2_CAPACITY_CAPTEST_20260902_161216_22D6E66B.md).
 
 Este runbook implanta o caminho v3 sem dupla escrita produtiva. As migrations são
 aditivas e as quatro flags começam desligadas. Aplicar as migrations não autoriza

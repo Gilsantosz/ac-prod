@@ -51,6 +51,10 @@ for (let index = 0; index < 8; index += 1) {
 
 const operatorCredentials = JSON.parse(await readFile(credentialsPath, 'utf8')).credentials;
 const operatorIndexes = [1, 2, 3, 4, 5, 6, 7, 9];
+await request(`${supabaseUrl}/rest/v1/rpc/prepare_capacity_atomic_contexts_v3`, {
+  method: 'POST',
+  body: JSON.stringify({ p_run_id: runId }),
+}, serviceKey);
 const devices = [];
 for (let deviceIndex = 0; deviceIndex < operatorIndexes.length; deviceIndex += 1) {
   const credential = operatorCredentials[operatorIndexes[deviceIndex] - 1];
@@ -69,6 +73,11 @@ for (let deviceIndex = 0; deviceIndex < operatorIndexes.length; deviceIndex += 1
   const machine = deviceIndex === 7
     ? (machines.find((item) => item.id !== primaryMachine.id && item.name !== primaryMachine.name) || primaryMachine)
     : primaryMachine;
+  const atomicCell = cells.find((item) => String(item.name).trim().toLowerCase() === 'corte');
+  const atomicMachine = machines.find((item) => String(item.name).trim().toLowerCase() === 'nanshing');
+  if (!cell || !machine || !atomicCell || !atomicMachine) {
+    throw new Error(`OPERATOR_CONTEXT_INCOMPLETE_${deviceIndex + 1}`);
+  }
   const context = await request(`${supabaseUrl}/rest/v1/rpc/set_operator_session_context`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${authUser.access_token}` },
@@ -84,10 +93,10 @@ for (let deviceIndex = 0; deviceIndex < operatorIndexes.length; deviceIndex += 1
     machine_id: machine.id,
     machine_name: machine.name,
     operator_index: operatorIndexes[deviceIndex],
-    atomic_cell_id: cells.find((item) => String(item.name).trim().toLowerCase() === 'corte')?.id,
-    atomic_cell_name: cells.find((item) => String(item.name).trim().toLowerCase() === 'corte')?.name,
-    atomic_machine_id: machines.find((item) => String(item.name).trim().toLowerCase() === 'nanshing')?.id,
-    atomic_machine_name: machines.find((item) => String(item.name).trim().toLowerCase() === 'nanshing')?.name,
+    atomic_cell_id: atomicCell.id,
+    atomic_cell_name: atomicCell.name,
+    atomic_machine_id: atomicMachine.id,
+    atomic_machine_name: atomicMachine.name,
   });
 }
 
