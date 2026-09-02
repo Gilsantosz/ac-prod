@@ -189,11 +189,14 @@ import {
   getQueueStats,
   getQueueStatsByCellMachine,
   markEventError,
+  pinCollectionPipelineVersion,
+  reassignFirstCollectionPipelineAttempt,
   pruneOldSynced,
   recoverStaleProcessingEvents,
   runCollectionQueueMaintenance,
   runStaleProcessingRecovery,
 } from '../collectionEventQueue';
+import { COLLECTION_STATES } from '../collectionStateMachine';
 
 const originalNavigatorLocks = navigator.locks;
 
@@ -290,6 +293,115 @@ describe('Collection Local Queue SLA & Concurrency', () => {
     expect(stats.total).toBe(1);
     expect(stats.pending).toBe(1);
     expect(stats.hasSlowEnqueue).toBe(false);
+  });
+
+  it('remove tokens antes do IndexedDB e persiste somente a sessão não sensível', async () => {
+    const eventId = await enqueueCollectionEvent({
+      client_event_id: 'event-safe',
+      rawValue: '09950001',
+      operator_session_id: 'operator-session-id',
+      operatorSessionToken: 'top-secret',
+      operator_session_token: 'snake-secret',
+      payload: {
+        token: 'nested-secret',
+        authorization: 'Bearer secret',
+        safe_context: 'preserved',
+      },
+    });
+
+    expect(store.get(eventId)).toMatchObject({
+      operator_session_id: 'operator-session-id',
+      collection_state: COLLECTION_STATES.PENDING_DATABASE,
+      status: 'pending',
+      raw_value: '09950001',
+      device_id: expect.any(String),
+      device_sequence: expect.any(Number),
+      payload: { safe_context: 'preserved' },
+    });
+    expect(store.get(eventId)).not.toHaveProperty('operatorSessionToken');
+    expect(store.get(eventId)).not.toHaveProperty('operator_session_token');
+    expect(store.get(eventId).payload).not.toHaveProperty('token');
+    expect(store.get(eventId).payload).not.toHaveProperty('authorization');
+  });
+
+  it('ignora estado, tentativas e agenda forjados pelo payload de captura', async () => {
+    const eventId = await enqueueCollectionEvent({
+      client_event_id: 'event-canonical-capture',
+      rawValue: '09950001',
+      status: 'synced',
+      collection_state: COLLECTION_STATES.APPROVED,
+      retries: 99,
+      next_attempt_at: null,
+      processed_at: '2020-01-01T00:00:00.000Z',
+      result: { success: true },
+      last_error: 'forged',
+      pipeline_version: 3,
+    });
+
+    expect(store.get(eventId)).toMatchObject({
+      status: 'pending',
+      collection_state: COLLECTION_STATES.PENDING_DATABASE,
+      retries: 0,
+      next_attempt_at: expect.any(String),
+      processed_at: null,
+      result: null,
+      last_error: null,
+      pipeline_version: null,
+    });
+  });
+
+  it('fixa o pipeline antes da rede e impede troca automática posterior', async () => {
+    const eventId = await enqueueCollectionEvent({
+      client_event_id: 'event-pipeline-pin',
+      rawValue: '09950001',
+    });
+    const candidate = { client_event_id: eventId };
+
+    await pinCollectionPipelineVersion([candidate], 3);
+    expect(candidate.pipeline_version).toBe(3);
+    expect(store.get(eventId)).toMatchObject({ pipeline_version: 3 });
+
+    await expect(pinCollectionPipelineVersion([candidate], 2)).rejects.toMatchObject({
+      code: 'COLLECTION_PIPELINE_ASSIGNMENT_CONFLICT',
+      retryable: false,
+    });
+    expect(store.get(eventId)).toMatchObject({ pipeline_version: 3 });
+  });
+
+  it('permite rollback da primeira tentativa antes do ACK e bloqueia depois da fronteira', async () => {
+    const firstId = await enqueueCollectionEvent({
+      client_event_id: 'event-first-attempt-rollback',
+      rawValue: '09950001',
+    });
+    const firstCandidate = { client_event_id: firstId };
+    await pinCollectionPipelineVersion([firstCandidate], 3);
+    await reassignFirstCollectionPipelineAttempt([firstCandidate], 3, 2);
+    expect(firstCandidate.pipeline_version).toBe(2);
+    expect(store.get(firstId)).toMatchObject({
+      pipeline_version: 2,
+      pipeline_reassignment_reason: 'V3_INGRESS_DISABLED_BEFORE_PERSISTENCE',
+    });
+
+    const acknowledgedId = await enqueueCollectionEvent({
+      client_event_id: 'event-acknowledged-no-rollback',
+      rawValue: '09950002',
+    });
+    const acknowledgedCandidate = { client_event_id: acknowledgedId };
+    await pinCollectionPipelineVersion([acknowledgedCandidate], 3);
+    store.set(acknowledgedId, {
+      ...store.get(acknowledgedId),
+      collection_state: COLLECTION_STATES.DATABASE_ACKNOWLEDGED,
+    });
+
+    await expect(reassignFirstCollectionPipelineAttempt(
+      [acknowledgedCandidate],
+      3,
+      2,
+    )).rejects.toMatchObject({
+      code: 'COLLECTION_PIPELINE_REASSIGNMENT_UNSAFE',
+      retryable: false,
+    });
+    expect(store.get(acknowledgedId)).toMatchObject({ pipeline_version: 3 });
   });
 
   it('filtra estatísticas por célula e máquina', async () => {

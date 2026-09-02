@@ -5,8 +5,21 @@
  * Cada evento recebe um UUID gerado no cliente (client_event_id) para idempotência.
  */
 
+import {
+  COLLECTION_STATES,
+  assertCollectionTransition,
+  collectionStateFromResult,
+  isCollectionTerminalState,
+  legacyQueueStatusForCollectionState,
+  normalizeCollectionState,
+} from '@/lib/collectionStateMachine';
+import {
+  getCollectionDeviceId,
+  nextCollectionDeviceSequence,
+} from '@/lib/collectionDeviceIdentity';
+
 const DB_NAME = 'acprod_collection_queue';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE = 'events';
 
 export const COLLECTION_QUEUE_RETENTION_DAYS = 3;
@@ -132,6 +145,15 @@ function openDb() {
       if (!store.indexNames.contains('by_next_attempt')) {
         store.createIndex('by_next_attempt', 'next_attempt_at', { unique: false });
       }
+      if (!store.indexNames.contains('by_collection_state')) {
+        store.createIndex('by_collection_state', 'collection_state', { unique: false });
+      }
+      if (!store.indexNames.contains('by_source_mode')) {
+        store.createIndex('by_source_mode', 'source_mode', { unique: false });
+      }
+      if (!store.indexNames.contains('by_device_sequence')) {
+        store.createIndex('by_device_sequence', 'device_sequence', { unique: false });
+      }
     };
     req.onsuccess = (e) => {
       const db = e.target.result;
@@ -248,7 +270,7 @@ async function dbRecoverStaleProcessingBatch(
       objectStore.put({
         ...event,
         status: 'pending',
-        retries: 0,
+        collection_state: COLLECTION_STATES.RETRYING,
         next_attempt_at: now,
         updated_at: now,
       });
@@ -301,6 +323,39 @@ function generateClientEventId() {
   });
 }
 
+const SENSITIVE_EVENT_KEYS = new Set([
+  'access_token',
+  'authorization',
+  'jwt',
+  'operator_session_token',
+  'operatorsessiontoken',
+  'session_token',
+  'token',
+]);
+
+function isSensitiveEventKey(key) {
+  const normalized = String(key).toLowerCase();
+  return SENSITIVE_EVENT_KEYS.has(normalized)
+    || normalized.includes('token')
+    || normalized.includes('jwt')
+    || normalized === 'cookie';
+}
+
+/**
+ * Remove credenciais inclusive de payloads aninhados antes de qualquer escrita.
+ * A sessão operacional não sensível é representada por operator_session_id.
+ */
+export function sanitizeCollectionEventPayload(value) {
+  if (Array.isArray(value)) return value.map(sanitizeCollectionEventPayload);
+  if (!value || typeof value !== 'object') return value;
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !isSensitiveEventKey(key))
+      .map(([key, nestedValue]) => [key, sanitizeCollectionEventPayload(nestedValue)]),
+  );
+}
+
 // ─── Notificação de UI ────────────────────────────────────────────────────────
 
 function notifyChange() {
@@ -321,32 +376,76 @@ export function notifyCollectionQueueChange() {
  * @returns {string} client_event_id gerado
  */
 export async function enqueueCollectionEvent(payload) {
+  const safePayload = sanitizeCollectionEventPayload(payload || {});
   const now = new Date().toISOString();
-  const clientEventId = payload.client_event_id || generateClientEventId();
+  const capturedAtClient = safePayload.captured_at_client
+    || safePayload.capturedAtClient
+    || safePayload.created_at_client
+    || safePayload.createdAtClient
+    || now;
+  const clientEventId = safePayload.client_event_id || generateClientEventId();
+  const deviceId = safePayload.device_id
+    || safePayload.deviceId
+    || getCollectionDeviceId();
+  const providedDeviceSequence = Number(safePayload.device_sequence);
+  const deviceSequence = Number.isSafeInteger(providedDeviceSequence)
+    && providedDeviceSequence > 0
+    ? Number(safePayload.device_sequence)
+    : await nextCollectionDeviceSequence(deviceId);
+  const sourceMode = safePayload.source_mode
+    || safePayload.sourceMode
+    || (globalThis.navigator?.onLine === false ? 'offline_replay' : 'live');
   const event = {
     client_event_id: clientEventId,
     status: 'pending',
+    collection_state: COLLECTION_STATES.CAPTURED_LOCAL,
     retries: 0,
-    created_at_client: now,
+    created_at_client: capturedAtClient,
+    captured_at_client: capturedAtClient,
     updated_at: now,
-    event_kind: payload.event_kind || (payload.is_replacement_event ? 'replacement_stage' : 'production_stage'),
+    event_kind: safePayload.event_kind || (safePayload.is_replacement_event ? 'replacement_stage' : 'production_stage'),
     next_attempt_at: now,
-    raw_value: payload.rawValue ?? payload.raw_value ?? '',
-    lot_id: payload.lotId ?? payload.lot_id ?? null,
-    lot_code: payload.lotCode ?? payload.lot_code ?? null,
-    load_number: payload.loadNumber ?? payload.load_number ?? null,
-    order_number: payload.orderNumber ?? payload.order_number ?? null,
-    customer_name: payload.customerName ?? payload.customer_name ?? null,
-    environment_name: payload.environmentName ?? payload.environment_name ?? null,
-    machine_id: payload.machineId ?? payload.machine_id ?? null,
-    machine_name: payload.machineName ?? payload.machine_name ?? null,
-    station_name: payload.stationName ?? payload.station_name ?? null,
+    source_mode: sourceMode === 'offline_replay' ? 'offline_replay' : 'live',
+    device_id: deviceId,
+    device_sequence: deviceSequence,
+    raw_value: safePayload.rawValue ?? safePayload.raw_value ?? '',
+    lot_id: safePayload.lotId ?? safePayload.lot_id ?? null,
+    lot_code: safePayload.lotCode ?? safePayload.lot_code ?? null,
+    load_number: safePayload.loadNumber ?? safePayload.load_number ?? null,
+    order_number: safePayload.orderNumber ?? safePayload.order_number ?? null,
+    customer_name: safePayload.customerName ?? safePayload.customer_name ?? null,
+    environment_name: safePayload.environmentName ?? safePayload.environment_name ?? null,
+    machine_id: safePayload.machineId ?? safePayload.machine_id ?? null,
+    machine_name: safePayload.machineName ?? safePayload.machine_name ?? null,
+    station_name: safePayload.stationName ?? safePayload.station_name ?? null,
     enqueue_duration_ms: 0,
     sync_started_at: null,
     sync_finished_at: null,
     sync_duration_ms: null,
-    ...payload,
+    ...safePayload,
+    // Campos de transporte/estado são definidos pelo cliente e jamais pelo
+    // payload do chamador. Mantê-los depois do spread evita pular a fila,
+    // forjar ACK/finalização ou suprimir retentativas no IndexedDB.
     client_event_id: clientEventId,
+    status: 'pending',
+    collection_state: COLLECTION_STATES.CAPTURED_LOCAL,
+    retries: 0,
+    created_at_client: capturedAtClient,
+    captured_at_client: capturedAtClient,
+    updated_at: now,
+    next_attempt_at: now,
+    source_mode: sourceMode === 'offline_replay' ? 'offline_replay' : 'live',
+    device_id: deviceId,
+    device_sequence: deviceSequence,
+    enqueue_duration_ms: 0,
+    sync_started_at: null,
+    sync_finished_at: null,
+    sync_duration_ms: null,
+    processed_at: null,
+    result: null,
+    last_result: null,
+    last_error: null,
+    pipeline_version: null,
   };
   // Idempotência: se já existe, não duplica
   const existing = await dbGet(event.client_event_id);
@@ -357,6 +456,8 @@ export async function enqueueCollectionEvent(payload) {
   const elapsed = performance.now() - t0;
 
   event.enqueue_duration_ms = elapsed;
+  event.collection_state = COLLECTION_STATES.PENDING_DATABASE;
+  event.updated_at = new Date().toISOString();
   await dbPut(event);
 
   if (elapsed > 800) {
@@ -431,6 +532,153 @@ export async function getQueueStatsByCellMachine(cellName, machineId, eventKind 
  */
 export async function getEventsByStatus(status) {
   return dbGetByIndex('by_status', status);
+}
+
+export async function getCollectionEvent(clientEventId) {
+  return dbGet(clientEventId);
+}
+
+/**
+ * Fixa a fronteira transacional antes da primeira tentativa de rede. A versão
+ * nunca muda automaticamente: ACK incerto exige reconciliação no mesmo
+ * pipeline, impedindo dupla escrita produtiva durante rollout/rollback.
+ */
+export async function pinCollectionPipelineVersion(events = [], version) {
+  const normalizedVersion = Number(version);
+  if (![2, 3].includes(normalizedVersion)) {
+    throw new Error(`Versão de pipeline inválida: ${version}.`);
+  }
+
+  for (const candidate of events) {
+    const clientEventId = candidate?.client_event_id;
+    if (!clientEventId) continue;
+    if (typeof globalThis.indexedDB === 'undefined') {
+      const currentVersion = Number(candidate.pipeline_version);
+      if ([2, 3].includes(currentVersion) && currentVersion !== normalizedVersion) {
+        const error = new Error(
+          `A leitura ${clientEventId} já pertence ao pipeline V${currentVersion}.`,
+        );
+        error.code = 'COLLECTION_PIPELINE_ASSIGNMENT_CONFLICT';
+        error.retryable = false;
+        throw error;
+      }
+      candidate.pipeline_version = normalizedVersion;
+      continue;
+    }
+    const event = await dbGet(clientEventId);
+    const currentVersion = Number(event?.pipeline_version || candidate.pipeline_version);
+    if ([2, 3].includes(currentVersion) && currentVersion !== normalizedVersion) {
+      const error = new Error(
+        `A leitura ${clientEventId} já pertence ao pipeline V${currentVersion}.`,
+      );
+      error.code = 'COLLECTION_PIPELINE_ASSIGNMENT_CONFLICT';
+      error.retryable = false;
+      throw error;
+    }
+    candidate.pipeline_version = normalizedVersion;
+    if (event && currentVersion !== normalizedVersion) {
+      await dbPut({
+        ...event,
+        pipeline_version: normalizedVersion,
+        pipeline_assigned_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    }
+  }
+  notifyChange();
+  return normalizedVersion;
+}
+
+/**
+ * Exceção estreita para rollback: desfaz a primeira atribuição somente quando o
+ * próprio RPC V3 respondeu, de forma definitiva, que o ingresso estava
+ * desligado antes de qualquer persistência. Eventos já atribuídos em uma
+ * tentativa anterior continuam imutáveis e exigem reconciliação no V3.
+ */
+export async function reassignFirstCollectionPipelineAttempt(
+  events = [],
+  fromVersion = 3,
+  toVersion = 2,
+) {
+  if (![2, 3].includes(Number(fromVersion))
+    || ![2, 3].includes(Number(toVersion))
+    || Number(fromVersion) === Number(toVersion)) {
+    throw new Error('Reatribuição de pipeline inválida.');
+  }
+
+  for (const candidate of events) {
+    const clientEventId = candidate?.client_event_id;
+    if (!clientEventId) continue;
+    if (typeof globalThis.indexedDB === 'undefined') {
+      if (Number(candidate.pipeline_version) !== Number(fromVersion)) {
+        throw new Error(`A leitura ${clientEventId} não pertence ao pipeline esperado.`);
+      }
+      candidate.pipeline_version = Number(toVersion);
+      continue;
+    }
+
+    const event = await dbGet(clientEventId);
+    const currentVersion = Number(event?.pipeline_version || candidate.pipeline_version);
+    const currentState = normalizeCollectionState(
+      event?.collection_state || candidate.collection_state,
+      COLLECTION_STATES.PENDING_DATABASE,
+    );
+    if (currentVersion !== Number(fromVersion)
+      || isCollectionTerminalState(currentState)
+      || currentState === COLLECTION_STATES.DATABASE_ACKNOWLEDGED
+      || currentState === COLLECTION_STATES.PROCESSING) {
+      const error = new Error(
+        `A leitura ${clientEventId} já cruzou a fronteira do pipeline V${currentVersion || '?'}.`,
+      );
+      error.code = 'COLLECTION_PIPELINE_REASSIGNMENT_UNSAFE';
+      error.retryable = false;
+      throw error;
+    }
+
+    candidate.pipeline_version = Number(toVersion);
+    if (event) {
+      await dbPut({
+        ...event,
+        pipeline_version: Number(toVersion),
+        pipeline_reassigned_at: new Date().toISOString(),
+        pipeline_reassignment_reason: 'V3_INGRESS_DISABLED_BEFORE_PERSISTENCE',
+        updated_at: new Date().toISOString(),
+      });
+    }
+  }
+  notifyChange();
+  return Number(toVersion);
+}
+
+export async function getUnresolvedCollectionEvents(options = {}) {
+  const {
+    eventKind = 'production_stage',
+    limit = 25,
+    olderThanMs = 0,
+  } = options;
+  const cutoff = Date.now() - Math.max(0, Number(olderThanMs) || 0);
+  const all = await dbGetAll();
+  return all
+    .filter((event) => {
+      const state = normalizeCollectionState(
+        event.collection_state,
+        event.status === 'processing'
+          ? COLLECTION_STATES.PROCESSING
+          : COLLECTION_STATES.PENDING_DATABASE,
+      );
+      const updatedAt = new Date(
+        event.database_acknowledged_at
+          || event.updated_at
+          || event.created_at_client,
+      ).getTime();
+      return event.event_kind === eventKind
+        && !isCollectionTerminalState(state)
+        && updatedAt <= cutoff;
+    })
+    .sort((left, right) => (
+      left.created_at_client.localeCompare(right.created_at_client)
+    ))
+    .slice(0, Math.max(1, Math.min(25, Number(limit) || 25)));
 }
 
 function readSharedCursor(storageKey, memoryCursor) {
@@ -573,6 +821,13 @@ export async function markEventPending(clientEventId) {
   const event = await dbGet(clientEventId);
   if (!event) return;
   event.status = 'pending';
+  const currentState = normalizeCollectionState(
+    event.collection_state,
+    COLLECTION_STATES.CAPTURED_LOCAL,
+  );
+  event.collection_state = currentState === COLLECTION_STATES.RETRYING
+    ? COLLECTION_STATES.RETRYING
+    : COLLECTION_STATES.PENDING_DATABASE;
   event.next_attempt_at = new Date().toISOString();
   event.updated_at = new Date().toISOString();
   await dbPut(event);
@@ -583,19 +838,33 @@ export async function markEventProcessing(clientEventId, options = {}) {
   const event = await dbGet(clientEventId);
   if (!event) return;
   event.status = 'processing';
+  // Antes do ACK do banco este é apenas o estado do transporte local.
+  event.collection_state = event.collection_state === COLLECTION_STATES.RETRYING
+    ? COLLECTION_STATES.PENDING_DATABASE
+    : (event.collection_state || COLLECTION_STATES.PENDING_DATABASE);
   event.next_attempt_at = null;
   event.sync_started_at = new Date().toISOString();
   event.updated_at = new Date().toISOString();
   await dbPut(event);
   if (options.notify !== false) notifyChange();
+  return event;
 }
 
 export async function markEventSynced(clientEventId, result, options = {}) {
   const event = await dbGet(clientEventId);
   if (!event) return;
+  const canonicalResult = result?.result ?? result?.resultado ?? result;
+  let finalState = collectionStateFromResult(canonicalResult);
+  if (!finalState && canonicalResult?.success === true) {
+    finalState = COLLECTION_STATES.APPROVED;
+  }
+  if (!finalState || !isCollectionTerminalState(finalState)) {
+    finalState = COLLECTION_STATES.REJECTED;
+  }
   event.status = 'synced';
+  event.collection_state = finalState;
   event.next_attempt_at = null;
-  event.result = result;
+  event.result = canonicalResult;
   event.sync_finished_at = new Date().toISOString();
   if (event.sync_started_at) {
     event.sync_duration_ms = new Date(event.sync_finished_at).getTime() - new Date(event.sync_started_at).getTime();
@@ -614,9 +883,19 @@ export async function markEventError(
 ) {
   const event = await dbGet(clientEventId);
   if (!event) return;
+  const currentState = normalizeCollectionState(event.collection_state);
+  // Um ACK/PROCESSING observado por Broadcast é mais forte que uma falha ou
+  // resposta perdida do transporte HTTP. Não reenviar um recibo já confirmado.
+  if (currentState === COLLECTION_STATES.DATABASE_ACKNOWLEDGED
+    || currentState === COLLECTION_STATES.PROCESSING) {
+    return event;
+  }
   const retries = (event.retries || 0) + 1;
   const retryable = error?.retryable !== false;
   event.status = retryable && retries < maxRetries ? 'pending' : 'error';
+  event.collection_state = event.status === 'pending'
+    ? COLLECTION_STATES.RETRYING
+    : COLLECTION_STATES.DEAD_LETTERED;
   event.retries = retries;
   event.last_error = error?.message || String(error);
   event.last_result = error?.result || null;
@@ -632,6 +911,132 @@ export async function markEventError(
   event.updated_at = new Date().toISOString();
   await dbPut(event);
   if (options.notify !== false) notifyChange();
+  return event;
+}
+
+async function transitionCollectionEvent(clientEventId, nextState, patch = {}, options = {}) {
+  const event = await dbGet(clientEventId);
+  if (!event) return null;
+  const currentState = normalizeCollectionState(
+    event.collection_state,
+    event.status === 'processing'
+      ? COLLECTION_STATES.PENDING_DATABASE
+      : COLLECTION_STATES.CAPTURED_LOCAL,
+  );
+  // Uma decisão terminal só pode ser substituída por uma correção autoritativa
+  // explicitamente marcada pelo servidor/projetor. Entregas normais continuam
+  // monotônicas e idempotentes.
+  if (isCollectionTerminalState(currentState) && options.force !== true) return event;
+  const stateRank = {
+    [COLLECTION_STATES.CAPTURED_LOCAL]: 0,
+    [COLLECTION_STATES.PENDING_DATABASE]: 1,
+    [COLLECTION_STATES.RETRYING]: 1,
+    [COLLECTION_STATES.DATABASE_ACKNOWLEDGED]: 2,
+    [COLLECTION_STATES.PROCESSING]: 3,
+  };
+  const normalizedCandidate = normalizeCollectionState(nextState);
+  if (options.force !== true
+    && stateRank[normalizedCandidate] < stateRank[currentState]) {
+    return event;
+  }
+  const normalizedNext = options.force === true
+    ? normalizedCandidate
+    : assertCollectionTransition(currentState, nextState);
+  const now = new Date().toISOString();
+  const updated = {
+    ...event,
+    ...sanitizeCollectionEventPayload(patch),
+    collection_state: normalizedNext,
+    status: legacyQueueStatusForCollectionState(normalizedNext),
+    updated_at: now,
+  };
+  await dbPut(updated);
+  if (options.notify !== false) notifyChange();
+  return updated;
+}
+
+export async function markEventDatabaseAcknowledged(
+  clientEventId,
+  acknowledgement = {},
+  options = {},
+) {
+  return transitionCollectionEvent(
+    clientEventId,
+    COLLECTION_STATES.DATABASE_ACKNOWLEDGED,
+    {
+      database_acknowledgement: acknowledgement,
+      database_acknowledged_at: acknowledgement.received_at_db
+        || acknowledgement.receivedAtDb
+        || new Date().toISOString(),
+      batch_id: acknowledgement.batch_id || acknowledgement.batchId || null,
+      next_attempt_at: null,
+    },
+    options,
+  );
+}
+
+export async function markEventServerProcessing(
+  clientEventId,
+  serverPayload = {},
+  options = {},
+) {
+  return transitionCollectionEvent(
+    clientEventId,
+    COLLECTION_STATES.PROCESSING,
+    {
+      server_processing: serverPayload,
+      server_processing_at: serverPayload.processing_started_at
+        || serverPayload.occurred_at
+        || new Date().toISOString(),
+    },
+    options,
+  );
+}
+
+export async function markEventFinalized(
+  clientEventId,
+  finalPayload = {},
+  options = {},
+) {
+  const result = finalPayload.result ?? finalPayload.resultado ?? finalPayload;
+  const state = collectionStateFromResult(finalPayload)
+    || collectionStateFromResult(result)
+    || (result?.success === true ? COLLECTION_STATES.APPROVED : COLLECTION_STATES.REJECTED);
+  if (!isCollectionTerminalState(state)) {
+    throw new Error(`Resultado final sem estado terminal: ${state || 'UNKNOWN'}.`);
+  }
+  return transitionCollectionEvent(
+    clientEventId,
+    state,
+    {
+      result,
+      next_attempt_at: null,
+      sync_finished_at: new Date().toISOString(),
+      processed_at: finalPayload.processed_at
+        || finalPayload.processado_em
+        || new Date().toISOString(),
+    },
+    options,
+  );
+}
+
+export async function markEventDeadLettered(
+  clientEventId,
+  payload = {},
+  options = {},
+) {
+  return transitionCollectionEvent(
+    clientEventId,
+    COLLECTION_STATES.DEAD_LETTERED,
+    {
+      last_error: payload.error || payload.message || 'Evento enviado para dead letter.',
+      last_result: payload,
+      next_attempt_at: null,
+      sync_finished_at: new Date().toISOString(),
+      processed_at: new Date().toISOString(),
+    },
+    options,
+  );
 }
 
 /**
@@ -697,6 +1102,7 @@ export async function retryErrors() {
     await dbPut({
       ...event,
       status: 'pending',
+      collection_state: COLLECTION_STATES.RETRYING,
       retries: 0,
       next_attempt_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

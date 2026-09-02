@@ -8,6 +8,11 @@ import {
   parseProductionScanCode,
   PRODUCTION_SCAN_LENGTH,
 } from '@/lib/productionScanCode';
+import {
+  COLLECTION_STATES,
+  collectionStateFromResult,
+  getCollectionStatePresentation,
+} from '@/lib/collectionStateMachine';
 
 const DUPLICATE_TRIGGER_GUARD_MS = 250;
 
@@ -35,6 +40,7 @@ export default function TraceabilityScannerPanel({
   const lastCaptureRef = useRef({ code: null, at: 0 });
   const mountedRef = useRef(true);
   const refocusTimerRef = useRef(null);
+  const lastApprovalSoundRef = useRef(null);
   const isSuspended = activeDowntime || modalOpen;
   const contextReady = Boolean(cellName && shift && operator) && !isSuspended;
 
@@ -203,44 +209,40 @@ export default function TraceabilityScannerPanel({
 
   useEffect(() => {
     if (!feedback) return;
+    const state = collectionStateFromResult(feedback);
+    if (state !== COLLECTION_STATES.APPROVED) return;
+    const soundKey = `${feedback.client_event_id || feedback.reading?.id || 'approved'}:${state}`;
+    if (lastApprovalSoundRef.current === soundKey) return;
+    lastApprovalSoundRef.current = soundKey;
 
-    const playSound = (alertLevel) => {
+    const playApprovalSound = () => {
       try {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (!AudioCtx) return;
         const ctx = new AudioCtx();
-
-        if (alertLevel === 'green') {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(880, ctx.currentTime);
-          gain.gain.setValueAtTime(0.1, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
-          osc.start();
-          osc.stop(ctx.currentTime + 0.12);
-        } else {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.type = 'triangle';
-          osc.frequency.setValueAtTime(659.25, ctx.currentTime);
-          gain.gain.setValueAtTime(0.08, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
-          osc.start();
-          osc.stop(ctx.currentTime + 0.35);
-        }
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
+        osc.onended = () => ctx.close?.();
+        osc.start();
+        osc.stop(ctx.currentTime + 0.12);
       } catch (error) {
         console.error('Falha na execução do áudio de bip:', error);
       }
     };
 
-    const level = feedback.alert_level || (feedback.success ? 'green' : 'red');
-    playSound(level);
+    playApprovalSound();
   }, [feedback]);
+
+  const feedbackPresentation = feedback
+    ? getCollectionStatePresentation(collectionStateFromResult(feedback))
+    : null;
+  const feedbackTone = feedbackPresentation?.tone || 'neutral';
 
   return (
     <div className="space-y-5 rounded-md border border-border bg-card p-4 sm:p-5">
@@ -294,28 +296,32 @@ export default function TraceabilityScannerPanel({
         <div
           role="status"
           data-status={feedback.status}
+          data-collection-state={feedbackPresentation.state}
           className={`flex flex-col gap-1.5 rounded-xl border p-4 shadow-md transition-all ${
-            feedback.alert_level === 'red' || ['rejected', 'blocked', 'error'].includes(feedback.status)
+            feedbackTone === 'danger'
               ? 'border-red-300 border-red-500/30 bg-red-500/5 text-red-600 dark:bg-red-950/10 dark:text-red-400'
-              : feedback.alert_level === 'yellow' || feedback.status === 'duplicated' || feedback.status === 'warning' || feedback.status === 'wrong_step'
+              : feedbackTone === 'warning'
                 ? 'border-amber-300 border-amber-500/30 bg-amber-500/5 text-amber-600 dark:bg-amber-950/10 dark:text-amber-400'
-                : feedback.alert_level === 'blue'
+                : feedbackTone === 'neutral'
                   ? 'border-blue-500/30 bg-blue-500/5 text-blue-600 dark:bg-blue-950/10 dark:text-blue-400'
                   : 'border-emerald-300 border-emerald-500/30 bg-emerald-500/5 text-emerald-600 dark:bg-emerald-950/10 dark:text-emerald-400'
           }`}
         >
           <div className="flex items-center gap-2 text-base font-bold uppercase tracking-wide">
-            {feedback.alert_level === 'red' || ['rejected', 'blocked', 'error'].includes(feedback.status) ? (
-              <><span className="h-2.5 w-2.5 shrink-0 animate-ping rounded-full bg-red-500" />ENTRADA BLOQUEADA</>
-            ) : feedback.alert_level === 'yellow' || feedback.status === 'duplicated' || feedback.status === 'warning' ? (
-              <><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500" />ATENÇÃO DO OPERADOR</>
-            ) : feedback.alert_level === 'blue' ? (
-              <><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-blue-500" />INFORMAÇÃO DO FLUXO</>
-            ) : (
-              <><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500" />PEÇA LIBERADA — OK</>
-            )}
+            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+              feedbackTone === 'approved'
+                ? 'bg-emerald-500'
+                : feedbackTone === 'danger'
+                  ? 'bg-red-500'
+                  : feedbackTone === 'warning'
+                    ? 'bg-amber-500'
+                    : 'bg-blue-500'
+            }`} />
+            {feedbackPresentation.label}
           </div>
-          <p className="text-sm font-medium leading-relaxed">{feedback.message}</p>
+          <p className="text-sm font-medium leading-relaxed">
+            {feedback.message || feedbackPresentation.defaultMessage}
+          </p>
           {(feedback.item || feedback.lot || feedback.order) && (
             <div className="mt-1 grid grid-cols-2 gap-2 border-t border-current/15 pt-2 text-xs lg:grid-cols-5">
               <div><span className="block opacity-70">Peça</span><strong className="break-all font-mono">{feedback.item?.traceability_code || feedback.item?.piece_uid || feedback.reading?.tag_value || '—'}</strong></div>

@@ -5,11 +5,13 @@ const {
   processFastProductionReading,
   processProductionCollectionBatch,
   collectReplacementStageV2,
+  getOperatorSession,
 } = vi.hoisted(() => ({
   processProductionReading: vi.fn(),
   processFastProductionReading: vi.fn(),
   processProductionCollectionBatch: vi.fn(),
   collectReplacementStageV2: vi.fn(),
+  getOperatorSession: vi.fn(),
 }));
 
 vi.mock('@/lib/traceabilityService', () => ({ processProductionReading }));
@@ -23,6 +25,7 @@ vi.mock('@/lib/replacementService', () => ({
   REPLACEMENT_EVENT_KIND: 'replacement_stage',
   collectReplacementStageV2,
 }));
+vi.mock('@/lib/operatorSessionService', () => ({ getOperatorSession }));
 
 import {
   COLLECTION_EVENT_KINDS,
@@ -54,12 +57,13 @@ describe('collectionEventDispatcher', () => {
       success: true,
       source: 'replacement',
     });
+    getOperatorSession.mockReturnValue({ token: 'current-session-token' });
   });
 
   it('despacha reposição exclusivamente para collect_replacement_stage_v2', async () => {
     const result = await dispatchCollectionEvent({
       event_kind: COLLECTION_EVENT_KINDS.REPLACEMENT_STAGE,
-      session_token: 'session-token',
+      session_token: 'stale-event-token',
       raw_value: 'REP-001',
       client_event_id: 'event-1',
       device_id: 'device-1',
@@ -69,7 +73,7 @@ describe('collectionEventDispatcher', () => {
 
     expect(result.source).toBe('replacement');
     expect(collectReplacementStageV2).toHaveBeenCalledWith(expect.objectContaining({
-      sessionToken: 'session-token',
+      sessionToken: 'current-session-token',
       barcode: 'REP-001',
       clientEventId: 'event-1',
       deviceId: 'device-1',

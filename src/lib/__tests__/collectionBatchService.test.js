@@ -124,7 +124,7 @@ describe('processProductionCollectionBatch', () => {
     ]);
   });
 
-  it('prioriza o token congelado no próprio evento', async () => {
+  it('ignora token congelado e usa a sessão atual somente no fallback V2', async () => {
     const insertedRows = [{
       client_event_id: 'event-a',
       tag_lida: '09950001',
@@ -143,9 +143,10 @@ describe('processProductionCollectionBatch', () => {
     }]);
 
     expect(insert.mock.calls[0][0][0].payload).toMatchObject({
-      operatorSessionToken: 'event-session-token',
-      operator_session_token: 'event-session-token',
+      operatorSessionToken: 'operator-session-token',
+      operator_session_token: 'operator-session-token',
     });
+    expect(insert.mock.calls[0][0][0].payload.session_token).toBeUndefined();
   });
 
   it('trata resposta perdida após commit recuperando client_event_id existente', async () => {

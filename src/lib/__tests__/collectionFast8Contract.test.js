@@ -46,6 +46,8 @@ describe('AC.Prod2 collection fast8 v8.5 contract', () => {
     expect(queue).toContain('refreshStatsSafely');
     expect(queue).toContain('fallbackLockRef');
     expect(queue).toContain('const id = await enqueueCollectionEvent(payload)');
+    expect(queue).toContain('operator_session_id');
+    expect(queue).not.toContain('operatorSessionToken = payload');
     expect(queue).toContain('não bloqueia o próximo código');
   });
 

@@ -66,12 +66,100 @@ globalThis.indexedDB = {
   },
 };
 
-import { enqueueCollectionEvent } from '@/lib/collectionEventQueue';
-import { flushCollectionMicroBatchQueue } from '@/lib/collectionMicroBatchQueue';
+import {
+  enqueueCollectionEvent,
+  markEventDatabaseAcknowledged,
+} from '@/lib/collectionEventQueue';
+import {
+  flushCollectionMicroBatchQueue,
+  planCollectionMicroBatches,
+} from '@/lib/collectionMicroBatchQueue';
+import { COLLECTION_STATES } from '@/lib/collectionStateMachine';
 
 describe('flushCollectionMicroBatchQueue', () => {
   beforeEach(() => {
     store.clear();
+  });
+
+  it('limita o tick e reserva um de cinco lotes para replay offline', () => {
+    const live = Array.from({ length: 125 }, (_, index) => ({
+      client_event_id: `live-${index}`,
+      source_mode: 'live',
+    }));
+    const replay = Array.from({ length: 50 }, (_, index) => ({
+      client_event_id: `replay-${index}`,
+      source_mode: 'offline_replay',
+    }));
+
+    const batches = planCollectionMicroBatches([...replay, ...live], 25);
+
+    expect(batches).toHaveLength(5);
+    expect(batches.map((batch) => batch[0].source_mode)).toEqual([
+      'live',
+      'live',
+      'live',
+      'live',
+      'offline_replay',
+    ]);
+    expect(batches.every((batch) => batch.length <= 25)).toBe(true);
+  });
+
+  it('salva ACK do banco sem marcar a leitura como aprovada/synced', async () => {
+    await enqueueCollectionEvent({
+      client_event_id: 'event-ack',
+      rawValue: '09950001',
+      event_kind: 'production_stage',
+    });
+    const processBatchFn = vi.fn().mockResolvedValue([{
+      client_event_id: 'event-ack',
+      batch_id: 'batch-1',
+      received_at_db: '2026-09-01T12:00:00.000Z',
+      status_sincronizacao: 'recebida',
+      collection_state: COLLECTION_STATES.DATABASE_ACKNOWLEDGED,
+    }]);
+
+    const summary = await flushCollectionMicroBatchQueue(processBatchFn);
+
+    expect(summary).toMatchObject({
+      processed: 1,
+      acknowledged: 1,
+      synced: 0,
+      errors: 0,
+    });
+    expect(store.get('event-ack')).toMatchObject({
+      status: 'processing',
+      collection_state: COLLECTION_STATES.DATABASE_ACKNOWLEDGED,
+      batch_id: 'batch-1',
+    });
+  });
+
+  it('não regride ACK recebido por Broadcast quando a resposta HTTP se perde', async () => {
+    await enqueueCollectionEvent({
+      client_event_id: 'event-lost-response',
+      rawValue: '09950001',
+      event_kind: 'production_stage',
+    });
+    const processBatchFn = vi.fn(async () => {
+      await markEventDatabaseAcknowledged('event-lost-response', {
+        batch_id: 'batch-committed',
+        received_at_db: '2026-09-01T12:00:01.000Z',
+      });
+      throw Object.assign(new Error('resposta HTTP perdida'), { retryable: true });
+    });
+
+    const summary = await flushCollectionMicroBatchQueue(processBatchFn);
+
+    expect(summary).toMatchObject({
+      processed: 1,
+      acknowledged: 1,
+      synced: 0,
+      errors: 0,
+    });
+    expect(store.get('event-lost-response')).toMatchObject({
+      status: 'processing',
+      collection_state: COLLECTION_STATES.DATABASE_ACKNOWLEDGED,
+      retries: 0,
+    });
   });
 
   it('processa várias leituras em uma única chamada e marca todas como synced', async () => {

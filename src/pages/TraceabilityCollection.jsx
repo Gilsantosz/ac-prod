@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { RadioTower, ScanLine } from 'lucide-react';
@@ -32,16 +32,18 @@ import CollectionFullscreenKiosk from '@/components/collection/CollectionFullscr
 import CollectionVolumeEntryPanel from '@/components/collection/CollectionVolumeEntryPanel';
 import CollectionErrorBoundary from '@/components/ui/CollectionErrorBoundary';
 import { getActiveDowntime } from '@/lib/downtimeService';
-import { invalidateAllMesQueries } from '@/config/queryKeys';
 import { recordSessionActivity } from '@/lib/sessionActivity';
+import {
+  COLLECTION_STATES,
+  collectionStateFromResult,
+  isCollectionTerminalState,
+} from '@/lib/collectionStateMachine';
 import {
   getPieceTraceability,
   rejectPieceFromCollection,
   getCollectionKpis,
   getOperatorShiftKpisV2,
   requestPieceReplacement,
-  subscribeToCollectionHistory,
-  unsubscribeFromCollectionHistory
 } from '@/lib/collectionService';
 
 function currentShift() {
@@ -131,7 +133,7 @@ export default function TraceabilityCollection({ embedded = false }) {
   const queryClient = useQueryClient();
   const [mode, setMode] = useState('scanner');
   
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const urlPieceCode = searchParams.get('code') || searchParams.get('piece') || searchParams.get('q') || searchParams.get('openTraceability');
 
   useEffect(() => {
@@ -168,6 +170,7 @@ export default function TraceabilityCollection({ embedded = false }) {
     } catch {}
     return null;
   });
+  const latestClientEventIdRef = useRef(feedback?.client_event_id || null);
 
   const updateFeedback = useCallback((newFeedback) => {
     if (isClosedLotContext(newFeedback)) {
@@ -179,6 +182,8 @@ export default function TraceabilityCollection({ embedded = false }) {
     if (newFeedback) {
       try {
         const toSave = {
+          client_event_id: newFeedback.client_event_id,
+          collection_state: newFeedback.collection_state,
           success: newFeedback.success,
           status: newFeedback.status,
           message: newFeedback.message,
@@ -252,6 +257,10 @@ export default function TraceabilityCollection({ embedded = false }) {
     try { return user?.cell || localStorage.getItem('traceability-cell') || ''; }
     catch { return user?.cell || ''; }
   });
+  const selectedCellId = useMemo(() => (
+    displayCells.find((cell) => cell.name === cellName || cell.id === cellName)?.id
+    || null
+  ), [displayCells, cellName]);
 
   const [shift, setShift] = useState(() => opSession?.shift || currentShift());
   const [machine, setMachine] = useState(null);
@@ -392,14 +401,14 @@ export default function TraceabilityCollection({ embedded = false }) {
     staleTime: 0,
     refetchOnMount: true,
     retry: false,
-    refetchInterval: 15_000,
+    refetchInterval: false,
   });
 
   const { data: shiftKpis = {} } = useQuery({
     queryKey: ['operator-shift-kpis', opSession?.id, shift, shiftRange.dateFrom, shiftRange.dateTo],
     queryFn: () => getOperatorShiftKpisV2(opSession?.id),
     enabled: !!opSession?.id,
-    refetchInterval: 15_000,
+    refetchInterval: false,
   });
 
   const cellStats = {
@@ -417,32 +426,23 @@ export default function TraceabilityCollection({ embedded = false }) {
   const currentClientLotCode = feedback?.lot?.lot_code || selectedPiece?.lot_code || null;
 
   const refreshKpis = useCallback(() => {
-    invalidateAllMesQueries(queryClient);
+    queryClient.invalidateQueries({
+      predicate: (query) => query.queryKey?.[0] === 'collection-kpis'
+        && query.queryKey?.[1] === cellName,
+    });
+    queryClient.invalidateQueries({
+      predicate: (query) => query.queryKey?.[0] === 'operator-shift-kpis'
+        && query.queryKey?.[1] === opSession?.id,
+    });
     queryClient.invalidateQueries({
       queryKey: ['stageReadings', cellName, machine?.id],
     });
-  }, [queryClient, cellName, machine?.id]);
+  }, [queryClient, cellName, machine?.id, opSession?.id]);
 
   const refreshData = useCallback(() => {
     refreshKpis();
     setRefreshReadsSignal((value) => value + 1);
   }, [refreshKpis]);
-
-  // Uma decisão final gera apenas uma atualização consolidada dos KPIs.
-  // O painel de histórico possui sua própria assinatura e não é forçado por aqui.
-  useEffect(() => {
-    if (!cellName) return undefined;
-
-    const channel = subscribeToCollectionHistory({
-      cellName,
-      channelSuffix: 'parent',
-      callback: () => refreshKpis(),
-    });
-
-    return () => {
-      unsubscribeFromCollectionHistory(channel);
-    };
-  }, [cellName, refreshKpis]);
 
   // Busca silenciosa da timeline da peça ativa
   useEffect(() => {
@@ -486,11 +486,108 @@ export default function TraceabilityCollection({ embedded = false }) {
     return result;
   }, [cellName, shift, operator, operatorId, machine, refreshData]);
 
+  const handleQueueResult = useCallback(({
+    event,
+    result,
+    error,
+    state: providedState,
+  }) => {
+    const domainResult = result?.result ?? result?.resultado ?? result ?? {};
+    const state = providedState
+      || collectionStateFromResult(result)
+      || collectionStateFromResult(domainResult)
+      || (error ? COLLECTION_STATES.RETRYING : null);
+    const clientEventId = event?.client_event_id
+      || result?.client_event_id
+      || domainResult?.client_event_id
+      || null;
+    const isLatest = clientEventId
+      && clientEventId === latestClientEventIdRef.current;
+
+    if (isLatest && state) {
+      updateFeedback({
+        ...domainResult,
+        client_event_id: clientEventId,
+        collection_state: state,
+        status: state.toLowerCase(),
+        success: state === COLLECTION_STATES.APPROVED,
+        alert_level: state === COLLECTION_STATES.APPROVED
+          ? 'green'
+          : isCollectionTerminalState(state)
+            ? (state === COLLECTION_STATES.BLOCKED
+              || state === COLLECTION_STATES.DUPLICATED
+              || state === COLLECTION_STATES.PENDING_REVIEW
+                ? 'yellow'
+                : 'red')
+            : 'blue',
+        message: domainResult?.message
+          || error?.message
+          || (state === COLLECTION_STATES.DATABASE_ACKNOWLEDGED
+            ? 'Registrada no banco. Aguardando validação.'
+            : 'Leitura preservada e aguardando processamento.'),
+      });
+    }
+
+    if (!isCollectionTerminalState(state)) return;
+    refreshData();
+
+    const message = domainResult?.message || error?.message;
+    if (state === COLLECTION_STATES.APPROVED) {
+      toast.success(message || 'Leitura aprovada.', {
+        id: `collection-final-${clientEventId}`,
+      });
+      navigator.vibrate?.([70, 40, 70]);
+    } else if ([
+      COLLECTION_STATES.BLOCKED,
+      COLLECTION_STATES.DUPLICATED,
+      COLLECTION_STATES.PENDING_REVIEW,
+    ].includes(state)) {
+      toast.warning(message || 'Leitura requer atenção.', {
+        id: `collection-final-${clientEventId}`,
+      });
+    } else {
+      toast.error(message || 'Leitura não aprovada.', {
+        id: `collection-final-${clientEventId}`,
+      });
+    }
+
+    if (isLatest && domainResult?.item) {
+      setSelectedPiece({
+        id: domainResult.item.id || domainResult.reading?.piece_id,
+        piece_uid: event?.raw_value || domainResult.reading?.tag_value,
+        piece_name: domainResult.item.name || domainResult.item.piece_name || 'Peça Lida',
+        lot_id: domainResult.lot?.id,
+        lot_code: domainResult.lot?.lot_code || 'LOTE-N/A',
+        order_number: domainResult.order?.order_number || domainResult.order?.order_code || 'N/A',
+        client_name: domainResult.order?.customer_name || 'Cliente não informado',
+        current_stage: domainResult.route?.step_name || domainResult.item.current_stage || domainResult.item.current_step,
+        current_stage_name: domainResult.route?.step_name || domainResult.item.current_stage || domainResult.item.current_step,
+        operator_name: operator,
+        status: state.toLowerCase(),
+        route: [],
+        completedSteps: [],
+      });
+    }
+  }, [operator, refreshData, updateFeedback]);
+
   // ─── Fila de coleta com filtros ─────────────────────────────────────────────
-  const { stats: queueStats, flushing, enqueue, processNow, retryQueueErrors } = useCollectionQueue(processEvent, {
+  const {
+    stats: queueStats,
+    flushing,
+    enqueue,
+    processNow,
+    retryQueueErrors,
+    pipelineV3Enabled,
+    realtimeStatus,
+    online: collectionOnline,
+  } = useCollectionQueue(processEvent, {
     cellName,
+    cellId: selectedCellId,
     machineId: machine?.id,
     eventKind: COLLECTION_EVENT_KINDS.PRODUCTION_STAGE,
+    operatorId,
+    queryClient,
+    onResult: handleQueueResult,
   });
 
   // ─── Handler principal de leitura — enfileira e processa ────────────────────
@@ -528,11 +625,24 @@ export default function TraceabilityCollection({ embedded = false }) {
       operatorId,
       machineId: machine?.id || null,
       machineName: machine?.name || null,
+      source_mode: collectionOnline ? 'live' : 'offline_replay',
+      quantity: Math.max(1, Number(payload.quantity) || 1),
     };
 
     const clientEventId = await enqueue(eventPayload, { autoFlush: false });
+    latestClientEventIdRef.current = clientEventId;
+    updateFeedback({
+      success: false,
+      status: 'captured_local',
+      collection_state: COLLECTION_STATES.CAPTURED_LOCAL,
+      alert_level: 'blue',
+      client_event_id: clientEventId,
+      message: collectionOnline
+        ? 'Leitura capturada.'
+        : 'Salva neste equipamento — aguardando sincronização.',
+    });
 
-    if (navigator.onLine) {
+    if (collectionOnline) {
       try {
         const result = await processNow(clientEventId);
         updateFeedback({ ...result, client_event_id: clientEventId });
@@ -577,21 +687,30 @@ export default function TraceabilityCollection({ embedded = false }) {
       } catch (error) {
         const result = {
           success: false,
-          status: 'error',
+          status: 'retrying',
+          collection_state: COLLECTION_STATES.RETRYING,
+          alert_level: 'blue',
           client_event_id: clientEventId,
           message: error?.message || 'Leitura enfileirada para reenvio.',
         };
         updateFeedback(result);
-        toast.error('Falha ao processar leitura. Enfileirada para reenvio automático.');
+        toast.warning('Leitura preservada. O reenvio será feito automaticamente.');
         return result;
       }
     } else {
       toast.info('Sem conexão. Leitura salva na fila local.');
-      const result = { success: false, status: 'queued', client_event_id: clientEventId, message: 'Leitura salva na fila local.' };
+      const result = {
+        success: false,
+        status: 'captured_local',
+        collection_state: COLLECTION_STATES.CAPTURED_LOCAL,
+        alert_level: 'blue',
+        client_event_id: clientEventId,
+        message: 'Salva neste equipamento — aguardando sincronização.',
+      };
       updateFeedback(result);
       return result;
     }
-  }, [cellName, shift, operator, operatorId, machine, enqueue, processNow, updateFeedback, activeDowntime]);
+  }, [cellName, shift, operator, operatorId, machine, collectionOnline, enqueue, processNow, updateFeedback, activeDowntime]);
 
   // Aberturas de modais operacionais
   const handleOpenRejectModal = (piece) => {
@@ -902,7 +1021,7 @@ export default function TraceabilityCollection({ embedded = false }) {
         stats={queueStats}
         flushing={flushing}
         onRetry={retryQueueErrors}
-        online={navigator.onLine}
+        online={collectionOnline}
       />
 
       {/* Detalhamento de Peças da Estação / Célula */}
@@ -915,8 +1034,18 @@ export default function TraceabilityCollection({ embedded = false }) {
                 Painel de Integridade da Estação: {cellName}
               </h4>
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-xs text-muted-foreground font-medium">Monitoramento em Tempo Real</span>
+                <span className={`h-2 w-2 rounded-full ${
+                  collectionOnline && (!pipelineV3Enabled || realtimeStatus === 'SUBSCRIBED')
+                    ? 'bg-emerald-500 animate-pulse'
+                    : 'bg-slate-400'
+                }`} />
+                <span className="text-xs text-muted-foreground font-medium">
+                  {!collectionOnline
+                    ? 'Offline — leituras preservadas localmente'
+                    : pipelineV3Enabled && realtimeStatus !== 'SUBSCRIBED'
+                      ? 'Reconciliação segura ativa'
+                      : 'Monitoramento em Tempo Real'}
+                </span>
               </div>
             </div>
 

@@ -2,6 +2,11 @@ import { AlertTriangle, CalendarDays, Clock, Layers, MapPin, Monitor, User } fro
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import {
+  COLLECTION_STATES,
+  collectionStateFromResult,
+  isCollectionTerminalState,
+} from '@/lib/collectionStateMachine';
 
 export default function CollectionReadItem({
   read,
@@ -12,14 +17,18 @@ export default function CollectionReadItem({
   onOpenTraceability,
   canReject = false
 }) {
-  const isRejected = read.event_status === 'rejected';
-  const isBlocked = read.event_status === 'blocked' || read.event_status === 'duplicated';
+  const collectionState = collectionStateFromResult({
+    collection_state: read.collection_state,
+    status: read.event_status || read.status,
+  });
+  const isRejected = collectionState === COLLECTION_STATES.REJECTED;
+  const isBlocked = collectionState === COLLECTION_STATES.BLOCKED;
+  const isDuplicated = collectionState === COLLECTION_STATES.DUPLICATED;
   const isRework = read.event_status === 'rework';
-  const isApproved = read.event_status === 'approved';
+  const isApproved = collectionState === COLLECTION_STATES.APPROVED;
   // Peça original reprovada que foi resolvida via reposição — tag distinto
   const isApprovedViaReplacement = read.event_status === 'approved_via_replacement';
   const isNotFound = ['not_found', 'invalid'].includes(read.event_status);
-  const isError = ['error', 'processing'].includes(read.event_status);
   const entryType = read.entry_type || read.result_payload?.entry_type || read.result_payload?.source;
   const isReplacementEntry = ['baixa_reposicao', 'replacement_approval'].includes(entryType) || isApprovedViaReplacement;
   const traceabilityCode = isReplacementEntry
@@ -44,8 +53,10 @@ export default function CollectionReadItem({
   };
 
   const getStatusBadge = () => {
+    if (isNotFound) return <Badge className="bg-zinc-600 text-white border-0 text-[10px]">NÃO LOCALIZADA</Badge>;
     if (isRejected) return <Badge className="bg-rose-500 text-white border-0 text-[10px]">REPROVADA</Badge>;
     if (isBlocked) return <Badge className="bg-amber-500 text-white border-0 text-[10px]">BLOQUEADA</Badge>;
+    if (isDuplicated) return <Badge className="bg-amber-500 text-white border-0 text-[10px]">DUPLICADA</Badge>;
     if (isRework) return <Badge className="bg-purple-500 text-white border-0 text-[10px]">RETRABALHO</Badge>;
     if (isApproved) return <Badge className="bg-emerald-500 text-white border-0 text-[10px]">APROVADA</Badge>;
     if (isApprovedViaReplacement) return (
@@ -53,8 +64,13 @@ export default function CollectionReadItem({
         ↻ APROVADA VIA REPOSIÇÃO
       </Badge>
     );
-    if (isNotFound) return <Badge className="bg-zinc-600 text-white border-0 text-[10px]">NÃO LOCALIZADA</Badge>;
-    if (isError) return <Badge className="bg-red-700 text-white border-0 text-[10px]">ERRO DE SINCRONIA</Badge>;
+    if (collectionState === COLLECTION_STATES.CAPTURED_LOCAL) return <Badge className="border-blue-400/50 bg-blue-500/10 text-blue-700 dark:text-blue-300 text-[10px]">CAPTURADA LOCAL</Badge>;
+    if (collectionState === COLLECTION_STATES.PENDING_DATABASE) return <Badge className="border-blue-400/50 bg-blue-500/10 text-blue-700 dark:text-blue-300 text-[10px]">AGUARDANDO ENVIO</Badge>;
+    if (collectionState === COLLECTION_STATES.DATABASE_ACKNOWLEDGED) return <Badge className="border-sky-400/50 bg-sky-500/10 text-sky-700 dark:text-sky-300 text-[10px]">REGISTRADA NO BANCO</Badge>;
+    if (collectionState === COLLECTION_STATES.PROCESSING) return <Badge className="border-sky-400/50 bg-sky-500/10 text-sky-700 dark:text-sky-300 text-[10px]">PROCESSANDO</Badge>;
+    if (collectionState === COLLECTION_STATES.RETRYING) return <Badge className="border-blue-400/50 bg-blue-500/10 text-blue-700 dark:text-blue-300 text-[10px]">REENVIO</Badge>;
+    if (collectionState === COLLECTION_STATES.PENDING_REVIEW) return <Badge className="bg-amber-500 text-white border-0 text-[10px]">EM REVISÃO</Badge>;
+    if (collectionState === COLLECTION_STATES.DEAD_LETTERED) return <Badge className="bg-red-700 text-white border-0 text-[10px]">ANÁLISE MANUAL</Badge>;
     return <Badge variant="outline" className="text-[10px]">{read.event_status}</Badge>;
   };
 
@@ -96,7 +112,12 @@ export default function CollectionReadItem({
               ✋ Manual
             </Badge>
           ) : (
-            <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[9px] font-bold gap-1">
+            <Badge className={cn(
+              'text-[9px] font-bold gap-1',
+              isApproved
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                : 'bg-slate-500/10 text-slate-600 dark:text-slate-300 border-slate-500/30',
+            )}>
               🔍 Coleta Física
             </Badge>
           )}
@@ -144,7 +165,7 @@ export default function CollectionReadItem({
 
       {/* Ações rápidas no card */}
       <div className="flex flex-wrap gap-2 pt-1.5" onClick={(e) => e.stopPropagation()}>
-        {onCreateOccurrence && read.event_status !== 'processing' && (
+        {onCreateOccurrence && (isCollectionTerminalState(collectionState) || isApprovedViaReplacement || isRework) && (
           <Button
             type="button"
             size="sm"

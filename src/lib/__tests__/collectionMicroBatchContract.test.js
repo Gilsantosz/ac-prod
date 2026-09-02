@@ -25,15 +25,19 @@ describe('AC.Prod2 collection micro-batching v8.6 contract', () => {
     expect(migration).toContain("- 'operator_session_token'");
   });
 
-  it('envia array por insert e preserva client_event_id para idempotência', () => {
+  it('usa RPC V3 em até 25 itens e mantém INSERT apenas como fallback V2', () => {
     const service = repoFile('src/lib/collectionBatchService.js');
 
     expect(service).toContain(".from('coletas_producao')");
     expect(service).toContain('.insert(rows)');
+    expect(service).toContain("supabase.rpc('ingest_collection_batch_v3'");
+    expect(service).toContain('p_batch_id: batchId');
+    expect(service).toContain('p_device_id: deviceId');
+    expect(service).toContain('p_events: envelope');
     expect(service).toContain("error.code === '23505'");
     expect(service).toContain('client_event_id');
     expect(service).toContain('operatorSessionToken');
-    expect(service).toContain('COLLECTION_BATCH_MAX_SIZE = 100');
+    expect(service).toContain('COLLECTION_BATCH_MAX_SIZE = 25');
   });
 
   it('escoa a fila em até um segundo sem bloquear o próximo código', () => {
@@ -42,13 +46,15 @@ describe('AC.Prod2 collection micro-batching v8.6 contract', () => {
 
     expect(hook).toMatch(/\(microBatch \? 1_?000 : 15_?000\)/);
     expect(hook).toContain('dispatchCollectionEventBatch');
-    expect(hook).toContain("status: 'queued'");
+    expect(hook).toContain("status: 'pending_database'");
     expect(hook).toMatch(/não\s+bloqueia o próximo código/);
     expect(hook).toContain('getOperatorSession');
-    expect(hook).toContain('operator_session_token');
+    expect(hook).toContain('operator_session_id');
+    expect(hook).not.toContain('operatorSessionToken = payload');
     expect(queue).toContain('flushCollectionMicroBatchQueue');
     expect(queue).toContain('markEventError');
-    expect(queue).toContain('markEventSynced');
+    expect(queue).toContain('markEventDatabaseAcknowledged');
+    expect(queue).toContain('markEventFinalized');
   });
 
   it('mantém reposição fora do lote produtivo', () => {

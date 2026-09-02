@@ -51,6 +51,11 @@ vi.mock('@/lib/operatorSessionService', () => ({
   getOperatorSession: mocks.getOperatorSession,
 }));
 
+vi.mock('@/lib/collectionDeviceIdentity', () => ({
+  getCollectionDeviceId: () => 'test-device-id',
+  getCollectionAppVersion: () => 'test',
+}));
+
 vi.mock('sonner', () => ({
   toast: {
     error: vi.fn(),
