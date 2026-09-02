@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
+import { isDefinitiveSessionError } from '@/lib/authResilience';
+import { measureAuthStep } from '@/lib/authTelemetry';
 
 // ✅ SEGURO: Apenas a chave anon (pública) é usada no frontend.
 // A SERVICE_ROLE_KEY nunca é usada aqui — toda autorização é controlada por RLS no PostgreSQL.
@@ -134,7 +136,7 @@ export const clearPersistedAuthSession = () => {
   authStorage?.removeItem(FALLBACK_SESSION_KEY);
 };
 
-export const restoreAuthSession = async () => {
+export const restoreAuthSession = async ({ correlationId = 'session-restore' } = {}) => {
   const raw = authStorage?.getItem(FALLBACK_SESSION_KEY);
   if (!raw) return null;
 
@@ -142,25 +144,24 @@ export const restoreAuthSession = async () => {
     const stored = JSON.parse(raw);
     if (!stored?.access_token || !stored?.refresh_token) return null;
 
-    const { data, error } = await Promise.race([
+    const { data, error } = await measureAuthStep(correlationId, 'restore_session', () => (
       supabase.auth.setSession({
         access_token: stored.access_token,
         refresh_token: stored.refresh_token,
-      }),
-      new Promise((resolve) =>
-        setTimeout(() => resolve({ data: { session: null }, error: { message: 'Timeout' } }), 4000)
-      ),
-    ]);
+      })
+    ));
 
     if (error || !data?.session) {
-      clearPersistedAuthSession();
+      // Uma indisponibilidade temporária não invalida o refresh token. A limpeza
+      // é reservada a respostas definitivas do servidor de autenticação.
+      if (isDefinitiveSessionError(error)) clearPersistedAuthSession();
       return null;
     }
 
     persistAuthSession(data.session);
     return data.session;
-  } catch {
-    clearPersistedAuthSession();
+  } catch (error) {
+    if (isDefinitiveSessionError(error)) clearPersistedAuthSession();
     return null;
   }
 };

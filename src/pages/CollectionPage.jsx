@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { PlusCircle, LogOut } from 'lucide-react';
 import { useOperatorSession } from '@/hooks/useOperatorSession';
 import { Button } from '@/components/ui/button';
@@ -8,13 +7,6 @@ import OperationalLoginGate from '@/components/entry/OperationalLoginGate';
 
 export default function CollectionPage() {
   const { isLoggedIn, logout } = useOperatorSession();
-
-  // Ao sair da página (desmontar o componente), o login deve ser pedido novamente
-  useEffect(() => {
-    return () => {
-      logout();
-    };
-  }, [logout]);
 
   if (!isLoggedIn) {
     return (

@@ -10,7 +10,7 @@
  * - A SERVICE_ROLE_KEY nunca é exposta no frontend
  */
 
-import { clearPersistedAuthSession, persistAuthSession, supabase } from './supabaseClient';
+import { clearPersistedAuthSession, supabase } from './supabaseClient';
 import { getDefaultPermissions } from '@/config/appRoutes';
 import {
   getProductionMetricRule,
@@ -652,15 +652,9 @@ const auth = {
       err.status = 401;
       throw err;
     }
-    try {
-      const profile = await requireRegisteredProfile(data.user);
-      persistAuthSession(data.session);
-      return profile;
-    } catch (profileError) {
-      clearPersistedAuthSession();
-      await supabase.auth.signOut();
-      throw profileError;
-    }
+    // O AuthProvider é o único responsável por validar/coalescer o perfil.
+    // Isso evita uma segunda consulta concorrente disparada por SIGNED_IN.
+    return { user: data.user, session: data.session };
   },
 
   register: async () => {
