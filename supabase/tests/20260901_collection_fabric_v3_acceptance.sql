@@ -522,7 +522,11 @@ BEGIN
         RAISE EXCEPTION 'TEST_FAIL: INSERT guard does not use NEW: %', v_installed_name;
       END IF;
       IF (v_trigger.tgtype::integer & 16) = 16
-         AND position('coalesce(new.pipeline_version, old.pipeline_version' IN v_definition) = 0 THEN
+         AND (
+           position('coalesce' IN v_definition) = 0
+           OR position('new.pipeline_version' IN v_definition) = 0
+           OR position('old.pipeline_version' IN v_definition) = 0
+         ) THEN
         RAISE EXCEPTION 'TEST_FAIL: UPDATE guard does not coalesce NEW/OLD: %', v_installed_name;
       END IF;
       IF (v_trigger.tgtype::integer & 8) = 8
@@ -723,8 +727,26 @@ BEGIN
      OR position('collection_projection_v3' IN v_definition) = 0
      OR position('previous_decision' IN v_definition) = 0
      OR position('legacy_production_entry_reversal' IN v_definition) = 0
-     OR position('% 16' IN v_definition) = 0 THEN
+     OR position('% 16' IN v_definition) = 0
+     OR position(
+       'public.switch_cell_active_lot_context(text,text,uuid,uuid,uuid,timestamptz,text)'
+       IN v_definition
+     ) = 0
+     OR position(
+       'select public.switch_cell_active_lot_context($1, $2, $3, $4, $5, $6, $7)'
+       IN v_definition
+     ) = 0
+     OR position(
+       'v_item.outbox_created_at, v_item.client_event_id;'
+       IN v_definition
+     ) = 0 THEN
     RAISE EXCEPTION 'TEST_FAIL: projector lacks idempotent outbox/shard application';
+  END IF;
+
+  IF to_regprocedure(
+    'public.switch_cell_active_lot_context(text,text,uuid,uuid,uuid,timestamptz,text)'
+  ) IS NULL THEN
+    RAISE EXCEPTION 'TEST_FAIL: seven-argument active-lot context overload missing';
   END IF;
 
   SELECT lower(pg_get_functiondef(
@@ -780,13 +802,22 @@ BEGIN
      OR NOT (SELECT class_row.relrowsecurity FROM pg_class class_row WHERE class_row.oid = 'realtime.messages'::regclass) THEN
     RAISE EXCEPTION 'TEST_FAIL: realtime.messages RLS is unavailable';
   END IF;
-  IF has_table_privilege('anon', 'realtime.messages', 'INSERT')
-     OR has_table_privilege('authenticated', 'realtime.messages', 'INSERT')
-     OR has_table_privilege('anon', 'realtime.messages', 'UPDATE')
-     OR has_table_privilege('authenticated', 'realtime.messages', 'UPDATE')
-     OR has_table_privilege('anon', 'realtime.messages', 'DELETE')
-     OR has_table_privilege('authenticated', 'realtime.messages', 'DELETE') THEN
-    RAISE EXCEPTION 'TEST_FAIL: browser role can publish or mutate Realtime messages';
+  -- Supabase gerencia os grants base de realtime.messages. A negação efetiva de
+  -- escrita vem do RLS: sem policy INSERT/UPDATE/DELETE/ALL, o grant sozinho não
+  -- autoriza o browser a publicar ou alterar mensagens.
+  IF EXISTS (
+    SELECT 1
+    FROM pg_policies policy_row
+    WHERE policy_row.schemaname = 'realtime'
+      AND policy_row.tablename = 'messages'
+      AND policy_row.cmd IN ('ALL', 'INSERT', 'UPDATE', 'DELETE')
+      AND (
+        'anon'::name = ANY (policy_row.roles)
+        OR 'authenticated'::name = ANY (policy_row.roles)
+        OR 'public'::name = ANY (policy_row.roles)
+      )
+  ) THEN
+    RAISE EXCEPTION 'TEST_FAIL: browser write policy exposes realtime.messages';
   END IF;
   IF EXISTS (
     SELECT 1

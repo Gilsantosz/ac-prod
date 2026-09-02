@@ -5,11 +5,13 @@ import { check, fail, sleep } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
 
 /*
- * AC.Prod Collection Fabric v3 — workload de staging.
+ * AC.Prod Collection Fabric v3 — workload mutante de capacidade.
  *
- * Este arquivo NAO prepara massa, NAO habilita flags e NAO deve ser usado em
- * producao. Cada execucao escreve recibos e fatos produtivos no alvo informado.
- * Consulte docs/runbooks/collection-fabric-v3-deploy.md antes de executar.
+ * Este arquivo NAO prepara massa nem habilita flags. O alvo normal continua
+ * sendo staging. A unica excecao aceita e o projeto AC.Prod explicitamente
+ * autorizado enquanto ele ainda e um ambiente de teste; essa excecao exige
+ * tres confirmacoes exatas abaixo. Cada execucao escreve recibos, fatos e
+ * projecoes produtivas persistentes. Consulte o runbook antes de executar.
  */
 
 const supabaseUrl = (__ENV.SUPABASE_URL || '').replace(/\/$/, '');
@@ -19,15 +21,34 @@ const profile = (__ENV.K6_PROFILE || 'smoke').toLowerCase();
 const runId = __ENV.K6_RUN_ID || '';
 const sequenceBase = Number(__ENV.K6_SEQUENCE_BASE || 0);
 const productionProjectRef = 'uozuzdfvnufsjsonswag';
+const authorizedTestProductionUrl = `https://${productionProjectRef}.supabase.co`;
+const authorizedTestProductionConfirmation =
+  'EU-AUTORIZO-ESCRITAS-K6-DESTRUTIVAS-NO-ACPROD-TESTE-uozuzdfvnufsjsonswag';
+const target = __ENV.K6_TARGET || '';
+const writesConfirmation = __ENV.K6_CONFIRM_WRITES || '';
 
 if (!supabaseUrl || !anonKey || !fixturePath) {
   fail('Defina SUPABASE_URL, SUPABASE_ANON_KEY e K6_FIXTURES.');
 }
-if (__ENV.K6_TARGET !== 'staging' || __ENV.K6_CONFIRM_WRITES !== 'staging-v3-load') {
-  fail('Carga mutante bloqueada: exija K6_TARGET=staging e K6_CONFIRM_WRITES=staging-v3-load.');
-}
-if (supabaseUrl.includes(productionProjectRef)) {
-  fail('Carga bloqueada no projeto de producao. Use staging isolado com compute representativo.');
+if (target === 'staging') {
+  if (writesConfirmation !== 'staging-v3-load') {
+    fail('Carga mutante bloqueada: staging exige K6_CONFIRM_WRITES=staging-v3-load.');
+  }
+  if (supabaseUrl.includes(productionProjectRef)) {
+    fail('Carga staging bloqueada no projeto AC.Prod de teste/producao. Use K6_TARGET=test-production somente com a autorizacao documentada.');
+  }
+} else if (target === 'test-production') {
+  if (
+    supabaseUrl !== authorizedTestProductionUrl
+    || writesConfirmation !== authorizedTestProductionConfirmation
+  ) {
+    fail(
+      'Carga test-production bloqueada: exige a URL exata do projeto AC.Prod de teste '
+      + 'e a frase forte/especifica documentada no runbook.',
+    );
+  }
+} else {
+  fail('Carga mutante bloqueada: K6_TARGET deve ser staging ou test-production.');
 }
 if (!/^[a-zA-Z0-9_-]{1,32}$/.test(runId)) {
   fail('K6_RUN_ID deve ter de 1 a 32 caracteres [a-zA-Z0-9_-] e ser unico por rodada.');

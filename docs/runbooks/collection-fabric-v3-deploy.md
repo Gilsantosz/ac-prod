@@ -142,8 +142,10 @@ Não envie um evento ao v2 e ao v3. O roteamento do dispositivo é exclusivo.
 ## 5. Executar a carga reproduzível
 
 O script [collection-fabric-v3.js](../../tests/load/collection-fabric-v3.js)
-recusa o project ref de produção, exige confirmação de staging e nunca habilita
-flags. Use uma fixture protegida e execute cada perfil separadamente. Exemplo:
+exige confirmação de staging e nunca habilita flags. Ele bloqueia projetos de
+produção por padrão; a única exceção versionada é o projeto AC.Prod identificado
+abaixo, enquanto seu uso estiver formalmente registrado como ambiente de teste.
+Use uma fixture protegida e execute cada perfil separadamente. Exemplo normal:
 
 ```bash
 export SUPABASE_URL="https://STAGING-REF.supabase.co"
@@ -170,6 +172,39 @@ K6_SEQUENCE_BASE=160000000 K6_PROFILE=nominal K6_RUN_ID=nominal-r1 \
 K6_SEQUENCE_BASE=170000000 K6_PROFILE=burst K6_RUN_ID=burst-r1 \
   k6 run --summary-export=artifacts/burst-r1.json tests/load/collection-fabric-v3.js
 ```
+
+### Exceção temporária: AC.Prod de produção usado como ambiente de teste
+
+> **ATENÇÃO — ESCRITAS DESTRUTIVAS:** esta exceção grava recibos, fatos de
+> produção, tentativas, outbox, projeções e KPIs no projeto
+> `uozuzdfvnufsjsonswag`. A carga não possui limpeza automática e pode alterar
+> dashboards, lotes e contadores. Não execute com dados ou usuários reais.
+
+Use esta forma somente com autorização registrada para a janela atual. As três
+travas precisam coincidir exatamente: alvo `test-production`, URL base do project
+ref autorizado e frase forte que nomeia a escrita destrutiva. Uma URL parecida,
+outro project ref ou a confirmação de staging falha antes de qualquer requisição.
+Nunca use `service_role` na fixture.
+
+```bash
+export SUPABASE_URL="https://uozuzdfvnufsjsonswag.supabase.co"
+export SUPABASE_ANON_KEY="CHAVE-PUBLICA-DO-PROJETO"
+export K6_TARGET="test-production"
+export K6_CONFIRM_WRITES="EU-AUTORIZO-ESCRITAS-K6-DESTRUTIVAS-NO-ACPROD-TESTE-uozuzdfvnufsjsonswag"
+export K6_FIXTURES="/caminho-seguro/collection-v3-fixture.json"
+mkdir -p artifacts
+
+K6_SEQUENCE_BASE=180000000 K6_PROFILE=smoke K6_RUN_ID=testprod-smoke-r1 \
+  k6 run --summary-export=artifacts/testprod-smoke-r1.json tests/load/collection-fabric-v3.js
+```
+
+Comece obrigatoriamente pelo `smoke`. Antes de executar qualquer outro perfil,
+confirme health `ready=true`, filas drenadas, DLQ vazia, reconciliação correta e
+ausência de usuários reais. Registre a autorização, o checksum da fixture
+sanitizado e a faixa de sequência. O perfil nominal grava 18.000 eventos por
+rodada; repetições exigem novos códigos e novas faixas. Quando o projeto deixar de
+ser ambiente de teste, remova esta exceção em uma alteração versionada antes de
+qualquer nova carga.
 
 Use uma nova faixa de sequence para cada comando. Repita nominal e rajada pelo
 menos três vezes depois de aquecimento, sem alterar timeouts, concorrência ou

@@ -134,8 +134,8 @@ GRANT EXECUTE ON FUNCTION private.wake_collection_inbox_worker(text, integer)
   TO postgres, service_role;
 
 -- Broadcast é somente leitura para clientes; publicação continua restrita ao
--- service_role/realtime.send. Uma política por escopo mantém a auditoria clara.
-ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
+-- service_role/realtime.send. realtime.messages já é gerenciada com RLS pelo
+-- Supabase; este projeto altera somente as políticas autorizadas do recurso.
 
 DROP POLICY IF EXISTS collection_v3_device_broadcast_select
   ON realtime.messages;
@@ -597,7 +597,7 @@ AS $health$
       AND to_regprocedure('public.process_collection_projection_batch_v3(text,jsonb)') IS NOT NULL
       AND to_regprocedure('public.reconcile_collection_projection_shards_v3(uuid,text)') IS NOT NULL
       AND to_regprocedure('private.enqueue_collection_projection_correction_v3()') IS NOT NULL
-      AND to_regprocedure('public.switch_cell_active_lot_context(text,text,uuid,uuid,uuid)') IS NOT NULL
+      AND to_regprocedure('public.switch_cell_active_lot_context(text,text,uuid,uuid,uuid,timestamptz,text)') IS NOT NULL
       AND to_regprocedure('public.recalculate_cell_lot_state(uuid,text,text,uuid,uuid)') IS NOT NULL
       AND to_regprocedure('public.refresh_collection_lot_state(uuid,uuid)') IS NOT NULL
       AND to_regclass('pgmq.q_collection_live_v3') IS NOT NULL
@@ -893,7 +893,7 @@ BEGIN
           USING ERRCODE = '55000';
       END IF;
       IF to_regprocedure('private.enqueue_collection_projection_correction_v3()') IS NULL
-         OR to_regprocedure('public.switch_cell_active_lot_context(text,text,uuid,uuid,uuid)') IS NULL
+         OR to_regprocedure('public.switch_cell_active_lot_context(text,text,uuid,uuid,uuid,timestamptz,text)') IS NULL
          OR to_regprocedure('public.recalculate_cell_lot_state(uuid,text,text,uuid,uuid)') IS NULL
          OR to_regprocedure('public.refresh_collection_lot_state(uuid,uuid)') IS NULL
          OR NOT EXISTS (

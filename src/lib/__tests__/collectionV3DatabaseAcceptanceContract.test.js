@@ -7,10 +7,24 @@ const acceptancePath =
 const migrationDirectory = resolve(process.cwd(), 'supabase/migrations');
 const acceptance = readFileSync(resolve(process.cwd(), acceptancePath), 'utf8');
 const v3MigrationPaths = readdirSync(migrationDirectory)
-  .filter((name) => /^2026090112\d{4}_collection_fabric_v3_.*\.sql$/.test(name))
+  .filter((name) => /^202609011[23]\d{4}_collection_fabric_v3_.*\.sql$/.test(name))
   .sort()
   .map((name) => resolve(migrationDirectory, name));
 const migrations = v3MigrationPaths.map((path) => readFileSync(path, 'utf8')).join('\n');
+const realtimeHealthRollout = readFileSync(
+  resolve(
+    migrationDirectory,
+    '20260901125000_collection_fabric_v3_realtime_health_rollout.sql',
+  ),
+  'utf8',
+);
+const projectorRuntimeCompatibility = readFileSync(
+  resolve(
+    migrationDirectory,
+    '20260901130000_collection_fabric_v3_projector_runtime_compatibility.sql',
+  ),
+  'utf8',
+);
 
 describe('Collection Fabric v3 database acceptance contract', () => {
   it('is a rollback-only SQL acceptance test', () => {
@@ -114,6 +128,28 @@ describe('Collection Fabric v3 database acceptance contract', () => {
     expect(migrations).toContain('Aprovações são contabilizadas pelo trigger de production_entries');
     expect(migrations).toContain("'outbox_id', v_item.outbox_id");
     expect(migrations).toContain("'delta', jsonb_build_object(");
+  });
+
+  it('uses the seven-argument active-lot context contract without losing event identity', () => {
+    const switchContextSignature =
+      'public.switch_cell_active_lot_context(text,text,uuid,uuid,uuid,timestamptz,text)';
+
+    expect(realtimeHealthRollout).toContain(
+      `to_regprocedure('${switchContextSignature}')`,
+    );
+    expect(realtimeHealthRollout).not.toContain(
+      "to_regprocedure('public.switch_cell_active_lot_context(text,text,uuid,uuid,uuid)')",
+    );
+    expect(realtimeHealthRollout).not.toContain(
+      'ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY',
+    );
+    expect(projectorRuntimeCompatibility).toContain(switchContextSignature);
+    expect(projectorRuntimeCompatibility).toContain(
+      'SELECT public.switch_cell_active_lot_context($1, $2, $3, $4, $5, $6, $7)',
+    );
+    expect(projectorRuntimeCompatibility).toContain(
+      'v_item.outbox_created_at, v_item.client_event_id;',
+    );
   });
 
   it('derives worker URLs from the target environment and enforces operational thresholds', () => {
