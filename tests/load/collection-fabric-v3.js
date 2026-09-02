@@ -19,6 +19,8 @@ const anonKey = __ENV.SUPABASE_ANON_KEY || '';
 const fixturePath = __ENV.K6_FIXTURES || '';
 const profile = (__ENV.K6_PROFILE || 'smoke').toLowerCase();
 const runId = __ENV.K6_RUN_ID || '';
+const attemptId = (__ENV.K6_ATTEMPT || '1').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 16);
+const globalCodeOffset = Number(__ENV.K6_CODE_OFFSET || 0);
 const sequenceBase = Number(__ENV.K6_SEQUENCE_BASE || 0);
 const productionProjectRef = 'uozuzdfvnufsjsonswag';
 const authorizedTestProductionUrl = `https://${productionProjectRef}.supabase.co`;
@@ -59,6 +61,7 @@ if (!Number.isSafeInteger(sequenceBase) || sequenceBase < 1) {
 
 const fixture = JSON.parse(open(fixturePath));
 const devices = Array.isArray(fixture.devices) ? fixture.devices : [];
+const atomicDevices = Array.isArray(fixture.atomic_devices) ? fixture.atomic_devices : [];
 const codes = Array.isArray(fixture.codes) ? fixture.codes.map(String) : [];
 
 const allowedProfiles = new Set([
@@ -70,6 +73,8 @@ const allowedProfiles = new Set([
   'idempotency',
   'contention_piece',
   'contention_cell_lot',
+  'atomic8',
+  'smoke100',
 ]);
 if (!allowedProfiles.has(profile)) {
   fail(
@@ -148,6 +153,15 @@ const scenarioProfiles = {
       vus: 1,
       iterations: 1,
       maxDuration: '30s',
+    },
+  },
+  smoke100: {
+    smoke_one_hundred_pieces: {
+      executor: 'per-vu-iterations',
+      exec: 'smokeHundred',
+      vus: 1,
+      iterations: 4,
+      maxDuration: '2m',
     },
   },
   nominal: {
@@ -249,6 +263,15 @@ const scenarioProfiles = {
       maxDuration: '45s',
     },
   },
+  atomic8: {
+    eight_devices_same_piece_same_cell: {
+      executor: 'per-vu-iterations',
+      exec: 'atomicEight',
+      vus: 8,
+      iterations: 1,
+      maxDuration: '45s',
+    },
+  },
 };
 
 const profileThresholds = profile === 'idempotency'
@@ -260,13 +283,13 @@ if (profile === 'priority') {
 if (profile === 'nominal') {
   profileThresholds.collection_realtime_devices_without_finalized = ['count==0'];
 }
-if (profile === 'contention_piece') {
+if (profile === 'contention_piece' || profile === 'atomic8') {
   profileThresholds.collection_contention_launch_lag_ms = ['max<=100'];
   profileThresholds.collection_contention_window_violations = ['count==0'];
   profileThresholds.collection_contention_context_violations = ['count==0'];
-  profileThresholds.collection_contention_piece_outcomes = ['count==20'];
+  profileThresholds.collection_contention_piece_outcomes = [`count==${profile === 'atomic8' ? 8 : 20}`];
   profileThresholds.collection_contention_piece_approvals = ['count==1'];
-  profileThresholds.collection_contention_piece_blocked_or_duplicated = ['count==19'];
+  profileThresholds.collection_contention_piece_blocked_or_duplicated = [`count==${profile === 'atomic8' ? 7 : 19}`];
 }
 if (profile === 'contention_cell_lot') {
   profileThresholds.collection_contention_launch_lag_ms = ['max<=100'];
@@ -292,6 +315,8 @@ const profileRequirements = {
   idempotency: { devices: 20, codes: 20 },
   contention_piece: { devices: 20, codes: 1 },
   contention_cell_lot: { devices: 50, codes: 50 },
+  atomic8: { devices: 8, codes: 1 },
+  smoke100: { devices: 1, codes: 100 },
 };
 
 const scenarioOffsets = {
@@ -305,6 +330,8 @@ const scenarioOffsets = {
   idempotency: 6_000_000,
   contention_piece: 7_000_000,
   contention_cell_lot: 8_000_000,
+  atomic8: 9_000_000,
+  smoke100: 10_000_000,
 };
 
 function authHeaders(device) {
@@ -386,7 +413,7 @@ function selectDevice(iteration) {
 }
 
 function eventCode(codeOffset, iteration, batchSize, eventIndex) {
-  return codes[codeOffset + (iteration * batchSize) + eventIndex];
+  return codes[globalCodeOffset + codeOffset + (iteration * batchSize) + eventIndex];
 }
 
 function createEvents(scenarioName, sourceMode, batchSize, iteration) {
@@ -403,7 +430,7 @@ function createEvents(scenarioName, sourceMode, batchSize, iteration) {
   ).toISOString();
 
   return Array.from({ length: batchSize }, (_, eventIndex) => ({
-    client_event_id: `k6-v3:${runId}:${scenarioName}:${iteration}:${eventIndex}`,
+    client_event_id: `k6-v3:${runId}:${attemptId}:${scenarioName}:${iteration}:${eventIndex}`,
     raw_value: eventCode(codeOffset, iteration, batchSize, eventIndex),
     reader_type: 'keyboard_barcode',
     captured_at_client: capturedAt,
@@ -491,7 +518,7 @@ function waitForCoordinatedLaunch(startAt) {
 
 function submitContentionEvent(workload, code, setupData) {
   const vuIndex = Number(execution.vu.idInTest) - 1;
-  const device = devices[vuIndex];
+  const device = (profile === 'atomic8' ? atomicDevices : devices)[vuIndex];
   const clientEventId = `k6-v3:${runId}:${workload}:${vuIndex}`;
   const event = {
     client_event_id: clientEventId,
@@ -660,14 +687,14 @@ function validateFixture() {
     fail('Fixture invalida: os codigos produtivos devem ser exclusivos nesta rodada.');
   }
 
-  if (profile === 'contention_piece' || profile === 'contention_cell_lot') {
+  if (profile === 'contention_piece' || profile === 'contention_cell_lot' || profile === 'atomic8') {
     const expected = fixture.contention || {};
     if (!/^[0-9a-f-]{36}$/i.test(expected.lot_id || '') || !expected.cell_name) {
       fail('Fixture de contencao exige contention.lot_id e contention.cell_name.');
     }
-    const requiredDevices = devices.slice(0, requirement.devices);
+    const requiredDevices = (profile === 'atomic8' ? atomicDevices : devices).slice(0, requirement.devices);
     const machines = requiredDevices.map((device) => device.machine_id).filter(Boolean);
-    if (machines.length !== requirement.devices || new Set(machines).size !== requirement.devices) {
+    if (machines.length !== requirement.devices || (profile !== 'atomic8' && new Set(machines).size !== requirement.devices)) {
       fail('Perfil de contencao exige uma machine_id distinta por dispositivo.');
     }
   }
@@ -705,6 +732,10 @@ export function setup() {
 
 export function smoke() {
   submitBatch('smoke', 'live', 1);
+}
+
+export function smokeHundred() {
+  submitBatch('smoke100', 'live', 25);
 }
 
 export function nominal() {
@@ -920,6 +951,19 @@ export function contentionSamePiece(setupData) {
   }
   check(row, {
     'mesma peca termina aprovada bloqueada ou duplicada': (value) => (
+      ['approved', 'blocked', 'duplicated'].includes(value.status)
+    ),
+  });
+}
+
+export function atomicEight(setupData) {
+  const row = submitContentionEvent('atomic8', codes[0], setupData);
+  if (!row) return;
+  contentionPieceOutcomes.add(1);
+  if (row.status === 'approved') contentionPieceApprovals.add(1);
+  else if (row.status === 'blocked' || row.status === 'duplicated') contentionPieceBlockedOrDuplicated.add(1);
+  check(row, {
+    'corrida atomica termina aprovada bloqueada ou duplicada': (value) => (
       ['approved', 'blocked', 'duplicated'].includes(value.status)
     ),
   });
