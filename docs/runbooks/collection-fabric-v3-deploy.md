@@ -1,11 +1,51 @@
 # Runbook de implantação — Collection Fabric v3
 
-Status: **procedimento proposto; ainda não executado em staging nem em produção**.
+Status: **implantação técnica executada em 2026-09-02 no AC.Prod autorizado como
+ambiente `test-production`; capacidade k6 e homologação operacional permanecem
+pendentes**.
 
 Este runbook implanta o caminho v3 sem dupla escrita produtiva. As migrations são
 aditivas e as quatro flags começam desligadas. Aplicar as migrations não autoriza
 ativar o tráfego. A capacidade permanece **não validada** até que os testes k6
 passem no mesmo tipo de compute que receberá o tráfego.
+
+## Registro da implantação de 2026-09-02
+
+Esta execução ocorreu após autorização explícita para tratar o aplicativo de
+produção como ambiente de teste. Ela comprova instalação, publicação e saúde
+estrutural; não substitui o ensaio de capacidade descrito na seção 5.
+
+- Supabase: projeto `uozuzdfvnufsjsonswag`, região `sa-east-1`, PostgreSQL 17.6,
+  observado como `ACTIVE_HEALTHY` durante a janela.
+- Git: PR [#61](https://github.com/Gilsantosz/ac-prod/pull/61), merge squash
+  `ec05579fa7f77e9b109e8beaaaf7eaecf6c35a43`.
+- Frontend: [GitHub Pages](https://gilsantosz.github.io/ac-prod/) publicado pelo
+  workflow [33642368398](https://github.com/Gilsantosz/ac-prod/actions/runs/33642368398).
+  O `build-info.json` público confirmou o mesmo SHA.
+- Banco: migrations `20260901120000`, `20260901121000`, `20260901122000`,
+  `20260901123000`, `20260901124000`, `20260901125000` e `20260901130000`
+  aplicadas e reconciliadas no ledger remoto. O histórico anterior já estava
+  divergente entre local e remoto; ele não foi reescrito nem reparado em bloco.
+- Edge Functions: `process-collection-v3` e `project-collection-v3` publicadas na
+  versão 1, com autenticação interna por `x-cron-secret`; chamadas sem segredo
+  retornaram 401.
+- Flags: `ingress`, `worker`, `projection` e `broadcast` habilitadas, nessa ordem,
+  com escopo global no ambiente de teste. A última ativação ocorreu às
+  `2026-09-02T14:34:57Z`.
+- Validação: lint, typecheck, 463 testes unitários, auditoria de dependências e
+  segredos, build, aceitação SQL transacional e Playwright contra o Pages
+  passaram. Às `2026-09-02T14:38:03Z`, o health v3 retornou `ready=true`,
+  `structural_ready=true`, filas e DLQ zeradas, sem deadlocks ou statement
+  timeouts; o health legado v9.2.3 também permaneceu `ready=true`.
+- Pendência explícita: não havia fixture protegida com 100 dispositivos/sessões
+  autorizadas e até 18.000 códigos válidos exclusivos. Por isso, nenhum perfil
+  k6 foi executado e `capacity_estimate` continua `null`. Não promover este
+  resultado como homologação de capacidade para uso produtivo real.
+
+Se o ambiente passar a conter operação real, limite ou desligue primeiro as
+flags conforme o [runbook de rollback](collection-fabric-v3-rollback.md), gere a
+fixture em ambiente isolado e conclua os gates de capacidade antes de nova
+expansão.
 
 ## Papéis e registros obrigatórios
 
