@@ -48,6 +48,9 @@ import QualityPage from '@/pages/QualityPage';
 import Traceability from '@/pages/Traceability';
 import { useProductionRealtimeSync } from '@/hooks/useProductionRealtimeSync';
 import { isSupabaseConfigured } from '@/lib/supabaseClient';
+import RealtimeStatusIndicator from '@/components/RealtimeStatusIndicator';
+import PwaUpdatePrompt from '@/components/PwaUpdatePrompt';
+import CapacityTests from '@/pages/CapacityTests';
 
 const AcProdRedirect = () => {
   const location = useLocation();
@@ -174,6 +177,7 @@ const AuthenticatedApp = () => {
 
           <Route path="/integracoes/promob" element={<Navigate to="/pcp" replace />} />
           <Route path="/logs-sistema" element={<SystemLogs />} />
+          <Route path="/testes-capacidade" element={<CapacityTests />} />
           <Route path="/downloads-backups" element={<DownloadsBackups />} />
           <Route path="/backups" element={<Navigate to="/downloads-backups" replace />} />
           <Route path="/ordens-producao" element={<Navigate to="/pcp?tab=orders" replace />} />
@@ -263,6 +267,8 @@ function App() {
 
         <Toaster />
         <SonnerToaster position="top-right" richColors />
+        <RealtimeStatusIndicator />
+        <PwaUpdatePrompt />
       </QueryClientProvider>
     </AuthProvider>
   )

@@ -101,7 +101,7 @@ export default defineConfig(() => {
         devOptions: {
           enabled: false,
         },
-        registerType: 'autoUpdate',
+        registerType: 'prompt',
         injectRegister: 'script-defer',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icons/*.png'],
         manifest: {
@@ -133,8 +133,8 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
-          skipWaiting: true,
-          clientsClaim: true,
+          skipWaiting: false,
+          clientsClaim: false,
           cleanupOutdatedCaches: true,
           // Mantém somente os arquivos estáticos do aplicativo no cache.
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],

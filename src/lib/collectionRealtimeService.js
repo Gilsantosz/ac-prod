@@ -11,6 +11,7 @@ import {
   COLLECTION_STATES,
   collectionStateFromResult,
 } from '@/lib/collectionStateMachine';
+import { recordAuthMetric } from '@/lib/authTelemetry';
 
 export const COLLECTION_BROADCAST_EVENTS = Object.freeze([
   'collection.received',
@@ -51,26 +52,94 @@ export function subscribeToCollectionBroadcastV3({
   ];
   if (cellId) specs.push(`collection:cell:${cleanChannelPart(cellId)}`);
 
-  const channels = specs.map((channelName) => {
-    let channel = supabase.channel(channelName, {
-      config: { private: true, broadcast: { self: false, ack: false } },
-    });
-    for (const eventName of COLLECTION_BROADCAST_EVENTS) {
-      channel = channel.on(
-        'broadcast',
-        { event: eventName },
-        (message) => onMessage?.(unwrapCollectionBroadcast(message, eventName)),
-      );
-    }
-    channel.subscribe((status) => onStatus?.(status, channelName));
-    return channel;
-  });
+  const subscription = {
+    channels: [],
+    stopped: false,
+    reconnectTimer: null,
+    reconnectAttempt: 0,
+    seen: new Map(),
+    firstEventRecorded: false,
+  };
 
-  return { channels };
+  const emitStatus = (status, channelName) => {
+    const normalized = status === 'SUBSCRIBED'
+      ? 'connected'
+      : (typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'reconnecting');
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('acprod-realtime-status', {
+        detail: { status: normalized, channel: channelName },
+      }));
+    }
+    onStatus?.(status, channelName);
+  };
+
+  const eventKey = (payload) => [
+    payload.outbox_id || payload.client_event_id || payload.id || '',
+    payload.projection_revision || payload.state_version || '',
+    payload.broadcast_event || payload.event || '',
+  ].join(':');
+
+  const deliver = (message, eventName) => {
+    const payload = unwrapCollectionBroadcast(message, eventName);
+    const key = eventKey(payload);
+    if (key !== '::' && subscription.seen.has(key)) return;
+    if (key !== '::') {
+      subscription.seen.set(key, Date.now());
+      if (subscription.seen.size > 1_000) {
+        const oldest = subscription.seen.keys().next().value;
+        subscription.seen.delete(oldest);
+      }
+    }
+    if (!subscription.firstEventRecorded) {
+      subscription.firstEventRecorded = true;
+      recordAuthMetric({ correlationId: 'realtime', step: 'first_realtime_event', result: 'success' });
+    }
+    onMessage?.(payload);
+  };
+
+  const connect = () => {
+    if (subscription.stopped) return;
+    subscription.channels = specs.map((channelName) => {
+      let channel = supabase.channel(channelName, {
+        config: { private: true, broadcast: { self: false, ack: false } },
+      });
+      for (const eventName of COLLECTION_BROADCAST_EVENTS) {
+        channel = channel.on('broadcast', { event: eventName }, (message) => deliver(message, eventName));
+      }
+      channel.subscribe((status) => {
+        emitStatus(status, channelName);
+        if (status === 'SUBSCRIBED') {
+          subscription.reconnectAttempt = 0;
+          recordAuthMetric({ correlationId: 'realtime', step: 'realtime_subscribed', result: 'success' });
+          return;
+        }
+        if (!['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status) || subscription.stopped) return;
+        if (subscription.reconnectTimer) return;
+        const attempt = subscription.reconnectAttempt++;
+        const delay = Math.min(30_000, 750 * (2 ** attempt)) * (0.75 + Math.random() * 0.5);
+        subscription.reconnectTimer = setTimeout(async () => {
+          subscription.reconnectTimer = null;
+          const staleChannels = subscription.channels;
+          subscription.channels = [];
+          await Promise.all(staleChannels.map((stale) => supabase.removeChannel?.(stale)));
+          connect();
+        }, delay);
+      });
+      return channel;
+    });
+  };
+
+  recordAuthMetric({ correlationId: 'realtime', step: 'first_realtime_channel', result: 'started' });
+  connect();
+  return subscription;
 }
 
 export async function unsubscribeFromCollectionBroadcastV3(subscription) {
+  if (!subscription) return;
+  subscription.stopped = true;
+  if (subscription.reconnectTimer) clearTimeout(subscription.reconnectTimer);
   const channels = subscription?.channels || [];
+  subscription.channels = [];
   await Promise.all(channels.map((channel) => (
     supabase.removeChannel?.(channel) || Promise.resolve()
   )));

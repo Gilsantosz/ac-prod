@@ -290,6 +290,12 @@ export function useProductionRealtimeSync(options = {}) {
 
     let channel = null;
     let fallbackInterval = null;
+    const publishStatus = (status) => {
+      if (typeof window === 'undefined') return;
+      window.dispatchEvent(new CustomEvent('acprod-realtime-status', {
+        detail: { status, channel: realtimeChannelName },
+      }));
+    };
 
     try {
       channel = supabase.channel(realtimeChannelName);
@@ -308,6 +314,7 @@ export function useProductionRealtimeSync(options = {}) {
 
       channel.subscribe((status) => {
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          publishStatus(navigator.onLine === false ? 'offline' : 'query_fallback');
           console.warn('[Production Realtime] Canal websocket temporariamente indisponível. Ativando fallback de atualização periódica.');
           if (!fallbackInterval) {
             fallbackInterval = setInterval(() => {
@@ -319,6 +326,7 @@ export function useProductionRealtimeSync(options = {}) {
             }, 15000);
           }
         } else if (status === 'SUBSCRIBED') {
+          publishStatus('connected');
           if (fallbackInterval) {
             clearInterval(fallbackInterval);
             fallbackInterval = null;
@@ -326,6 +334,7 @@ export function useProductionRealtimeSync(options = {}) {
         }
       });
     } catch (err) {
+      publishStatus(navigator.onLine === false ? 'offline' : 'query_fallback');
       console.warn('[Production Realtime] Erro ao registrar canal realtime:', err);
       if (!fallbackInterval) {
         fallbackInterval = setInterval(() => {
