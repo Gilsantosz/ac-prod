@@ -9,7 +9,7 @@ import {
   LayoutDashboard, PlusCircle, ClipboardList, Gauge, Boxes,
   Layers, Plug, AlertOctagon, Trophy, LineChart, BrainCircuit,
   Zap, Users, Shield, HardDrive, Truck, Box, BellRing, FolderKanban, GitFork, ShieldCheck, Wrench, HardHat, Edit3,
-  ChartNoAxesCombined, RotateCcw, ShieldAlert
+  ChartNoAxesCombined, RotateCcw, ShieldAlert, Activity
 } from 'lucide-react';
 
 export const routeGroups = {
@@ -317,6 +317,16 @@ export const appRoutes = [
     aliases: ['/celulas', '/metas', '/celulas-e-metas', '/cells-goals']
   },
   {
+    path: '/testes-capacidade',
+    label: 'Testes de Capacidade',
+    description: 'Ensaios controlados de autenticação, coleta, filas e Realtime (Admin Only)',
+    icon: Activity,
+    group: 'admin',
+    permission: 'adminOnly',
+    showInSidebar: true,
+    showInDashboardHub: false
+  },
+  {
     path: '/logs-sistema',
     label: 'Logs do Sistema',
     description: 'Auditoria de segurança e logs de sistema (Admin Only)',
@@ -386,6 +396,7 @@ const PAGE_ACCESS_OVERRIDES = {
   '/operadores': { viewPermission: 'view_operators', editPermission: 'manage_operators' },
   '/celulas-metas': { viewPermission: 'view_cells', editPermission: 'manage_cells' },
   '/logs-sistema': { viewPermission: 'view_audit_logs', adminOnly: true },
+  '/testes-capacidade': { viewPermission: 'adminOnly', adminOnly: true },
   '/downloads-backups': { viewPermission: 'view_backups', editPermission: 'manage_backups', adminOnly: true },
   '/logs-integridade': { viewPermission: 'view_integrity_logs' },
   '/reposicao': { viewPermission: 'view_replacements', editPermission: 'manage_replacements' },

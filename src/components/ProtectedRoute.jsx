@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { useAuth } from '@/lib/AuthContext';
+import { AUTH_STATES, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import { Lock, ShieldAlert, ArrowLeft, LogOut } from 'lucide-react';
 import { canUserViewRoute, getRouteAccess, isRouteOnStandby, permissionLabels } from '@/config/appRoutes';
 import { navTo } from '@/lib/navigation';
+import { recordAuthMetric } from '@/lib/authTelemetry';
 
 
 const DefaultFallback = () => (
@@ -14,7 +15,7 @@ const DefaultFallback = () => (
 );
 
 export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthenticatedElement }) {
-  const { user, isAuthenticated, isLoadingAuth, authChecked, authError, checkUserAuth, logout } = useAuth();
+  const { user, isAuthenticated, isLoadingAuth, authChecked, authError, authStatus, checkUserAuth, logout } = useAuth();
   const location = useLocation();
 
   useEffect(() => {
@@ -23,8 +24,26 @@ export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthe
     }
   }, [authChecked, isLoadingAuth, checkUserAuth]);
 
+  useEffect(() => {
+    if (authStatus === AUTH_STATES.AUTHENTICATED) {
+      recordAuthMetric({ correlationId: 'route', step: 'protected_route_released', result: 'success' });
+    }
+  }, [authStatus]);
+
   if (isLoadingAuth || !authChecked) {
     return fallback;
+  }
+
+  if ([AUTH_STATES.PROFILE_LOADING, AUTH_STATES.RECONNECTING].includes(authStatus)) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-slate-950/30 backdrop-blur-sm p-4">
+        <div className="rounded-2xl border border-slate-700 bg-slate-900 p-6 text-center shadow-2xl">
+          <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-slate-700 border-t-emerald-400" />
+          <p className="font-semibold text-slate-100">Validando acesso</p>
+          <p className="mt-1 text-sm text-slate-400">Reconectando sem encerrar sua sessão.</p>
+        </div>
+      </div>
+    );
   }
 
   if (authError) {

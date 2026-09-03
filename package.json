@@ -27,6 +27,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:coverage": "vitest run --coverage",
+    "capacity:controlled": "node tests/capacity/run-controlled-capacity.mjs",
+    "capacity:gate": "node tests/capacity/evaluate-capacity-gate.mjs",
     "security:audit": "npm audit --omit=dev --audit-level=high",
     "security:secrets": "secretlint --maskSecrets \"**/*\"",
     "security:check": "npm run security:audit && npm run security:secrets"

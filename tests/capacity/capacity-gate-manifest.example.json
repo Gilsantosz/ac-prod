@@ -1,0 +1,17 @@
+{
+  "target": "staging",
+  "evidence": {
+    "migration_applied": false,
+    "edge_functions_deployed": false,
+    "health_before": false,
+    "health_after": false,
+    "sql_acceptance_passed": false,
+    "browser_indexeddb_passed": false,
+    "compute_observability_attached": false,
+    "reconciliation_clean": false,
+    "rollback_rehearsed": false,
+    "approvals_recorded": false,
+    "flags_restored_off": false
+  },
+  "runs": []
+}

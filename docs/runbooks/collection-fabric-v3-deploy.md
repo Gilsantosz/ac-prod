@@ -1,8 +1,10 @@
 # Runbook de implantação — Collection Fabric v3
 
-Status: **implantação técnica executada em 2026-09-02 no AC.Prod autorizado como
-ambiente `test-production`; capacidade k6 e homologação operacional permanecem
-pendentes**.
+Status: **rollout contido em 2026-09-02; capacidade não homologada e quatro flags
+v3 desligadas após falha de SLO no smoke real**.
+
+O relatório da rodada e a evidência de limpeza estão em
+[ACPROD2_CAPACITY_CAPTEST_20260902_161216_22D6E66B.md](../reports/ACPROD2_CAPACITY_CAPTEST_20260902_161216_22D6E66B.md).
 
 Este runbook implanta o caminho v3 sem dupla escrita produtiva. As migrations são
 aditivas e as quatro flags começam desligadas. Aplicar as migrations não autoriza
@@ -181,37 +183,75 @@ Não envie um evento ao v2 e ao v3. O roteamento do dispositivo é exclusivo.
 
 ## 5. Executar a carga reproduzível
 
-O script [collection-fabric-v3.js](../../tests/load/collection-fabric-v3.js)
-exige confirmação de staging e nunca habilita flags. Ele bloqueia projetos de
-produção por padrão; a única exceção versionada é o projeto AC.Prod identificado
-abaixo, enquanto seu uso estiver formalmente registrado como ambiente de teste.
-Use uma fixture protegida e execute cada perfil separadamente. Exemplo normal:
+O workload [collection-fabric-v3.js](../../tests/load/collection-fabric-v3.js)
+exige confirmação de staging e nunca habilita flags. Ele deve ser iniciado
+somente pelo executor
+[run-controlled-capacity.mjs](../../tests/capacity/run-controlled-capacity.mjs),
+que reclama atomicamente o run solicitado na página administrativa, mantém
+heartbeat, pausa/retoma o processo k6 e encerra-o ao observar cancelamento,
+emergency-stop ou perda do plano de controle. Não chame `k6 run` diretamente.
+
+Solicite o run na página **Testes de Capacidade**, usando perfil, alvo e
+`sequence_base` exatos. Copie o `CAPTEST_...` exibido e gere uma fixture nova
+para esse run/perfil antes de iniciar o executor. Dispositivos, peças e duração
+são limites fixos do perfil versionado; o banco e o executor recusam uma
+configuração divergente. A credencial server-side entra somente por stdin e é
+removida do ambiente filho; o k6 continua usando exclusivamente a chave
+pública/JWTs da fixture. A saída do preparador deve ficar fora do repositório.
+`nominal` pagina e valida 18.000
+códigos e cria 100 sessões operacionais com `device_id`/`session_id` distintos;
+os perfis de contenção recebem 20 ou 50 máquinas de teste realmente distintas na
+mesma célula. O perfil `atomic8`, em contraste, grava o mesmo contexto de
+célula/máquina nas oito sessões reais. Chamadas não idempotentes de criação e
+login não são repetidas automaticamente; o cleanup procura também users Auth
+marcados com o `run_id`, cobrindo uma resposta perdida antes do checkpoint.
+
+`K6_CODE_OFFSET` deve estar ausente ou ser zero. Como a massa é exata e vinculada
+ao perfil/run, deslocar os códigos é recusado antes do claim; gere uma nova
+fixture e uma nova faixa para qualquer repetição.
 
 ```bash
 export SUPABASE_URL="https://STAGING-REF.supabase.co"
 export SUPABASE_ANON_KEY="CHAVE-PUBLICA-DE-STAGING"
 export K6_TARGET="staging"
 export K6_CONFIRM_WRITES="staging-v3-load"
-export K6_FIXTURES="/caminho-seguro/collection-v3-fixture.json"
-mkdir -p artifacts
+export K6_PROFILE="smoke"
+export K6_SEQUENCE_BASE="100000000"
+export CAPACITY_RUN_ID="CAPTEST_YYYYMMDD_HHMMSS_XXXXXXXX"
+export CAPTEST_PRIVATE_DIR="/private/tmp/acprod-capacity-private"
+export K6_FIXTURES="${CAPTEST_PRIVATE_DIR}/${CAPACITY_RUN_ID}-${K6_PROFILE}.json"
+export CAPACITY_SUMMARY="artifacts/capacity/${CAPACITY_RUN_ID}/${K6_PROFILE}.json"
 
-K6_SEQUENCE_BASE=100000000 K6_PROFILE=smoke K6_RUN_ID=smoke-r1 \
-  k6 run --summary-export=artifacts/smoke-r1.json tests/load/collection-fabric-v3.js
-K6_SEQUENCE_BASE=110000000 K6_PROFILE=idempotency K6_RUN_ID=idempotency-r1 \
-  k6 run --summary-export=artifacts/idempotency-r1.json tests/load/collection-fabric-v3.js
-K6_SEQUENCE_BASE=120000000 K6_PROFILE=microbatch K6_RUN_ID=microbatch-r1 \
-  k6 run --summary-export=artifacts/microbatch-r1.json tests/load/collection-fabric-v3.js
-K6_SEQUENCE_BASE=130000000 K6_PROFILE=priority K6_RUN_ID=priority-r1 \
-  k6 run --summary-export=artifacts/priority-r1.json tests/load/collection-fabric-v3.js
-K6_SEQUENCE_BASE=140000000 K6_PROFILE=contention_piece K6_RUN_ID=piece-r1 \
-  k6 run --summary-export=artifacts/piece-r1.json tests/load/collection-fabric-v3.js
-K6_SEQUENCE_BASE=150000000 K6_PROFILE=contention_cell_lot K6_RUN_ID=cell-lot-r1 \
-  k6 run --summary-export=artifacts/cell-lot-r1.json tests/load/collection-fabric-v3.js
-K6_SEQUENCE_BASE=160000000 K6_PROFILE=nominal K6_RUN_ID=nominal-r1 \
-  k6 run --summary-export=artifacts/nominal-r1.json tests/load/collection-fabric-v3.js
-K6_SEQUENCE_BASE=170000000 K6_PROFILE=burst K6_RUN_ID=burst-r1 \
-  k6 run --summary-export=artifacts/burst-r1.json tests/load/collection-fabric-v3.js
+node tests/capacity/seed-capacity-fixture.mjs "$CAPACITY_RUN_ID" "$K6_PROFILE"
+# Aplique o seed.sql informado pelo comando acima no staging vinculado.
+supabase projects api-keys --project-ref "STAGING-REF" --reveal --output json | \
+  node tests/capacity/prepare-auth-fixture.mjs \
+    "$CAPACITY_RUN_ID" "$K6_PROFILE" \
+    "${CAPTEST_PRIVATE_DIR}/${CAPACITY_RUN_ID}-operator-credentials.json" \
+    "$K6_FIXTURES"
+
+npm run capacity:controlled -- \
+  --run-id "$CAPACITY_RUN_ID" --summary-export "$CAPACITY_SUMMARY" --dry-run
+
+supabase projects api-keys --project-ref "STAGING-REF" --reveal --output json | \
+  npm run capacity:controlled -- \
+    --run-id "$CAPACITY_RUN_ID" --summary-export "$CAPACITY_SUMMARY"
 ```
+
+O dry-run não toca o banco nem gera carga. A execução real recusa divergência
+entre os valores locais e o registro solicitado. Repita o procedimento com um
+novo run e uma nova faixa: uma vez para `idempotency` e `atomic8`; três vezes
+para `microbatch`, `priority`, `contention_piece`, `contention_cell_lot`,
+`nominal` e `burst`. Preserve tanto o summary quanto o sidecar
+`*.control.json` criado pelo executor.
+
+Se o host do executor morrer após o claim, aguarde ao menos 15 segundos e prove
+fora do banco que não existe processo k6 remanescente. A página então habilita
+**Falhar run órfão** e exige `FALHAR EXECUTOR SEM HEARTBEAT`. A transição é
+travada no banco, registra `executor_heartbeat_expired` e libera o singleton ao
+tornar o run `failed`. Não tente assumir o mesmo run com outro executor: abra um
+novo `CAPTEST_...` e reserve outra faixa de sequência, evitando sobreposição ou
+evidência ambígua.
 
 ### Exceção temporária: AC.Prod de produção usado como ambiente de teste
 
@@ -224,7 +264,7 @@ Use esta forma somente com autorização registrada para a janela atual. As trê
 travas precisam coincidir exatamente: alvo `test-production`, URL base do project
 ref autorizado e frase forte que nomeia a escrita destrutiva. Uma URL parecida,
 outro project ref ou a confirmação de staging falha antes de qualquer requisição.
-Nunca use `service_role` na fixture.
+Nunca use `service_role` na fixture nem em variável passada ao k6.
 
 ```bash
 export SUPABASE_URL="https://uozuzdfvnufsjsonswag.supabase.co"
@@ -232,10 +272,14 @@ export SUPABASE_ANON_KEY="CHAVE-PUBLICA-DO-PROJETO"
 export K6_TARGET="test-production"
 export K6_CONFIRM_WRITES="EU-AUTORIZO-ESCRITAS-K6-DESTRUTIVAS-NO-ACPROD-TESTE-uozuzdfvnufsjsonswag"
 export K6_FIXTURES="/caminho-seguro/collection-v3-fixture.json"
-mkdir -p artifacts
+export K6_PROFILE="smoke"
+export K6_SEQUENCE_BASE="180000000"
+export CAPACITY_RUN_ID="CAPTEST_YYYYMMDD_HHMMSS_XXXXXXXX"
+export CAPACITY_SUMMARY="artifacts/capacity/${CAPACITY_RUN_ID}/${K6_PROFILE}.json"
 
-K6_SEQUENCE_BASE=180000000 K6_PROFILE=smoke K6_RUN_ID=testprod-smoke-r1 \
-  k6 run --summary-export=artifacts/testprod-smoke-r1.json tests/load/collection-fabric-v3.js
+supabase projects api-keys --project-ref "uozuzdfvnufsjsonswag" --reveal --output json | \
+  npm run capacity:controlled -- \
+    --run-id "$CAPACITY_RUN_ID" --summary-export "$CAPACITY_SUMMARY"
 ```
 
 Comece obrigatoriamente pelo `smoke`. Antes de executar qualquer outro perfil,
@@ -258,6 +302,24 @@ abaixo de 2 s, projeção p95 abaixo de 500 ms e queue age p99 abaixo de 2 s no
 nominal. No nominal, os 100 canais privados de dispositivo devem permanecer
 conectados e cada um deve receber ao menos um `collection.finalized`. O p95 de
 IndexedDB (25 ms) vem de instrumentação de browser, não do k6.
+
+Antes das rodadas válidas, faça um smoke descartável de parada: com o executor
+ativo, acione **Pausar**, confirme que os contadores deixam de avançar; acione
+**Retomar**, confirme continuidade; por fim acione **Parada de emergência** e
+confirme `emergency_stopped`, término do PID k6 em até 3 segundos e ausência de
+novas requisições. Esse run não entra no gate.
+
+Ao final, copie
+[capacity-gate-manifest.example.json](../../tests/capacity/capacity-gate-manifest.example.json),
+defina um único `target`, preencha os sidecars e evidências e execute:
+
+```bash
+npm run capacity:gate -- artifacts/capacity/HOMOLOGACAO/manifest.json
+```
+
+O avaliador exige 21 rodadas, hashes dos summaries, faixas únicas, todos os
+thresholds e todas as evidências. Qualquer ausência retorna **NO-GO** (exit 2).
+Ele nunca habilita flags nem promove release.
 
 ## 6. Shadow somente leitura
 

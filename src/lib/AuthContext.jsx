@@ -1,9 +1,19 @@
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { clearPersistedAuthSession, persistAuthSession, restoreAuthSession, supabase } from '@/lib/supabaseClient';
 import { base44 } from '@/lib/localDb';
 import { navTo } from '@/lib/navigation';
-import { getDefaultPermissions } from '@/config/appRoutes';
 import { clearOperatorSession } from '@/lib/operatorSessionService';
+import {
+  clearProfileRequestState,
+  fetchProfileSingleFlight,
+  getCachedProfile,
+  invalidateProfileCache,
+  isAccessDeniedError,
+  isDefinitiveSessionError,
+  isTransientAuthError,
+  retryDelay,
+} from '@/lib/authResilience';
+import { createAuthCorrelationId, measureAuthStep, recordAuthMetric } from '@/lib/authTelemetry';
 import {
   clearSessionActivity,
   getLastSessionActivity,
@@ -14,8 +24,18 @@ import {
 } from '@/lib/sessionActivity';
 
 const AuthContext = createContext();
-const AUTH_STEP_TIMEOUT_MS = 3000;
+const AUTH_STEP_TIMEOUT_MS = 8000;
 const AUTH_INIT_TIMEOUT_MS = 12000;
+
+export const AUTH_STATES = Object.freeze({
+  INITIALIZING: 'initializing',
+  AUTHENTICATED: 'authenticated',
+  PROFILE_LOADING: 'profile_loading',
+  PROFILE_DEGRADED: 'profile_degraded',
+  RECONNECTING: 'reconnecting',
+  UNAUTHORIZED: 'unauthorized',
+  SIGNED_OUT: 'signed_out',
+});
 
 const withTimeout = (promise, timeoutMs, fallback) => Promise.race([
   promise,
@@ -26,34 +46,27 @@ const redirectTo = (path) => {
   navTo(path);
 };
 
-const profileAccessError = (code, message) => {
-  const error = new Error(message);
-  error.code = code;
-  return error;
-};
-
-const isAccessDeniedError = (error) => ['USER_NOT_REGISTERED', 'USER_INACTIVE'].includes(error?.code);
-
-
 const resolveSessionUser = async (session) => {
   if (!session?.user) return { user: null, shouldSignOut: false };
 
-  const userResult = await withTimeout(
-    supabase.auth.getUser(),
-    AUTH_STEP_TIMEOUT_MS,
-    { data: { user: null }, error: { message: 'Timeout' } },
-  );
+  let userResult;
+  try {
+    userResult = await supabase.auth.getUser();
+  } catch (error) {
+    if (isTransientAuthError(error)) return { user: session.user, shouldSignOut: false };
+    return { user: null, shouldSignOut: isDefinitiveSessionError(error) };
+  }
 
   if (userResult?.data?.user && !userResult?.error) {
     return { user: userResult.data.user, shouldSignOut: false };
   }
 
-  if (userResult?.error?.message === 'Timeout') {
-    console.warn('[Leo Flow] Validação remota da sessão demorou; usando sessão local.');
+  if (isTransientAuthError(userResult?.error)) {
+    console.warn('[Auth] Validação remota temporariamente indisponível; usando sessão válida local.');
     return { user: session.user, shouldSignOut: false };
   }
 
-  return { user: null, shouldSignOut: true };
+  return { user: null, shouldSignOut: isDefinitiveSessionError(userResult?.error) };
 };
 
 export const AuthProvider = ({ children }) => {
@@ -62,72 +75,52 @@ export const AuthProvider = ({ children }) => {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [authError, setAuthError] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [authStatus, setAuthStatus] = useState(AUTH_STATES.INITIALIZING);
+  const authGeneration = useRef(0);
+  const authSessionAllowed = useRef(true);
+  const profileRetry = useRef({ timer: null, attempt: 0 });
 
-  // ─── Busca o perfil completo (com role e permissions da tabela profiles) ────
-  const fetchProfile = useCallback(async (supabaseUser) => {
-    if (!supabaseUser) return null;
-    try {
-      // Busca o perfil com timeout de 4 segundos para evitar travamento em redes lentas
-      const { data: profile, error } = await withTimeout(
-        supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', supabaseUser.id)
-          .maybeSingle(),
-        AUTH_STEP_TIMEOUT_MS,
-        { data: null, error: { message: 'Timeout', code: 'TIMEOUT' } },
-      );
-
-      if (error?.code === 'TIMEOUT') {
-        throw profileAccessError('PROFILE_UNAVAILABLE', 'Não foi possível validar seu acesso agora. Tente novamente.');
-      }
-      if (error) throw error;
-      if (!profile) {
-        throw profileAccessError('USER_NOT_REGISTERED', 'Este e-mail ainda não foi cadastrado pelo administrador.');
-      }
-      if (profile.active === false) {
-        throw profileAccessError('USER_INACTIVE', 'Esta conta está desativada. Procure o administrador.');
-      }
-
-      const userRole = profile.role;
-      return {
-        id: supabaseUser.id,
-        email: profile.email || supabaseUser.email,
-        name: profile.name,
-        role: userRole,
-        cell: profile.cell || '',
-        permissions: profile.permissions || getDefaultPermissions(userRole),
-        dashboard_layout: profile.dashboard_layout || null,
-        managed_cells: profile.managed_cells || [],
-        report_delivery_enabled: profile.report_delivery_enabled === true,
-        receives_daily_report: profile.receives_daily_report === true,
-        active: true,
-      };
-
-    } catch (err) {
-      console.error('[Leo Flow] Erro no catch de fetchProfile:', err);
-      throw err;
-    }
+  const cancelProfileRetry = useCallback(() => {
+    if (profileRetry.current.timer) clearTimeout(profileRetry.current.timer);
+    profileRetry.current = { timer: null, attempt: 0 };
   }, []);
 
+  // ─── Busca o perfil completo (com role e permissions da tabela profiles) ────
+  const fetchProfile = useCallback((supabaseUser, options = {}) => (
+    fetchProfileSingleFlight(supabase, supabaseUser, options)
+  ), []);
+
   const rejectUnauthorizedSession = useCallback(async (error) => {
+    authSessionAllowed.current = false;
+    authGeneration.current += 1;
+    cancelProfileRetry();
+    clearProfileRequestState();
     clearPersistedAuthSession();
     clearSessionActivity();
     setUser(null);
     setIsAuthenticated(false);
+    setIsLoadingAuth(false);
+    setAuthChecked(true);
+    setAuthStatus(AUTH_STATES.UNAUTHORIZED);
     setAuthError({
       type: isAccessDeniedError(error) ? 'user_not_registered' : 'auth_required',
       message: error?.message || 'Não foi possível validar o acesso.',
     });
     await withTimeout(clearOperatorSession(), AUTH_STEP_TIMEOUT_MS, null);
     await withTimeout(supabase.auth.signOut({ scope: 'local' }), AUTH_STEP_TIMEOUT_MS, null);
-  }, []);
+  }, [cancelProfileRetry]);
 
   const expireInactiveSession = useCallback(async ({ redirect = true } = {}) => {
+    authSessionAllowed.current = false;
+    authGeneration.current += 1;
+    cancelProfileRetry();
+    clearProfileRequestState();
     clearPersistedAuthSession();
     clearSessionActivity();
     setUser(null);
     setIsAuthenticated(false);
+    setIsLoadingAuth(false);
+    setAuthStatus(AUTH_STATES.SIGNED_OUT);
     setAuthChecked(true);
     setAuthError({
       type: 'inactivity_logout',
@@ -137,7 +130,87 @@ export const AuthProvider = ({ children }) => {
     await withTimeout(clearOperatorSession(), AUTH_STEP_TIMEOUT_MS, null);
     await withTimeout(supabase.auth.signOut({ scope: 'local' }), AUTH_STEP_TIMEOUT_MS, null);
     if (redirect) redirectTo('/login');
-  }, []);
+  }, [cancelProfileRetry]);
+
+  const validateProfileSession = useCallback(async (session, options = {}) => {
+    if (!session?.user) return null;
+    const correlationId = options.correlationId || createAuthCorrelationId();
+    const generation = options.generation ?? authGeneration.current;
+    // Every async auth path carries the generation it started with. Logout (or
+    // a newer login) increments the generation before clearing local state, so
+    // a delayed profile retry must stop before it can restore either storage or
+    // the Realtime JWT.
+    if (!authSessionAllowed.current || generation !== authGeneration.current) return null;
+    persistAuthSession(session);
+    if (!authSessionAllowed.current || generation !== authGeneration.current) return null;
+    if (session.access_token && typeof supabase.realtime?.setAuth === 'function') {
+      try {
+        await measureAuthStep(correlationId, 'realtime_set_auth', () => (
+          supabase.realtime.setAuth(session.access_token)
+        ));
+      } catch (error) {
+        recordAuthMetric({ correlationId, step: 'realtime_set_auth', result: 'degraded', error });
+      }
+    }
+    if (!authSessionAllowed.current || generation !== authGeneration.current) return null;
+
+    setAuthStatus(AUTH_STATES.PROFILE_LOADING);
+    setIsAuthenticated(true);
+    setAuthError(null);
+    try {
+      const profile = await fetchProfile(session.user, {
+        force: options.force === true,
+        correlationId,
+      });
+      if (!authSessionAllowed.current || generation !== authGeneration.current) return null;
+      cancelProfileRetry();
+      recordSessionActivity();
+      recordAuthMetric({ correlationId, step: 'permissions_loaded', result: 'success' });
+      setUser(profile);
+      setIsAuthenticated(true);
+      setAuthStatus(AUTH_STATES.AUTHENTICATED);
+      setAuthError(null);
+      setAuthChecked(true);
+      setIsLoadingAuth(false);
+      recordAuthMetric({ correlationId, step: 'auth_provider_complete', result: 'success' });
+      return profile;
+    } catch (error) {
+      if (!authSessionAllowed.current || generation !== authGeneration.current) return null;
+      if (isAccessDeniedError(error)) {
+        await rejectUnauthorizedSession(error);
+        return null;
+      }
+      if (!isTransientAuthError(error) && error?.code !== 'PROFILE_UNAVAILABLE') throw error;
+
+      const cachedProfile = getCachedProfile(session.user.id, { allowExpired: true });
+      if (cachedProfile) setUser(cachedProfile);
+      setIsAuthenticated(true);
+      setAuthStatus(cachedProfile ? AUTH_STATES.PROFILE_DEGRADED : AUTH_STATES.RECONNECTING);
+      setAuthError(null);
+      setAuthChecked(true);
+      setIsLoadingAuth(false);
+      recordAuthMetric({ correlationId, step: 'auth_provider_complete', result: 'degraded', error });
+
+      if (!profileRetry.current.timer) {
+        const attempt = profileRetry.current.attempt;
+        profileRetry.current.attempt += 1;
+        const timer = setTimeout(() => {
+          if (profileRetry.current.timer !== timer) return;
+          profileRetry.current.timer = null;
+          if (!authSessionAllowed.current || generation !== authGeneration.current) return;
+          validateProfileSession(session, {
+            correlationId,
+            generation,
+            force: true,
+          }).catch((retryError) => {
+            console.warn('[Auth] Nova tentativa de perfil falhou:', retryError?.code || retryError?.message);
+          });
+        }, retryDelay(attempt));
+        profileRetry.current.timer = timer;
+      }
+      return cachedProfile;
+    }
+  }, [cancelProfileRetry, fetchProfile, rejectUnauthorizedSession]);
 
   // ─── Inicialização do estado de autenticação ─────────────────────────────────
   // Estratégia: getSession() como fonte primária (lê localStorage, instantâneo
@@ -146,16 +219,17 @@ export const AuthProvider = ({ children }) => {
     let isMounted = true;
     let initTimedOut = false;
     const authEventTimers = new Set();
+    const generation = ++authGeneration.current;
+    const correlationId = createAuthCorrelationId();
 
     const initFailSafe = setTimeout(() => {
       if (!isMounted) return;
       initTimedOut = true;
-      // Não apaga a sessão persistida em uma oscilação de rede. O próximo
-      // carregamento poderá restaurá-la sem solicitar novamente as credenciais.
-      setUser(null);
-      setIsAuthenticated(false);
+      // Não apaga nem invalida uma sessão por indisponibilidade temporária.
+      setAuthStatus(AUTH_STATES.RECONNECTING);
       setIsLoadingAuth(false);
       setAuthChecked(true);
+      recordAuthMetric({ correlationId, step: 'auth_initialization', result: 'degraded', error: { code: 'INIT_TIMEOUT' } });
     }, AUTH_INIT_TIMEOUT_MS);
 
     const initAuth = async () => {
@@ -165,57 +239,44 @@ export const AuthProvider = ({ children }) => {
           return;
         }
 
-        // getSession() lê do localStorage. Se houver token expirado, tenta refresh
-        // via rede (pode demorar). Limitamos a 4 segundos para evitar spinner eterno.
-        const sessionResult = await withTimeout(
-          supabase.auth.getSession(),
-          AUTH_STEP_TIMEOUT_MS,
-          { data: { session: null }, timedOut: true },
+        const sessionResult = await measureAuthStep(
+          correlationId,
+          'get_session',
+          () => supabase.auth.getSession(),
         );
 
-        if (!isMounted || initTimedOut) return;
+        if (!isMounted || generation !== authGeneration.current) return;
 
         let session = sessionResult?.data?.session;
-        if (!session && !sessionResult?.timedOut) {
-          session = await withTimeout(restoreAuthSession(), AUTH_STEP_TIMEOUT_MS, null);
+        if (!session && !sessionResult?.error) {
+          session = await restoreAuthSession({ correlationId });
         }
 
-        if (!isMounted || initTimedOut) return;
+        if (!isMounted || generation !== authGeneration.current) return;
 
         if (session?.user) {
           const { user, shouldSignOut } = await resolveSessionUser(session);
 
-          if (!isMounted || initTimedOut) return;
+          if (!isMounted || generation !== authGeneration.current) return;
 
           if (user) {
-            try {
-              const profile = await fetchProfile(user);
-              if (!isMounted || initTimedOut) return;
-              recordSessionActivity();
-              setUser(profile);
-              setIsAuthenticated(true);
-              setAuthError(null);
-            } catch (profileError) {
-              if (isMounted) await rejectUnauthorizedSession(profileError);
-            }
+            await validateProfileSession({ ...session, user }, { correlationId, generation });
           } else if (shouldSignOut) {
-            // Sessão inválida no servidor — limpa localmente
-            if (isMounted) {
-              setUser(null);
-              setIsAuthenticated(false);
-            }
-            clearPersistedAuthSession();
-            await withTimeout(supabase.auth.signOut(), AUTH_STEP_TIMEOUT_MS, null);
+            await rejectUnauthorizedSession(sessionResult?.error || { code: 'SESSION_INVALID' });
+          } else {
+            setIsAuthenticated(true);
+            setAuthStatus(AUTH_STATES.RECONNECTING);
           }
         } else {
           setUser(null);
           setIsAuthenticated(false);
+          setAuthStatus(AUTH_STATES.SIGNED_OUT);
         }
       } catch (err) {
-        console.error('[Leo Flow] Erro ao inicializar sessão:', err);
+        console.error('[Auth] Erro ao inicializar sessão:', err?.code || err?.message);
         if (isMounted) {
-          setUser(null);
-          setIsAuthenticated(false);
+          if (isDefinitiveSessionError(err)) await rejectUnauthorizedSession(err);
+          else setAuthStatus(AUTH_STATES.RECONNECTING);
         }
       } finally {
         clearTimeout(initFailSafe);
@@ -234,36 +295,50 @@ export const AuthProvider = ({ children }) => {
     // TOKEN_REFRESHED → refresh silencioso de token
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isMounted) return;
+      const eventGeneration = authGeneration.current;
+      const eventSessionAllowed = authSessionAllowed.current;
 
       const timer = setTimeout(async () => {
         authEventTimers.delete(timer);
-        if (!isMounted) return;
+        if (!isMounted || !eventSessionAllowed || eventGeneration !== authGeneration.current) return;
 
+        const eventCorrelationId = createAuthCorrelationId();
         if (event === 'SIGNED_IN' && session?.user) {
-          try {
-            const profile = await fetchProfile(session.user);
-            if (!isMounted) return;
-            persistAuthSession(session);
-            recordSessionActivity();
-            setUser(profile);
-            setIsAuthenticated(true);
-            setAuthError(null);
-          } catch (err) {
-            console.error('[Leo Flow] Erro ao carregar perfil após login:', err);
-            if (isMounted) await rejectUnauthorizedSession(err);
-          }
+          await validateProfileSession(session, {
+            correlationId: eventCorrelationId,
+            generation: eventGeneration,
+          });
         } else if (event === 'SIGNED_OUT') {
+          authSessionAllowed.current = false;
+          authGeneration.current += 1;
+          cancelProfileRetry();
+          clearProfileRequestState();
           clearPersistedAuthSession();
           clearSessionActivity();
           setUser(null);
           setIsAuthenticated(false);
+          setIsLoadingAuth(false);
+          setAuthChecked(true);
+          setAuthStatus(AUTH_STATES.SIGNED_OUT);
         } else if (event === 'USER_UPDATED' && session?.user) {
-          try {
-            const profile = await fetchProfile(session.user);
-            if (isMounted) setUser(profile);
-          } catch { /* silencioso */ }
+          invalidateProfileCache(session.user.id);
+          await validateProfileSession(session, {
+            correlationId: eventCorrelationId,
+            generation: eventGeneration,
+            force: true,
+          });
+        } else if (event === 'TOKEN_REFRESHED' && session) {
+          if (!authSessionAllowed.current || eventGeneration !== authGeneration.current) return;
+          persistAuthSession(session);
+          if (!authSessionAllowed.current || eventGeneration !== authGeneration.current) return;
+          if (session.access_token && typeof supabase.realtime?.setAuth === 'function') {
+            await measureAuthStep(eventCorrelationId, 'realtime_token_refreshed', () => (
+              supabase.realtime.setAuth(session.access_token)
+            ));
+          }
+          if (!authSessionAllowed.current || eventGeneration !== authGeneration.current) return;
+          recordAuthMetric({ correlationId: eventCorrelationId, step: 'token_refreshed', result: 'success' });
         }
-        if (event === 'TOKEN_REFRESHED' && session) persistAuthSession(session);
       }, 0);
       authEventTimers.add(timer);
     });
@@ -271,10 +346,11 @@ export const AuthProvider = ({ children }) => {
     return () => {
       isMounted = false;
       clearTimeout(initFailSafe);
+      cancelProfileRetry();
       authEventTimers.forEach((timer) => clearTimeout(timer));
       subscription.unsubscribe();
     };
-  }, [expireInactiveSession, fetchProfile, rejectUnauthorizedSession]);
+  }, [cancelProfileRetry, expireInactiveSession, rejectUnauthorizedSession, validateProfileSession]);
 
   // ─── Inatividade real: 30 minutos sem interação com o sistema ──────────────
   useEffect(() => {
@@ -356,82 +432,97 @@ export const AuthProvider = ({ children }) => {
 
   // ─── checkUserAuth — compatibilidade com ProtectedRoute ──────────────────────
   const checkUserAuth = useCallback(async () => {
+    if (isLoadingAuth || [AUTH_STATES.PROFILE_LOADING, AUTH_STATES.RECONNECTING].includes(authStatus)) return;
+    if (!authSessionAllowed.current) return;
+    const generation = authGeneration.current;
     setIsLoadingAuth(true);
+    const correlationId = createAuthCorrelationId();
     try {
       if (isSessionInactive()) {
         await expireInactiveSession();
         return;
       }
 
-      const sessionResult = await withTimeout(
-        supabase.auth.getSession(),
-        AUTH_STEP_TIMEOUT_MS,
-        { data: { session: null }, timedOut: true },
+      const sessionResult = await measureAuthStep(
+        correlationId,
+        'get_session',
+        () => supabase.auth.getSession(),
       );
       const session = sessionResult?.data?.session;
-      const restoredSession = session || (!sessionResult?.timedOut
-        ? await withTimeout(restoreAuthSession(), AUTH_STEP_TIMEOUT_MS, null)
+      const restoredSession = session || (!sessionResult?.error
+        ? await restoreAuthSession({ correlationId })
         : null);
+      if (generation !== authGeneration.current) return;
       if (restoredSession?.user) {
         const { user, shouldSignOut } = await resolveSessionUser(restoredSession);
+        if (generation !== authGeneration.current) return;
 
         if (user) {
-          try {
-            const profile = await fetchProfile(user);
-            recordSessionActivity();
-            setUser(profile);
-            setIsAuthenticated(true);
-            setAuthError(null);
-          } catch (profileError) {
-            await rejectUnauthorizedSession(profileError);
-          }
+          await validateProfileSession(
+            { ...restoredSession, user },
+            { correlationId, generation },
+          );
         } else if (shouldSignOut) {
-          setUser(null);
-          setIsAuthenticated(false);
-          clearPersistedAuthSession();
-          await withTimeout(supabase.auth.signOut(), AUTH_STEP_TIMEOUT_MS, null);
+          await rejectUnauthorizedSession(sessionResult?.error || { code: 'SESSION_INVALID' });
         } else {
-          setUser(null);
-          setIsAuthenticated(false);
+          setIsAuthenticated(true);
+          setAuthStatus(AUTH_STATES.RECONNECTING);
         }
       } else {
         setUser(null);
         setIsAuthenticated(false);
+        setAuthStatus(AUTH_STATES.SIGNED_OUT);
       }
     } catch (error) {
-      console.error('[Leo Flow] checkUserAuth error:', error);
-      setUser(null);
-      setIsAuthenticated(false);
+      if (generation !== authGeneration.current) return;
+      console.error('[Auth] checkUserAuth error:', error?.code || error?.message);
+      if (isDefinitiveSessionError(error)) await rejectUnauthorizedSession(error);
+      else setAuthStatus(AUTH_STATES.RECONNECTING);
     } finally {
-      setIsLoadingAuth(false);
-      setAuthChecked(true);
+      if (generation === authGeneration.current) {
+        setIsLoadingAuth(false);
+        setAuthChecked(true);
+      }
     }
-  }, [expireInactiveSession, fetchProfile, rejectUnauthorizedSession]);
+  }, [authStatus, expireInactiveSession, isLoadingAuth, rejectUnauthorizedSession, validateProfileSession]);
 
   // ─── Login ────────────────────────────────────────────────────────────────────
   const login = async (email, password) => {
+    const correlationId = createAuthCorrelationId();
+    authSessionAllowed.current = false;
+    const generation = ++authGeneration.current;
+    cancelProfileRetry();
+    recordAuthMetric({ correlationId, step: 'login_click', result: 'started' });
     setIsLoadingAuth(true);
     setAuthError(null);
+    setAuthStatus(AUTH_STATES.INITIALIZING);
     try {
-      const profile = await withTimeout(
-        base44.auth.loginViaEmailPassword(email, password),
-        10000,
-        null,
+      const result = await measureAuthStep(
+        correlationId,
+        'sign_in_with_password',
+        () => base44.auth.loginViaEmailPassword(email, password),
       );
-      if (!profile) throw new Error('O servidor demorou para responder. Tente novamente.');
-      recordSessionActivity();
-      setUser(profile);
-      setIsAuthenticated(true);
+      if (generation !== authGeneration.current) return null;
+      authSessionAllowed.current = true;
+      recordAuthMetric({ correlationId, step: 'token_response', result: 'success' });
+      const profile = await validateProfileSession(result.session, { correlationId, generation });
+      if (generation !== authGeneration.current) return null;
       setAuthChecked(true);
       return profile;
     } catch (error) {
-      setAuthError({
-        type: isAccessDeniedError(error) ? 'user_not_registered' : 'invalid_credentials',
-        message: error.message || 'Credenciais inválidas',
-      });
+      if (generation !== authGeneration.current) throw error;
+      if (isAccessDeniedError(error)) {
+        await rejectUnauthorizedSession(error);
+      } else {
+        setAuthStatus(AUTH_STATES.SIGNED_OUT);
+        setAuthError({
+          type: 'invalid_credentials',
+          message: error.message || 'Credenciais inválidas',
+        });
+      }
       throw error;
     } finally {
-      setIsLoadingAuth(false);
+      if (generation === authGeneration.current) setIsLoadingAuth(false);
     }
   };
 
@@ -455,8 +546,14 @@ export const AuthProvider = ({ children }) => {
 
   // ─── Logout ───────────────────────────────────────────────────────────────────
   const logout = async (shouldRedirect = true) => {
+    authSessionAllowed.current = false;
+    authGeneration.current += 1;
+    cancelProfileRetry();
+    clearProfileRequestState();
     setUser(null);
     setIsAuthenticated(false);
+    setIsLoadingAuth(false);
+    setAuthStatus(AUTH_STATES.SIGNED_OUT);
     setAuthError(null);
     setAuthChecked(true);
     try {
@@ -479,6 +576,7 @@ export const AuthProvider = ({ children }) => {
       isLoadingAuth,
       authError,
       authChecked,
+      authStatus,
       login,
       register,
       logout,
