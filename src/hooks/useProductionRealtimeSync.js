@@ -131,8 +131,16 @@ const TABLE_TO_QUERY_KEYS = {
     ['downtimeStats'],
     ['oeeStats'],
   ],
-  packing_volumes: [['packages']],
-  packing_volume_items: [['packages']],
+  packing_volumes: [
+    ['packages'],
+    ['production-lots'],
+    ['trace-search'],
+  ],
+  packing_volume_items: [
+    ['packages'],
+    ['production-lots'],
+    ['trace-search'],
+  ],
   production_cell_lot_states: [
     ['collection-kpis'],
     ['production-lots'],
