@@ -246,6 +246,30 @@ export function useProductionRealtimeSync(options = {}) {
       });
     };
 
+    // Dashboard.jsx usa initialData=[] para evitar layout vazio. Quando essa query
+    // é criada pela primeira vez, o React Query pode considerar o array inicial
+    // fresco por alguns segundos e adiar o primeiro GET. Ao detectar a montagem
+    // de um observador do Painel com cache vazio/idle, invalida exatamente essa
+    // query uma única vez na montagem para buscar o estado autoritativo do banco.
+    // Isso cobre inclusive navegação para o Painel depois de o Realtime já estar
+    // conectado, sem reintroduzir polling agressivo em todos os clientes.
+    const unsubscribeQueryCache = queryClient.getQueryCache().subscribe((event) => {
+      const queryKey = event?.query?.queryKey;
+      if (
+        event?.type !== 'observerAdded'
+        || !Array.isArray(queryKey)
+        || queryKey[0] !== 'production'
+        || queryKey[1] !== 'dashboard'
+      ) {
+        return;
+      }
+
+      const state = event.query.state;
+      if (Array.isArray(state?.data) && state.data.length === 0 && state.fetchStatus === 'idle') {
+        triggerInvalidate(queryKey);
+      }
+    });
+
     const handlePayload = (payload) => {
       const table = payload.table;
       const queryKeys = TABLE_TO_QUERY_KEYS[table];
@@ -363,6 +387,7 @@ export function useProductionRealtimeSync(options = {}) {
     }
 
     return () => {
+      unsubscribeQueryCache();
       if (fallbackInterval) clearInterval(fallbackInterval);
       if (channel) {
         try {
