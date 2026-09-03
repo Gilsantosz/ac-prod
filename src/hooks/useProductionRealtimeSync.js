@@ -43,6 +43,9 @@ const TABLE_TO_QUERY_KEYS = {
     ['cellKpis'],
     ['goals-list'],
   ],
+  production_stage_policies: [
+    ['production-stage-policies'],
+  ],
   production_realtime_counters: [
     ['realtimeCounters'],
     ['collection-kpis'],
@@ -128,16 +131,8 @@ const TABLE_TO_QUERY_KEYS = {
     ['downtimeStats'],
     ['oeeStats'],
   ],
-  packing_volumes: [
-    ['packages'],
-    ['production-lots'],
-    ['trace-search'],
-  ],
-  packing_volume_items: [
-    ['packages'],
-    ['production-lots'],
-    ['trace-search'],
-  ],
+  packing_volumes: [['packages']],
+  packing_volume_items: [['packages']],
   production_cell_lot_states: [
     ['collection-kpis'],
     ['production-lots'],
@@ -230,6 +225,19 @@ export function useProductionRealtimeSync(options = {}) {
       debounceTimers.set(keyStr, timer);
     };
 
+    const invalidateOperationalBootstrap = () => {
+      [
+        ['production'],
+        ['realtimeCounters'],
+        ['collection-kpis'],
+        ['cellKpis'],
+        ['cells'],
+        ['production-stage-policies'],
+      ].forEach((queryKey) => {
+        queryClient.invalidateQueries({ queryKey, refetchType: 'active' });
+      });
+    };
+
     const handlePayload = (payload) => {
       const table = payload.table;
       const queryKeys = TABLE_TO_QUERY_KEYS[table];
@@ -316,6 +324,8 @@ export function useProductionRealtimeSync(options = {}) {
               queryClient.invalidateQueries({ queryKey: ['occurrences'] });
               queryClient.invalidateQueries({ queryKey: ['collection-kpis'] });
               queryClient.invalidateQueries({ queryKey: ['cellKpis'] });
+              queryClient.invalidateQueries({ queryKey: ['cells'] });
+              queryClient.invalidateQueries({ queryKey: ['production-stage-policies'] });
             }, 15000);
           }
         } else if (status === 'SUBSCRIBED') {
@@ -323,6 +333,10 @@ export function useProductionRealtimeSync(options = {}) {
             clearInterval(fallbackInterval);
             fallbackInterval = null;
           }
+          // Um cache com initialData pode nascer "fresco" antes do primeiro GET.
+          // Ao confirmar o websocket, força somente queries ativas a buscarem o
+          // estado autoritativo do banco, eliminando KPIs zerados no bootstrap.
+          invalidateOperationalBootstrap();
         }
       });
     } catch (err) {
@@ -334,6 +348,8 @@ export function useProductionRealtimeSync(options = {}) {
           queryClient.invalidateQueries({ queryKey: ['occurrences'] });
           queryClient.invalidateQueries({ queryKey: ['collection-kpis'] });
           queryClient.invalidateQueries({ queryKey: ['cellKpis'] });
+          queryClient.invalidateQueries({ queryKey: ['cells'] });
+          queryClient.invalidateQueries({ queryKey: ['production-stage-policies'] });
         }, 15000);
       }
     }
