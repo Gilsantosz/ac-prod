@@ -10,6 +10,7 @@ const recoveryMigration = readFileSync(resolve(
 ), 'utf8');
 const seedScript = readFileSync(resolve('tests/capacity/seed-capacity-fixture.mjs'), 'utf8');
 const authFixtureScript = readFileSync(resolve('tests/capacity/prepare-auth-fixture.mjs'), 'utf8');
+const cleanupFixtureScript = readFileSync(resolve('tests/capacity/cleanup-capacity-fixture.mjs'), 'utf8');
 
 describe('capacity control-plane database contract', () => {
   it('allows only one active run and exposes executor RPCs only to service_role', () => {
@@ -74,6 +75,14 @@ describe('capacity control-plane database contract', () => {
     expect(authFixtureScript).toContain('machine = contentionMachines[deviceIndex]');
     expect(recoveryMigration).toContain("WHEN 'contention_cell_lot' THEN 50");
     expect(recoveryMigration).toContain("'capacity_role', 'contention'");
+  });
+
+  it('retries only safe preparation calls and can clean an uncheckpointed Auth user', () => {
+    expect(authFixtureScript).toContain('{ retrySafe = false }');
+    expect(authFixtureScript).toContain('}, serviceKey, { retrySafe: true });');
+    expect(cleanupFixtureScript).toContain('process.env.SUPABASE_URL');
+    expect(cleanupFixtureScript).toContain('metadata.test_run_id === runId');
+    expect(cleanupFixtureScript).toContain("metadata.created_by === 'capacity_test'");
   });
 
   it('fails a stale executor-owned run instead of reclaiming it concurrently', () => {

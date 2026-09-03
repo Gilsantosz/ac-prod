@@ -1,6 +1,7 @@
 import { randomInt } from 'node:crypto';
 import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { CAPACITY_PROFILE_REQUIREMENTS } from '../../src/lib/capacityTestControl.js';
 
 const runId = process.argv[2];
@@ -9,7 +10,13 @@ if (!/^CAPTEST_[0-9]{8}_[0-9]{6}_[A-Z0-9]{8}$/.test(runId || '')) throw new Erro
 const requirement = CAPACITY_PROFILE_REQUIREMENTS[profile];
 if (!requirement) throw new Error('profile inválido');
 
-const root = process.env.CAPTEST_PRIVATE_DIR || '/private/tmp/acprod-capacity-private';
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const root = path.resolve(process.env.CAPTEST_PRIVATE_DIR || '/private/tmp/acprod-capacity-private');
+const rootRelativeToRepository = path.relative(repositoryRoot, root);
+if (rootRelativeToRepository === ''
+    || (!rootRelativeToRepository.startsWith('..') && !path.isAbsolute(rootRelativeToRepository))) {
+  throw new Error('CAPTEST_PRIVATE_DIR deve ficar fora do repositório');
+}
 await mkdir(root, { recursive: true, mode: 0o700 });
 const registrationSeed = String(randomInt(10_000_000, 99_999_999));
 const credentials = Array.from({ length: 14 }, (_, index) => ({

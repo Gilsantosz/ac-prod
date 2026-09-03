@@ -5,6 +5,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import {
   dirname, isAbsolute, relative, resolve,
 } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { CAPACITY_PROFILE_REQUIREMENTS } from '../../src/lib/capacityTestControl.js';
 
 const [runId, profile, credentialsPath, outputPathArgument] = process.argv.slice(2);
@@ -14,7 +15,7 @@ if (!requirement) throw new Error('profile inválido');
 if (!credentialsPath || !outputPathArgument) throw new Error('Informe credentials_path e output_path');
 
 const outputPath = resolve(outputPathArgument);
-const repositoryRoot = resolve(process.cwd());
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const outputRelativeToRepository = relative(repositoryRoot, outputPath);
 if (outputRelativeToRepository === ''
     || (!outputRelativeToRepository.startsWith('..') && !isAbsolute(outputRelativeToRepository))) {
@@ -44,8 +45,8 @@ const delay = (milliseconds) => new Promise((resolvePromise) => {
   setTimeout(resolvePromise, milliseconds);
 });
 
-const request = async (url, options = {}, key = anonKey) => {
-  const maxAttempts = 6;
+const request = async (url, options = {}, key = anonKey, { retrySafe = false } = {}) => {
+  const maxAttempts = retrySafe ? 6 : 1;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30_000);
@@ -71,7 +72,7 @@ const request = async (url, options = {}, key = anonKey) => {
         await delay(250 * (2 ** (attempt - 1)));
         continue;
       }
-      throw new Error('HTTP_NETWORK_RETRY_EXHAUSTED');
+      throw new Error(retrySafe ? 'HTTP_NETWORK_RETRY_EXHAUSTED' : 'HTTP_NETWORK_REQUEST_FAILED');
     }
     const data = await response.json().catch(() => null);
     if (response.ok) return data;
@@ -103,6 +104,7 @@ const fetchFixturePieces = async () => {
       + `&order=sequence_number.asc&limit=${pageSize}&offset=${offset}`,
       {},
       serviceKey,
+      { retrySafe: true },
     );
     if (!Array.isArray(page)) throw new Error('CAPACITY_PIECE_PAGE_INVALID');
     rows.push(...page);
@@ -117,11 +119,11 @@ const fetchFixturePieces = async () => {
 await request(`${supabaseUrl}/rest/v1/rpc/prepare_capacity_atomic_contexts_v3`, {
   method: 'POST',
   body: JSON.stringify({ p_run_id: runId }),
-}, serviceKey);
+}, serviceKey, { retrySafe: true });
 const fixtureContexts = await request(`${supabaseUrl}/rest/v1/rpc/get_capacity_fixture_contexts_v4`, {
   method: 'POST',
   body: JSON.stringify({ p_run_id: runId }),
-}, serviceKey);
+}, serviceKey, { retrySafe: true });
 const pieces = await fetchFixturePieces();
 const codes = pieces.map((piece) => String(piece.traceability_code || ''));
 if (codes.some((code) => !/^\d{8}$/.test(code)) || new Set(codes).size !== codes.length) {
@@ -199,7 +201,7 @@ for (let index = 0; index < authUserCount; index += 1) {
     method: 'PATCH',
     headers: { Prefer: 'return=minimal' },
     body: JSON.stringify({ active: true, role: 'operator', name: `${runId}_AUTH_${index + 1}` }),
-  }, serviceKey);
+  }, serviceKey, { retrySafe: true });
   const session = await request(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
     method: 'POST',
     body: JSON.stringify({ email, password }),

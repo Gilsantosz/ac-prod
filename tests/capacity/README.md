@@ -17,12 +17,15 @@ directory with mode `0600`; they must never be committed or copied into reports.
    the repository. The script fetches every code in 1,000-row pages and creates
    the profile's complete set of authenticated device sessions (100 for
    `priority`, `nominal`, and `burst`). It checkpoints auth IDs after every
-   creation so partial preparation remains cleanable.
+   creation so partial preparation remains cleanable. Creation/login calls are
+   never retried automatically; cleanup also discovers an account tagged with
+   this run if its successful creation response was lost before the checkpoint.
 4. Request the exact profile/target/sequence in the admin page. Device count,
    piece count and duration are immutable properties of that versioned profile.
    Then invoke only `run-controlled-capacity.mjs`. Pipe the revealed CLI key JSON
    to stdin; the wrapper strips server credentials before spawning k6 and polls
-   the control record every 250 ms.
+   the control record every 250 ms. `K6_CODE_OFFSET` must be absent or zero;
+   reserve a new fixture/run instead of shifting an exact profile fixture.
 5. Prove pause/resume/emergency-stop with a disposable smoke. The executor must
    terminate k6 within three seconds of emergency-stop.
    If its heartbeat is absent for at least 15 seconds, first prove no k6 process

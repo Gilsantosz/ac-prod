@@ -202,7 +202,13 @@ pública/JWTs da fixture. A saída do preparador deve ficar fora do repositório
 códigos e cria 100 sessões operacionais com `device_id`/`session_id` distintos;
 os perfis de contenção recebem 20 ou 50 máquinas de teste realmente distintas na
 mesma célula. O perfil `atomic8`, em contraste, grava o mesmo contexto de
-célula/máquina nas oito sessões reais.
+célula/máquina nas oito sessões reais. Chamadas não idempotentes de criação e
+login não são repetidas automaticamente; o cleanup procura também users Auth
+marcados com o `run_id`, cobrindo uma resposta perdida antes do checkpoint.
+
+`K6_CODE_OFFSET` deve estar ausente ou ser zero. Como a massa é exata e vinculada
+ao perfil/run, deslocar os códigos é recusado antes do claim; gere uma nova
+fixture e uma nova faixa para qualquer repetição.
 
 ```bash
 export SUPABASE_URL="https://STAGING-REF.supabase.co"

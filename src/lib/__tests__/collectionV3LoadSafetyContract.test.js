@@ -33,6 +33,12 @@ describe('Collection Fabric v3 k6 target safety contract', () => {
     expect(load).not.toContain('SUPABASE_SERVICE_ROLE_KEY');
   });
 
+  it('rejects code offsets because every fixture is bound to one exact profile/run', () => {
+    expect(load).toContain('requestedCodeOffset !== 0');
+    expect(load).toContain('K6_CODE_OFFSET não é suportado');
+    expect(load).not.toContain('codes[globalCodeOffset');
+  });
+
   it('documents the exact target, URL and destructive confirmation without weakening staging', () => {
     expect(runbook).toContain('K6_TARGET="staging"');
     expect(runbook).toContain('K6_CONFIRM_WRITES="staging-v3-load"');

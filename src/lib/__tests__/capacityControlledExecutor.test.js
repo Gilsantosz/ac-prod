@@ -44,6 +44,11 @@ describe('controlled capacity executor', () => {
     expect(() => validateEnvironmentPlan(env, {
       profile: 'burst', target: 'staging', sequence_base: 180000000,
     })).toThrow('RUN_PROFILE_MISMATCH');
+    expect(() => validateEnvironmentPlan({ ...env, K6_CODE_OFFSET: '1' }))
+      .toThrow('K6_CODE_OFFSET_UNSUPPORTED');
+    expect(() => validateEnvironmentPlan({ ...env, K6_CODE_OFFSET: '-1' }))
+      .toThrow('K6_CODE_OFFSET_UNSUPPORTED');
+    expect(validateEnvironmentPlan({ ...env, K6_CODE_OFFSET: '0' }).profile).toBe('smoke');
   });
 
   it('binds the private fixture to the exact run, profile and device identities', async () => {
@@ -125,6 +130,8 @@ describe('controlled capacity executor', () => {
     expect(source).toContain('signal: controller.signal');
     expect(source).toContain("child.kill('SIGKILL')");
     expect(source).toContain('const SAFE_K6_ENVIRONMENT_KEYS');
+    expect(source).toContain('K6_CODE_OFFSET_UNSUPPORTED');
+    expect(source).not.toContain("'K6_CODE_OFFSET',");
     expect(source).not.toContain('...env, K6_RUN_ID');
   });
 

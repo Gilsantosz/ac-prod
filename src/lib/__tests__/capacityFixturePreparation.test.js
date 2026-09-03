@@ -155,4 +155,123 @@ describe('capacity fixture preparation', () => {
       await new Promise((resolvePromise) => server.close(resolvePromise));
     }
   }, 20_000);
+
+  it('does not retry a user creation whose response is lost', async () => {
+    let userCreationAttempts = 0;
+    const server = createServer((request, response) => {
+      request.resume();
+      const url = new URL(request.url, 'http://127.0.0.1');
+      response.setHeader('Content-Type', 'application/json');
+      if (url.pathname === '/rest/v1/rpc/prepare_capacity_atomic_contexts_v3') {
+        response.end('{}');
+      } else if (url.pathname === '/rest/v1/rpc/get_capacity_fixture_contexts_v4') {
+        response.end(JSON.stringify({
+          cut_cell: { id: uuidFor(1), name: 'Corte' },
+          atomic_machine: { id: uuidFor(2), name: 'CAPTEST_ATOMIC' },
+          contention_machines: [],
+        }));
+      } else if (url.pathname === '/rest/v1/production_pieces') {
+        response.end(JSON.stringify(Array.from({ length: 100 }, (_, index) => ({
+          traceability_code: String(index + 1).padStart(8, '0'),
+          lot_id: uuidFor(3),
+          sequence_number: index + 1,
+        }))));
+      } else if (url.pathname === '/auth/v1/admin/users') {
+        userCreationAttempts += 1;
+        request.socket.destroy();
+      } else {
+        response.statusCode = 404;
+        response.end(JSON.stringify({ code: 'NOT_FOUND' }));
+      }
+    });
+    await new Promise((resolvePromise) => server.listen(0, '127.0.0.1', resolvePromise));
+
+    const directory = await mkdtemp(resolve(tmpdir(), 'acprod-capacity-no-retry-'));
+    temporaryDirectories.push(directory);
+    const credentialsPath = resolve(directory, 'credentials.json');
+    const fixturePath = resolve(directory, 'smoke.json');
+    await writeFile(credentialsPath, JSON.stringify({
+      credentials: Array.from({ length: 14 }, (_, index) => ({
+        login_name: `operator-${index + 1}`,
+        registration: `registration-${index + 1}`,
+      })),
+    }), { mode: 0o600 });
+
+    try {
+      const address = server.address();
+      await expect(runScript([
+        'tests/capacity/prepare-auth-fixture.mjs',
+        'CAPTEST_20260903_150001_A1B2C3D4',
+        'smoke',
+        credentialsPath,
+        fixturePath,
+      ], {
+        PATH: process.env.PATH,
+        SUPABASE_URL: `http://127.0.0.1:${address.port}`,
+        SUPABASE_ANON_KEY: 'public-value',
+      }, JSON.stringify([{ name: 'service_role', api_key: 'server-value' }])))
+        .rejects.toThrow('HTTP_NETWORK_REQUEST_FAILED');
+      expect(userCreationAttempts).toBe(1);
+      expect(JSON.parse(await readFile(fixturePath, 'utf8')).auth_user_ids).toEqual([]);
+    } finally {
+      await new Promise((resolvePromise) => server.close(resolvePromise));
+    }
+  }, 20_000);
+
+  it('uses SUPABASE_URL and discovers an uncheckpointed CAPTEST user during cleanup', async () => {
+    const deletedUsers = [];
+    const runId = 'CAPTEST_20260903_150002_A1B2C3D4';
+    const knownUserId = uuidFor(200);
+    const orphanUserId = uuidFor(201);
+    const unrelatedUserId = uuidFor(202);
+    const server = createServer((request, response) => {
+      request.resume();
+      const url = new URL(request.url, 'http://127.0.0.1');
+      response.setHeader('Content-Type', 'application/json');
+      if (url.pathname === '/auth/v1/admin/users' && request.method === 'GET') {
+        response.end(JSON.stringify({ users: [
+          {
+            id: orphanUserId,
+            user_metadata: { test_run_id: runId, is_test: true, created_by: 'capacity_test' },
+          },
+          {
+            id: unrelatedUserId,
+            user_metadata: { test_run_id: 'CAPTEST_20260903_000000_00000000', is_test: true, created_by: 'capacity_test' },
+          },
+        ] }));
+      } else if (url.pathname.startsWith('/auth/v1/admin/users/') && request.method === 'DELETE') {
+        deletedUsers.push(url.pathname.split('/').pop());
+        response.end('{}');
+      } else {
+        response.statusCode = 404;
+        response.end(JSON.stringify({ code: 'NOT_FOUND' }));
+      }
+    });
+    await new Promise((resolvePromise) => server.listen(0, '127.0.0.1', resolvePromise));
+
+    const directory = await mkdtemp(resolve(tmpdir(), 'acprod-capacity-cleanup-'));
+    temporaryDirectories.push(directory);
+    const fixturePath = resolve(directory, 'fixture.json');
+    await writeFile(fixturePath, JSON.stringify({
+      run_id: runId,
+      auth_user_ids: [knownUserId],
+    }), { mode: 0o600 });
+
+    try {
+      const address = server.address();
+      const stdout = await runScript([
+        'tests/capacity/cleanup-capacity-fixture.mjs',
+        runId,
+        fixturePath,
+      ], {
+        PATH: process.env.PATH,
+        SUPABASE_URL: `http://127.0.0.1:${address.port}`,
+      }, JSON.stringify([{ name: 'service_role', api_key: 'server-value' }]));
+      expect(JSON.parse(stdout).auth_users_removed).toBe(2);
+      expect(new Set(deletedUsers)).toEqual(new Set([knownUserId, orphanUserId]));
+      expect(deletedUsers).not.toContain(unrelatedUserId);
+    } finally {
+      await new Promise((resolvePromise) => server.close(resolvePromise));
+    }
+  }, 20_000);
 });

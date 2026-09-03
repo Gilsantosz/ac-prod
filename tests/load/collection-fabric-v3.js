@@ -20,7 +20,7 @@ const fixturePath = __ENV.K6_FIXTURES || '';
 const profile = (__ENV.K6_PROFILE || 'smoke').toLowerCase();
 const runId = __ENV.K6_RUN_ID || '';
 const attemptId = (__ENV.K6_ATTEMPT || '1').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 16);
-const globalCodeOffset = Number(__ENV.K6_CODE_OFFSET || 0);
+const requestedCodeOffset = Number(__ENV.K6_CODE_OFFSET || 0);
 const sequenceBase = Number(__ENV.K6_SEQUENCE_BASE || 0);
 const productionProjectRef = 'uozuzdfvnufsjsonswag';
 const authorizedTestProductionUrl = `https://${productionProjectRef}.supabase.co`;
@@ -57,6 +57,9 @@ if (!/^[a-zA-Z0-9_-]{1,32}$/.test(runId)) {
 }
 if (!Number.isSafeInteger(sequenceBase) || sequenceBase < 1) {
   fail('K6_SEQUENCE_BASE deve ser um inteiro positivo, reservado para esta rodada.');
+}
+if (!Number.isSafeInteger(requestedCodeOffset) || requestedCodeOffset !== 0) {
+  fail('K6_CODE_OFFSET não é suportado por fixtures vinculadas ao perfil; use uma nova fixture/run.');
 }
 
 const fixture = JSON.parse(open(fixturePath));
@@ -420,7 +423,7 @@ function selectDevice(iteration) {
 }
 
 function eventCode(codeOffset, iteration, batchSize, eventIndex) {
-  return codes[globalCodeOffset + codeOffset + (iteration * batchSize) + eventIndex];
+  return codes[codeOffset + (iteration * batchSize) + eventIndex];
 }
 
 function createEvents(scenarioName, sourceMode, batchSize, iteration) {

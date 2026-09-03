@@ -49,7 +49,6 @@ const SAFE_K6_ENVIRONMENT_KEYS = Object.freeze([
   'K6_PROFILE',
   'K6_SEQUENCE_BASE',
   'K6_ATTEMPT',
-  'K6_CODE_OFFSET',
   'K6_HTTP_TIMEOUT',
 ]);
 
@@ -109,6 +108,7 @@ export function validateEnvironmentPlan(env, runConfig = null) {
   const profile = String(env.K6_PROFILE || '').toLowerCase();
   const target = String(env.K6_TARGET || '');
   const sequenceBase = Number(env.K6_SEQUENCE_BASE);
+  const codeOffset = Number(env.K6_CODE_OFFSET || 0);
   const fixturePath = resolve(String(env.K6_FIXTURES || ''));
   if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(supabaseUrl)) {
     throw new Error('SUPABASE_URL_INVALID');
@@ -127,6 +127,9 @@ export function validateEnvironmentPlan(env, runConfig = null) {
   }
   if (!Number.isSafeInteger(sequenceBase) || sequenceBase < 1) {
     throw new Error('K6_SEQUENCE_BASE_INVALID');
+  }
+  if (!Number.isSafeInteger(codeOffset) || codeOffset !== 0) {
+    throw new Error('K6_CODE_OFFSET_UNSUPPORTED');
   }
   if (!env.K6_FIXTURES) throw new Error('K6_FIXTURES_REQUIRED');
 
