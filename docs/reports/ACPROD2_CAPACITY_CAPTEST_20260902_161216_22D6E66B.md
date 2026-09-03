@@ -81,14 +81,16 @@ Foram usados 8 usuários temporários, com 2 sessões simultâneas por usuário.
 | Deadlock do run | 0 | 0 | PASS |
 | Statement timeout do run | 0 | 0 | PASS |
 | DLQ do run | 0 | 0 | PASS |
-| ACK de ingresso p95 | < 500 ms | 801,249 ms | **FAIL** |
-| Decisão p95 | < 1.000 ms | 2.634 ms | **FAIL** |
+| ACK de ingresso p95 | < 250 ms | 801,249 ms | **FAIL** |
+| Decisão p95 | < 800 ms | 2.634 ms | **FAIL** |
 | Decisão p99 | < 2.000 ms | 2.634 ms | **FAIL** |
-| Queue age p95 | < 1.000 ms | 2.612 ms | **FAIL** |
-| Projeção após decisão p95 | < 2.000 ms | 949 ms | PASS |
+| Queue age p99 | < 2.000 ms | 2.612 ms | **FAIL** |
+| Projeção após decisão p95 | < 500 ms | 949 ms | **FAIL** |
 | Processamento interno | observacional | 110,524 ms | PASS |
 
-O perfil seguinte foi bloqueado pelo preflight enquanto a amostra ruim ainda
+Os critérios acima são os mesmos thresholds versionados no k6 e no relatório de
+capacidade; valores mais permissivos que constavam na primeira redação foram
+corrigidos, sem reclassificar a execução. O perfil seguinte foi bloqueado pelo preflight enquanto a amostra ruim ainda
 estava na janela de health. O teste atômico, a rota completa, o nominal, o burst
 e a endurance não foram executados: a regra é parar no primeiro gate crítico
 violado, não reduzir carga nem relaxar limites.
@@ -127,8 +129,9 @@ violado, não reduzir carga nem relaxar limites.
 
 ## Pendências que impedem homologação
 
-1. Reduzir a latência de cold start/wakeup/claim: a fila consumiu 2.507,356 ms,
-   apesar do processamento interno de 110,524 ms.
+1. Reduzir a latência de cold start/wakeup/claim: o recibo foi enfileirado às
+   `16:57:28.447Z` e só iniciou processamento às `16:57:31.059Z` (2.611,939 ms),
+   apesar do processamento interno de aproximadamente 110,524 ms.
 2. Repetir smoke sem relaxar SLO; somente então executar atômico, rota completa,
    nominal, burst e endurance.
 3. Corrigir drift legado detectado pelo lint remoto em entrada manual, validação

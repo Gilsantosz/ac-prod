@@ -25,6 +25,33 @@ describe('authentication and PWA continuity contracts', () => {
     expect(source).toContain('supabase.realtime.setAuth(session.access_token)');
   });
 
+  it('invalidates delayed profile and token work before session side effects', () => {
+    const source = read('src/lib/AuthContext.jsx');
+    const validation = source.slice(
+      source.indexOf('const validateProfileSession'),
+      source.indexOf('// ─── Inicialização do estado de autenticação'),
+    );
+    const firstGenerationGuard = validation.indexOf('generation !== authGeneration.current');
+    expect(firstGenerationGuard).toBeGreaterThan(-1);
+    expect(firstGenerationGuard).toBeLessThan(validation.indexOf('persistAuthSession(session)'));
+    expect(validation).toContain('!authSessionAllowed.current || generation !== authGeneration.current');
+    expect(validation).toContain('if (!profileRetry.current.timer)');
+    expect(validation).toContain(
+      'if (!authSessionAllowed.current || generation !== authGeneration.current) return;',
+    );
+
+    const authEvents = source.slice(
+      source.indexOf('supabase.auth.onAuthStateChange'),
+      source.indexOf('return () =>', source.indexOf('supabase.auth.onAuthStateChange')),
+    );
+    expect(authEvents).toContain('const eventGeneration = authGeneration.current');
+    expect(authEvents).toContain('const eventSessionAllowed = authSessionAllowed.current');
+    expect(authEvents).toContain('!eventSessionAllowed');
+    expect(authEvents).toContain('eventGeneration !== authGeneration.current');
+    expect(authEvents.indexOf('eventGeneration !== authGeneration.current'))
+      .toBeLessThan(authEvents.indexOf('persistAuthSession(session)'));
+  });
+
   it('requires confirmation before activating a waiting service worker', () => {
     const config = read('vite.config.js');
     const prompt = read('src/components/PwaUpdatePrompt.jsx');

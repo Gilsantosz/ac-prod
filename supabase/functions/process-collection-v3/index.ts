@@ -4,10 +4,12 @@ import { createClient } from "npm:@supabase/supabase-js@2.106.2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-const CLAIM_RPC = "claim_collection_batch_v3";
+const CLAIM_WITH_LEASE_RPC = "claim_collection_worker_batch_v3";
 const PROCESS_RPC = "process_collection_batch_v3";
-const ACQUIRE_LEASE_RPC = "acquire_collection_worker_lease_v3";
+const BEGIN_LEASE_RPC = "begin_collection_worker_lease_v3";
 const RELEASE_LEASE_RPC = "release_collection_worker_lease_v3";
+const LEASE_TTL_SECONDS = 120;
+const MAX_REQUEST_BODY_BYTES = 16_384;
 const MIN_BATCH_SIZE = 5;
 const DEFAULT_BATCH_SIZE = 10;
 const MAX_BATCH_SIZE = 25;
@@ -82,17 +84,6 @@ function claimedItems(data: unknown): unknown[] {
   return data;
 }
 
-async function authorizeInternalWakeup(req: Request): Promise<boolean> {
-  const secret = req.headers.get("x-cron-secret")?.trim() ?? "";
-  if (!secret) return false;
-
-  const { data, error } = await admin.rpc(
-    "verify_collection_worker_cron_secret",
-    { p_secret: secret },
-  );
-  return !error && data === true;
-}
-
 async function requestBody(req: Request): Promise<JsonRecord> {
   try {
     const value: unknown = await req.json();
@@ -106,14 +97,17 @@ async function requestBody(req: Request): Promise<JsonRecord> {
 }
 
 Deno.serve(async (req: Request) => {
+  const startedAt = performance.now();
+  const handlerReceivedAt = Date.now();
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: responseHeaders });
   }
   if (req.method !== "POST") {
     return jsonResponse(405, { error: "METHOD_NOT_ALLOWED" });
   }
-  if (!(await authorizeInternalWakeup(req))) {
-    return jsonResponse(401, { error: "UNAUTHORIZED_COLLECTION_WORKER" });
+  const contentLength = Number.parseInt(req.headers.get("content-length") ?? "0", 10);
+  if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BODY_BYTES) {
+    return jsonResponse(413, { error: "REQUEST_BODY_TOO_LARGE" });
   }
 
   const body = await requestBody(req);
@@ -134,7 +128,17 @@ Deno.serve(async (req: Request) => {
     && /^[a-zA-Z0-9:_-]{1,160}$/.test(body.lease_owner)
     ? body.lease_owner
     : `edge:${invocationId}`;
-  const startedAt = performance.now();
+  const wakeEnqueuedAt = typeof body.wake_enqueued_at === "string"
+    ? Date.parse(body.wake_enqueued_at)
+    : Number.NaN;
+  const dispatchDelayMs = Number.isFinite(wakeEnqueuedAt)
+    ? Math.max(0, handlerReceivedAt - wakeEnqueuedAt)
+    : null;
+  const stageMs = {
+    begin_lease: 0,
+    claim_with_lease: 0,
+    process: 0,
+  };
 
   let rounds = 0;
   let batchesProcessed = 0;
@@ -142,31 +146,53 @@ Deno.serve(async (req: Request) => {
   let leaseAcquired = false;
 
   try {
-    const { data: acquired, error: leaseError } = await admin.rpc(
-      ACQUIRE_LEASE_RPC,
-      { p_worker_kind: "decision", p_lease_owner: requestedLeaseOwner, p_ttl_seconds: 45 },
+    const secret = req.headers.get("x-cron-secret")?.trim() ?? "";
+    if (!secret) {
+      return jsonResponse(401, { error: "UNAUTHORIZED_COLLECTION_WORKER" });
+    }
+    const beginLeaseStartedAt = performance.now();
+    const { data: leaseStatus, error: leaseError } = await admin.rpc(
+      BEGIN_LEASE_RPC,
+      {
+        p_secret: secret,
+        p_worker_kind: "decision",
+        p_lease_owner: requestedLeaseOwner,
+        p_ttl_seconds: LEASE_TTL_SECONDS,
+      },
     );
-    if (leaseError) throw new WorkerFailure("LEASE_ACQUIRE_FAILED", safeDatabaseCode(leaseError));
-    if (acquired !== true) {
+    stageMs.begin_lease += performance.now() - beginLeaseStartedAt;
+    if (leaseError) throw new WorkerFailure("LEASE_BEGIN_FAILED", safeDatabaseCode(leaseError));
+    if (leaseStatus === "unauthorized") {
+      return jsonResponse(401, { error: "UNAUTHORIZED_COLLECTION_WORKER" });
+    }
+    if (leaseStatus === "coalesced") {
       return jsonResponse(202, {
         ok: true,
         coalesced: true,
         invocation_id: invocationId,
+        dispatch_delay_ms: dispatchDelayMs,
       });
     }
+    if (leaseStatus !== "acquired") throw new WorkerFailure("INVALID_LEASE_BEGIN_RESPONSE");
     leaseAcquired = true;
 
     for (let round = 0; round < maxRounds; round += 1) {
       const workerId = `decision-v3:${invocationId}:${round}`;
+      // The database renews ownership and claims in one short transaction.
+      // A lost/expired lease raises before any batch can be processed.
+      const claimWithLeaseStartedAt = performance.now();
       const { data: claimData, error: claimError } = await admin.rpc(
-        CLAIM_RPC,
+        CLAIM_WITH_LEASE_RPC,
         {
+          p_worker_kind: "decision",
+          p_lease_owner: requestedLeaseOwner,
           p_worker_id: workerId,
           p_limit: limit,
         },
       );
+      stageMs.claim_with_lease += performance.now() - claimWithLeaseStartedAt;
       if (claimError) {
-        throw new WorkerFailure("CLAIM_FAILED", safeDatabaseCode(claimError));
+        throw new WorkerFailure("LEASE_OR_CLAIM_FAILED", safeDatabaseCode(claimError));
       }
 
       rounds += 1;
@@ -174,6 +200,7 @@ Deno.serve(async (req: Request) => {
       if (items.length === 0) break;
       totalClaimed += items.length;
 
+      const processStartedAt = performance.now();
       const { error: processError } = await admin.rpc(
         PROCESS_RPC,
         {
@@ -181,6 +208,7 @@ Deno.serve(async (req: Request) => {
           p_items: items,
         },
       );
+      stageMs.process += performance.now() - processStartedAt;
       if (processError) {
         throw new WorkerFailure(
           "PROCESS_BATCH_FAILED",
@@ -200,6 +228,10 @@ Deno.serve(async (req: Request) => {
       batches_processed: batchesProcessed,
       claimed: totalClaimed,
       batch_limit: limit,
+      dispatch_delay_ms: dispatchDelayMs,
+      stage_ms: Object.fromEntries(
+        Object.entries(stageMs).map(([key, value]) => [key, Number(value.toFixed(3))]),
+      ),
       duration_ms: durationMs,
     };
     console.log(JSON.stringify(summary));
@@ -219,6 +251,10 @@ Deno.serve(async (req: Request) => {
       rounds,
       batches_processed: batchesProcessed,
       claimed: totalClaimed,
+      dispatch_delay_ms: dispatchDelayMs,
+      stage_ms: Object.fromEntries(
+        Object.entries(stageMs).map(([key, value]) => [key, Number(value.toFixed(3))]),
+      ),
       duration_ms: durationMs,
     }));
 

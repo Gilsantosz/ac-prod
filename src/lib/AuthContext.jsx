@@ -77,6 +77,7 @@ export const AuthProvider = ({ children }) => {
   const [authChecked, setAuthChecked] = useState(false);
   const [authStatus, setAuthStatus] = useState(AUTH_STATES.INITIALIZING);
   const authGeneration = useRef(0);
+  const authSessionAllowed = useRef(true);
   const profileRetry = useRef({ timer: null, attempt: 0 });
 
   const cancelProfileRetry = useCallback(() => {
@@ -90,6 +91,7 @@ export const AuthProvider = ({ children }) => {
   ), []);
 
   const rejectUnauthorizedSession = useCallback(async (error) => {
+    authSessionAllowed.current = false;
     authGeneration.current += 1;
     cancelProfileRetry();
     clearProfileRequestState();
@@ -97,6 +99,8 @@ export const AuthProvider = ({ children }) => {
     clearSessionActivity();
     setUser(null);
     setIsAuthenticated(false);
+    setIsLoadingAuth(false);
+    setAuthChecked(true);
     setAuthStatus(AUTH_STATES.UNAUTHORIZED);
     setAuthError({
       type: isAccessDeniedError(error) ? 'user_not_registered' : 'auth_required',
@@ -107,6 +111,7 @@ export const AuthProvider = ({ children }) => {
   }, [cancelProfileRetry]);
 
   const expireInactiveSession = useCallback(async ({ redirect = true } = {}) => {
+    authSessionAllowed.current = false;
     authGeneration.current += 1;
     cancelProfileRetry();
     clearProfileRequestState();
@@ -114,6 +119,7 @@ export const AuthProvider = ({ children }) => {
     clearSessionActivity();
     setUser(null);
     setIsAuthenticated(false);
+    setIsLoadingAuth(false);
     setAuthStatus(AUTH_STATES.SIGNED_OUT);
     setAuthChecked(true);
     setAuthError({
@@ -130,7 +136,13 @@ export const AuthProvider = ({ children }) => {
     if (!session?.user) return null;
     const correlationId = options.correlationId || createAuthCorrelationId();
     const generation = options.generation ?? authGeneration.current;
+    // Every async auth path carries the generation it started with. Logout (or
+    // a newer login) increments the generation before clearing local state, so
+    // a delayed profile retry must stop before it can restore either storage or
+    // the Realtime JWT.
+    if (!authSessionAllowed.current || generation !== authGeneration.current) return null;
     persistAuthSession(session);
+    if (!authSessionAllowed.current || generation !== authGeneration.current) return null;
     if (session.access_token && typeof supabase.realtime?.setAuth === 'function') {
       try {
         await measureAuthStep(correlationId, 'realtime_set_auth', () => (
@@ -140,7 +152,7 @@ export const AuthProvider = ({ children }) => {
         recordAuthMetric({ correlationId, step: 'realtime_set_auth', result: 'degraded', error });
       }
     }
-    if (generation !== authGeneration.current) return null;
+    if (!authSessionAllowed.current || generation !== authGeneration.current) return null;
 
     setAuthStatus(AUTH_STATES.PROFILE_LOADING);
     setIsAuthenticated(true);
@@ -150,7 +162,7 @@ export const AuthProvider = ({ children }) => {
         force: options.force === true,
         correlationId,
       });
-      if (generation !== authGeneration.current) return null;
+      if (!authSessionAllowed.current || generation !== authGeneration.current) return null;
       cancelProfileRetry();
       recordSessionActivity();
       recordAuthMetric({ correlationId, step: 'permissions_loaded', result: 'success' });
@@ -163,7 +175,7 @@ export const AuthProvider = ({ children }) => {
       recordAuthMetric({ correlationId, step: 'auth_provider_complete', result: 'success' });
       return profile;
     } catch (error) {
-      if (generation !== authGeneration.current) return null;
+      if (!authSessionAllowed.current || generation !== authGeneration.current) return null;
       if (isAccessDeniedError(error)) {
         await rejectUnauthorizedSession(error);
         return null;
@@ -179,18 +191,23 @@ export const AuthProvider = ({ children }) => {
       setIsLoadingAuth(false);
       recordAuthMetric({ correlationId, step: 'auth_provider_complete', result: 'degraded', error });
 
-      const attempt = profileRetry.current.attempt;
-      profileRetry.current.attempt += 1;
-      profileRetry.current.timer = setTimeout(() => {
-        profileRetry.current.timer = null;
-        validateProfileSession(session, {
-          correlationId,
-          generation,
-          force: true,
-        }).catch((retryError) => {
-          console.warn('[Auth] Nova tentativa de perfil falhou:', retryError?.code || retryError?.message);
-        });
-      }, retryDelay(attempt));
+      if (!profileRetry.current.timer) {
+        const attempt = profileRetry.current.attempt;
+        profileRetry.current.attempt += 1;
+        const timer = setTimeout(() => {
+          if (profileRetry.current.timer !== timer) return;
+          profileRetry.current.timer = null;
+          if (!authSessionAllowed.current || generation !== authGeneration.current) return;
+          validateProfileSession(session, {
+            correlationId,
+            generation,
+            force: true,
+          }).catch((retryError) => {
+            console.warn('[Auth] Nova tentativa de perfil falhou:', retryError?.code || retryError?.message);
+          });
+        }, retryDelay(attempt));
+        profileRetry.current.timer = timer;
+      }
       return cachedProfile;
     }
   }, [cancelProfileRetry, fetchProfile, rejectUnauthorizedSession]);
@@ -278,18 +295,21 @@ export const AuthProvider = ({ children }) => {
     // TOKEN_REFRESHED → refresh silencioso de token
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isMounted) return;
+      const eventGeneration = authGeneration.current;
+      const eventSessionAllowed = authSessionAllowed.current;
 
       const timer = setTimeout(async () => {
         authEventTimers.delete(timer);
-        if (!isMounted) return;
+        if (!isMounted || !eventSessionAllowed || eventGeneration !== authGeneration.current) return;
 
         const eventCorrelationId = createAuthCorrelationId();
         if (event === 'SIGNED_IN' && session?.user) {
           await validateProfileSession(session, {
             correlationId: eventCorrelationId,
-            generation: authGeneration.current,
+            generation: eventGeneration,
           });
         } else if (event === 'SIGNED_OUT') {
+          authSessionAllowed.current = false;
           authGeneration.current += 1;
           cancelProfileRetry();
           clearProfileRequestState();
@@ -297,21 +317,26 @@ export const AuthProvider = ({ children }) => {
           clearSessionActivity();
           setUser(null);
           setIsAuthenticated(false);
+          setIsLoadingAuth(false);
+          setAuthChecked(true);
           setAuthStatus(AUTH_STATES.SIGNED_OUT);
         } else if (event === 'USER_UPDATED' && session?.user) {
           invalidateProfileCache(session.user.id);
           await validateProfileSession(session, {
             correlationId: eventCorrelationId,
-            generation: authGeneration.current,
+            generation: eventGeneration,
             force: true,
           });
         } else if (event === 'TOKEN_REFRESHED' && session) {
+          if (!authSessionAllowed.current || eventGeneration !== authGeneration.current) return;
           persistAuthSession(session);
+          if (!authSessionAllowed.current || eventGeneration !== authGeneration.current) return;
           if (session.access_token && typeof supabase.realtime?.setAuth === 'function') {
             await measureAuthStep(eventCorrelationId, 'realtime_token_refreshed', () => (
               supabase.realtime.setAuth(session.access_token)
             ));
           }
+          if (!authSessionAllowed.current || eventGeneration !== authGeneration.current) return;
           recordAuthMetric({ correlationId: eventCorrelationId, step: 'token_refreshed', result: 'success' });
         }
       }, 0);
@@ -408,6 +433,8 @@ export const AuthProvider = ({ children }) => {
   // ─── checkUserAuth — compatibilidade com ProtectedRoute ──────────────────────
   const checkUserAuth = useCallback(async () => {
     if (isLoadingAuth || [AUTH_STATES.PROFILE_LOADING, AUTH_STATES.RECONNECTING].includes(authStatus)) return;
+    if (!authSessionAllowed.current) return;
+    const generation = authGeneration.current;
     setIsLoadingAuth(true);
     const correlationId = createAuthCorrelationId();
     try {
@@ -425,13 +452,15 @@ export const AuthProvider = ({ children }) => {
       const restoredSession = session || (!sessionResult?.error
         ? await restoreAuthSession({ correlationId })
         : null);
+      if (generation !== authGeneration.current) return;
       if (restoredSession?.user) {
         const { user, shouldSignOut } = await resolveSessionUser(restoredSession);
+        if (generation !== authGeneration.current) return;
 
         if (user) {
           await validateProfileSession(
             { ...restoredSession, user },
-            { correlationId, generation: authGeneration.current },
+            { correlationId, generation },
           );
         } else if (shouldSignOut) {
           await rejectUnauthorizedSession(sessionResult?.error || { code: 'SESSION_INVALID' });
@@ -445,18 +474,22 @@ export const AuthProvider = ({ children }) => {
         setAuthStatus(AUTH_STATES.SIGNED_OUT);
       }
     } catch (error) {
+      if (generation !== authGeneration.current) return;
       console.error('[Auth] checkUserAuth error:', error?.code || error?.message);
       if (isDefinitiveSessionError(error)) await rejectUnauthorizedSession(error);
       else setAuthStatus(AUTH_STATES.RECONNECTING);
     } finally {
-      setIsLoadingAuth(false);
-      setAuthChecked(true);
+      if (generation === authGeneration.current) {
+        setIsLoadingAuth(false);
+        setAuthChecked(true);
+      }
     }
   }, [authStatus, expireInactiveSession, isLoadingAuth, rejectUnauthorizedSession, validateProfileSession]);
 
   // ─── Login ────────────────────────────────────────────────────────────────────
   const login = async (email, password) => {
     const correlationId = createAuthCorrelationId();
+    authSessionAllowed.current = false;
     const generation = ++authGeneration.current;
     cancelProfileRetry();
     recordAuthMetric({ correlationId, step: 'login_click', result: 'started' });
@@ -469,11 +502,15 @@ export const AuthProvider = ({ children }) => {
         'sign_in_with_password',
         () => base44.auth.loginViaEmailPassword(email, password),
       );
+      if (generation !== authGeneration.current) return null;
+      authSessionAllowed.current = true;
       recordAuthMetric({ correlationId, step: 'token_response', result: 'success' });
       const profile = await validateProfileSession(result.session, { correlationId, generation });
+      if (generation !== authGeneration.current) return null;
       setAuthChecked(true);
       return profile;
     } catch (error) {
+      if (generation !== authGeneration.current) throw error;
       if (isAccessDeniedError(error)) {
         await rejectUnauthorizedSession(error);
       } else {
@@ -485,7 +522,7 @@ export const AuthProvider = ({ children }) => {
       }
       throw error;
     } finally {
-      setIsLoadingAuth(false);
+      if (generation === authGeneration.current) setIsLoadingAuth(false);
     }
   };
 
@@ -509,11 +546,13 @@ export const AuthProvider = ({ children }) => {
 
   // ─── Logout ───────────────────────────────────────────────────────────────────
   const logout = async (shouldRedirect = true) => {
+    authSessionAllowed.current = false;
     authGeneration.current += 1;
     cancelProfileRetry();
     clearProfileRequestState();
     setUser(null);
     setIsAuthenticated(false);
+    setIsLoadingAuth(false);
     setAuthStatus(AUTH_STATES.SIGNED_OUT);
     setAuthError(null);
     setAuthChecked(true);

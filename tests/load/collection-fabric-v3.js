@@ -84,6 +84,12 @@ if (!allowedProfiles.has(profile)) {
 }
 
 const ackMs = new Trend('collection_ingress_ack_ms', true);
+const ackBlockedMs = new Trend('collection_ingress_ack_blocked_ms', true);
+const ackConnectingMs = new Trend('collection_ingress_ack_connecting_ms', true);
+const ackTlsMs = new Trend('collection_ingress_ack_tls_ms', true);
+const ackSendingMs = new Trend('collection_ingress_ack_sending_ms', true);
+const ackWaitingMs = new Trend('collection_ingress_ack_waiting_ms', true);
+const ackReceivingMs = new Trend('collection_ingress_ack_receiving_ms', true);
 const decisionMs = new Trend('collection_decision_ms', true);
 const liveDecisionMs = new Trend('collection_live_decision_ms', true);
 const replayDecisionMs = new Trend('collection_replay_decision_ms', true);
@@ -302,6 +308,7 @@ if (profile === 'contention_cell_lot') {
 export const options = {
   scenarios: scenarioProfiles[profile],
   thresholds: { ...commonThresholds, ...profileThresholds },
+  summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   discardResponseBodies: false,
   userAgent: `acprod-collection-fabric-v3-k6/${runId}`,
 };
@@ -459,6 +466,12 @@ function submitBatch(scenarioName, sourceMode, batchSize, iteration = iterationN
   );
 
   ackMs.add(response.timings.duration, { source_mode: sourceMode, workload: scenarioName });
+  ackBlockedMs.add(response.timings.blocked, { source_mode: sourceMode, workload: scenarioName });
+  ackConnectingMs.add(response.timings.connecting, { source_mode: sourceMode, workload: scenarioName });
+  ackTlsMs.add(response.timings.tls_handshaking, { source_mode: sourceMode, workload: scenarioName });
+  ackSendingMs.add(response.timings.sending, { source_mode: sourceMode, workload: scenarioName });
+  ackWaitingMs.add(response.timings.waiting, { source_mode: sourceMode, workload: scenarioName });
+  ackReceivingMs.add(response.timings.receiving, { source_mode: sourceMode, workload: scenarioName });
   const body = jsonResponse(response);
   const results = Array.isArray(body?.results) ? body.results : [];
   const responseOk = response.status === 200 && results.length === events.length;

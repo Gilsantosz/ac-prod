@@ -6,13 +6,11 @@ const WORKERS = [
   {
     label: 'decision',
     path: 'supabase/functions/process-collection-v3/index.ts',
-    claimRpc: 'claim_collection_batch_v3',
     processRpc: 'process_collection_batch_v3',
   },
   {
     label: 'projection',
     path: 'supabase/functions/project-collection-v3/index.ts',
-    claimRpc: 'claim_collection_projection_batch_v3',
     processRpc: 'process_collection_projection_batch_v3',
   },
 ];
@@ -51,43 +49,46 @@ describe('Collection Fabric V3 Edge workers contract', () => {
     expect(source).not.toContain('JWT_SECRET');
   });
 
-  it.each(WORKERS)('$label worker authenticates every POST with the existing cron secret RPC', ({ path }) => {
+  it.each(WORKERS)('$label worker authenticates and begins its lease in one server-side RPC', ({ path }) => {
     const source = readWorker(path);
 
     expect(source).toContain('req.headers.get("x-cron-secret")');
-    expect(source).toContain('"verify_collection_worker_cron_secret"');
-    expect(source).toContain('{ p_secret: secret }');
+    expect(source).toContain('const BEGIN_LEASE_RPC = "begin_collection_worker_lease_v3"');
+    expect(source).toContain('p_secret: secret');
     expect(source).toContain('UNAUTHORIZED_COLLECTION_');
-    expect(source.indexOf('authorizeInternalWakeup(req)'))
-      .toBeLessThan(source.indexOf('const body = await requestBody(req)'));
+    expect(source).toContain('MAX_REQUEST_BODY_BYTES = 16_384');
   });
 
-  it.each(WORKERS)('$label worker calls the V3 claim and batch processor with the agreed payload', ({
+  it.each(WORKERS)('$label worker calls the lease-aware claim and batch processor with the agreed payload', ({
     path,
-    claimRpc,
     processRpc,
   }) => {
     const source = readWorker(path);
 
-    expect(source).toContain(`const CLAIM_RPC = "${claimRpc}"`);
+    expect(source).toContain('const CLAIM_WITH_LEASE_RPC = "claim_collection_worker_batch_v3"');
     expect(source).toContain(`const PROCESS_RPC = "${processRpc}"`);
     expect(source).toContain('p_worker_id: workerId');
     expect(source).toContain('p_limit: limit');
     expect(source).toContain('p_items: items');
-    expect(occurrences(source, 'await admin.rpc(')).toBe(5);
-    expect(occurrences(source, 'await admin.rpc(\n        CLAIM_RPC,')).toBe(1);
+    expect(occurrences(source, 'await admin.rpc(')).toBe(4);
+    expect(occurrences(source, 'await admin.rpc(\n        CLAIM_WITH_LEASE_RPC,')).toBe(1);
     expect(occurrences(source, 'await admin.rpc(\n        PROCESS_RPC,')).toBe(1);
   });
 
-  it.each(WORKERS)('$label worker uses a distributed lease and always releases it', ({ path, label }) => {
+  it.each(WORKERS)('$label worker renews its distributed lease and always releases it', ({ path, label }) => {
     const source = readWorker(path);
+    const loop = roundLoop(source);
 
-    expect(source).toContain('const ACQUIRE_LEASE_RPC = "acquire_collection_worker_lease_v3"');
+    expect(source).toContain('const BEGIN_LEASE_RPC = "begin_collection_worker_lease_v3"');
+    expect(source).toContain('const CLAIM_WITH_LEASE_RPC = "claim_collection_worker_batch_v3"');
+    expect(source).toContain('const LEASE_TTL_SECONDS = 120');
     expect(source).toContain('const RELEASE_LEASE_RPC = "release_collection_worker_lease_v3"');
     expect(source).toContain(`p_worker_kind: "${label}"`);
     expect(source).toContain('coalesced: true');
     expect(source).toContain('} finally {');
-    expect(source.indexOf('ACQUIRE_LEASE_RPC')).toBeLessThan(source.indexOf('for (let round'));
+    expect(source.indexOf('BEGIN_LEASE_RPC')).toBeLessThan(source.indexOf('for (let round'));
+    expect(loop.indexOf('CLAIM_WITH_LEASE_RPC')).toBeLessThan(loop.indexOf('PROCESS_RPC'));
+    expect(loop).toContain('LEASE_OR_CLAIM_FAILED');
     expect(source.indexOf('} finally {')).toBeLessThan(source.lastIndexOf('RELEASE_LEASE_RPC'));
   });
 
@@ -101,7 +102,7 @@ describe('Collection Fabric V3 Edge workers contract', () => {
     expect(source).toContain('body.limit,\n    DEFAULT_BATCH_SIZE,\n    MIN_BATCH_SIZE,\n    MAX_BATCH_SIZE');
     expect(source).toContain('body.max_rounds,\n    DEFAULT_MAX_ROUNDS,\n    1,\n    MAX_ROUNDS');
     expect(occurrences(loop, 'await admin.rpc(')).toBe(2);
-    expect(loop.indexOf('CLAIM_RPC')).toBeLessThan(loop.indexOf('PROCESS_RPC'));
+    expect(loop.indexOf('CLAIM_WITH_LEASE_RPC')).toBeLessThan(loop.indexOf('PROCESS_RPC'));
   });
 
   it.each(WORKERS)('$label worker sends the claimed array once and never starts per-item concurrency', ({ path }) => {

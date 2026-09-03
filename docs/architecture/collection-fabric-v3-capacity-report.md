@@ -47,10 +47,35 @@ DLQ vazia e sem tráfego concorrente não controlado.
 | retries/SQLSTATE | a preencher | a preencher |
 | CPU/memória/I/O/conexões | a preencher | a preencher |
 
+## Diagnóstico preservado do NO-GO de 2026-09-02
+
+| Marco do evento smoke | Timestamp / duração |
+| --- | ---: |
+| enfileirado | `16:57:28.447Z` |
+| início do processamento | `16:57:31.059Z` |
+| espera até o worker | 2.611,939 ms |
+| decisão persistida | `16:57:31.169Z` |
+| processamento da decisão | aproximadamente 110,524 ms |
+| projeção após a decisão | aproximadamente 948,779 ms |
+
+A amostra mostra que o gargalo dominante ocorreu antes do processamento da
+regra: despacho `pg_net`/Edge, início do runtime e chamadas sequenciais de
+controle/claim. O candidato seguinte reduz uma chamada sequencial do primeiro
+lote ao combinar autorização/aquisição e renovar o lease junto do claim em cada
+rodada. Ele registra `dispatch_delay_ms` e `stage_ms` (`begin_lease`,
+`claim_with_lease`, `process`) nos logs sanitizados dos dois workers. Isso é uma correção e um
+instrumento de diagnóstico, não evidência de SLO. O k6 também separa o ACK em
+`blocked`, conexão, TLS, envio, espera do servidor e recebimento, para distinguir
+rede fria de tempo SQL. O smoke frio ainda precisa
+passar sem aquecimento oculto ou threshold relaxado.
+
 ## Método reproduzível
 
 Use [tests/load/collection-fabric-v3.js](../../tests/load/collection-fabric-v3.js)
 conforme o [runbook de implantação](../runbooks/collection-fabric-v3-deploy.md).
+O workload deve ser iniciado pelo executor controlado; execução direta do k6 não
+é evidência aceita porque não obedece pausa/emergency-stop. A decisão final deve
+ser reproduzida por `npm run capacity:gate -- <manifest>`.
 Cada rodada usa `K6_RUN_ID` e faixa `K6_SEQUENCE_BASE` próprios, fixture fora do
 Git e 100 sessões/dispositivos reais de staging. Todos os códigos devem ter oito
 dígitos, ser exclusivos na rodada e representar peças válidas na etapa/rota.
@@ -68,6 +93,7 @@ da carga após uma falha.
 | priority | seed replay 5 × 25; depois 20 live/s e 5 replay/s por 60 s | 1.625 códigos, 100 dispositivos | 3 |
 | contention_piece | 20 dispositivos lançam a mesma peça dentro de 100 ms | 1 código, 20 dispositivos | 3 |
 | contention_cell_lot | 50 dispositivos, mesma célula/lote, peças distintas dentro de 100 ms | 50 códigos, 50 dispositivos | 3 |
+| atomic8 | 8 dispositivos disputam a mesma peça/contexto | 1 código, 8 dispositivos | 1 |
 | nominal | 100 canais privados + 100 identidades, 30 eventos/s por 10 min | 18.000 códigos | 3 após aquecimento |
 | burst | 100 eventos/s por 60 s | 6.000 códigos, 100 dispositivos | 3 |
 

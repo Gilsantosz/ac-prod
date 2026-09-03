@@ -1,22 +1,24 @@
-import { useMemo, useState } from 'react';
-import { Activity, AlertTriangle, Pause, Play, Square } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Activity, AlertTriangle, Pause, Play, RotateCcw, Square } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import PageHeader from '@/components/ui/PageHeader';
+import {
+  CAPACITY_PROFILE_REQUIREMENTS,
+  CONTROLLABLE_CAPACITY_STATUSES,
+  selectControllableCapacityRun,
+} from '@/lib/capacityTestControl';
 
 const DEFAULTS = {
-  devices: 8,
+  ...CAPACITY_PROFILE_REQUIREMENTS.smoke,
   operators: 14,
-  pieces: 500,
-  events: 3500,
-  rate_per_second: 8,
-  duration_minutes: 10,
-  duplicate_percent: 5,
-  rejection_percent: 1,
-  replacement_percent: 1,
-  network_oscillation: false,
+  profile: 'smoke',
+  target: 'staging',
+  sequence_base: 180000000,
 };
+
+const CAPACITY_PROFILES = Object.keys(CAPACITY_PROFILE_REQUIREMENTS);
 
 function newRunId() {
   const date = new Date();
@@ -53,6 +55,18 @@ export default function CapacityTests() {
 
   const active = useMemo(() => runs.data?.find((run) => run.run_id === activeRunId), [activeRunId, runs.data]);
   const setNumber = (key, value) => setConfig((current) => ({ ...current, [key]: Number(value) }));
+  const setProfile = (profile) => setConfig((current) => ({
+    ...current,
+    profile,
+    ...CAPACITY_PROFILE_REQUIREMENTS[profile],
+  }));
+
+  useEffect(() => {
+    if (!runs.data) return;
+    const selected = selectControllableCapacityRun(runs.data, activeRunId);
+    const nextRunId = selected?.run_id || null;
+    if (nextRunId !== activeRunId) setActiveRunId(nextRunId);
+  }, [activeRunId, runs.data]);
 
   const start = async () => {
     setMessage(null);
@@ -82,16 +96,28 @@ export default function CapacityTests() {
       <PageHeader title="Testes de Capacidade" subtitle="Plano de controle protegido para ensaios CAPTEST auditáveis" icon={Activity} />
 
       <section className="grid gap-4 rounded-2xl border border-border bg-card p-5 md:grid-cols-4">
-        {Object.entries({ devices: 'Dispositivos', operators: 'Operadores', pieces: 'Peças', events: 'Eventos', rate_per_second: 'Eventos/s', duration_minutes: 'Duração (min)', duplicate_percent: '% duplicadas', rejection_percent: '% reprovação', replacement_percent: '% reposição' }).map(([key, label]) => (
+        <label className="space-y-1 text-sm">
+          <span className="text-muted-foreground">Perfil k6</span>
+          <select className="w-full rounded-lg border bg-background px-3 py-2" value={config.profile} onChange={(event) => setProfile(event.target.value)}>
+            {CAPACITY_PROFILES.map((profile) => <option key={profile} value={profile}>{profile}</option>)}
+          </select>
+        </label>
+        <label className="space-y-1 text-sm">
+          <span className="text-muted-foreground">Alvo</span>
+          <select className="w-full rounded-lg border bg-background px-3 py-2" value={config.target} onChange={(event) => setConfig((current) => ({ ...current, target: event.target.value }))}>
+            <option value="staging">staging</option>
+            <option value="test-production">test-production</option>
+          </select>
+        </label>
+        {Object.entries({ sequence_base: 'Sequence base', devices: 'Dispositivos', operators: 'Operadores', pieces: 'Peças', duration_minutes: 'Duração (min)' }).map(([key, label]) => (
           <label key={key} className="space-y-1 text-sm">
             <span className="text-muted-foreground">{label}</span>
-            <input className="w-full rounded-lg border bg-background px-3 py-2" type="number" min="0" value={config[key]} onChange={(event) => setNumber(key, event.target.value)} />
+            <input className="w-full rounded-lg border bg-background px-3 py-2 disabled:cursor-not-allowed disabled:opacity-60" type="number" min="0" value={config[key]} onChange={(event) => setNumber(key, event.target.value)} disabled={['devices', 'pieces', 'duration_minutes'].includes(key)} />
           </label>
         ))}
-        <label className="flex items-center gap-2 self-end rounded-lg border px-3 py-2 text-sm">
-          <input type="checkbox" checked={config.network_oscillation} onChange={(event) => setConfig((current) => ({ ...current, network_oscillation: event.target.checked }))} />
-          Oscilação de rede
-        </label>
+        <p className="self-end text-xs text-muted-foreground md:col-span-2">
+          Dispositivos, peças e duração são fixos no perfil versionado; o executor recusa qualquer divergência do pedido auditado.
+        </p>
       </section>
 
       <section className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5">
@@ -100,9 +126,12 @@ export default function CapacityTests() {
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <input className="min-w-0 flex-1 rounded-lg border bg-background px-3 py-2" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
           <Button onClick={start} disabled={confirmation !== 'INICIAR TESTE CONTROLADO'}><Play className="mr-2 h-4 w-4" />Iniciar</Button>
-          <Button variant="outline" onClick={() => control('pause')} disabled={!activeRunId}><Pause className="mr-2 h-4 w-4" />Pausar</Button>
-          <Button variant="destructive" onClick={() => control('emergency_stop')} disabled={!activeRunId}><Square className="mr-2 h-4 w-4" />Parada de emergência</Button>
+          <Button variant="outline" onClick={() => control('pause')} disabled={active?.status !== 'running'}><Pause className="mr-2 h-4 w-4" />Pausar</Button>
+          <Button variant="outline" onClick={() => control('resume')} disabled={active?.status !== 'paused'}><RotateCcw className="mr-2 h-4 w-4" />Retomar</Button>
+          <Button variant="outline" onClick={() => control('cancel')} disabled={!CONTROLLABLE_CAPACITY_STATUSES.includes(active?.status)}><Square className="mr-2 h-4 w-4" />Cancelar</Button>
+          <Button variant="destructive" onClick={() => control('emergency_stop')} disabled={!CONTROLLABLE_CAPACITY_STATUSES.includes(active?.status)}><AlertTriangle className="mr-2 h-4 w-4" />Parada de emergência</Button>
         </div>
+        {activeRunId && <p className="mt-3 break-all font-mono text-xs">Run controlado: {activeRunId}</p>}
         {message && <p className="mt-3 text-sm">{message}</p>}
       </section>
 
@@ -115,6 +144,7 @@ export default function CapacityTests() {
         <Metric label="Projection p95" value={`${health.data?.latency_ms?.projection?.p95 ?? '—'} ms`} />
         <Metric label="Worker decision" value={health.data?.workers?.active_decision ?? '—'} />
         <Metric label="Worker projection" value={health.data?.workers?.active_projection ?? '—'} />
+        <Metric label="Heartbeat executor" value={active?.executor_heartbeat_at ? new Date(active.executor_heartbeat_at).toLocaleTimeString() : '—'} />
       </section>
     </div>
   );

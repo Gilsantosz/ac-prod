@@ -57,6 +57,7 @@ export function subscribeToCollectionBroadcastV3({
     stopped: false,
     reconnectTimer: null,
     reconnectAttempt: 0,
+    channelGeneration: 0,
     seen: new Map(),
     firstEventRecorded: false,
   };
@@ -99,29 +100,39 @@ export function subscribeToCollectionBroadcastV3({
 
   const connect = () => {
     if (subscription.stopped) return;
+    const channelGeneration = ++subscription.channelGeneration;
     subscription.channels = specs.map((channelName) => {
       let channel = supabase.channel(channelName, {
         config: { private: true, broadcast: { self: false, ack: false } },
       });
       for (const eventName of COLLECTION_BROADCAST_EVENTS) {
-        channel = channel.on('broadcast', { event: eventName }, (message) => deliver(message, eventName));
+        channel = channel.on('broadcast', { event: eventName }, (message) => {
+          if (subscription.stopped || channelGeneration !== subscription.channelGeneration) return;
+          deliver(message, eventName);
+        });
       }
       channel.subscribe((status) => {
+        if (subscription.stopped || channelGeneration !== subscription.channelGeneration) return;
         emitStatus(status, channelName);
         if (status === 'SUBSCRIBED') {
           subscription.reconnectAttempt = 0;
           recordAuthMetric({ correlationId: 'realtime', step: 'realtime_subscribed', result: 'success' });
           return;
         }
-        if (!['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status) || subscription.stopped) return;
+        if (!['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) return;
         if (subscription.reconnectTimer) return;
         const attempt = subscription.reconnectAttempt++;
         const delay = Math.min(30_000, 750 * (2 ** attempt)) * (0.75 + Math.random() * 0.5);
         subscription.reconnectTimer = setTimeout(async () => {
           subscription.reconnectTimer = null;
+          if (subscription.stopped || channelGeneration !== subscription.channelGeneration) return;
+          // Invalidate callbacks before removeChannel emits its intentional
+          // CLOSED status; otherwise that CLOSED schedules a second reconnect.
+          subscription.channelGeneration += 1;
           const staleChannels = subscription.channels;
           subscription.channels = [];
           await Promise.all(staleChannels.map((stale) => supabase.removeChannel?.(stale)));
+          if (subscription.stopped) return;
           connect();
         }, delay);
       });
@@ -137,7 +148,9 @@ export function subscribeToCollectionBroadcastV3({
 export async function unsubscribeFromCollectionBroadcastV3(subscription) {
   if (!subscription) return;
   subscription.stopped = true;
+  subscription.channelGeneration += 1;
   if (subscription.reconnectTimer) clearTimeout(subscription.reconnectTimer);
+  subscription.reconnectTimer = null;
   const channels = subscription?.channels || [];
   subscription.channels = [];
   await Promise.all(channels.map((channel) => (
