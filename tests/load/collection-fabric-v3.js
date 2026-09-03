@@ -670,6 +670,12 @@ function fetchHealth(device) {
 
 function validateFixture() {
   const requirement = profileRequirements[profile];
+  if (fixture.run_id !== runId) {
+    fail(`Fixture de ${fixture.run_id || 'run ausente'} nao pode executar o run ${runId}.`);
+  }
+  if (fixture.profile !== profile) {
+    fail(`Fixture de ${fixture.profile || 'perfil ausente'} nao pode executar o perfil ${profile}.`);
+  }
   if (devices.length < requirement.devices) {
     fail(`Fixture insuficiente: ${profile} exige ${requirement.devices} dispositivos distintos.`);
   }

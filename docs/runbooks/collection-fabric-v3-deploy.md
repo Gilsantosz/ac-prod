@@ -191,24 +191,38 @@ que reclama atomicamente o run solicitado na página administrativa, mantém
 heartbeat, pausa/retoma o processo k6 e encerra-o ao observar cancelamento,
 emergency-stop ou perda do plano de controle. Não chame `k6 run` diretamente.
 
-Na página **Testes de Capacidade**, solicite um run com perfil, alvo e
-`sequence_base` exatos. Copie o `CAPTEST_...` exibido e use os mesmos valores no
-executor. Dispositivos, peças e duração são limites fixos do perfil versionado;
-o banco e o executor recusam uma configuração divergente. A credencial
-server-side entra somente por stdin e é removida do
-ambiente filho; o k6 continua usando exclusivamente a chave pública/JWTs da
-fixture.
+Solicite o run na página **Testes de Capacidade**, usando perfil, alvo e
+`sequence_base` exatos. Copie o `CAPTEST_...` exibido e gere uma fixture nova
+para esse run/perfil antes de iniciar o executor. Dispositivos, peças e duração
+são limites fixos do perfil versionado; o banco e o executor recusam uma
+configuração divergente. A credencial server-side entra somente por stdin e é
+removida do ambiente filho; o k6 continua usando exclusivamente a chave
+pública/JWTs da fixture. A saída do preparador deve ficar fora do repositório.
+`nominal` pagina e valida 18.000
+códigos e cria 100 sessões operacionais com `device_id`/`session_id` distintos;
+os perfis de contenção recebem 20 ou 50 máquinas de teste realmente distintas na
+mesma célula. O perfil `atomic8`, em contraste, grava o mesmo contexto de
+célula/máquina nas oito sessões reais.
 
 ```bash
 export SUPABASE_URL="https://STAGING-REF.supabase.co"
 export SUPABASE_ANON_KEY="CHAVE-PUBLICA-DE-STAGING"
 export K6_TARGET="staging"
 export K6_CONFIRM_WRITES="staging-v3-load"
-export K6_FIXTURES="/caminho-seguro/collection-v3-fixture.json"
 export K6_PROFILE="smoke"
 export K6_SEQUENCE_BASE="100000000"
 export CAPACITY_RUN_ID="CAPTEST_YYYYMMDD_HHMMSS_XXXXXXXX"
+export CAPTEST_PRIVATE_DIR="/private/tmp/acprod-capacity-private"
+export K6_FIXTURES="${CAPTEST_PRIVATE_DIR}/${CAPACITY_RUN_ID}-${K6_PROFILE}.json"
 export CAPACITY_SUMMARY="artifacts/capacity/${CAPACITY_RUN_ID}/${K6_PROFILE}.json"
+
+node tests/capacity/seed-capacity-fixture.mjs "$CAPACITY_RUN_ID" "$K6_PROFILE"
+# Aplique o seed.sql informado pelo comando acima no staging vinculado.
+supabase projects api-keys --project-ref "STAGING-REF" --reveal --output json | \
+  node tests/capacity/prepare-auth-fixture.mjs \
+    "$CAPACITY_RUN_ID" "$K6_PROFILE" \
+    "${CAPTEST_PRIVATE_DIR}/${CAPACITY_RUN_ID}-operator-credentials.json" \
+    "$K6_FIXTURES"
 
 npm run capacity:controlled -- \
   --run-id "$CAPACITY_RUN_ID" --summary-export "$CAPACITY_SUMMARY" --dry-run
@@ -224,6 +238,14 @@ novo run e uma nova faixa: uma vez para `idempotency` e `atomic8`; três vezes
 para `microbatch`, `priority`, `contention_piece`, `contention_cell_lot`,
 `nominal` e `burst`. Preserve tanto o summary quanto o sidecar
 `*.control.json` criado pelo executor.
+
+Se o host do executor morrer após o claim, aguarde ao menos 15 segundos e prove
+fora do banco que não existe processo k6 remanescente. A página então habilita
+**Falhar run órfão** e exige `FALHAR EXECUTOR SEM HEARTBEAT`. A transição é
+travada no banco, registra `executor_heartbeat_expired` e libera o singleton ao
+tornar o run `failed`. Não tente assumir o mesmo run com outro executor: abra um
+novo `CAPTEST_...` e reserve outra faixa de sequência, evitando sobreposição ou
+evidência ambígua.
 
 ### Exceção temporária: AC.Prod de produção usado como ambiente de teste
 

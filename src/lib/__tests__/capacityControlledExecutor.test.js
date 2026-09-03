@@ -10,6 +10,7 @@ import {
   parseExecutorArgs,
   runControlledCapacity,
   summarizeK6Result,
+  validateCapacityFixture,
   validateEnvironmentPlan,
 } from '../../../tests/capacity/run-controlled-capacity.mjs';
 
@@ -43,6 +44,33 @@ describe('controlled capacity executor', () => {
     expect(() => validateEnvironmentPlan(env, {
       profile: 'burst', target: 'staging', sequence_base: 180000000,
     })).toThrow('RUN_PROFILE_MISMATCH');
+  });
+
+  it('binds the private fixture to the exact run, profile and device identities', async () => {
+    const temp = await mkdtemp(resolve(tmpdir(), 'acprod-capacity-fixture-check-'));
+    const fixturePath = resolve(temp, 'fixture.json');
+    const runId = 'CAPTEST_20260903_120000_ABCDEF12';
+    await writeFile(fixturePath, JSON.stringify({
+      run_id: runId,
+      profile: 'smoke',
+      devices: [{
+        device_id: '00000000-0000-4000-8000-000000000001',
+        operator_session_id: '00000000-0000-4000-8000-000000000002',
+        access_token: 'user-token',
+        cell_id: '00000000-0000-4000-8000-000000000003',
+        machine_id: '00000000-0000-4000-8000-000000000004',
+      }],
+      codes: ['00000001'],
+    }));
+
+    try {
+      await expect(validateCapacityFixture(fixturePath, runId, 'smoke'))
+        .resolves.toEqual({ codes: 1, devices: 1 });
+      await expect(validateCapacityFixture(fixturePath, 'CAPTEST_20260903_120001_ABCDEF12', 'smoke'))
+        .rejects.toThrow('CAPACITY_FIXTURE_RUN_MISMATCH');
+    } finally {
+      await rm(temp, { recursive: true, force: true });
+    }
   });
 
   it('pauses, resumes and terminates k6 when the control record changes', () => {
@@ -104,7 +132,18 @@ describe('controlled capacity executor', () => {
     const temp = await mkdtemp(resolve(tmpdir(), 'acprod-capacity-'));
     const fixturePath = resolve(temp, 'fixture.json');
     const summaryPath = resolve(temp, 'summary.json');
-    await writeFile(fixturePath, '{}');
+    await writeFile(fixturePath, JSON.stringify({
+      run_id: 'CAPTEST_20260903_120000_ABCDEF12',
+      profile: 'smoke',
+      devices: [{
+        device_id: '00000000-0000-4000-8000-000000000001',
+        operator_session_id: '00000000-0000-4000-8000-000000000002',
+        access_token: 'user-token',
+        cell_id: '00000000-0000-4000-8000-000000000003',
+        machine_id: '00000000-0000-4000-8000-000000000004',
+      }],
+      codes: ['00000001'],
+    }));
     const passingMetric = (values, threshold) => ({ ...values, thresholds: { [threshold]: true } });
     await writeFile(summaryPath, JSON.stringify({
       metrics: {

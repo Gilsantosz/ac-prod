@@ -26,7 +26,10 @@ BEGIN
   IF to_regprocedure('public.inspect_capacity_test_run_v3(text)') IS NULL
      OR to_regprocedure('public.claim_capacity_test_run_v3(text,text)') IS NULL
      OR to_regprocedure('public.observe_capacity_test_run_v3(text,text,boolean)') IS NULL
-     OR to_regprocedure('public.finish_capacity_test_run_v3(text,text,text,jsonb,text)') IS NULL THEN
+     OR to_regprocedure('public.finish_capacity_test_run_v3(text,text,text,jsonb,text)') IS NULL
+     OR to_regprocedure('public.fail_stale_capacity_test_run_v3(text,text)') IS NULL
+     OR to_regprocedure('public.seed_capacity_fixture_v4(text,text,text)') IS NULL
+     OR to_regprocedure('public.get_capacity_fixture_contexts_v4(text)') IS NULL THEN
     RAISE EXCEPTION 'capacity executor RPC contract missing';
   END IF;
 
@@ -36,10 +39,21 @@ BEGIN
     RAISE EXCEPTION 'capacity executor grants are unsafe';
   END IF;
 
+  IF has_function_privilege('anon', 'public.seed_capacity_fixture_v4(text,text,text)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.seed_capacity_fixture_v4(text,text,text)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.seed_capacity_fixture_v4(text,text,text)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.get_capacity_fixture_contexts_v4(text)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.get_capacity_fixture_contexts_v4(text)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.get_capacity_fixture_contexts_v4(text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'capacity fixture grants are unsafe';
+  END IF;
+
   IF has_function_privilege('service_role', 'public.request_capacity_test_run(text,jsonb,text)', 'EXECUTE')
      OR has_function_privilege('service_role', 'public.control_capacity_test_run(text,text)', 'EXECUTE')
+     OR has_function_privilege('service_role', 'public.fail_stale_capacity_test_run_v3(text,text)', 'EXECUTE')
      OR NOT has_function_privilege('authenticated', 'public.request_capacity_test_run(text,jsonb,text)', 'EXECUTE')
-     OR NOT has_function_privilege('authenticated', 'public.control_capacity_test_run(text,text)', 'EXECUTE') THEN
+     OR NOT has_function_privilege('authenticated', 'public.control_capacity_test_run(text,text)', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.fail_stale_capacity_test_run_v3(text,text)', 'EXECUTE') THEN
     RAISE EXCEPTION 'capacity operator grants are unsafe';
   END IF;
 

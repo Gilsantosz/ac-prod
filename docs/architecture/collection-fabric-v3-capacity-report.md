@@ -11,6 +11,12 @@ suportada de equipamentos ou SLO atingido. Preencha o relatório somente com art
 no compute real/representativo do alvo. Um smoke, revisão de código ou resultado
 do pipeline v2 não valida a capacidade v3.
 
+O candidato atual prepara a matriz que antes era inexequível: a fixture v4 cria
+até 18.000 códigos, até 100 sessões operacionais autenticadas e contextos reais
+distintos para contenção. Oito principals Auth exclusivos do CAPTEST representam
+os dispositivos sem transformar a homologação do pipeline em teste de carga do
+endpoint de login. Isso é prontidão de ensaio, não altera o NO-GO acima.
+
 ## Identificação da rodada
 
 | Campo | Valor |
@@ -94,7 +100,7 @@ da carga após uma falha.
 | contention_piece | 20 dispositivos lançam a mesma peça dentro de 100 ms | 1 código, 20 dispositivos | 3 |
 | contention_cell_lot | 50 dispositivos, mesma célula/lote, peças distintas dentro de 100 ms | 50 códigos, 50 dispositivos | 3 |
 | atomic8 | 8 dispositivos disputam a mesma peça/contexto | 1 código, 8 dispositivos | 1 |
-| nominal | 100 canais privados + 100 identidades, 30 eventos/s por 10 min | 18.000 códigos | 3 após aquecimento |
+| nominal | 100 canais privados + 100 sessões/dispositivos autenticados, 30 eventos/s por 10 min | 18.000 códigos | 3 após aquecimento |
 | burst | 100 eventos/s por 60 s | 6.000 códigos, 100 dispositivos | 3 |
 
 As falhas após claim e do projetor continuam exigindo controle transacional

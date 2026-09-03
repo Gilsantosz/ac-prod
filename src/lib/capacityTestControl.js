@@ -24,7 +24,10 @@ export const TERMINAL_CAPACITY_STATUSES = Object.freeze([
   'failed',
 ]);
 
+export const CAPACITY_EXECUTOR_STALE_MS = 15_000;
+
 const controllableStatuses = new Set(CONTROLLABLE_CAPACITY_STATUSES);
+const executorOwnedStatuses = new Set(['running', 'paused', 'cancel_requested']);
 
 export function isControllableCapacityRun(run) {
   return Boolean(run?.run_id && controllableStatuses.has(run.status));
@@ -34,4 +37,13 @@ export function selectControllableCapacityRun(runs = [], selectedRunId = null) {
   const selected = runs.find((run) => run.run_id === selectedRunId);
   if (isControllableCapacityRun(selected)) return selected;
   return runs.find(isControllableCapacityRun) || null;
+}
+
+export function isCapacityExecutorHeartbeatStale(run, now = Date.now()) {
+  if (!run?.executor_id || !executorOwnedStatuses.has(run.status)) return false;
+  const heartbeatAt = new Date(
+    run.executor_heartbeat_at || run.started_at || run.created_at,
+  ).getTime();
+  return Number.isFinite(heartbeatAt)
+    && Number(now) - heartbeatAt >= CAPACITY_EXECUTOR_STALE_MS;
 }

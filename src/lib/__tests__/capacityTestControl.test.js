@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CAPACITY_EXECUTOR_STALE_MS,
   CAPACITY_PROFILE_REQUIREMENTS,
+  isCapacityExecutorHeartbeatStale,
   isControllableCapacityRun,
   selectControllableCapacityRun,
 } from '@/lib/capacityTestControl';
@@ -37,5 +39,25 @@ describe('capacity test control selection', () => {
       .toBe(false);
     expect(selectControllableCapacityRun([{ run_id: 'done', status: 'completed' }]))
       .toBeNull();
+  });
+
+  it('marks only an executor-owned run with an expired heartbeat as stale', () => {
+    const now = Date.parse('2026-09-03T14:00:30.000Z');
+    const staleRun = {
+      run_id: 'stale',
+      status: 'running',
+      executor_id: 'capacity:executor-1',
+      executor_heartbeat_at: new Date(now - CAPACITY_EXECUTOR_STALE_MS).toISOString(),
+    };
+
+    expect(isCapacityExecutorHeartbeatStale(staleRun, now)).toBe(true);
+    expect(isCapacityExecutorHeartbeatStale({
+      ...staleRun,
+      executor_heartbeat_at: new Date(now - CAPACITY_EXECUTOR_STALE_MS + 1).toISOString(),
+    }, now)).toBe(false);
+    expect(isCapacityExecutorHeartbeatStale({ ...staleRun, status: 'requested' }, now))
+      .toBe(false);
+    expect(isCapacityExecutorHeartbeatStale({ ...staleRun, executor_id: null }, now))
+      .toBe(false);
   });
 });

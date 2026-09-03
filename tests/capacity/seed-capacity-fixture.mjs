@@ -1,11 +1,13 @@
 import { randomInt } from 'node:crypto';
 import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { CAPACITY_PROFILE_REQUIREMENTS } from '../../src/lib/capacityTestControl.js';
 
 const runId = process.argv[2];
-const pieces = Number(process.argv[3] || 500);
+const profile = String(process.argv[3] || '');
 if (!/^CAPTEST_[0-9]{8}_[0-9]{6}_[A-Z0-9]{8}$/.test(runId || '')) throw new Error('run_id inválido');
-if (!Number.isInteger(pieces) || pieces < 100 || pieces > 1000) throw new Error('pieces deve estar entre 100 e 1000');
+const requirement = CAPACITY_PROFILE_REQUIREMENTS[profile];
+if (!requirement) throw new Error('profile inválido');
 
 const root = process.env.CAPTEST_PRIVATE_DIR || '/private/tmp/acprod-capacity-private';
 await mkdir(root, { recursive: true, mode: 0o700 });
@@ -22,9 +24,15 @@ await chmod(credentialsPath, 0o600);
 await writeFile(sqlPath, [
   'begin;',
   "select set_config('request.jwt.claim.role', 'service_role', true);",
-  `select public.seed_capacity_fixture_v3('${runId}', ${pieces}, '${registrationSeed}');`,
+  `select public.seed_capacity_fixture_v4('${runId}', '${profile}', '${registrationSeed}');`,
   'commit;',
 ].join('\n'), { mode: 0o600 });
 await chmod(sqlPath, 0o600);
-process.stdout.write(JSON.stringify({ run_id: runId, sql_path: sqlPath, credentials_path: credentialsPath }));
-
+process.stdout.write(JSON.stringify({
+  run_id: runId,
+  profile,
+  required_devices: requirement.devices,
+  required_pieces: requirement.pieces,
+  sql_path: sqlPath,
+  credentials_path: credentialsPath,
+}));

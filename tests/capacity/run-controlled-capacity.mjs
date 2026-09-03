@@ -146,6 +146,49 @@ export function validateEnvironmentPlan(env, runConfig = null) {
   return { fixturePath, profile, sequenceBase, supabaseUrl, target };
 }
 
+export async function validateCapacityFixture(fixturePath, runId, profile) {
+  let fixture;
+  try {
+    fixture = JSON.parse(await readFile(fixturePath, 'utf8'));
+  } catch {
+    throw new Error('CAPACITY_FIXTURE_UNREADABLE');
+  }
+  const requirement = CAPACITY_PROFILE_REQUIREMENTS[profile];
+  const devices = Array.isArray(fixture.devices) ? fixture.devices : [];
+  const atomicDevices = Array.isArray(fixture.atomic_devices) ? fixture.atomic_devices : [];
+  const codes = Array.isArray(fixture.codes) ? fixture.codes.map(String) : [];
+  if (fixture.run_id !== runId) throw new Error('CAPACITY_FIXTURE_RUN_MISMATCH');
+  if (fixture.profile !== profile) throw new Error('CAPACITY_FIXTURE_PROFILE_MISMATCH');
+  if (devices.length < requirement.devices || codes.length < requirement.pieces) {
+    throw new Error('CAPACITY_FIXTURE_SIZE_MISMATCH');
+  }
+  const selectedDevices = profile === 'atomic8' ? atomicDevices : devices;
+  const selected = selectedDevices.slice(0, requirement.devices);
+  if (selected.length !== requirement.devices
+      || selected.some((device) => !device?.device_id
+        || !device?.operator_session_id
+        || !device?.access_token
+        || !device?.cell_id
+        || !device?.machine_id)
+      || new Set(selected.map((device) => device.device_id)).size !== selected.length
+      || new Set(selected.map((device) => device.operator_session_id)).size !== selected.length) {
+    throw new Error('CAPACITY_FIXTURE_DEVICE_IDENTITY_INVALID');
+  }
+  if (codes.some((code) => !/^\d{8}$/.test(code)) || new Set(codes).size !== codes.length) {
+    throw new Error('CAPACITY_FIXTURE_CODES_INVALID');
+  }
+  if (profile === 'atomic8') {
+    if (new Set(selected.map((device) => device.machine_id)).size !== 1) {
+      throw new Error('CAPACITY_FIXTURE_ATOMIC_CONTEXT_INVALID');
+    }
+  } else if (profile === 'contention_piece' || profile === 'contention_cell_lot') {
+    if (new Set(selected.map((device) => device.machine_id)).size !== selected.length) {
+      throw new Error('CAPACITY_FIXTURE_CONTENTION_CONTEXT_INVALID');
+    }
+  }
+  return { codes: codes.length, devices: selected.length };
+}
+
 export function applyControlStatus(status, state, sendSignal) {
   if (status === 'paused') {
     if (!state.paused && !state.stopOutcome) {
@@ -327,6 +370,7 @@ export async function runControlledCapacity({
   if (process.platform === 'win32') throw new Error('CONTROLLED_EXECUTOR_REQUIRES_POSIX_SIGNALS');
   const plan = validateEnvironmentPlan(env);
   await access(plan.fixturePath, fsConstants.R_OK);
+  await validateCapacityFixture(plan.fixturePath, args.runId, plan.profile);
   await mkdir(dirname(args.summaryExport), { recursive: true });
   await verifyK6(args.k6Bin);
 
@@ -505,6 +549,7 @@ async function main() {
   const plan = validateEnvironmentPlan(process.env);
   await access(plan.fixturePath, fsConstants.R_OK);
   if (args.dryRun) {
+    await validateCapacityFixture(plan.fixturePath, args.runId, plan.profile);
     await waitForK6Version(args.k6Bin);
     process.stdout.write(`${JSON.stringify({
       ready: true,

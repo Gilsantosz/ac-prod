@@ -7,6 +7,7 @@ import PageHeader from '@/components/ui/PageHeader';
 import {
   CAPACITY_PROFILE_REQUIREMENTS,
   CONTROLLABLE_CAPACITY_STATUSES,
+  isCapacityExecutorHeartbeatStale,
   selectControllableCapacityRun,
 } from '@/lib/capacityTestControl';
 
@@ -30,6 +31,7 @@ function newRunId() {
 export default function CapacityTests() {
   const [config, setConfig] = useState(DEFAULTS);
   const [confirmation, setConfirmation] = useState('');
+  const [staleConfirmation, setStaleConfirmation] = useState('');
   const [activeRunId, setActiveRunId] = useState(null);
   const [message, setMessage] = useState(null);
 
@@ -54,6 +56,7 @@ export default function CapacityTests() {
   });
 
   const active = useMemo(() => runs.data?.find((run) => run.run_id === activeRunId), [activeRunId, runs.data]);
+  const executorStale = isCapacityExecutorHeartbeatStale(active);
   const setNumber = (key, value) => setConfig((current) => ({ ...current, [key]: Number(value) }));
   const setProfile = (profile) => setConfig((current) => ({
     ...current,
@@ -91,6 +94,19 @@ export default function CapacityTests() {
     await runs.refetch();
   };
 
+  const failStaleExecutor = async () => {
+    if (!activeRunId || !executorStale) return;
+    const { error } = await supabase.rpc('fail_stale_capacity_test_run_v3', {
+      p_run_id: activeRunId,
+      p_confirmation: staleConfirmation,
+    });
+    setMessage(error
+      ? error.message
+      : `Run ${activeRunId} marcado como failed por heartbeat vencido. Use um novo run e uma nova faixa de sequência.`);
+    if (!error) setStaleConfirmation('');
+    await runs.refetch();
+  };
+
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-6 lg:p-8">
       <PageHeader title="Testes de Capacidade" subtitle="Plano de controle protegido para ensaios CAPTEST auditáveis" icon={Activity} />
@@ -125,12 +141,35 @@ export default function CapacityTests() {
         <p className="mt-1 text-xs text-muted-foreground">Digite INICIAR TESTE CONTROLADO. O pedido não executa carga no navegador: um script versionado assume o run com limites e parada de emergência.</p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <input className="min-w-0 flex-1 rounded-lg border bg-background px-3 py-2" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
-          <Button onClick={start} disabled={confirmation !== 'INICIAR TESTE CONTROLADO'}><Play className="mr-2 h-4 w-4" />Iniciar</Button>
+          <Button onClick={start} disabled={confirmation !== 'INICIAR TESTE CONTROLADO' || Boolean(active)}><Play className="mr-2 h-4 w-4" />Iniciar</Button>
           <Button variant="outline" onClick={() => control('pause')} disabled={active?.status !== 'running'}><Pause className="mr-2 h-4 w-4" />Pausar</Button>
           <Button variant="outline" onClick={() => control('resume')} disabled={active?.status !== 'paused'}><RotateCcw className="mr-2 h-4 w-4" />Retomar</Button>
           <Button variant="outline" onClick={() => control('cancel')} disabled={!CONTROLLABLE_CAPACITY_STATUSES.includes(active?.status)}><Square className="mr-2 h-4 w-4" />Cancelar</Button>
           <Button variant="destructive" onClick={() => control('emergency_stop')} disabled={!CONTROLLABLE_CAPACITY_STATUSES.includes(active?.status)}><AlertTriangle className="mr-2 h-4 w-4" />Parada de emergência</Button>
         </div>
+        {executorStale && (
+          <div className="mt-4 rounded-xl border border-destructive/40 bg-destructive/5 p-3">
+            <p className="text-sm font-semibold text-destructive">Executor sem heartbeat há pelo menos 15 segundos</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Confirme primeiro que não existe processo k6 vivo nesse host. Este run será falhado e não poderá ser retomado; a próxima tentativa exige novo run e nova faixa.
+            </p>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <input
+                className="min-w-0 flex-1 rounded-lg border bg-background px-3 py-2"
+                value={staleConfirmation}
+                onChange={(event) => setStaleConfirmation(event.target.value)}
+                placeholder="FALHAR EXECUTOR SEM HEARTBEAT"
+              />
+              <Button
+                variant="destructive"
+                onClick={failStaleExecutor}
+                disabled={staleConfirmation !== 'FALHAR EXECUTOR SEM HEARTBEAT'}
+              >
+                Falhar run órfão
+              </Button>
+            </div>
+          </div>
+        )}
         {activeRunId && <p className="mt-3 break-all font-mono text-xs">Run controlado: {activeRunId}</p>}
         {message && <p className="mt-3 text-sm">{message}</p>}
       </section>
