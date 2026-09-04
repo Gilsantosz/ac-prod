@@ -120,6 +120,7 @@ alegação de capacidade sem evidência.
 - [Manifesto de evidências e checksums](09-evidence-manifest.md)
 - [Gate de recuperação da branch de staging](10-staging-recovery-gate.md)
 - [Revalidação do staging, backups e decisão de recuperação](11-staging-revalidation-and-recovery-decision.md)
+- [Revalidação atual de GitHub e runtime](12-current-runtime-revalidation.md)
 - [Manifesto sanitizado do staging antes do reset](staging-pre-reset-manifest.json)
 - [Exportação sanitizada e restaurável das evidências de capacidade](staging-capacity-evidence-sanitized.json)
 - [Migration exclusiva da branch, captura literal — evidência, não desired state](staging-branch-only-migration.sql.txt)
