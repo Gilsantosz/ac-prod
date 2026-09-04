@@ -4,7 +4,8 @@ Data de referência: 2026-09-04
 Janela principal de inspeção: cortes entre 14:55:56 e 15:18:39 UTC; definições críticas e inventários foram revalidados até 17:05:35 UTC
 Repositório: `Gilsantosz/ac-prod`
 Base auditada: `main` em `9174c796df4fa008507e727eb35cce63b3e4a08f`
-Branch de trabalho: `codex/mes-vnext-audit-20260904`
+Branch documental de origem: `codex/mes-vnext-audit-20260904`
+Branch atual de implementação: `fix/mes-v4-fastpath-horizontal-workers-20260904`
 Supabase: projeto `uozuzdfvnufsjsonswag`, região `sa-east-1`, PostgreSQL 17.6.1.127
 PR obrigatória revisada: [#63 — fix/auth-realtime-capacity-20260902](https://github.com/Gilsantosz/ac-prod/pull/63)
 
@@ -16,7 +17,9 @@ no projeto de produção.**
 Essa decisão não decorre apenas dos percentis históricos acima dos SLOs. O
 runtime atual contém recibos sincronizados sem os fatos produtivos
 correspondentes, a trilha de migrations diverge do Git, o ambiente de teste de
-capacidade está com `MIGRATIONS_FAILED`, o worker v3 usa uma lease global e há
+capacidade está com `MIGRATIONS_FAILED`, e a lease global proposta pela PR #63
+serializa cada `worker_kind`; a `main` ainda usa heartbeats por worker, mas não
+possui slots configuráveis nem runtime persistente. Também há
 privilégios incompatíveis com o princípio de menor acesso. A capacidade continua
 **não homologada**.
 
@@ -116,6 +119,7 @@ alegação de capacidade sem evidência.
 - [Matriz de compatibilidade por fluxo](08-flow-compatibility-matrix.md)
 - [Manifesto de evidências e checksums](09-evidence-manifest.md)
 - [Gate de recuperação da branch de staging](10-staging-recovery-gate.md)
+- [Revalidação do staging, backups e decisão de recuperação](11-staging-revalidation-and-recovery-decision.md)
 - [Manifesto sanitizado do staging antes do reset](staging-pre-reset-manifest.json)
 - [Exportação sanitizada e restaurável das evidências de capacidade](staging-capacity-evidence-sanitized.json)
 - [Migration exclusiva da branch, captura literal — evidência, não desired state](staging-branch-only-migration.sql.txt)
