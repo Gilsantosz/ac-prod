@@ -8,10 +8,14 @@ cee4158133e291c4192e8820b38075ad764532c277e7fa51e7117718918233a4  docs/audits/20
 15d446fd365e66bc77049f46c6f4d0290a365dd08653c98cb2424a9bf1138576  docs/audits/2026-09-04-mes-vnext/07-official-platform-evidence.md
 9b4620a8f5799ee085fd1451ea4cf38d32d9a7efece12ab1b7b7c5a5e43874bb  docs/audits/2026-09-04-mes-vnext/08-flow-compatibility-matrix.md
 7b626c9d0ac728808b7cdcde8b9f2f49df071c0aaf11ccb66faa0899f9756640  docs/audits/2026-09-04-mes-vnext/09-evidence-manifest.md
-cc93f086adf0cb2735f0a616e8c535088fe88dcd9ef582302562fa9027141063  docs/audits/2026-09-04-mes-vnext/README.md
+7b7fbf36f4b29cbd3da0dacf5505312f18a7b392ccc0ee090cc139d39b0dfce7  docs/audits/2026-09-04-mes-vnext/README.md
 8cff2800a81ef98e5327d712449dae2397cfd3a4c4a078485741b013c58b806b  docs/audits/2026-09-04-mes-vnext/github-pr63-snapshot.json
 6cd403e15c835cf32bb785941cf4118f3bca64faf3c8def3d1500290ca2c15d4  docs/audits/2026-09-04-mes-vnext/runtime-critical-function-definitions.sql.txt
 0681797fa1263607f29fca55f94d52d9ee1a354ae8ba2faaac6c058245dd94d8  docs/audits/2026-09-04-mes-vnext/runtime-critical-relation-manifest.md
 8e188dfd6e7c8d6185a57a08de26c56df7df0dfb13f6cfb60610e50fe56b746f  docs/audits/2026-09-04-mes-vnext/runtime-object-manifest.json
 aae1e49a456f79611fa57a3b3a9b252345a14b55d858d890e4686b3a60514aab  docs/audits/2026-09-04-mes-vnext/runtime-read-only-probes.sql
 835c0ea3c75a453ada1ed4a8763a4dd9b1ef59efec1a51985bb80e8ce176ac4c  docs/audits/2026-09-04-mes-vnext/runtime-security-definer-inventory.md
+509d82c71cd8f387c82812ccaf43667379b2891a0706651eb4f5d252c53fa96f  docs/audits/2026-09-04-mes-vnext/staging-pre-reset-manifest.json
+e9d3b6e0889e78c24226b6ce82483bf920f7670c4480429b53f5d53cdc91e88f  docs/audits/2026-09-04-mes-vnext/10-staging-recovery-gate.md
+ed4bfbaf96732ffb7d2a3fc849371fc35a5f92fa51726a382484d8ed4dec61f4  docs/audits/2026-09-04-mes-vnext/staging-capacity-evidence-sanitized.json
+abb58138c91a8b5b2ac1bab0a2a20eeb09f8d317795394103416d5af1bb13d6b  docs/audits/2026-09-04-mes-vnext/staging-branch-only-migration.sql.txt

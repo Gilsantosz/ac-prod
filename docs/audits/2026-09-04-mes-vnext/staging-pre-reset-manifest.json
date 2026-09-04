@@ -1,0 +1,3322 @@
+{
+  "manifest_version": 1,
+  "classification": "sanitized_pre_reset_evidence",
+  "purpose": "Freeze the observable state of the existing Supabase capacity-test development branch before any authorized recovery/reset. This file is evidence, not a backup and not a migration.",
+  "acquisition": {
+    "mode": "Supabase metadata/list APIs plus read-only SELECT statements",
+    "mutation_performed": false,
+    "reset_performed": false,
+    "capture_window_utc": {
+      "first": "2026-09-04T18:12:34.688868+00:00",
+      "last": "2026-09-04T18:14:19.999628+00:00"
+    }
+  },
+  "identity": {
+    "branch": {
+      "id": "cf279f17-5cdd-4ec5-b0e4-467f87215ed9",
+      "name": "capacity-test",
+      "project_ref": "smnsihksrhzbkhcbdjfu",
+      "is_default": false,
+      "persistent": true,
+      "status": "MIGRATIONS_FAILED",
+      "created_at": "2026-08-30T14:54:11.174723+00:00",
+      "updated_at": "2026-08-30T14:54:11.174723+00:00",
+      "parent_project_ref": "uozuzdfvnufsjsonswag",
+      "with_data": false,
+      "preview_project_status": "ACTIVE_HEALTHY"
+    },
+    "production": {
+      "id": "77f245b9-0102-470b-803d-cdaeb64e64b9",
+      "name": "main",
+      "project_ref": "uozuzdfvnufsjsonswag",
+      "is_default": true,
+      "persistent": false,
+      "status": "FUNCTIONS_DEPLOYED",
+      "created_at": "2026-08-30T14:51:29.776969+00:00",
+      "updated_at": "2026-08-30T14:51:29.776969+00:00",
+      "parent_project_ref": "uozuzdfvnufsjsonswag",
+      "with_data": false,
+      "preview_project_status": "ACTIVE_HEALTHY"
+    },
+    "branch_api_url": "https://smnsihksrhzbkhcbdjfu.supabase.co",
+    "production_api_url": "https://uozuzdfvnufsjsonswag.supabase.co",
+    "verified_distinct_project_refs": true,
+    "verified_non_default_branch": true,
+    "verified_parent_project_ref": true
+  },
+  "status_at_capture": {
+    "branch_status": "MIGRATIONS_FAILED",
+    "preview_project_status": "ACTIVE_HEALTHY",
+    "persistent": true,
+    "with_data_seed_option": false
+  },
+  "migration_ledger": {
+    "relation": "supabase_migrations.schema_migrations",
+    "row_count": 5,
+    "canonical_serialization": "version + US + name + US + statement_count + US + statement_bytes + US + statements_sha256 + US + rollback_sha256; rows joined by RS in ascending serialized order",
+    "sha256": "4b7190c1b4c26a8ea3b71cab1b3554cc0f4664790d8d93ff9bcb66fd32b96bb3",
+    "rows": [
+      {
+        "name": "initial_schema",
+        "version": "20260601004505",
+        "rollback_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "statement_bytes": 3176,
+        "statement_count": 11,
+        "statements_sha256": "da5cc14116a06bbd6c8522407a78b4a892890e63ad9f47bd7cc0a5a56d0090b4"
+      },
+      {
+        "name": "rls_and_triggers",
+        "version": "20260601004528",
+        "rollback_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "statement_bytes": 4293,
+        "statement_count": 37,
+        "statements_sha256": "e55a7daf9977bcef81fa635d7834e32461f01d09d607cd772e7539a0b7d4624f"
+      },
+      {
+        "name": "seed_data",
+        "version": "20260601004540",
+        "rollback_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "statement_bytes": 786,
+        "statement_count": 3,
+        "statements_sha256": "be3c3f56a6f8f092455c814833106422f3c5962b767dd8afe8545e3b177a23da"
+      },
+      {
+        "name": "create_admin_user",
+        "version": "20260601005430",
+        "rollback_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "statement_bytes": 1049,
+        "statement_count": 2,
+        "statements_sha256": "7558f4ff5544ecebf34176b03a20a92d41c141b4a825be450ebdf35d437e7e6a"
+      },
+      {
+        "name": "capacity_test_reusable_cleaned_prefix",
+        "version": "20260830233615",
+        "rollback_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "statement_bytes": 729,
+        "statement_count": 1,
+        "statements_sha256": "5c8d1dbe72c6e94d3d53c29fa51bbde4c4b455ee5aa3df924c9f3c3d0e81a551"
+      }
+    ],
+    "comparison_with_production_at_capture": {
+      "production_row_count": 154,
+      "branch_row_count": 5,
+      "common_versions": 4,
+      "production_only_versions": 150,
+      "branch_only_versions": 1,
+      "branch_only": [
+        {
+          "version": "20260830233615",
+          "name": "capacity_test_reusable_cleaned_prefix",
+          "statements_sha256": "5c8d1dbe72c6e94d3d53c29fa51bbde4c4b455ee5aa3df924c9f3c3d0e81a551",
+          "statement_count": 1,
+          "statement_bytes": 729,
+          "credential_or_email_screen": "no email-like text, credential terms, or auth-user INSERT detected"
+        }
+      ]
+    }
+  },
+  "runtime": {
+    "database": {
+      "database_bytes": 390220947,
+      "server_version": "17.6",
+      "max_connections": 60,
+      "superuser_reserved_connections": 3
+    },
+    "catalog_fingerprints": {
+      "routine_count": 171,
+      "relation_count": 113,
+      "routines_sha256": "8d71c986f23ed9e82c98de2c610bfafcb5a05cfc8702f3509c4d91eeb88f6f54",
+      "relations_sha256": "ca21ed0ae56511f57a6618cba1f962da7cc719a346a9117f729e8ade396bdc49",
+      "extensions_sha256": "95a1bfa9eabfbba8c6c80f6d47287fffe5fdb78d722c7c83816be849b63d1813",
+      "publication_count": 2,
+      "publications_sha256": "d3323ab1a91319fb1d4410bc6567826b051da362e8a8f7dbafe53d4ca906195d",
+      "installed_extension_count": 6
+    },
+    "installed_extensions": [
+      {
+        "name": "pg_net",
+        "schema": "extensions",
+        "version": "0.20.4"
+      },
+      {
+        "name": "pg_stat_statements",
+        "schema": "extensions",
+        "version": "1.11"
+      },
+      {
+        "name": "pgcrypto",
+        "schema": "extensions",
+        "version": "1.3"
+      },
+      {
+        "name": "plpgsql",
+        "schema": "pg_catalog",
+        "version": "1.0"
+      },
+      {
+        "name": "supabase_vault",
+        "schema": "vault",
+        "version": "0.3.1"
+      },
+      {
+        "name": "uuid-ossp",
+        "schema": "extensions",
+        "version": "1.1"
+      }
+    ],
+    "publications": [
+      {
+        "name": "supabase_realtime",
+        "all_tables": false
+      },
+      {
+        "name": "supabase_realtime_messages_publication",
+        "all_tables": false
+      }
+    ],
+    "vault_secret_names": [],
+    "required_object_presence": {
+      "cron_job": false,
+      "pgmq_meta": false,
+      "feature_flags": false,
+      "coletas_producao": false,
+      "capacity_test_runs": true,
+      "production_stage_readings": true,
+      "collection_projection_outbox": false,
+      "production_collection_events": true,
+      "collection_processing_attempts": false
+    },
+    "edge_functions": [
+      {
+        "id": "efe5f880-87c8-4398-86a3-38210b3c1edd",
+        "slug": "admin-users",
+        "status": "ACTIVE",
+        "version": 6,
+        "created_at_utc": "2026-07-19T01:35:31.099Z",
+        "updated_at_utc": "2026-08-11T17:48:16.150Z",
+        "verify_jwt": true,
+        "bundle_sha256": "ec3960f8b77223d48afcf2a87c4a806ad83b40019d2c649858d0cbf34ebe4016"
+      },
+      {
+        "id": "fab127ac-4115-4a43-abea-14dd9cf68d68",
+        "slug": "archive-production-history",
+        "status": "ACTIVE",
+        "version": 2,
+        "created_at_utc": "2026-07-28T14:26:13.121Z",
+        "updated_at_utc": "2026-07-28T14:26:13.121Z",
+        "verify_jwt": false,
+        "bundle_sha256": "508b7f426f83248b29b7ea87d7c4f5581c0c7ac67f6ffdc78ea702677928fd7a"
+      },
+      {
+        "id": "70f5c8b4-1398-4bd9-b332-18f43513df3d",
+        "slug": "capacity-test-control",
+        "status": "ACTIVE",
+        "version": 7,
+        "created_at_utc": "2026-08-30T14:57:13.947Z",
+        "updated_at_utc": "2026-08-30T20:02:56.281Z",
+        "verify_jwt": true,
+        "bundle_sha256": "3f6dd827020674f82a18d2fe6d552c4ee86c4898372a8c67cc65735da627853b"
+      },
+      {
+        "id": "ee144698-360d-471d-9ecc-a34d4cd0524b",
+        "slug": "generate-productive-backup",
+        "status": "ACTIVE",
+        "version": 8,
+        "created_at_utc": "2026-06-21T21:54:12.294Z",
+        "updated_at_utc": "2026-08-11T18:06:57.799Z",
+        "verify_jwt": true,
+        "bundle_sha256": "b1a8ff7734442d9f58627793eba76413cd6812068f308eb46a9d1f603c8da60f"
+      },
+      {
+        "id": "9eb3bac5-0867-41d7-a606-80e65cf96c5e",
+        "slug": "promob-api-sync",
+        "status": "ACTIVE",
+        "version": 4,
+        "created_at_utc": "2026-06-17T04:09:15.885Z",
+        "updated_at_utc": "2026-08-12T12:32:54.806Z",
+        "verify_jwt": true,
+        "bundle_sha256": "3f1ee6b79ae144a0aed7570bf83950f0cbc93eda23396b3637e832f046334361"
+      },
+      {
+        "id": "f0921942-19f9-400a-9183-3c9c2b318a0c",
+        "slug": "promob-import-xml",
+        "status": "ACTIVE",
+        "version": 10,
+        "created_at_utc": "2026-06-21T21:53:36.377Z",
+        "updated_at_utc": "2026-06-29T00:59:49.241Z",
+        "verify_jwt": true,
+        "bundle_sha256": "5959815ba6f6a846dbe238f5670c5ebf3f1e3c51c4e6904e79e1906e677e2b88"
+      },
+      {
+        "id": "db322d5c-b1f4-438f-b93b-e9e02e979102",
+        "slug": "promob-parse-order",
+        "status": "ACTIVE",
+        "version": 11,
+        "created_at_utc": "2026-06-17T04:09:05.745Z",
+        "updated_at_utc": "2026-08-11T18:07:01.646Z",
+        "verify_jwt": true,
+        "bundle_sha256": "8d330dd8430a5816c3e27a63b01e3ace4db571e30973e4636ddae23f31614cbf"
+      },
+      {
+        "id": "62df934e-58f4-4f14-b5db-2ce552cd14d1",
+        "slug": "recover-password",
+        "status": "ACTIVE",
+        "version": 5,
+        "created_at_utc": "2026-07-27T02:31:04.895Z",
+        "updated_at_utc": "2026-08-12T12:32:58.396Z",
+        "verify_jwt": false,
+        "bundle_sha256": "9861898c1f406f03adfcf3d78b0788dc6bb7b72d3bd44ec86828cfdd46014916"
+      },
+      {
+        "id": "34a4a2c2-c328-416f-ac8e-35a7f171f903",
+        "slug": "schedule-report-job",
+        "status": "ACTIVE",
+        "version": 3,
+        "created_at_utc": "2026-06-21T21:54:53.156Z",
+        "updated_at_utc": "2026-07-19T01:52:03.782Z",
+        "verify_jwt": true,
+        "bundle_sha256": "568edbd72099b5e1c62f9b7391738f674ef3eeb17f390a3b368202e02d8ce157"
+      },
+      {
+        "id": "131d6041-4bb0-4605-9be3-b85f5f003b4a",
+        "slug": "send-report-email",
+        "status": "ACTIVE",
+        "version": 9,
+        "created_at_utc": "2026-06-21T21:55:14.012Z",
+        "updated_at_utc": "2026-08-12T12:33:02.886Z",
+        "verify_jwt": true,
+        "bundle_sha256": "9e13fa4f4d4983944efe7fca59782c64c6d9ef52298bc63d85f6a7e18cc28f3e"
+      },
+      {
+        "id": "d2533186-4ecf-4d7a-be35-a85a45b56a38",
+        "slug": "send-scheduled-reports",
+        "status": "ACTIVE",
+        "version": 17,
+        "created_at_utc": "2026-06-17T14:58:20.095Z",
+        "updated_at_utc": "2026-07-29T14:28:18.995Z",
+        "verify_jwt": false,
+        "bundle_sha256": "0ee1abb7db232ed11bda47d5ff64628292ad62bcc469cf60c2b1a45ce4710bf0"
+      },
+      {
+        "id": "418a715f-c8e6-4877-8e81-7cef50a03633",
+        "slug": "sendDailyClosure",
+        "status": "ACTIVE",
+        "version": 14,
+        "created_at_utc": "2026-06-15T03:12:47.688Z",
+        "updated_at_utc": "2026-07-24T17:04:22.659Z",
+        "verify_jwt": true,
+        "bundle_sha256": "860f19997275c4e78f6d4d6bc12132e94edaedb136deb733a01f2f764ab67feb"
+      },
+      {
+        "id": "e78b2a82-c37a-4f96-ac1f-d6da08da63e5",
+        "slug": "sync-google-drive-archive",
+        "status": "ACTIVE",
+        "version": 6,
+        "created_at_utc": "2026-06-26T15:22:52.347Z",
+        "updated_at_utc": "2026-08-11T18:07:03.828Z",
+        "verify_jwt": true,
+        "bundle_sha256": "8108ea6cced73ccef502b24d48f77fe86dd146a2fa2a742d627f37d216c0eb7f"
+      },
+      {
+        "id": "e6e8fd9a-d948-4b81-811e-bc981c9762f0",
+        "slug": "syncResendContact",
+        "status": "ACTIVE",
+        "version": 6,
+        "created_at_utc": "2026-06-15T04:16:44.725Z",
+        "updated_at_utc": "2026-07-19T01:46:52.556Z",
+        "verify_jwt": true,
+        "bundle_sha256": "00eda22033b23315e2717dfb38601c16f95e8fea8f60f81136d91f80c9887b19"
+      }
+    ]
+  },
+  "data_evidence": {
+    "hash_algorithm": "sha256(concat in deterministic key order of sha256(jsonb_text(sanitized row)))",
+    "captured_at_utc": "2026-09-04T18:13:35.498849+00:00",
+    "other_exact_counts": {
+      "auth.users": 2,
+      "public.profiles": 1,
+      "public.operators": 83,
+      "public.production_lots": 40,
+      "public.operator_sessions": 0,
+      "public.production_orders": 40,
+      "public.offline_event_queue": 0,
+      "public.promob_import_batches": 2,
+      "public.production_stage_readings": 0,
+      "public.production_collection_events": 0,
+      "public.production_realtime_counters": 0
+    },
+    "audit_table_sanitized": {
+      "row_count": 100357,
+      "relation_name": "public.system_audit_logs",
+      "dataset_sha256": "c3c69c437c4439352523d32acfb338a18cd421ab6ba6da6bf29559686c853cdd",
+      "max_observed_at": "2026-08-31T00:20:58.303479+00:00",
+      "min_observed_at": "2026-08-30T16:01:09.503774+00:00"
+    },
+    "fixture_tables_overall": [
+      {
+        "row_count": 20000,
+        "relation_name": "public.pcp_import_rows",
+        "dataset_sha256": "4f8a4fface126797aebebf0c2a14f9648f686c89ffcb7bb783bbd18d43933061",
+        "max_observed_at": "2026-08-31T00:20:58.303479+00:00",
+        "min_observed_at": "2026-08-30T23:56:25.288102+00:00"
+      },
+      {
+        "row_count": 20000,
+        "relation_name": "public.production_events",
+        "dataset_sha256": "7a1febf603105aafac9f5dd191b05effa1d842d39b60c6ff23f647145d00e98a",
+        "max_observed_at": "2026-08-31T00:20:58.303479+00:00",
+        "min_observed_at": "2026-08-30T23:56:25.288102+00:00"
+      },
+      {
+        "row_count": 20000,
+        "relation_name": "public.production_lot_items",
+        "dataset_sha256": "6a68ee1db24f22a5d36fcbbfd3ce769ba7b2d1fb203b80ba92777df4923e8c42",
+        "max_observed_at": "2026-08-31T00:20:58.303479+00:00",
+        "min_observed_at": "2026-08-30T23:56:25.288102+00:00"
+      },
+      {
+        "row_count": 20000,
+        "relation_name": "public.production_pieces",
+        "dataset_sha256": "9eea684a53f0fd6d2c513f9b785d54a77d744aac97ced9bff9edffcb326cdce1",
+        "max_observed_at": "2026-08-31T00:20:58.303479+00:00",
+        "min_observed_at": "2026-08-30T23:56:25.288102+00:00"
+      },
+      {
+        "row_count": 20000,
+        "relation_name": "public.production_tags",
+        "dataset_sha256": "f165188fce0167367eecb3b72104ceea083580d99718049f63b104f53d7837b6",
+        "max_observed_at": "2026-08-31T00:20:58.303479+00:00",
+        "min_observed_at": "2026-08-30T23:56:25.288102+00:00"
+      }
+    ],
+    "capacity_tables_overall": [
+      {
+        "row_count": 599,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "0e905205fbbc2d7a456a03185b3382d46c39290ac6650a9b94d5c2fb4931598c",
+        "max_observed_at": "2026-08-31T00:22:38.131311+00:00",
+        "min_observed_at": "2026-08-30T16:08:14.239916+00:00"
+      },
+      {
+        "row_count": 14,
+        "relation_name": "public.capacity_test_commands",
+        "dataset_sha256": "e1b50ecbb7404438b0a8c6bd6124ee9d530a404b0b917499b15be1b362d23f49",
+        "max_observed_at": "2026-08-30T23:48:38.907731+00:00",
+        "min_observed_at": "2026-08-30T16:30:00.565662+00:00"
+      },
+      {
+        "row_count": 43800,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "52b6523d2e3d0d2f302840062d1cce42c9193a023110067d6261417520f54263",
+        "max_observed_at": "2026-08-31T00:22:38.131311+00:00",
+        "min_observed_at": "2026-08-30T16:08:07.313135+00:00"
+      },
+      {
+        "row_count": 11,
+        "relation_name": "public.capacity_test_errors",
+        "dataset_sha256": "2691dab28c29d9f922febfaeb2b3a8a13a59b9d63dba021e530fd6f3bd7210e9",
+        "max_observed_at": "2026-08-30T17:55:14.354929+00:00",
+        "min_observed_at": "2026-08-30T17:55:03.580292+00:00"
+      },
+      {
+        "row_count": 498,
+        "relation_name": "public.capacity_test_metric_samples",
+        "dataset_sha256": "95c3c368c3f85c1b2a20c581d317a413ec5077c5001576213779d43d89834b89",
+        "max_observed_at": "2026-08-30T23:48:38.863162+00:00",
+        "min_observed_at": "2026-08-30T16:40:44.336071+00:00"
+      },
+      {
+        "row_count": 10,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "a6c13deab0fcae7bcb924b70a2c8cef7f16ed1c08966c6b553273758315eae35",
+        "max_observed_at": "2026-08-31T00:22:28.98362+00:00",
+        "min_observed_at": "2026-08-30T16:05:48.502+00:00"
+      }
+    ],
+    "capacity_tables_per_run": [
+      {
+        "run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "row_count": 6,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "f3d966955e369718e22396e95ce1c2825feddaa849c462925cb70c76eb3e9aef",
+        "max_observed_at": "2026-08-30T16:42:21.601678+00:00",
+        "min_observed_at": "2026-08-30T16:42:21.601678+00:00"
+      },
+      {
+        "run_id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "row_count": 83,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "ee4378f30839fc187f488dca8069faafaa836c5877baf9b8074d2452f805f406",
+        "max_observed_at": "2026-08-30T21:19:24.669615+00:00",
+        "min_observed_at": "2026-08-30T21:19:24.669615+00:00"
+      },
+      {
+        "run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "row_count": 6,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "d37f0e7d7d114468a6f48844e788fa6e077377f1d3609736a7c820289da20a33",
+        "max_observed_at": "2026-08-30T16:46:10.111314+00:00",
+        "min_observed_at": "2026-08-30T16:46:10.111314+00:00"
+      },
+      {
+        "run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "row_count": 83,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "4e4232942e5d6ec457cfa36d471de08a77f95a03ff65d8704d35812684280a62",
+        "max_observed_at": "2026-08-30T21:28:06.581329+00:00",
+        "min_observed_at": "2026-08-30T21:28:06.581329+00:00"
+      },
+      {
+        "run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "row_count": 6,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "df16d849030281cfb9251a16f11d834af0e1bbb293d987c90bfae8fc58dd44c6",
+        "max_observed_at": "2026-08-30T16:28:27.132926+00:00",
+        "min_observed_at": "2026-08-30T16:28:27.132926+00:00"
+      },
+      {
+        "run_id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "row_count": 83,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "bdf6362ca5a2c86aa90dad48cae9fefb30213da04a9afdbbb9a20a4a330605b9",
+        "max_observed_at": "2026-08-30T18:42:19.644901+00:00",
+        "min_observed_at": "2026-08-30T18:42:19.644901+00:00"
+      },
+      {
+        "run_id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "row_count": 83,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "d87f5d9a4581dc44f9df2bf582670f0c11c3a87f133b6594a46a24257632afcb",
+        "max_observed_at": "2026-08-31T00:22:38.131311+00:00",
+        "min_observed_at": "2026-08-31T00:22:38.131311+00:00"
+      },
+      {
+        "run_id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "row_count": 83,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "91e4b59c220dd89cf256bdbae653873b57790e1179fb2d57e8d88208e537902b",
+        "max_observed_at": "2026-08-30T17:09:03.033917+00:00",
+        "min_observed_at": "2026-08-30T17:09:03.033917+00:00"
+      },
+      {
+        "run_id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "row_count": 83,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "4c95e70f831151a0ddcb7ecd8dade855e2edff49b4e7de043de60c4f2f327cc5",
+        "max_observed_at": "2026-08-30T16:08:14.239916+00:00",
+        "min_observed_at": "2026-08-30T16:08:14.239916+00:00"
+      },
+      {
+        "run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "row_count": 83,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "fb09588cf6c2a00af9f983771b15cea307e921e9bf50beb8a01e2d51264a2b0e",
+        "max_observed_at": "2026-08-30T16:08:58.822105+00:00",
+        "min_observed_at": "2026-08-30T16:08:58.822105+00:00"
+      },
+      {
+        "run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "row_count": 2,
+        "relation_name": "public.capacity_test_commands",
+        "dataset_sha256": "e96de88386cef2fae5a74183afec04c6e16b9c83d07dc78f3d61b14cd1d5dbfa",
+        "max_observed_at": "2026-08-30T16:43:31.580228+00:00",
+        "min_observed_at": "2026-08-30T16:43:06.979042+00:00"
+      },
+      {
+        "run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "row_count": 2,
+        "relation_name": "public.capacity_test_commands",
+        "dataset_sha256": "8899c2d5f47e3323244a108a4054acc9399b3d9576d359940373004a21cac29a",
+        "max_observed_at": "2026-08-30T16:47:09.27004+00:00",
+        "min_observed_at": "2026-08-30T16:46:45.789375+00:00"
+      },
+      {
+        "run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "row_count": 2,
+        "relation_name": "public.capacity_test_commands",
+        "dataset_sha256": "2a5cbbcec6ebb9e538eab0878b996db6ccb8679f7009da8ddbac00d939a77ed9",
+        "max_observed_at": "2026-08-30T23:48:38.907731+00:00",
+        "min_observed_at": "2026-08-30T23:48:03.133667+00:00"
+      },
+      {
+        "run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "row_count": 5,
+        "relation_name": "public.capacity_test_commands",
+        "dataset_sha256": "5434ab991c3158575e7483e23f3bfdc109cd7b9c3122b813cd01a54eeda33fd5",
+        "max_observed_at": "2026-08-30T16:42:00.766621+00:00",
+        "min_observed_at": "2026-08-30T16:30:00.565662+00:00"
+      },
+      {
+        "run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "row_count": 3,
+        "relation_name": "public.capacity_test_commands",
+        "dataset_sha256": "ddc6229a4b56de1af7ad520120a46b6010f2c44729e00a1e1f1bbc870bdfb504",
+        "max_observed_at": "2026-08-30T17:55:20.892811+00:00",
+        "min_observed_at": "2026-08-30T16:48:19.53274+00:00"
+      },
+      {
+        "run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "row_count": 271,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "81b73ec422f02a0ed1d19f91ce95c54280d1d12109bb0b1f7614d1aa2f969dbe",
+        "max_observed_at": "2026-08-30T16:42:56.290417+00:00",
+        "min_observed_at": "2026-08-30T16:42:20.703595+00:00"
+      },
+      {
+        "run_id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "row_count": 415,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "95ae3febe5150f0a413c3102ad17892d26c8f832972ca1a96bd0c491d01a8cd1",
+        "max_observed_at": "2026-08-30T21:19:24.669615+00:00",
+        "min_observed_at": "2026-08-30T21:19:24.669615+00:00"
+      },
+      {
+        "run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "row_count": 271,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "042d6afc4680857a6f9003d05813399050ba51bcf9b5e753ee9ffbf8551c223d",
+        "max_observed_at": "2026-08-30T16:46:35.695537+00:00",
+        "min_observed_at": "2026-08-30T16:46:09.349063+00:00"
+      },
+      {
+        "run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "row_count": 20456,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "3b337ae6d83c546429a02a2fe218d6d7c10a46f15fb0b76af8bd88661b716be4",
+        "max_observed_at": "2026-08-30T23:36:39.667713+00:00",
+        "min_observed_at": "2026-08-30T21:28:06.581329+00:00"
+      },
+      {
+        "run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "row_count": 271,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "6458a260ae7d1234ec565e4ffe509120205a64e00725236ebb7c31ada9b0c418",
+        "max_observed_at": "2026-08-30T16:29:37.970001+00:00",
+        "min_observed_at": "2026-08-30T16:28:26.365621+00:00"
+      },
+      {
+        "run_id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "row_count": 415,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "5744df36797799293f68651bcc1f38544456668d1d5a16f6fbefe5798ee0eceb",
+        "max_observed_at": "2026-08-30T18:42:19.565994+00:00",
+        "min_observed_at": "2026-08-30T18:42:12.821528+00:00"
+      },
+      {
+        "run_id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "row_count": 415,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "55b0efab30d8f017758c9f242c9b6b13e92c5036203767b337e655474e13d5f3",
+        "max_observed_at": "2026-08-31T00:22:38.131311+00:00",
+        "min_observed_at": "2026-08-31T00:22:38.131311+00:00"
+      },
+      {
+        "run_id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "row_count": 415,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "34dbd83d50160411275d05d11e2e9e99e1c48b04824451ea1ba8b048802cfb2b",
+        "max_observed_at": "2026-08-30T17:09:02.944501+00:00",
+        "min_observed_at": "2026-08-30T17:08:56.273578+00:00"
+      },
+      {
+        "run_id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "row_count": 415,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "e86d192d9ebcb320f2b70e147b287e1f0f56ad95cd56450830fced52b41258a6",
+        "max_observed_at": "2026-08-30T16:08:14.170939+00:00",
+        "min_observed_at": "2026-08-30T16:08:07.313135+00:00"
+      },
+      {
+        "run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "row_count": 20456,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "f4ac4c9e0edfdd9a26ac614c451511c68a763e565fcea550e75abf8ef245b119",
+        "max_observed_at": "2026-08-30T16:19:24.860569+00:00",
+        "min_observed_at": "2026-08-30T16:08:51.93519+00:00"
+      },
+      {
+        "run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "row_count": 11,
+        "relation_name": "public.capacity_test_errors",
+        "dataset_sha256": "2691dab28c29d9f922febfaeb2b3a8a13a59b9d63dba021e530fd6f3bd7210e9",
+        "max_observed_at": "2026-08-30T17:55:14.354929+00:00",
+        "min_observed_at": "2026-08-30T17:55:03.580292+00:00"
+      },
+      {
+        "run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "row_count": 100,
+        "relation_name": "public.capacity_test_metric_samples",
+        "dataset_sha256": "4625aabec6e9fced2770eaa910112283304af83d3e5fa986ab6e00953f4c67ca",
+        "max_observed_at": "2026-08-30T16:43:30.604063+00:00",
+        "min_observed_at": "2026-08-30T16:43:09.827482+00:00"
+      },
+      {
+        "run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "row_count": 101,
+        "relation_name": "public.capacity_test_metric_samples",
+        "dataset_sha256": "2452da55aa32f5760ef6fec16dfd4a6a21c775b88ff14a7a861da36beb5dd568",
+        "max_observed_at": "2026-08-30T16:47:09.215403+00:00",
+        "min_observed_at": "2026-08-30T16:46:48.220714+00:00"
+      },
+      {
+        "run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_metric_samples",
+        "dataset_sha256": "651df34275496be75f9ba7012a780456cf751c53d9471c96f917cba061fa2065",
+        "max_observed_at": "2026-08-30T23:48:38.863162+00:00",
+        "min_observed_at": "2026-08-30T23:48:38.863162+00:00"
+      },
+      {
+        "run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "row_count": 100,
+        "relation_name": "public.capacity_test_metric_samples",
+        "dataset_sha256": "fa9eaf354c2100d42fed3cc83e390d9aac45d679d6abb08a0e13e2138714db6e",
+        "max_observed_at": "2026-08-30T16:41:09.024003+00:00",
+        "min_observed_at": "2026-08-30T16:40:44.336071+00:00"
+      },
+      {
+        "run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "row_count": 196,
+        "relation_name": "public.capacity_test_metric_samples",
+        "dataset_sha256": "55f13dbd928b3bae168841cb57223215c2305bc095de59717c5e3adfe6aae065",
+        "max_observed_at": "2026-08-30T17:55:20.841588+00:00",
+        "min_observed_at": "2026-08-30T17:35:41.943641+00:00"
+      },
+      {
+        "run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "b91b340efa3a6cea3b2b5c3e51cb2a495c5c66458716618f03eda7afaf06c2c0",
+        "max_observed_at": "2026-08-30T16:42:19.978539+00:00",
+        "min_observed_at": "2026-08-30T16:42:19.978539+00:00"
+      },
+      {
+        "run_id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "3060f914c736262c5d25676873a1b0d6010491538a38739e2aef38d923ca73c3",
+        "max_observed_at": "2026-08-30T21:18:41.174218+00:00",
+        "min_observed_at": "2026-08-30T21:18:41.174218+00:00"
+      },
+      {
+        "run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "1cadc635d391f2625bab009d96a38b11ba2d115e06b6f15ad1a2d36f12096f21",
+        "max_observed_at": "2026-08-30T16:46:08.367915+00:00",
+        "min_observed_at": "2026-08-30T16:46:08.367915+00:00"
+      },
+      {
+        "run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "4630cb26e5693560def5a0ef46c02906202ace4dc96f0fec497f3fdcc39ee1e3",
+        "max_observed_at": "2026-08-30T21:20:42.861933+00:00",
+        "min_observed_at": "2026-08-30T21:20:42.861933+00:00"
+      },
+      {
+        "run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "49066409ba941d358a0592cf4a98f4f0b02c2a5dbf99a475d25c079ee2f70bc3",
+        "max_observed_at": "2026-08-30T16:28:25.730086+00:00",
+        "min_observed_at": "2026-08-30T16:28:25.730086+00:00"
+      },
+      {
+        "run_id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "45bc2b4f97c932846ec6a4115ef60e5011e0f4704b36cb73d7649f569be2d25a",
+        "max_observed_at": "2026-08-30T18:42:06.160519+00:00",
+        "min_observed_at": "2026-08-30T18:42:06.160519+00:00"
+      },
+      {
+        "run_id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "2be022e3d8fbaa06518ef5a770576f986f5e17cae03f1246fd4efc6a022e0cf2",
+        "max_observed_at": "2026-08-31T00:22:28.98362+00:00",
+        "min_observed_at": "2026-08-31T00:22:28.98362+00:00"
+      },
+      {
+        "run_id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "3bc232f6a66ee9c45094e245c4f7b90ec157b9bf1c4211c7069dc814e1e0fd5d",
+        "max_observed_at": "2026-08-30T17:03:46.741273+00:00",
+        "min_observed_at": "2026-08-30T17:03:46.741273+00:00"
+      },
+      {
+        "run_id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "81083e798c7018051a41da95452ff92e9a54818ed29f3839761934bac4cedee5",
+        "max_observed_at": "2026-08-30T16:05:48.502+00:00",
+        "min_observed_at": "2026-08-30T16:05:48.502+00:00"
+      },
+      {
+        "run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "8eb8fcae8eb6e459efd577faedb8ae20c1bc0318679b0ce76483a16e1674d452",
+        "max_observed_at": "2026-08-30T16:08:51.114304+00:00",
+        "min_observed_at": "2026-08-30T16:08:51.114304+00:00"
+      }
+    ]
+  },
+  "capacity_evidence": {
+    "runs": [
+      {
+        "id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "name": "Teste nominal 10.000 peças",
+        "status": "cleaned",
+        "is_test": true,
+        "paused_at": null,
+        "peak_rate": 0,
+        "cleaned_at": "2026-08-30T16:08:50.582+00:00",
+        "created_at": "2026-08-30T16:05:48.502+00:00",
+        "started_at": null,
+        "total_lost": 0,
+        "total_sent": 0,
+        "updated_at": "2026-08-30T16:08:50.582+00:00",
+        "environment": "supabase_branch",
+        "finished_at": null,
+        "project_ref": "smnsihksrhzbkhcbdjfu",
+        "cancelled_at": null,
+        "current_rate": 0,
+        "total_errors": 0,
+        "total_pieces": 10000,
+        "state_version": 1,
+        "total_success": 0,
+        "p50_latency_ms": 0,
+        "p95_latency_ms": 0,
+        "p99_latency_ms": 0,
+        "total_received": 0,
+        "total_processed": 0,
+        "synthetic_prefix": "ACPROD-CT-20260830-130548",
+        "total_duplicates": 0,
+        "runner_claimed_at": null,
+        "runner_stopped_at": null,
+        "average_latency_ms": 0,
+        "total_expected_events": 40000
+      },
+      {
+        "id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "name": "Teste nominal 10.000 peças",
+        "status": "cleaned",
+        "is_test": true,
+        "paused_at": null,
+        "peak_rate": 4.977,
+        "cleaned_at": "2026-08-30T18:58:12.096575+00:00",
+        "created_at": "2026-08-30T16:08:51.114304+00:00",
+        "started_at": "2026-08-30T17:34:59.044822+00:00",
+        "total_lost": 137,
+        "total_sent": 780,
+        "updated_at": "2026-08-30T18:58:12.096576+00:00",
+        "environment": "supabase_branch",
+        "finished_at": "2026-08-30T17:55:20.892811+00:00",
+        "project_ref": "smnsihksrhzbkhcbdjfu",
+        "cancelled_at": null,
+        "current_rate": 4.977,
+        "total_errors": 412,
+        "total_pieces": 10000,
+        "state_version": 5,
+        "total_success": 368,
+        "p50_latency_ms": 8161.744,
+        "p95_latency_ms": 15000.855,
+        "p99_latency_ms": 15000.98,
+        "total_received": 572,
+        "total_processed": 572,
+        "synthetic_prefix": "ACPROD-CT-NOMINAL-20260830",
+        "total_duplicates": 0,
+        "runner_claimed_at": null,
+        "runner_stopped_at": null,
+        "average_latency_ms": 8258.806,
+        "total_expected_events": 40000
+      },
+      {
+        "id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "name": "Smoke funcional 100 peças",
+        "status": "cleaned",
+        "is_test": true,
+        "paused_at": null,
+        "peak_rate": 3.82,
+        "cleaned_at": "2026-08-30T21:15:11.556252+00:00",
+        "created_at": "2026-08-30T16:28:25.730086+00:00",
+        "started_at": "2026-08-30T16:40:42.067541+00:00",
+        "total_lost": 0,
+        "total_sent": 400,
+        "updated_at": "2026-08-30T21:15:11.556253+00:00",
+        "environment": "supabase_branch",
+        "finished_at": "2026-08-30T16:42:00.766621+00:00",
+        "project_ref": "smnsihksrhzbkhcbdjfu",
+        "cancelled_at": null,
+        "current_rate": 3.82,
+        "total_errors": 0,
+        "total_pieces": 100,
+        "state_version": 7,
+        "total_success": 400,
+        "p50_latency_ms": 0,
+        "p95_latency_ms": 0,
+        "p99_latency_ms": 0,
+        "total_received": 400,
+        "total_processed": 400,
+        "synthetic_prefix": "ACPROD-CT-SMOKE-20260830-132825",
+        "total_duplicates": 0,
+        "runner_claimed_at": null,
+        "runner_stopped_at": null,
+        "average_latency_ms": 261.75,
+        "total_expected_events": 400
+      },
+      {
+        "id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "name": "Smoke funcional 2 - 100 peças",
+        "status": "cleaned",
+        "is_test": true,
+        "paused_at": null,
+        "peak_rate": 7.326,
+        "cleaned_at": "2026-08-30T21:15:06.634781+00:00",
+        "created_at": "2026-08-30T16:42:19.978539+00:00",
+        "started_at": "2026-08-30T16:43:06.979042+00:00",
+        "total_lost": 0,
+        "total_sent": 400,
+        "updated_at": "2026-08-30T21:15:06.634781+00:00",
+        "environment": "supabase_branch",
+        "finished_at": "2026-08-30T16:43:31.580228+00:00",
+        "project_ref": "smnsihksrhzbkhcbdjfu",
+        "cancelled_at": null,
+        "current_rate": 7.326,
+        "total_errors": 0,
+        "total_pieces": 100,
+        "state_version": 4,
+        "total_success": 400,
+        "p50_latency_ms": 0,
+        "p95_latency_ms": 0,
+        "p99_latency_ms": 0,
+        "total_received": 400,
+        "total_processed": 400,
+        "synthetic_prefix": "ACPROD-CT-SMOKE2-20260830-134219",
+        "total_duplicates": 0,
+        "runner_claimed_at": null,
+        "runner_stopped_at": null,
+        "average_latency_ms": 136.5,
+        "total_expected_events": 400
+      },
+      {
+        "id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "name": "Smoke funcional 3 - persistência",
+        "status": "cleaned",
+        "is_test": true,
+        "paused_at": null,
+        "peak_rate": 16.638,
+        "cleaned_at": "2026-08-30T21:14:15.90694+00:00",
+        "created_at": "2026-08-30T16:46:08.367915+00:00",
+        "started_at": "2026-08-30T16:46:45.789375+00:00",
+        "total_lost": 0,
+        "total_sent": 400,
+        "updated_at": "2026-08-30T21:14:15.90694+00:00",
+        "environment": "supabase_branch",
+        "finished_at": "2026-08-30T16:47:09.27004+00:00",
+        "project_ref": "smnsihksrhzbkhcbdjfu",
+        "cancelled_at": null,
+        "current_rate": 16.638,
+        "total_errors": 0,
+        "total_pieces": 100,
+        "state_version": 4,
+        "total_success": 400,
+        "p50_latency_ms": 207.22,
+        "p95_latency_ms": 334.207,
+        "p99_latency_ms": 452.101,
+        "total_received": 400,
+        "total_processed": 400,
+        "synthetic_prefix": "ACPROD-CT-SMOKE3-20260830-134607",
+        "total_duplicates": 0,
+        "runner_claimed_at": null,
+        "runner_stopped_at": null,
+        "average_latency_ms": 212.347,
+        "total_expected_events": 400
+      },
+      {
+        "id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "name": "Teste nominal de capacidade",
+        "status": "cleaned",
+        "is_test": true,
+        "paused_at": null,
+        "peak_rate": 0,
+        "cleaned_at": "2026-08-30T21:14:47.869159+00:00",
+        "created_at": "2026-08-30T17:03:46.741273+00:00",
+        "started_at": null,
+        "total_lost": 0,
+        "total_sent": 0,
+        "updated_at": "2026-08-30T21:14:47.869159+00:00",
+        "environment": "supabase_branch",
+        "finished_at": null,
+        "project_ref": "smnsihksrhzbkhcbdjfu",
+        "cancelled_at": null,
+        "current_rate": 0,
+        "total_errors": 0,
+        "total_pieces": 10000,
+        "state_version": 2,
+        "total_success": 0,
+        "p50_latency_ms": 0,
+        "p95_latency_ms": 0,
+        "p99_latency_ms": 0,
+        "total_received": 0,
+        "total_processed": 0,
+        "synthetic_prefix": "ACPROD-CT-20260830",
+        "total_duplicates": 0,
+        "runner_claimed_at": null,
+        "runner_stopped_at": null,
+        "average_latency_ms": 0,
+        "total_expected_events": 40000
+      },
+      {
+        "id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "name": "Teste nominal de capacidade",
+        "status": "cleaned",
+        "is_test": true,
+        "paused_at": null,
+        "peak_rate": 0,
+        "cleaned_at": "2026-08-30T21:14:33.039975+00:00",
+        "created_at": "2026-08-30T18:42:06.160519+00:00",
+        "started_at": null,
+        "total_lost": 0,
+        "total_sent": 0,
+        "updated_at": "2026-08-30T21:14:33.039975+00:00",
+        "environment": "supabase_branch",
+        "finished_at": null,
+        "project_ref": "smnsihksrhzbkhcbdjfu",
+        "cancelled_at": null,
+        "current_rate": 0,
+        "total_errors": 0,
+        "total_pieces": 10000,
+        "state_version": 2,
+        "total_success": 0,
+        "p50_latency_ms": 0,
+        "p95_latency_ms": 0,
+        "p99_latency_ms": 0,
+        "total_received": 0,
+        "total_processed": 0,
+        "synthetic_prefix": "ACPROD-CT-20260830-183927-531",
+        "total_duplicates": 0,
+        "runner_claimed_at": null,
+        "runner_stopped_at": null,
+        "average_latency_ms": 0,
+        "total_expected_events": 40000
+      },
+      {
+        "id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "name": "Teste nominal de capacidade",
+        "status": "cleaned",
+        "is_test": true,
+        "paused_at": null,
+        "peak_rate": 0,
+        "cleaned_at": "2026-08-30T21:20:18.956563+00:00",
+        "created_at": "2026-08-30T21:18:41.174218+00:00",
+        "started_at": null,
+        "total_lost": 0,
+        "total_sent": 0,
+        "updated_at": "2026-08-30T21:20:18.956563+00:00",
+        "environment": "supabase_branch",
+        "finished_at": null,
+        "project_ref": "smnsihksrhzbkhcbdjfu",
+        "cancelled_at": null,
+        "current_rate": 0,
+        "total_errors": 0,
+        "total_pieces": 10000,
+        "state_version": 6,
+        "total_success": 0,
+        "p50_latency_ms": 0,
+        "p95_latency_ms": 0,
+        "p99_latency_ms": 0,
+        "total_received": 0,
+        "total_processed": 0,
+        "synthetic_prefix": "ACPROD-CT-20260830-211511-569",
+        "total_duplicates": 0,
+        "runner_claimed_at": null,
+        "runner_stopped_at": null,
+        "average_latency_ms": 0,
+        "total_expected_events": 40000
+      },
+      {
+        "id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "name": "Teste nominal de capacidade",
+        "status": "cleaned",
+        "is_test": true,
+        "paused_at": null,
+        "peak_rate": 1.911,
+        "cleaned_at": "2026-08-30T23:55:21.222338+00:00",
+        "created_at": "2026-08-30T21:20:42.861933+00:00",
+        "started_at": "2026-08-30T23:48:03.133667+00:00",
+        "total_lost": 5,
+        "total_sent": 76,
+        "updated_at": "2026-08-30T23:55:21.222338+00:00",
+        "environment": "supabase_branch",
+        "finished_at": "2026-08-30T23:48:38.907731+00:00",
+        "project_ref": "smnsihksrhzbkhcbdjfu",
+        "cancelled_at": null,
+        "current_rate": 1.911,
+        "total_errors": 2,
+        "total_pieces": 10000,
+        "state_version": 12,
+        "total_success": 71,
+        "p50_latency_ms": 1086.355,
+        "p95_latency_ms": 4739.455,
+        "p99_latency_ms": 5000.573,
+        "total_received": 50,
+        "total_processed": 71,
+        "synthetic_prefix": "ACPROD-CT-NOMINAL-20260830",
+        "total_duplicates": 0,
+        "runner_claimed_at": "2026-08-30T23:48:01.338788+00:00",
+        "runner_stopped_at": "2026-08-30T23:48:39.403604+00:00",
+        "average_latency_ms": 1548.372,
+        "total_expected_events": 40000
+      },
+      {
+        "id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "name": "Teste nominal de capacidade",
+        "status": "preparing",
+        "is_test": true,
+        "paused_at": null,
+        "peak_rate": 0,
+        "cleaned_at": null,
+        "created_at": "2026-08-31T00:22:28.98362+00:00",
+        "started_at": null,
+        "total_lost": 0,
+        "total_sent": 0,
+        "updated_at": "2026-08-31T00:22:44.75064+00:00",
+        "environment": "supabase_branch",
+        "finished_at": null,
+        "project_ref": "smnsihksrhzbkhcbdjfu",
+        "cancelled_at": null,
+        "current_rate": 0,
+        "total_errors": 0,
+        "total_pieces": 10000,
+        "state_version": 2,
+        "total_success": 0,
+        "p50_latency_ms": 0,
+        "p95_latency_ms": 0,
+        "p99_latency_ms": 0,
+        "total_received": 0,
+        "total_processed": 0,
+        "synthetic_prefix": "ACPROD-CT-20260831-002208-691",
+        "total_duplicates": 0,
+        "runner_claimed_at": null,
+        "runner_stopped_at": null,
+        "average_latency_ms": 0,
+        "total_expected_events": 40000
+      }
+    ],
+    "table_hashes_per_run": [
+      {
+        "run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "row_count": 6,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "f3d966955e369718e22396e95ce1c2825feddaa849c462925cb70c76eb3e9aef",
+        "max_observed_at": "2026-08-30T16:42:21.601678+00:00",
+        "min_observed_at": "2026-08-30T16:42:21.601678+00:00"
+      },
+      {
+        "run_id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "row_count": 83,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "ee4378f30839fc187f488dca8069faafaa836c5877baf9b8074d2452f805f406",
+        "max_observed_at": "2026-08-30T21:19:24.669615+00:00",
+        "min_observed_at": "2026-08-30T21:19:24.669615+00:00"
+      },
+      {
+        "run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "row_count": 6,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "d37f0e7d7d114468a6f48844e788fa6e077377f1d3609736a7c820289da20a33",
+        "max_observed_at": "2026-08-30T16:46:10.111314+00:00",
+        "min_observed_at": "2026-08-30T16:46:10.111314+00:00"
+      },
+      {
+        "run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "row_count": 83,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "4e4232942e5d6ec457cfa36d471de08a77f95a03ff65d8704d35812684280a62",
+        "max_observed_at": "2026-08-30T21:28:06.581329+00:00",
+        "min_observed_at": "2026-08-30T21:28:06.581329+00:00"
+      },
+      {
+        "run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "row_count": 6,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "df16d849030281cfb9251a16f11d834af0e1bbb293d987c90bfae8fc58dd44c6",
+        "max_observed_at": "2026-08-30T16:28:27.132926+00:00",
+        "min_observed_at": "2026-08-30T16:28:27.132926+00:00"
+      },
+      {
+        "run_id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "row_count": 83,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "bdf6362ca5a2c86aa90dad48cae9fefb30213da04a9afdbbb9a20a4a330605b9",
+        "max_observed_at": "2026-08-30T18:42:19.644901+00:00",
+        "min_observed_at": "2026-08-30T18:42:19.644901+00:00"
+      },
+      {
+        "run_id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "row_count": 83,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "d87f5d9a4581dc44f9df2bf582670f0c11c3a87f133b6594a46a24257632afcb",
+        "max_observed_at": "2026-08-31T00:22:38.131311+00:00",
+        "min_observed_at": "2026-08-31T00:22:38.131311+00:00"
+      },
+      {
+        "run_id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "row_count": 83,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "91e4b59c220dd89cf256bdbae653873b57790e1179fb2d57e8d88208e537902b",
+        "max_observed_at": "2026-08-30T17:09:03.033917+00:00",
+        "min_observed_at": "2026-08-30T17:09:03.033917+00:00"
+      },
+      {
+        "run_id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "row_count": 83,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "4c95e70f831151a0ddcb7ecd8dade855e2edff49b4e7de043de60c4f2f327cc5",
+        "max_observed_at": "2026-08-30T16:08:14.239916+00:00",
+        "min_observed_at": "2026-08-30T16:08:14.239916+00:00"
+      },
+      {
+        "run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "row_count": 83,
+        "relation_name": "public.capacity_test_agents",
+        "dataset_sha256": "fb09588cf6c2a00af9f983771b15cea307e921e9bf50beb8a01e2d51264a2b0e",
+        "max_observed_at": "2026-08-30T16:08:58.822105+00:00",
+        "min_observed_at": "2026-08-30T16:08:58.822105+00:00"
+      },
+      {
+        "run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "row_count": 2,
+        "relation_name": "public.capacity_test_commands",
+        "dataset_sha256": "e96de88386cef2fae5a74183afec04c6e16b9c83d07dc78f3d61b14cd1d5dbfa",
+        "max_observed_at": "2026-08-30T16:43:31.580228+00:00",
+        "min_observed_at": "2026-08-30T16:43:06.979042+00:00"
+      },
+      {
+        "run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "row_count": 2,
+        "relation_name": "public.capacity_test_commands",
+        "dataset_sha256": "8899c2d5f47e3323244a108a4054acc9399b3d9576d359940373004a21cac29a",
+        "max_observed_at": "2026-08-30T16:47:09.27004+00:00",
+        "min_observed_at": "2026-08-30T16:46:45.789375+00:00"
+      },
+      {
+        "run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "row_count": 2,
+        "relation_name": "public.capacity_test_commands",
+        "dataset_sha256": "2a5cbbcec6ebb9e538eab0878b996db6ccb8679f7009da8ddbac00d939a77ed9",
+        "max_observed_at": "2026-08-30T23:48:38.907731+00:00",
+        "min_observed_at": "2026-08-30T23:48:03.133667+00:00"
+      },
+      {
+        "run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "row_count": 5,
+        "relation_name": "public.capacity_test_commands",
+        "dataset_sha256": "5434ab991c3158575e7483e23f3bfdc109cd7b9c3122b813cd01a54eeda33fd5",
+        "max_observed_at": "2026-08-30T16:42:00.766621+00:00",
+        "min_observed_at": "2026-08-30T16:30:00.565662+00:00"
+      },
+      {
+        "run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "row_count": 3,
+        "relation_name": "public.capacity_test_commands",
+        "dataset_sha256": "ddc6229a4b56de1af7ad520120a46b6010f2c44729e00a1e1f1bbc870bdfb504",
+        "max_observed_at": "2026-08-30T17:55:20.892811+00:00",
+        "min_observed_at": "2026-08-30T16:48:19.53274+00:00"
+      },
+      {
+        "run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "row_count": 271,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "81b73ec422f02a0ed1d19f91ce95c54280d1d12109bb0b1f7614d1aa2f969dbe",
+        "max_observed_at": "2026-08-30T16:42:56.290417+00:00",
+        "min_observed_at": "2026-08-30T16:42:20.703595+00:00"
+      },
+      {
+        "run_id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "row_count": 415,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "95ae3febe5150f0a413c3102ad17892d26c8f832972ca1a96bd0c491d01a8cd1",
+        "max_observed_at": "2026-08-30T21:19:24.669615+00:00",
+        "min_observed_at": "2026-08-30T21:19:24.669615+00:00"
+      },
+      {
+        "run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "row_count": 271,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "042d6afc4680857a6f9003d05813399050ba51bcf9b5e753ee9ffbf8551c223d",
+        "max_observed_at": "2026-08-30T16:46:35.695537+00:00",
+        "min_observed_at": "2026-08-30T16:46:09.349063+00:00"
+      },
+      {
+        "run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "row_count": 20456,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "3b337ae6d83c546429a02a2fe218d6d7c10a46f15fb0b76af8bd88661b716be4",
+        "max_observed_at": "2026-08-30T23:36:39.667713+00:00",
+        "min_observed_at": "2026-08-30T21:28:06.581329+00:00"
+      },
+      {
+        "run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "row_count": 271,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "6458a260ae7d1234ec565e4ffe509120205a64e00725236ebb7c31ada9b0c418",
+        "max_observed_at": "2026-08-30T16:29:37.970001+00:00",
+        "min_observed_at": "2026-08-30T16:28:26.365621+00:00"
+      },
+      {
+        "run_id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "row_count": 415,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "5744df36797799293f68651bcc1f38544456668d1d5a16f6fbefe5798ee0eceb",
+        "max_observed_at": "2026-08-30T18:42:19.565994+00:00",
+        "min_observed_at": "2026-08-30T18:42:12.821528+00:00"
+      },
+      {
+        "run_id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "row_count": 415,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "55b0efab30d8f017758c9f242c9b6b13e92c5036203767b337e655474e13d5f3",
+        "max_observed_at": "2026-08-31T00:22:38.131311+00:00",
+        "min_observed_at": "2026-08-31T00:22:38.131311+00:00"
+      },
+      {
+        "run_id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "row_count": 415,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "34dbd83d50160411275d05d11e2e9e99e1c48b04824451ea1ba8b048802cfb2b",
+        "max_observed_at": "2026-08-30T17:09:02.944501+00:00",
+        "min_observed_at": "2026-08-30T17:08:56.273578+00:00"
+      },
+      {
+        "run_id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "row_count": 415,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "e86d192d9ebcb320f2b70e147b287e1f0f56ad95cd56450830fced52b41258a6",
+        "max_observed_at": "2026-08-30T16:08:14.170939+00:00",
+        "min_observed_at": "2026-08-30T16:08:07.313135+00:00"
+      },
+      {
+        "run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "row_count": 20456,
+        "relation_name": "public.capacity_test_entities",
+        "dataset_sha256": "f4ac4c9e0edfdd9a26ac614c451511c68a763e565fcea550e75abf8ef245b119",
+        "max_observed_at": "2026-08-30T16:19:24.860569+00:00",
+        "min_observed_at": "2026-08-30T16:08:51.93519+00:00"
+      },
+      {
+        "run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "row_count": 11,
+        "relation_name": "public.capacity_test_errors",
+        "dataset_sha256": "2691dab28c29d9f922febfaeb2b3a8a13a59b9d63dba021e530fd6f3bd7210e9",
+        "max_observed_at": "2026-08-30T17:55:14.354929+00:00",
+        "min_observed_at": "2026-08-30T17:55:03.580292+00:00"
+      },
+      {
+        "run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "row_count": 100,
+        "relation_name": "public.capacity_test_metric_samples",
+        "dataset_sha256": "4625aabec6e9fced2770eaa910112283304af83d3e5fa986ab6e00953f4c67ca",
+        "max_observed_at": "2026-08-30T16:43:30.604063+00:00",
+        "min_observed_at": "2026-08-30T16:43:09.827482+00:00"
+      },
+      {
+        "run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "row_count": 101,
+        "relation_name": "public.capacity_test_metric_samples",
+        "dataset_sha256": "2452da55aa32f5760ef6fec16dfd4a6a21c775b88ff14a7a861da36beb5dd568",
+        "max_observed_at": "2026-08-30T16:47:09.215403+00:00",
+        "min_observed_at": "2026-08-30T16:46:48.220714+00:00"
+      },
+      {
+        "run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_metric_samples",
+        "dataset_sha256": "651df34275496be75f9ba7012a780456cf751c53d9471c96f917cba061fa2065",
+        "max_observed_at": "2026-08-30T23:48:38.863162+00:00",
+        "min_observed_at": "2026-08-30T23:48:38.863162+00:00"
+      },
+      {
+        "run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "row_count": 100,
+        "relation_name": "public.capacity_test_metric_samples",
+        "dataset_sha256": "fa9eaf354c2100d42fed3cc83e390d9aac45d679d6abb08a0e13e2138714db6e",
+        "max_observed_at": "2026-08-30T16:41:09.024003+00:00",
+        "min_observed_at": "2026-08-30T16:40:44.336071+00:00"
+      },
+      {
+        "run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "row_count": 196,
+        "relation_name": "public.capacity_test_metric_samples",
+        "dataset_sha256": "55f13dbd928b3bae168841cb57223215c2305bc095de59717c5e3adfe6aae065",
+        "max_observed_at": "2026-08-30T17:55:20.841588+00:00",
+        "min_observed_at": "2026-08-30T17:35:41.943641+00:00"
+      },
+      {
+        "run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "b91b340efa3a6cea3b2b5c3e51cb2a495c5c66458716618f03eda7afaf06c2c0",
+        "max_observed_at": "2026-08-30T16:42:19.978539+00:00",
+        "min_observed_at": "2026-08-30T16:42:19.978539+00:00"
+      },
+      {
+        "run_id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "3060f914c736262c5d25676873a1b0d6010491538a38739e2aef38d923ca73c3",
+        "max_observed_at": "2026-08-30T21:18:41.174218+00:00",
+        "min_observed_at": "2026-08-30T21:18:41.174218+00:00"
+      },
+      {
+        "run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "1cadc635d391f2625bab009d96a38b11ba2d115e06b6f15ad1a2d36f12096f21",
+        "max_observed_at": "2026-08-30T16:46:08.367915+00:00",
+        "min_observed_at": "2026-08-30T16:46:08.367915+00:00"
+      },
+      {
+        "run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "4630cb26e5693560def5a0ef46c02906202ace4dc96f0fec497f3fdcc39ee1e3",
+        "max_observed_at": "2026-08-30T21:20:42.861933+00:00",
+        "min_observed_at": "2026-08-30T21:20:42.861933+00:00"
+      },
+      {
+        "run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "49066409ba941d358a0592cf4a98f4f0b02c2a5dbf99a475d25c079ee2f70bc3",
+        "max_observed_at": "2026-08-30T16:28:25.730086+00:00",
+        "min_observed_at": "2026-08-30T16:28:25.730086+00:00"
+      },
+      {
+        "run_id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "45bc2b4f97c932846ec6a4115ef60e5011e0f4704b36cb73d7649f569be2d25a",
+        "max_observed_at": "2026-08-30T18:42:06.160519+00:00",
+        "min_observed_at": "2026-08-30T18:42:06.160519+00:00"
+      },
+      {
+        "run_id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "2be022e3d8fbaa06518ef5a770576f986f5e17cae03f1246fd4efc6a022e0cf2",
+        "max_observed_at": "2026-08-31T00:22:28.98362+00:00",
+        "min_observed_at": "2026-08-31T00:22:28.98362+00:00"
+      },
+      {
+        "run_id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "3bc232f6a66ee9c45094e245c4f7b90ec157b9bf1c4211c7069dc814e1e0fd5d",
+        "max_observed_at": "2026-08-30T17:03:46.741273+00:00",
+        "min_observed_at": "2026-08-30T17:03:46.741273+00:00"
+      },
+      {
+        "run_id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "81083e798c7018051a41da95452ff92e9a54818ed29f3839761934bac4cedee5",
+        "max_observed_at": "2026-08-30T16:05:48.502+00:00",
+        "min_observed_at": "2026-08-30T16:05:48.502+00:00"
+      },
+      {
+        "run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "row_count": 1,
+        "relation_name": "public.capacity_test_runs",
+        "dataset_sha256": "8eb8fcae8eb6e459efd577faedb8ae20c1bc0318679b0ce76483a16e1674d452",
+        "max_observed_at": "2026-08-30T16:08:51.114304+00:00",
+        "min_observed_at": "2026-08-30T16:08:51.114304+00:00"
+      }
+    ],
+    "entity_aggregates": [
+      {
+        "rows": 6,
+        "stage": null,
+        "entity_type": "cell_assignment",
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "max_created_at": "2026-08-30T16:42:21.440018+00:00",
+        "min_created_at": "2026-08-30T16:42:21.440018+00:00"
+      },
+      {
+        "rows": 1,
+        "stage": null,
+        "entity_type": "import_batch",
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "max_created_at": "2026-08-30T16:42:56.290417+00:00",
+        "min_created_at": "2026-08-30T16:42:56.290417+00:00"
+      },
+      {
+        "rows": 1,
+        "stage": "cnc",
+        "entity_type": "machine",
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "max_created_at": "2026-08-30T16:42:20.703595+00:00",
+        "min_created_at": "2026-08-30T16:42:20.703595+00:00"
+      },
+      {
+        "rows": 2,
+        "stage": "cut",
+        "entity_type": "machine",
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "max_created_at": "2026-08-30T16:42:20.703595+00:00",
+        "min_created_at": "2026-08-30T16:42:20.703595+00:00"
+      },
+      {
+        "rows": 2,
+        "stage": "edge",
+        "entity_type": "machine",
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "max_created_at": "2026-08-30T16:42:20.703595+00:00",
+        "min_created_at": "2026-08-30T16:42:20.703595+00:00"
+      },
+      {
+        "rows": 1,
+        "stage": "separation",
+        "entity_type": "machine",
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "max_created_at": "2026-08-30T16:42:20.703595+00:00",
+        "min_created_at": "2026-08-30T16:42:20.703595+00:00"
+      },
+      {
+        "rows": 6,
+        "stage": null,
+        "entity_type": "machine_assignment",
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "max_created_at": "2026-08-30T16:42:21.440018+00:00",
+        "min_created_at": "2026-08-30T16:42:21.440018+00:00"
+      },
+      {
+        "rows": 6,
+        "stage": null,
+        "entity_type": "operator",
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "max_created_at": "2026-08-30T16:42:21.290687+00:00",
+        "min_created_at": "2026-08-30T16:42:21.290687+00:00"
+      },
+      {
+        "rows": 100,
+        "stage": null,
+        "entity_type": "piece",
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "max_created_at": "2026-08-30T16:42:56.222431+00:00",
+        "min_created_at": "2026-08-30T16:42:56.222431+00:00"
+      },
+      {
+        "rows": 20,
+        "stage": null,
+        "entity_type": "production_lot",
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "max_created_at": "2026-08-30T16:42:56.290417+00:00",
+        "min_created_at": "2026-08-30T16:42:56.290417+00:00"
+      },
+      {
+        "rows": 100,
+        "stage": null,
+        "entity_type": "production_lot_item",
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "max_created_at": "2026-08-30T16:42:56.290417+00:00",
+        "min_created_at": "2026-08-30T16:42:56.290417+00:00"
+      },
+      {
+        "rows": 20,
+        "stage": null,
+        "entity_type": "production_order",
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "max_created_at": "2026-08-30T16:42:56.290417+00:00",
+        "min_created_at": "2026-08-30T16:42:56.290417+00:00"
+      },
+      {
+        "rows": 6,
+        "stage": null,
+        "entity_type": "workstation_authorization",
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "max_created_at": "2026-08-30T16:42:21.440018+00:00",
+        "min_created_at": "2026-08-30T16:42:21.440018+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "cell_assignment",
+        "test_run_id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "max_created_at": "2026-08-30T21:19:24.669615+00:00",
+        "min_created_at": "2026-08-30T21:19:24.669615+00:00"
+      },
+      {
+        "rows": 6,
+        "stage": "cnc",
+        "entity_type": "machine",
+        "test_run_id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "max_created_at": "2026-08-30T21:19:24.669615+00:00",
+        "min_created_at": "2026-08-30T21:19:24.669615+00:00"
+      },
+      {
+        "rows": 25,
+        "stage": "cut",
+        "entity_type": "machine",
+        "test_run_id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "max_created_at": "2026-08-30T21:19:24.669615+00:00",
+        "min_created_at": "2026-08-30T21:19:24.669615+00:00"
+      },
+      {
+        "rows": 50,
+        "stage": "edge",
+        "entity_type": "machine",
+        "test_run_id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "max_created_at": "2026-08-30T21:19:24.669615+00:00",
+        "min_created_at": "2026-08-30T21:19:24.669615+00:00"
+      },
+      {
+        "rows": 2,
+        "stage": "separation",
+        "entity_type": "machine",
+        "test_run_id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "max_created_at": "2026-08-30T21:19:24.669615+00:00",
+        "min_created_at": "2026-08-30T21:19:24.669615+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "machine_assignment",
+        "test_run_id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "max_created_at": "2026-08-30T21:19:24.669615+00:00",
+        "min_created_at": "2026-08-30T21:19:24.669615+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "operator",
+        "test_run_id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "max_created_at": "2026-08-30T21:19:24.669615+00:00",
+        "min_created_at": "2026-08-30T21:19:24.669615+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "workstation_authorization",
+        "test_run_id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "max_created_at": "2026-08-30T21:19:24.669615+00:00",
+        "min_created_at": "2026-08-30T21:19:24.669615+00:00"
+      },
+      {
+        "rows": 6,
+        "stage": null,
+        "entity_type": "cell_assignment",
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "max_created_at": "2026-08-30T16:46:10.061259+00:00",
+        "min_created_at": "2026-08-30T16:46:10.061259+00:00"
+      },
+      {
+        "rows": 1,
+        "stage": null,
+        "entity_type": "import_batch",
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "max_created_at": "2026-08-30T16:46:35.695537+00:00",
+        "min_created_at": "2026-08-30T16:46:35.695537+00:00"
+      },
+      {
+        "rows": 1,
+        "stage": "cnc",
+        "entity_type": "machine",
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "max_created_at": "2026-08-30T16:46:09.349063+00:00",
+        "min_created_at": "2026-08-30T16:46:09.349063+00:00"
+      },
+      {
+        "rows": 2,
+        "stage": "cut",
+        "entity_type": "machine",
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "max_created_at": "2026-08-30T16:46:09.349063+00:00",
+        "min_created_at": "2026-08-30T16:46:09.349063+00:00"
+      },
+      {
+        "rows": 2,
+        "stage": "edge",
+        "entity_type": "machine",
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "max_created_at": "2026-08-30T16:46:09.349063+00:00",
+        "min_created_at": "2026-08-30T16:46:09.349063+00:00"
+      },
+      {
+        "rows": 1,
+        "stage": "separation",
+        "entity_type": "machine",
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "max_created_at": "2026-08-30T16:46:09.349063+00:00",
+        "min_created_at": "2026-08-30T16:46:09.349063+00:00"
+      },
+      {
+        "rows": 6,
+        "stage": null,
+        "entity_type": "machine_assignment",
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "max_created_at": "2026-08-30T16:46:10.061259+00:00",
+        "min_created_at": "2026-08-30T16:46:10.061259+00:00"
+      },
+      {
+        "rows": 6,
+        "stage": null,
+        "entity_type": "operator",
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "max_created_at": "2026-08-30T16:46:09.911943+00:00",
+        "min_created_at": "2026-08-30T16:46:09.911943+00:00"
+      },
+      {
+        "rows": 100,
+        "stage": null,
+        "entity_type": "piece",
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "max_created_at": "2026-08-30T16:46:35.608229+00:00",
+        "min_created_at": "2026-08-30T16:46:35.608229+00:00"
+      },
+      {
+        "rows": 20,
+        "stage": null,
+        "entity_type": "production_lot",
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "max_created_at": "2026-08-30T16:46:35.695537+00:00",
+        "min_created_at": "2026-08-30T16:46:35.695537+00:00"
+      },
+      {
+        "rows": 100,
+        "stage": null,
+        "entity_type": "production_lot_item",
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "max_created_at": "2026-08-30T16:46:35.695537+00:00",
+        "min_created_at": "2026-08-30T16:46:35.695537+00:00"
+      },
+      {
+        "rows": 20,
+        "stage": null,
+        "entity_type": "production_order",
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "max_created_at": "2026-08-30T16:46:35.695537+00:00",
+        "min_created_at": "2026-08-30T16:46:35.695537+00:00"
+      },
+      {
+        "rows": 6,
+        "stage": null,
+        "entity_type": "workstation_authorization",
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "max_created_at": "2026-08-30T16:46:10.061259+00:00",
+        "min_created_at": "2026-08-30T16:46:10.061259+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "cell_assignment",
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "max_created_at": "2026-08-30T21:28:06.581329+00:00",
+        "min_created_at": "2026-08-30T21:28:06.581329+00:00"
+      },
+      {
+        "rows": 1,
+        "stage": null,
+        "entity_type": "import_batch",
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "max_created_at": "2026-08-30T23:36:39.667713+00:00",
+        "min_created_at": "2026-08-30T23:36:39.667713+00:00"
+      },
+      {
+        "rows": 6,
+        "stage": "cnc",
+        "entity_type": "machine",
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "max_created_at": "2026-08-30T21:28:06.581329+00:00",
+        "min_created_at": "2026-08-30T21:28:06.581329+00:00"
+      },
+      {
+        "rows": 25,
+        "stage": "cut",
+        "entity_type": "machine",
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "max_created_at": "2026-08-30T21:28:06.581329+00:00",
+        "min_created_at": "2026-08-30T21:28:06.581329+00:00"
+      },
+      {
+        "rows": 50,
+        "stage": "edge",
+        "entity_type": "machine",
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "max_created_at": "2026-08-30T21:28:06.581329+00:00",
+        "min_created_at": "2026-08-30T21:28:06.581329+00:00"
+      },
+      {
+        "rows": 2,
+        "stage": "separation",
+        "entity_type": "machine",
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "max_created_at": "2026-08-30T21:28:06.581329+00:00",
+        "min_created_at": "2026-08-30T21:28:06.581329+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "machine_assignment",
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "max_created_at": "2026-08-30T21:28:06.581329+00:00",
+        "min_created_at": "2026-08-30T21:28:06.581329+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "operator",
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "max_created_at": "2026-08-30T21:28:06.581329+00:00",
+        "min_created_at": "2026-08-30T21:28:06.581329+00:00"
+      },
+      {
+        "rows": 10000,
+        "stage": null,
+        "entity_type": "piece",
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "max_created_at": "2026-08-30T23:36:39.667713+00:00",
+        "min_created_at": "2026-08-30T23:36:39.667713+00:00"
+      },
+      {
+        "rows": 20,
+        "stage": null,
+        "entity_type": "production_lot",
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "max_created_at": "2026-08-30T23:36:39.667713+00:00",
+        "min_created_at": "2026-08-30T23:36:39.667713+00:00"
+      },
+      {
+        "rows": 10000,
+        "stage": null,
+        "entity_type": "production_lot_item",
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "max_created_at": "2026-08-30T23:36:39.667713+00:00",
+        "min_created_at": "2026-08-30T23:36:39.667713+00:00"
+      },
+      {
+        "rows": 20,
+        "stage": null,
+        "entity_type": "production_order",
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "max_created_at": "2026-08-30T23:36:39.667713+00:00",
+        "min_created_at": "2026-08-30T23:36:39.667713+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "workstation_authorization",
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "max_created_at": "2026-08-30T21:28:06.581329+00:00",
+        "min_created_at": "2026-08-30T21:28:06.581329+00:00"
+      },
+      {
+        "rows": 6,
+        "stage": null,
+        "entity_type": "cell_assignment",
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "max_created_at": "2026-08-30T16:28:27.07191+00:00",
+        "min_created_at": "2026-08-30T16:28:27.07191+00:00"
+      },
+      {
+        "rows": 1,
+        "stage": null,
+        "entity_type": "import_batch",
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "max_created_at": "2026-08-30T16:29:37.970001+00:00",
+        "min_created_at": "2026-08-30T16:29:37.970001+00:00"
+      },
+      {
+        "rows": 1,
+        "stage": "cnc",
+        "entity_type": "machine",
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "max_created_at": "2026-08-30T16:28:26.365621+00:00",
+        "min_created_at": "2026-08-30T16:28:26.365621+00:00"
+      },
+      {
+        "rows": 2,
+        "stage": "cut",
+        "entity_type": "machine",
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "max_created_at": "2026-08-30T16:28:26.365621+00:00",
+        "min_created_at": "2026-08-30T16:28:26.365621+00:00"
+      },
+      {
+        "rows": 2,
+        "stage": "edge",
+        "entity_type": "machine",
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "max_created_at": "2026-08-30T16:28:26.365621+00:00",
+        "min_created_at": "2026-08-30T16:28:26.365621+00:00"
+      },
+      {
+        "rows": 1,
+        "stage": "separation",
+        "entity_type": "machine",
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "max_created_at": "2026-08-30T16:28:26.365621+00:00",
+        "min_created_at": "2026-08-30T16:28:26.365621+00:00"
+      },
+      {
+        "rows": 6,
+        "stage": null,
+        "entity_type": "machine_assignment",
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "max_created_at": "2026-08-30T16:28:27.07191+00:00",
+        "min_created_at": "2026-08-30T16:28:27.07191+00:00"
+      },
+      {
+        "rows": 6,
+        "stage": null,
+        "entity_type": "operator",
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "max_created_at": "2026-08-30T16:28:26.924774+00:00",
+        "min_created_at": "2026-08-30T16:28:26.924774+00:00"
+      },
+      {
+        "rows": 100,
+        "stage": null,
+        "entity_type": "piece",
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "max_created_at": "2026-08-30T16:29:37.89826+00:00",
+        "min_created_at": "2026-08-30T16:29:37.89826+00:00"
+      },
+      {
+        "rows": 20,
+        "stage": null,
+        "entity_type": "production_lot",
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "max_created_at": "2026-08-30T16:29:37.970001+00:00",
+        "min_created_at": "2026-08-30T16:29:37.970001+00:00"
+      },
+      {
+        "rows": 100,
+        "stage": null,
+        "entity_type": "production_lot_item",
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "max_created_at": "2026-08-30T16:29:37.970001+00:00",
+        "min_created_at": "2026-08-30T16:29:37.970001+00:00"
+      },
+      {
+        "rows": 20,
+        "stage": null,
+        "entity_type": "production_order",
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "max_created_at": "2026-08-30T16:29:37.970001+00:00",
+        "min_created_at": "2026-08-30T16:29:37.970001+00:00"
+      },
+      {
+        "rows": 6,
+        "stage": null,
+        "entity_type": "workstation_authorization",
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "max_created_at": "2026-08-30T16:28:27.07191+00:00",
+        "min_created_at": "2026-08-30T16:28:27.07191+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "cell_assignment",
+        "test_run_id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "max_created_at": "2026-08-30T18:42:19.565994+00:00",
+        "min_created_at": "2026-08-30T18:42:19.565994+00:00"
+      },
+      {
+        "rows": 6,
+        "stage": "cnc",
+        "entity_type": "machine",
+        "test_run_id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "max_created_at": "2026-08-30T18:42:12.821528+00:00",
+        "min_created_at": "2026-08-30T18:42:12.821528+00:00"
+      },
+      {
+        "rows": 25,
+        "stage": "cut",
+        "entity_type": "machine",
+        "test_run_id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "max_created_at": "2026-08-30T18:42:12.821528+00:00",
+        "min_created_at": "2026-08-30T18:42:12.821528+00:00"
+      },
+      {
+        "rows": 50,
+        "stage": "edge",
+        "entity_type": "machine",
+        "test_run_id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "max_created_at": "2026-08-30T18:42:12.821528+00:00",
+        "min_created_at": "2026-08-30T18:42:12.821528+00:00"
+      },
+      {
+        "rows": 2,
+        "stage": "separation",
+        "entity_type": "machine",
+        "test_run_id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "max_created_at": "2026-08-30T18:42:12.821528+00:00",
+        "min_created_at": "2026-08-30T18:42:12.821528+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "machine_assignment",
+        "test_run_id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "max_created_at": "2026-08-30T18:42:19.565994+00:00",
+        "min_created_at": "2026-08-30T18:42:19.565994+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "operator",
+        "test_run_id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "max_created_at": "2026-08-30T18:42:19.360279+00:00",
+        "min_created_at": "2026-08-30T18:42:19.360279+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "workstation_authorization",
+        "test_run_id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "max_created_at": "2026-08-30T18:42:19.565994+00:00",
+        "min_created_at": "2026-08-30T18:42:19.565994+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "cell_assignment",
+        "test_run_id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "max_created_at": "2026-08-31T00:22:38.131311+00:00",
+        "min_created_at": "2026-08-31T00:22:38.131311+00:00"
+      },
+      {
+        "rows": 6,
+        "stage": "cnc",
+        "entity_type": "machine",
+        "test_run_id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "max_created_at": "2026-08-31T00:22:38.131311+00:00",
+        "min_created_at": "2026-08-31T00:22:38.131311+00:00"
+      },
+      {
+        "rows": 25,
+        "stage": "cut",
+        "entity_type": "machine",
+        "test_run_id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "max_created_at": "2026-08-31T00:22:38.131311+00:00",
+        "min_created_at": "2026-08-31T00:22:38.131311+00:00"
+      },
+      {
+        "rows": 50,
+        "stage": "edge",
+        "entity_type": "machine",
+        "test_run_id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "max_created_at": "2026-08-31T00:22:38.131311+00:00",
+        "min_created_at": "2026-08-31T00:22:38.131311+00:00"
+      },
+      {
+        "rows": 2,
+        "stage": "separation",
+        "entity_type": "machine",
+        "test_run_id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "max_created_at": "2026-08-31T00:22:38.131311+00:00",
+        "min_created_at": "2026-08-31T00:22:38.131311+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "machine_assignment",
+        "test_run_id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "max_created_at": "2026-08-31T00:22:38.131311+00:00",
+        "min_created_at": "2026-08-31T00:22:38.131311+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "operator",
+        "test_run_id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "max_created_at": "2026-08-31T00:22:38.131311+00:00",
+        "min_created_at": "2026-08-31T00:22:38.131311+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "workstation_authorization",
+        "test_run_id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "max_created_at": "2026-08-31T00:22:38.131311+00:00",
+        "min_created_at": "2026-08-31T00:22:38.131311+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "cell_assignment",
+        "test_run_id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "max_created_at": "2026-08-30T17:09:02.944501+00:00",
+        "min_created_at": "2026-08-30T17:09:02.944501+00:00"
+      },
+      {
+        "rows": 6,
+        "stage": "cnc",
+        "entity_type": "machine",
+        "test_run_id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "max_created_at": "2026-08-30T17:08:56.273578+00:00",
+        "min_created_at": "2026-08-30T17:08:56.273578+00:00"
+      },
+      {
+        "rows": 25,
+        "stage": "cut",
+        "entity_type": "machine",
+        "test_run_id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "max_created_at": "2026-08-30T17:08:56.273578+00:00",
+        "min_created_at": "2026-08-30T17:08:56.273578+00:00"
+      },
+      {
+        "rows": 50,
+        "stage": "edge",
+        "entity_type": "machine",
+        "test_run_id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "max_created_at": "2026-08-30T17:08:56.273578+00:00",
+        "min_created_at": "2026-08-30T17:08:56.273578+00:00"
+      },
+      {
+        "rows": 2,
+        "stage": "separation",
+        "entity_type": "machine",
+        "test_run_id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "max_created_at": "2026-08-30T17:08:56.273578+00:00",
+        "min_created_at": "2026-08-30T17:08:56.273578+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "machine_assignment",
+        "test_run_id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "max_created_at": "2026-08-30T17:09:02.944501+00:00",
+        "min_created_at": "2026-08-30T17:09:02.944501+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "operator",
+        "test_run_id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "max_created_at": "2026-08-30T17:09:02.758944+00:00",
+        "min_created_at": "2026-08-30T17:09:02.758944+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "workstation_authorization",
+        "test_run_id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "max_created_at": "2026-08-30T17:09:02.944501+00:00",
+        "min_created_at": "2026-08-30T17:09:02.944501+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "cell_assignment",
+        "test_run_id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "max_created_at": "2026-08-30T16:08:14.170939+00:00",
+        "min_created_at": "2026-08-30T16:08:14.170939+00:00"
+      },
+      {
+        "rows": 6,
+        "stage": "cnc",
+        "entity_type": "machine",
+        "test_run_id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "max_created_at": "2026-08-30T16:08:07.313135+00:00",
+        "min_created_at": "2026-08-30T16:08:07.313135+00:00"
+      },
+      {
+        "rows": 25,
+        "stage": "cut",
+        "entity_type": "machine",
+        "test_run_id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "max_created_at": "2026-08-30T16:08:07.313135+00:00",
+        "min_created_at": "2026-08-30T16:08:07.313135+00:00"
+      },
+      {
+        "rows": 50,
+        "stage": "edge",
+        "entity_type": "machine",
+        "test_run_id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "max_created_at": "2026-08-30T16:08:07.313135+00:00",
+        "min_created_at": "2026-08-30T16:08:07.313135+00:00"
+      },
+      {
+        "rows": 2,
+        "stage": "separation",
+        "entity_type": "machine",
+        "test_run_id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "max_created_at": "2026-08-30T16:08:07.313135+00:00",
+        "min_created_at": "2026-08-30T16:08:07.313135+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "machine_assignment",
+        "test_run_id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "max_created_at": "2026-08-30T16:08:14.170939+00:00",
+        "min_created_at": "2026-08-30T16:08:14.170939+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "operator",
+        "test_run_id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "max_created_at": "2026-08-30T16:08:13.973937+00:00",
+        "min_created_at": "2026-08-30T16:08:13.973937+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "workstation_authorization",
+        "test_run_id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "max_created_at": "2026-08-30T16:08:14.170939+00:00",
+        "min_created_at": "2026-08-30T16:08:14.170939+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "cell_assignment",
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "max_created_at": "2026-08-30T16:08:58.740501+00:00",
+        "min_created_at": "2026-08-30T16:08:58.740501+00:00"
+      },
+      {
+        "rows": 1,
+        "stage": null,
+        "entity_type": "import_batch",
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "max_created_at": "2026-08-30T16:19:20.537009+00:00",
+        "min_created_at": "2026-08-30T16:19:20.537009+00:00"
+      },
+      {
+        "rows": 6,
+        "stage": "cnc",
+        "entity_type": "machine",
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "max_created_at": "2026-08-30T16:08:51.93519+00:00",
+        "min_created_at": "2026-08-30T16:08:51.93519+00:00"
+      },
+      {
+        "rows": 25,
+        "stage": "cut",
+        "entity_type": "machine",
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "max_created_at": "2026-08-30T16:08:51.93519+00:00",
+        "min_created_at": "2026-08-30T16:08:51.93519+00:00"
+      },
+      {
+        "rows": 50,
+        "stage": "edge",
+        "entity_type": "machine",
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "max_created_at": "2026-08-30T16:08:51.93519+00:00",
+        "min_created_at": "2026-08-30T16:08:51.93519+00:00"
+      },
+      {
+        "rows": 2,
+        "stage": "separation",
+        "entity_type": "machine",
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "max_created_at": "2026-08-30T16:08:51.93519+00:00",
+        "min_created_at": "2026-08-30T16:08:51.93519+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "machine_assignment",
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "max_created_at": "2026-08-30T16:08:58.740501+00:00",
+        "min_created_at": "2026-08-30T16:08:58.740501+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "operator",
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "max_created_at": "2026-08-30T16:08:58.583972+00:00",
+        "min_created_at": "2026-08-30T16:08:58.583972+00:00"
+      },
+      {
+        "rows": 10000,
+        "stage": null,
+        "entity_type": "piece",
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "max_created_at": "2026-08-30T16:19:24.786716+00:00",
+        "min_created_at": "2026-08-30T16:19:20.447067+00:00"
+      },
+      {
+        "rows": 20,
+        "stage": null,
+        "entity_type": "production_lot",
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "max_created_at": "2026-08-30T16:19:20.537009+00:00",
+        "min_created_at": "2026-08-30T16:19:20.537009+00:00"
+      },
+      {
+        "rows": 10000,
+        "stage": null,
+        "entity_type": "production_lot_item",
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "max_created_at": "2026-08-30T16:19:24.860569+00:00",
+        "min_created_at": "2026-08-30T16:19:20.537009+00:00"
+      },
+      {
+        "rows": 20,
+        "stage": null,
+        "entity_type": "production_order",
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "max_created_at": "2026-08-30T16:19:20.537009+00:00",
+        "min_created_at": "2026-08-30T16:19:20.537009+00:00"
+      },
+      {
+        "rows": 83,
+        "stage": null,
+        "entity_type": "workstation_authorization",
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "max_created_at": "2026-08-30T16:08:58.740501+00:00",
+        "min_created_at": "2026-08-30T16:08:58.740501+00:00"
+      }
+    ],
+    "agent_aggregates": [
+      {
+        "stage": "Borda",
+        "state": "idle",
+        "agents": 2,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:42:21.601678+00:00",
+        "min_created_at": "2026-08-30T16:42:21.601678+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Corte",
+        "state": "idle",
+        "agents": 2,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:42:21.601678+00:00",
+        "min_created_at": "2026-08-30T16:42:21.601678+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Separação",
+        "state": "idle",
+        "agents": 1,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:42:21.601678+00:00",
+        "min_created_at": "2026-08-30T16:42:21.601678+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Usinagem",
+        "state": "idle",
+        "agents": 1,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:42:21.601678+00:00",
+        "min_created_at": "2026-08-30T16:42:21.601678+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Borda",
+        "state": "idle",
+        "agents": 50,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T21:19:24.669615+00:00",
+        "min_created_at": "2026-08-30T21:19:24.669615+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Corte",
+        "state": "idle",
+        "agents": 25,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T21:19:24.669615+00:00",
+        "min_created_at": "2026-08-30T21:19:24.669615+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Separação",
+        "state": "idle",
+        "agents": 2,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T21:19:24.669615+00:00",
+        "min_created_at": "2026-08-30T21:19:24.669615+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Usinagem",
+        "state": "idle",
+        "agents": 6,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "1b87a23c-69d7-44a3-b2af-10a77b509111",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T21:19:24.669615+00:00",
+        "min_created_at": "2026-08-30T21:19:24.669615+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Borda",
+        "state": "idle",
+        "agents": 2,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:46:10.111314+00:00",
+        "min_created_at": "2026-08-30T16:46:10.111314+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Corte",
+        "state": "idle",
+        "agents": 2,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:46:10.111314+00:00",
+        "min_created_at": "2026-08-30T16:46:10.111314+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Separação",
+        "state": "idle",
+        "agents": 1,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:46:10.111314+00:00",
+        "min_created_at": "2026-08-30T16:46:10.111314+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Usinagem",
+        "state": "idle",
+        "agents": 1,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:46:10.111314+00:00",
+        "min_created_at": "2026-08-30T16:46:10.111314+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Borda",
+        "state": "idle",
+        "agents": 50,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T21:28:06.581329+00:00",
+        "min_created_at": "2026-08-30T21:28:06.581329+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Corte",
+        "state": "idle",
+        "agents": 25,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T21:28:06.581329+00:00",
+        "min_created_at": "2026-08-30T21:28:06.581329+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Separação",
+        "state": "idle",
+        "agents": 2,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T21:28:06.581329+00:00",
+        "min_created_at": "2026-08-30T21:28:06.581329+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Usinagem",
+        "state": "idle",
+        "agents": 6,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T21:28:06.581329+00:00",
+        "min_created_at": "2026-08-30T21:28:06.581329+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Borda",
+        "state": "idle",
+        "agents": 2,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:40:28.504179+00:00",
+        "min_created_at": "2026-08-30T16:28:27.132926+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Corte",
+        "state": "idle",
+        "agents": 2,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:40:28.504179+00:00",
+        "min_created_at": "2026-08-30T16:28:27.132926+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Separação",
+        "state": "idle",
+        "agents": 1,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:40:28.504179+00:00",
+        "min_created_at": "2026-08-30T16:28:27.132926+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Usinagem",
+        "state": "idle",
+        "agents": 1,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:40:28.504179+00:00",
+        "min_created_at": "2026-08-30T16:28:27.132926+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Borda",
+        "state": "idle",
+        "agents": 50,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T18:42:19.644901+00:00",
+        "min_created_at": "2026-08-30T18:42:19.644901+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Corte",
+        "state": "idle",
+        "agents": 25,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T18:42:19.644901+00:00",
+        "min_created_at": "2026-08-30T18:42:19.644901+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Separação",
+        "state": "idle",
+        "agents": 2,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T18:42:19.644901+00:00",
+        "min_created_at": "2026-08-30T18:42:19.644901+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Usinagem",
+        "state": "idle",
+        "agents": 6,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "bb92fb5e-c2e1-4225-a07c-4c29121989bb",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T18:42:19.644901+00:00",
+        "min_created_at": "2026-08-30T18:42:19.644901+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Borda",
+        "state": "idle",
+        "agents": 50,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "success_count": 0,
+        "max_updated_at": "2026-08-31T00:22:38.131311+00:00",
+        "min_created_at": "2026-08-31T00:22:38.131311+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Corte",
+        "state": "idle",
+        "agents": 25,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "success_count": 0,
+        "max_updated_at": "2026-08-31T00:22:38.131311+00:00",
+        "min_created_at": "2026-08-31T00:22:38.131311+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Separação",
+        "state": "idle",
+        "agents": 2,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "success_count": 0,
+        "max_updated_at": "2026-08-31T00:22:38.131311+00:00",
+        "min_created_at": "2026-08-31T00:22:38.131311+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Usinagem",
+        "state": "idle",
+        "agents": 6,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "c7ea1b62-982c-4dbc-a0ac-5ee0735c46fe",
+        "success_count": 0,
+        "max_updated_at": "2026-08-31T00:22:38.131311+00:00",
+        "min_created_at": "2026-08-31T00:22:38.131311+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Borda",
+        "state": "idle",
+        "agents": 50,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T17:09:03.033917+00:00",
+        "min_created_at": "2026-08-30T17:09:03.033917+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Corte",
+        "state": "idle",
+        "agents": 25,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T17:09:03.033917+00:00",
+        "min_created_at": "2026-08-30T17:09:03.033917+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Separação",
+        "state": "idle",
+        "agents": 2,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T17:09:03.033917+00:00",
+        "min_created_at": "2026-08-30T17:09:03.033917+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Usinagem",
+        "state": "idle",
+        "agents": 6,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "d081964f-a7a2-4553-979a-5908dd506e21",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T17:09:03.033917+00:00",
+        "min_created_at": "2026-08-30T17:09:03.033917+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Borda",
+        "state": "idle",
+        "agents": 50,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:08:14.239916+00:00",
+        "min_created_at": "2026-08-30T16:08:14.239916+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Corte",
+        "state": "idle",
+        "agents": 25,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:08:14.239916+00:00",
+        "min_created_at": "2026-08-30T16:08:14.239916+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Separação",
+        "state": "idle",
+        "agents": 2,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:08:14.239916+00:00",
+        "min_created_at": "2026-08-30T16:08:14.239916+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Usinagem",
+        "state": "idle",
+        "agents": 6,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "f0ba5d49-2021-4c93-852a-1e79d920e50b",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:08:14.239916+00:00",
+        "min_created_at": "2026-08-30T16:08:14.239916+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Borda",
+        "state": "idle",
+        "agents": 50,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:08:58.822105+00:00",
+        "min_created_at": "2026-08-30T16:08:58.822105+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Corte",
+        "state": "idle",
+        "agents": 25,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:08:58.822105+00:00",
+        "min_created_at": "2026-08-30T16:08:58.822105+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Separação",
+        "state": "idle",
+        "agents": 2,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:08:58.822105+00:00",
+        "min_created_at": "2026-08-30T16:08:58.822105+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      },
+      {
+        "stage": "Usinagem",
+        "state": "idle",
+        "agents": 6,
+        "sent_count": 0,
+        "error_count": 0,
+        "retry_count": 0,
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "success_count": 0,
+        "max_updated_at": "2026-08-30T16:08:58.822105+00:00",
+        "min_created_at": "2026-08-30T16:08:58.822105+00:00",
+        "max_queue_depth": 0,
+        "last_heartbeat_at": null
+      }
+    ],
+    "metric_aggregates": [
+      {
+        "stage": "flow",
+        "samples": 100,
+        "sent_sum": 400,
+        "errors_sum": 0,
+        "success_sum": 400,
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "received_sum": 400,
+        "processed_sum": 400,
+        "duplicates_sum": 0,
+        "max_sampled_at": "2026-08-30T16:43:30.604063+00:00",
+        "min_sampled_at": "2026-08-30T16:43:09.827482+00:00",
+        "max_queue_depth": 0,
+        "max_latency_max_ms": null,
+        "max_latency_p95_ms": null,
+        "max_latency_p99_ms": null,
+        "max_realtime_delay_ms": null,
+        "max_throughput_per_second": 7.326
+      },
+      {
+        "stage": "flow",
+        "samples": 101,
+        "sent_sum": 400,
+        "errors_sum": 0,
+        "success_sum": 400,
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "received_sum": 400,
+        "processed_sum": 400,
+        "duplicates_sum": 0,
+        "max_sampled_at": "2026-08-30T16:47:09.215403+00:00",
+        "min_sampled_at": "2026-08-30T16:46:48.220714+00:00",
+        "max_queue_depth": 0,
+        "max_latency_max_ms": 698.604,
+        "max_latency_p95_ms": 334.207,
+        "max_latency_p99_ms": 452.101,
+        "max_realtime_delay_ms": null,
+        "max_throughput_per_second": 16.638
+      },
+      {
+        "stage": "flow",
+        "samples": 1,
+        "sent_sum": 76,
+        "errors_sum": 2,
+        "success_sum": 71,
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "received_sum": 50,
+        "processed_sum": 71,
+        "duplicates_sum": 0,
+        "max_sampled_at": "2026-08-30T23:48:38.863162+00:00",
+        "min_sampled_at": "2026-08-30T23:48:38.863162+00:00",
+        "max_queue_depth": 0,
+        "max_latency_max_ms": 5001.13,
+        "max_latency_p95_ms": 4739.455,
+        "max_latency_p99_ms": 5000.573,
+        "max_realtime_delay_ms": null,
+        "max_throughput_per_second": 1.911
+      },
+      {
+        "stage": "flow",
+        "samples": 100,
+        "sent_sum": 400,
+        "errors_sum": 0,
+        "success_sum": 400,
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "received_sum": 400,
+        "processed_sum": 400,
+        "duplicates_sum": 0,
+        "max_sampled_at": "2026-08-30T16:41:09.024003+00:00",
+        "min_sampled_at": "2026-08-30T16:40:44.336071+00:00",
+        "max_queue_depth": 0,
+        "max_latency_max_ms": null,
+        "max_latency_p95_ms": null,
+        "max_latency_p99_ms": null,
+        "max_realtime_delay_ms": null,
+        "max_throughput_per_second": 3.82
+      },
+      {
+        "stage": "flow",
+        "samples": 196,
+        "sent_sum": 780,
+        "errors_sum": 412,
+        "success_sum": 368,
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "received_sum": 572,
+        "processed_sum": 572,
+        "duplicates_sum": 0,
+        "max_sampled_at": "2026-08-30T17:55:20.841588+00:00",
+        "min_sampled_at": "2026-08-30T17:35:41.943641+00:00",
+        "max_queue_depth": 0,
+        "max_latency_max_ms": 15019.579,
+        "max_latency_p95_ms": 15000.855,
+        "max_latency_p99_ms": 15000.98,
+        "max_realtime_delay_ms": null,
+        "max_throughput_per_second": 4.977
+      }
+    ],
+    "error_aggregates": [
+      {
+        "rows": 1,
+        "stage": "separation",
+        "scenario": "capacity_flow",
+        "severity": "medium",
+        "error_code": "blocked",
+        "environment": "supabase_branch",
+        "fingerprint": "separation:blocked",
+        "http_status": 200,
+        "max_attempt": 1,
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "frequency_sum": 1034,
+        "max_latency_ms": 3309.571,
+        "max_occurred_at": "2026-08-30T17:55:14.354929+00:00",
+        "min_occurred_at": "2026-08-30T17:55:14.354929+00:00",
+        "any_reproducible": true,
+        "investigation_status": "found"
+      },
+      {
+        "rows": 1,
+        "stage": "cnc",
+        "scenario": "capacity_flow",
+        "severity": "medium",
+        "error_code": "blocked",
+        "environment": "supabase_branch",
+        "fingerprint": "cnc:blocked",
+        "http_status": 200,
+        "max_attempt": 1,
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "frequency_sum": 771,
+        "max_latency_ms": 2036.426,
+        "max_occurred_at": "2026-08-30T17:55:11.733689+00:00",
+        "min_occurred_at": "2026-08-30T17:55:11.733689+00:00",
+        "any_reproducible": true,
+        "investigation_status": "found"
+      },
+      {
+        "rows": 1,
+        "stage": "edge",
+        "scenario": "capacity_flow",
+        "severity": "medium",
+        "error_code": "blocked",
+        "environment": "supabase_branch",
+        "fingerprint": "edge:blocked",
+        "http_status": 200,
+        "max_attempt": 1,
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "frequency_sum": 437,
+        "max_latency_ms": 3363.406,
+        "max_occurred_at": "2026-08-30T17:55:13.944362+00:00",
+        "min_occurred_at": "2026-08-30T17:55:13.944362+00:00",
+        "any_reproducible": true,
+        "investigation_status": "found"
+      },
+      {
+        "rows": 1,
+        "stage": "edge",
+        "scenario": "capacity_flow",
+        "severity": "high",
+        "error_code": "HTTP_ERROR",
+        "environment": "supabase_branch",
+        "fingerprint": "edge:500",
+        "http_status": 500,
+        "max_attempt": 1,
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "frequency_sum": 200,
+        "max_latency_ms": 11002.262,
+        "max_occurred_at": "2026-08-30T17:55:10.837837+00:00",
+        "min_occurred_at": "2026-08-30T17:55:10.837837+00:00",
+        "any_reproducible": true,
+        "investigation_status": "found"
+      },
+      {
+        "rows": 1,
+        "stage": "cnc",
+        "scenario": "capacity_flow",
+        "severity": "high",
+        "error_code": "HTTP_ERROR",
+        "environment": "supabase_branch",
+        "fingerprint": "cnc:0",
+        "http_status": 0,
+        "max_attempt": 1,
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "frequency_sum": 320,
+        "max_latency_ms": 15000.345,
+        "max_occurred_at": "2026-08-30T17:55:09.472124+00:00",
+        "min_occurred_at": "2026-08-30T17:55:09.472124+00:00",
+        "any_reproducible": true,
+        "investigation_status": "found"
+      },
+      {
+        "rows": 1,
+        "stage": "cut",
+        "scenario": "capacity_flow",
+        "severity": "high",
+        "error_code": "HTTP_ERROR",
+        "environment": "supabase_branch",
+        "fingerprint": "cut:0",
+        "http_status": 0,
+        "max_attempt": 1,
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "frequency_sum": 462,
+        "max_latency_ms": 15000.184,
+        "max_occurred_at": "2026-08-30T17:55:10.45332+00:00",
+        "min_occurred_at": "2026-08-30T17:55:10.45332+00:00",
+        "any_reproducible": true,
+        "investigation_status": "found"
+      },
+      {
+        "rows": 1,
+        "stage": "cnc",
+        "scenario": "capacity_flow",
+        "severity": "high",
+        "error_code": "HTTP_ERROR",
+        "environment": "supabase_branch",
+        "fingerprint": "cnc:500",
+        "http_status": 500,
+        "max_attempt": 1,
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "frequency_sum": 156,
+        "max_latency_ms": 11654.383,
+        "max_occurred_at": "2026-08-30T17:55:11.726029+00:00",
+        "min_occurred_at": "2026-08-30T17:55:11.726029+00:00",
+        "any_reproducible": true,
+        "investigation_status": "found"
+      },
+      {
+        "rows": 1,
+        "stage": "separation",
+        "scenario": "capacity_flow",
+        "severity": "high",
+        "error_code": "HTTP_ERROR",
+        "environment": "supabase_branch",
+        "fingerprint": "separation:0",
+        "http_status": 0,
+        "max_attempt": 1,
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "frequency_sum": 289,
+        "max_latency_ms": 15001.042,
+        "max_occurred_at": "2026-08-30T17:55:03.580292+00:00",
+        "min_occurred_at": "2026-08-30T17:55:03.580292+00:00",
+        "any_reproducible": true,
+        "investigation_status": "found"
+      },
+      {
+        "rows": 1,
+        "stage": "edge",
+        "scenario": "capacity_flow",
+        "severity": "high",
+        "error_code": "HTTP_ERROR",
+        "environment": "supabase_branch",
+        "fingerprint": "edge:0",
+        "http_status": 0,
+        "max_attempt": 1,
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "frequency_sum": 393,
+        "max_latency_ms": 14999.911,
+        "max_occurred_at": "2026-08-30T17:55:08.927459+00:00",
+        "min_occurred_at": "2026-08-30T17:55:08.927459+00:00",
+        "any_reproducible": true,
+        "investigation_status": "found"
+      },
+      {
+        "rows": 1,
+        "stage": "separation",
+        "scenario": "capacity_flow",
+        "severity": "high",
+        "error_code": "HTTP_ERROR",
+        "environment": "supabase_branch",
+        "fingerprint": "separation:500",
+        "http_status": 500,
+        "max_attempt": 1,
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "frequency_sum": 118,
+        "max_latency_ms": 8364.798,
+        "max_occurred_at": "2026-08-30T17:55:08.855385+00:00",
+        "min_occurred_at": "2026-08-30T17:55:08.855385+00:00",
+        "any_reproducible": true,
+        "investigation_status": "found"
+      },
+      {
+        "rows": 1,
+        "stage": "cut",
+        "scenario": "capacity_flow",
+        "severity": "high",
+        "error_code": "HTTP_ERROR",
+        "environment": "supabase_branch",
+        "fingerprint": "cut:500",
+        "http_status": 500,
+        "max_attempt": 1,
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "frequency_sum": 265,
+        "max_latency_ms": 11496.52,
+        "max_occurred_at": "2026-08-30T17:55:11.975513+00:00",
+        "min_occurred_at": "2026-08-30T17:55:11.975513+00:00",
+        "any_reproducible": true,
+        "investigation_status": "found"
+      }
+    ],
+    "command_aggregates": [
+      {
+        "rows": 1,
+        "command": "finish",
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "previous_status": "running",
+        "max_requested_at": "2026-08-30T16:43:31.580228+00:00",
+        "min_requested_at": "2026-08-30T16:43:31.580228+00:00",
+        "resulting_status": "completed"
+      },
+      {
+        "rows": 1,
+        "command": "start",
+        "test_run_id": "045073b6-900e-48c5-9005-a6018a6c8273",
+        "previous_status": "ready",
+        "max_requested_at": "2026-08-30T16:43:06.979042+00:00",
+        "min_requested_at": "2026-08-30T16:43:06.979042+00:00",
+        "resulting_status": "running"
+      },
+      {
+        "rows": 1,
+        "command": "finish",
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "previous_status": "running",
+        "max_requested_at": "2026-08-30T16:47:09.27004+00:00",
+        "min_requested_at": "2026-08-30T16:47:09.27004+00:00",
+        "resulting_status": "completed"
+      },
+      {
+        "rows": 1,
+        "command": "start",
+        "test_run_id": "578722d8-0e5c-40c4-856d-3a69d16f38ea",
+        "previous_status": "ready",
+        "max_requested_at": "2026-08-30T16:46:45.789375+00:00",
+        "min_requested_at": "2026-08-30T16:46:45.789375+00:00",
+        "resulting_status": "running"
+      },
+      {
+        "rows": 1,
+        "command": "finish",
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "previous_status": "running",
+        "max_requested_at": "2026-08-30T23:48:38.907731+00:00",
+        "min_requested_at": "2026-08-30T23:48:38.907731+00:00",
+        "resulting_status": "completed"
+      },
+      {
+        "rows": 1,
+        "command": "start",
+        "test_run_id": "6a729c56-6f18-4339-8ace-562af471a3ac",
+        "previous_status": "ready",
+        "max_requested_at": "2026-08-30T23:48:03.133667+00:00",
+        "min_requested_at": "2026-08-30T23:48:03.133667+00:00",
+        "resulting_status": "running"
+      },
+      {
+        "rows": 1,
+        "command": "finish",
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "previous_status": "running",
+        "max_requested_at": "2026-08-30T16:42:00.766621+00:00",
+        "min_requested_at": "2026-08-30T16:42:00.766621+00:00",
+        "resulting_status": "completed"
+      },
+      {
+        "rows": 4,
+        "command": "start",
+        "test_run_id": "a18f33d0-ebe3-4236-9524-0c1cfd145467",
+        "previous_status": "ready",
+        "max_requested_at": "2026-08-30T16:40:42.067541+00:00",
+        "min_requested_at": "2026-08-30T16:30:00.565662+00:00",
+        "resulting_status": "running"
+      },
+      {
+        "rows": 1,
+        "command": "finish",
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "previous_status": "running",
+        "max_requested_at": "2026-08-30T17:55:20.892811+00:00",
+        "min_requested_at": "2026-08-30T17:55:20.892811+00:00",
+        "resulting_status": "completed"
+      },
+      {
+        "rows": 1,
+        "command": "release",
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "previous_status": "preparing",
+        "max_requested_at": "2026-08-30T16:48:19.53274+00:00",
+        "min_requested_at": "2026-08-30T16:48:19.53274+00:00",
+        "resulting_status": "ready"
+      },
+      {
+        "rows": 1,
+        "command": "start",
+        "test_run_id": "f7258da7-d1f2-4d50-9c06-5bd6c46a8fc1",
+        "previous_status": "ready",
+        "max_requested_at": "2026-08-30T17:34:59.044822+00:00",
+        "min_requested_at": "2026-08-30T17:34:59.044822+00:00",
+        "resulting_status": "running"
+      }
+    ]
+  },
+  "pre_reset_activity": {
+    "captured_at_utc": "2026-09-04T18:14:19.999628+00:00",
+    "sessions_by_allowlisted_class_and_state": [
+      {
+        "state": "idle",
+        "sessions": 1,
+        "in_transaction": 0,
+        "application_class": "<unset>"
+      },
+      {
+        "state": null,
+        "sessions": 6,
+        "in_transaction": 0,
+        "application_class": "<unset>"
+      },
+      {
+        "state": "idle",
+        "sessions": 1,
+        "in_transaction": 0,
+        "application_class": "metrics_exporter"
+      },
+      {
+        "state": null,
+        "sessions": 1,
+        "in_transaction": 0,
+        "application_class": "pg_cron"
+      },
+      {
+        "state": "idle",
+        "sessions": 1,
+        "in_transaction": 0,
+        "application_class": "pg_net"
+      },
+      {
+        "state": "idle",
+        "sessions": 1,
+        "in_transaction": 0,
+        "application_class": "postgrest"
+      }
+    ],
+    "idle_in_transaction": 0,
+    "waiting_locks": 0,
+    "granted_locks": 38
+  },
+  "critical_observations": [
+    "The target is a persistent non-default development branch whose parent is the production project; the project refs and API endpoints are distinct.",
+    "The branch database is reachable and ACTIVE_HEALTHY while the branch deployment status is MIGRATIONS_FAILED.",
+    "Nine capacity runs are cleaned and one run remains preparing; every capacity-test agent is idle and no agent has a recorded heartbeat.",
+    "The branch ledger is severely divergent from production: four common versions, one branch-only version, and 150 production-only versions.",
+    "PGMQ metadata, cron.job, coletas_producao, collection_processing_attempts, collection_projection_outbox, and feature_flags are absent.",
+    "No waiting locks and no idle-in-transaction sessions were observed at the final preflight snapshot.",
+    "Reset is destructive to untracked branch data/schema; this manifest preserves sanitized summaries and deterministic hashes but is not a recoverable database backup."
+  ],
+  "sanitization": {
+    "excluded": [
+      "email",
+      "full operator registration",
+      "JWT and refresh tokens",
+      "IP address",
+      "service credentials and secret values",
+      "raw JSON payloads/configuration/preflight/result summaries",
+      "raw audit old/new values, metadata, logs, stacks, and user agents",
+      "person identifiers from agent, metric, error, command, and audit exports"
+    ],
+    "vault_policy": "Names only; no secret values. The branch had zero Vault secret-name rows at capture.",
+    "hash_scope": "Capacity hashes use explicitly sanitized JSON projections. Fixture hashes are deterministic database-side digests only; fixture row contents are not exported. The audit hash uses a sanitized field projection."
+  },
+  "official_references": [
+    {
+      "title": "Supabase: Working with branches",
+      "url": "https://supabase.com/docs/guides/deployment/branching/working-with-branches",
+      "relevance": "Branches have isolated database/API/Auth/Storage/Edge state; branch data is temporary and resets/recreation lose additional data."
+    },
+    {
+      "title": "Supabase: Branching troubleshooting",
+      "url": "https://supabase.com/docs/guides/deployment/branching/troubleshooting",
+      "relevance": "Failed migrations should be diagnosed from deployment logs and migrations rerun sequentially after correcting migration state."
+    }
+  ]
+}
