@@ -348,6 +348,21 @@
     "audit_table_sanitized": {
       "row_count": 100357,
       "relation_name": "public.system_audit_logs",
+      "projection_id": "pre_reset_manifest_v1_with_id",
+      "projected_fields": [
+        "id",
+        "action",
+        "entity",
+        "page",
+        "route",
+        "method",
+        "success",
+        "created_at"
+      ],
+      "row_serialization": "sha256(jsonb_build_object(projected_fields)::text) encoded as 64 lowercase hex characters",
+      "ordering": "id::text ascending",
+      "aggregation": "sha256(concatenated row hashes without delimiter)",
+      "comparison_note": "Not directly comparable to capacity_archive_v1_without_id: that projection omits id from each row and uses it only for ordering.",
       "dataset_sha256": "c3c69c437c4439352523d32acfb338a18cd421ab6ba6da6bf29559686c853cdd",
       "max_observed_at": "2026-08-31T00:20:58.303479+00:00",
       "min_observed_at": "2026-08-30T16:01:09.503774+00:00"
