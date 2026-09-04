@@ -37,9 +37,9 @@ Antes do reset foram capturados, sem DDL/DML:
 Artefatos:
 
 - [`staging-pre-reset-manifest.json`](staging-pre-reset-manifest.json), SHA-256
-  `509d82c71cd8f387c82812ccaf43667379b2891a0706651eb4f5d252c53fa96f`;
+  `e7c2546448431e6bbd4f72abcdbb7ccf473ec2be3e69ef7a8b05b2b9c02c4a25`;
 - [`staging-capacity-evidence-sanitized.json`](staging-capacity-evidence-sanitized.json),
-  SHA-256 `ed4bfbaf96732ffb7d2a3fc849371fc35a5f92fa51726a382484d8ed4dec61f4`;
+  SHA-256 `8d6a0c60f9256d0d8408c27feae339e74a9d3f87e8b7acb1de5a6f18a604f0f5`;
 - [`staging-branch-only-migration.sql.txt`](staging-branch-only-migration.sql.txt),
   SHA-256 `abb58138c91a8b5b2ac1bab0a2a20eeb09f8d317795394103416d5af1bb13d6b`.
 
@@ -47,6 +47,21 @@ A exportação exclui e-mail, matrícula, IP, JWT, refresh token, service-role,
 segredos, identificadores de pessoa/sessão/máquina, payloads e logs brutos. Ela
 é restaurável como evidência sanitizada de auditoria, mas não é um backup físico
 completo do banco nem permite restaurar os campos deliberadamente excluídos.
+
+### Limitação de backup confirmada
+
+As credenciais atualmente disponíveis no repositório são apenas as duas chaves
+públicas do frontend. Não há `SUPABASE_DB_URL`, senha de banco ou secret
+equivalente para executar `pg_dump`. A superfície Supabase disponível nesta
+auditoria também não expõe criação/listagem/undo de Restore Points. Restore de
+branch apenas cancela exclusão agendada; não desfaz um reset.
+
+Assim, o gate de backup integral só pode ser liberado por uma destas vias:
+
+- fornecer uma credencial exclusiva da branch para gerar dumps separados de
+  roles/schema/data e validar o restore; ou
+- confirmar com a Supabase a habilitação de Restore Points para o projeto e
+  validar create/undo antes do reset.
 
 ## 3. Por que o reset foi interrompido no preflight
 
@@ -91,7 +106,7 @@ três arquivos temporários rastreados. Nenhum fluxo de recuperação poderá us
 
 1. congelar e commitar os artefatos pré-reset;
 2. obter um backup físico/restaurável restrito do staging e executar restore
-   drill, caso seja necessário preservar os campos brutos fora do repositório;
+   drill para preservar os campos brutos fora do repositório;
 3. criar uma lineage Git exclusiva de staging com baseline literal do runtime,
    seed somente sintético e incrementos vNext;
 4. neutralizar cron, Vault, worker wakeups e health probes por padrão; nenhum
@@ -129,6 +144,9 @@ três arquivos temporários rastreados. Nenhum fluxo de recuperação poderá us
 - [Troubleshooting de branches](https://supabase.com/docs/guides/deployment/branching/troubleshooting)
 - [Management API: reset de branch](https://supabase.com/docs/reference/api/v1-reset-a-branch)
 - [Database migrations e repair](https://supabase.com/docs/guides/deployment/database-migrations)
+- [Backup lógico em CI](https://supabase.com/docs/guides/deployment/ci/backups)
+- [Restore Points](https://supabase.com/docs/guides/integrations/supabase-for-platforms)
+- [Restore de branch não substitui backup](https://supabase.com/docs/reference/api/v1-restore-a-branch)
 
 ## 8. Estado deste checkpoint
 
