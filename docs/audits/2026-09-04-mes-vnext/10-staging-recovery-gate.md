@@ -150,6 +150,11 @@ três arquivos temporários rastreados. Nenhum fluxo de recuperação poderá us
 
 ## 8. Estado deste checkpoint
 
+- revalidação read-only às `2026-09-04T20:22:39.754471Z`: produção ainda com
+  154 migrations, última versão `20260903165317`, e as quatro flags v3 em
+  `false`; não há flag v4 no conjunto retornado;
+- metadata do staging revalidado no mesmo fechamento: `MIGRATIONS_FAILED`,
+  preview database `ACTIVE_HEALTHY`, mesmo Branch ID/ref/parent;
 - produção: **não alterada**;
 - staging: **não alterado**;
 - reset: **não executado**;
@@ -157,3 +162,8 @@ três arquivos temporários rastreados. Nenhum fluxo de recuperação poderá us
 - flags: **não alteradas**;
 - teste de carga: **não executado**;
 - decisão: **NO-GO/HOLD até baseline reprodutível e backup restaurável**.
+
+Contagens de tabelas operacionais continuam sujeitas a escrita legítima
+concorrente e não são usadas para atribuir ausência de mutação ao processo de
+auditoria. A afirmação acima refere-se às operações realizadas por esta
+recuperação: somente leituras foram enviadas aos dois bancos.
