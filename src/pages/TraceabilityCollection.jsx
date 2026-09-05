@@ -1156,6 +1156,7 @@ export default function TraceabilityCollection({ embedded = false }) {
       <div className="grid md:grid-cols-2 gap-6 items-stretch">
         <div className="h-full">
           <CollectionRecentReadsPanel
+            cellId={selectedCellId}
             cellName={cellName}
             workstationId={machine?.id}
             operatorId={operatorId}
@@ -1241,6 +1242,7 @@ export default function TraceabilityCollection({ embedded = false }) {
           open={kioskOpen}
           onClose={() => setKioskOpen(false)}
           cellName={cellName}
+          cellId={selectedCellId}
           machine={machine}
           shift={shift}
           operator={operator}

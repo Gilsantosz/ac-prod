@@ -19,6 +19,7 @@ import ActiveDowntimeBanner from '@/components/collection/ActiveDowntimeBanner';
 export default function CollectionFullscreenKiosk({
   open,
   onClose,
+  cellId,
   cellName,
   machine,
   shift,
@@ -309,6 +310,7 @@ export default function CollectionFullscreenKiosk({
             </h3>
             <div className="flex-1 min-h-[350px]">
               <CollectionRecentReadsPanel
+                cellId={cellId}
                 cellName={cellName}
                 workstationId={machine?.id}
                 operatorId={operatorId}

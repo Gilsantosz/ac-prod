@@ -147,11 +147,17 @@ export function subscribeToCollectionHistory({
   const channelName = `collection-history-${trimmedName || cellId || 'all'}${suffix}`;
 
   const finalEventConfig = {
-    event: 'INSERT',
+    // A fila assíncrona insere o evento como recebido/processando e só depois
+    // o atualiza para synced/approved. Escutar apenas INSERT deixa a aba
+    // "Aprovadas" congelada no estado anterior.
+    event: '*',
     schema: 'public',
     table: 'production_collection_events',
   };
-  if (trimmedName) finalEventConfig.filter = `cell_name=eq.${trimmedName}`;
+  // O ID evita perder notificações quando o nome cadastrado possui espaços
+  // legados (ex.: "Furação "). O nome permanece como fallback compatível.
+  if (cellId) finalEventConfig.filter = `cell_id=eq.${cellId}`;
+  else if (trimmedName) finalEventConfig.filter = `cell_name=eq.${trimmedName}`;
 
   try {
     return supabase

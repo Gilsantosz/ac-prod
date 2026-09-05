@@ -34,6 +34,7 @@ function getDateRange(selectedPeriod) {
 }
 
 export default function CollectionRecentReadsPanel({
+  cellId,
   cellName,
   workstationId,
   operatorId,
@@ -150,7 +151,9 @@ export default function CollectionRecentReadsPanel({
         refreshInFlight = true;
         lastRefreshAt = Date.now();
         try {
-          await fetchReadings(false, false);
+          // Atualiza lista e contador porque um UPDATE do worker pode mover o
+          // mesmo evento de "processando" para "aprovado".
+          await fetchReadings(false, true);
         } finally {
           refreshInFlight = false;
           if (refreshPending) scheduleRealtimeRefresh();
@@ -160,6 +163,7 @@ export default function CollectionRecentReadsPanel({
 
     setRealtimeStatus(navigator.onLine ? 'connecting' : 'offline');
     const channel = subscribeToCollectionHistory({
+      cellId,
       cellName,
       channelSuffix: 'panel',
       callback: scheduleRealtimeRefresh,
@@ -182,6 +186,17 @@ export default function CollectionRecentReadsPanel({
       window.removeEventListener('online', onOnline);
       unsubscribeFromCollectionHistory(channel);
     };
+  }, [cellId, cellName, fetchReadings]);
+
+  // Rede instável ou uma janela sem assinatura Realtime não pode deixar o
+  // histórico parado indefinidamente. Este é apenas o fallback; em condição
+  // normal, as mudanças continuam chegando pelo canal acima.
+  useEffect(() => {
+    if (!cellName) return undefined;
+    const intervalId = window.setInterval(() => {
+      void fetchReadings(false, true);
+    }, 15000);
+    return () => window.clearInterval(intervalId);
   }, [cellName, fetchReadings]);
 
   const handleSelect = (read) => {

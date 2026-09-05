@@ -3,138 +3,160 @@
  * Regra crítica: peças que exigem Marcenaria não podem avançar para Separação
  * antes que a Marcenaria esteja concluída.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
 import { auditLog, AUDIT_ACTIONS } from '@/lib/auditLog';
-import { fetchManualJoineryPieces, completeManualJoineryPiece } from '@/lib/manualJoineryService';
+import {
+  fetchManualJoineryPieces,
+  completeManualJoineryPiece,
+  fetchReadyJoineryLots,
+  completeReadyJoineryPiece,
+} from '@/lib/manualJoineryService';
 import { useOperatorSession } from '@/hooks/useOperatorSession';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  Wrench, CheckCircle, Clock, RefreshCw, UserRound,
+  Wrench, CheckCircle, RefreshCw, UserRound, AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function JoineryWorkbench({ _trace }) {
   const qc = useQueryClient();
-  const [lotFilter] = useState('pending');
   const [selectedLotId, setSelectedLotId] = useState(null);
+  const { session: operatorSession, setContext } = useOperatorSession();
 
-  // ─── Lotes com itens de Marcenaria ────────────────────────────
-  const { data: joineryLots = [], isLoading } = useQuery({
-    queryKey: ['joinery-lots', lotFilter],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('production_lots')
-        .select(`
-          id, lot_code, current_stage, status, blocked_reason,
-          production_orders:production_orders!production_order_id (order_code, customer_name, delivery_date),
-          lot_items!inner (
-            id, piece_name, piece_code, width, height, thickness,
-            material, color, status, requires_joinery, quantity
-          )
-        `)
-        .eq('lot_items.requires_joinery', true)
-        .order('created_at', { ascending: false })
-        .limit(100);
-
-      if (error) throw error;
-      return data || [];
-    },
-    refetchInterval: 20000,
-    initialData: [],
+  // ─── Peças canônicas liberadas para a Marcenaria ──────────────
+  const {
+    data: joineryLots = [],
+    isLoading,
+    isError,
+    error: joineryError,
+    refetch: refetchJoineryLots,
+  } = useQuery({
+    queryKey: ['joinery-lots'],
+    queryFn: fetchReadyJoineryLots,
+    refetchInterval: 15000,
   });
 
-  // ─── Eventos de marcenaria para o lote selecionado ───────────
-  const { data: joineryEvents = [] } = useQuery({
-    queryKey: ['joinery-events', selectedLotId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('lot_step_events')
-        .select('*, profiles(name)')
-        .eq('lot_id', selectedLotId)
-        .eq('step_code', 'joinery')
-        .order('created_at', { ascending: true });
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!selectedLotId,
-    initialData: [],
-  });
+  // Entrada na etapa e conclusão feita por outros postos aparecem sem reload.
+  // O polling de 15 s permanece como fallback caso o Realtime esteja indisponível.
+  useEffect(() => {
+    const suffix = globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2);
+    const channel = supabase
+      .channel(`joinery-workbench-${suffix}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'production_pieces',
+        filter: 'current_stage=eq.joinery',
+      }, () => qc.invalidateQueries({ queryKey: ['joinery-lots'] }))
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'production_stage_readings',
+        filter: 'step_name=eq.joinery',
+      }, () => qc.invalidateQueries({ queryKey: ['joinery-lots'] }))
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [qc]);
+
+  useEffect(() => {
+    if (selectedLotId && !joineryLots.some((lot) => lot.id === selectedLotId)) {
+      setSelectedLotId(null);
+    }
+  }, [joineryLots, selectedLotId]);
 
   const selectedLot = joineryLots.find(l => l.id === selectedLotId);
-  const joineryItems = selectedLot?.lot_items?.filter(i => i.requires_joinery) || [];
-  const completedItemIds = new Set(
-    joineryEvents.filter(e => e.event_type === 'finish').map(e => e.lot_item_id)
-  );
+  const joineryItems = selectedLot?.lot_items || [];
+  const pendingCount = joineryItems.length;
+  const readyPieceCount = joineryLots.reduce((total, lot) => total + (lot.lot_items?.length || 0), 0);
 
-  const pendingCount  = joineryItems.filter(i => !completedItemIds.has(i.id)).length;
-  const completedCount = joineryItems.filter(i => completedItemIds.has(i.id)).length;
-  const allDone = pendingCount === 0 && joineryItems.length > 0;
+  const ensureJoineryContext = async () => {
+    if (!operatorSession?.token) throw new Error('Faça o login operacional antes da baixa.');
+
+    const joineryCell = (operatorSession.cells || []).find((cell) => {
+      const name = String(cell?.name || cell || '').trim().toLowerCase();
+      const type = String(cell?.type || '').trim().toLowerCase();
+      return name === 'marcenaria' || type === 'joinery';
+    });
+    const joineryCellId = joineryCell?.id;
+    if (!joineryCellId) {
+      throw new Error('O operador não possui uma célula Marcenaria válida no cadastro.');
+    }
+
+    if (operatorSession.selected_cell_id === joineryCellId) return operatorSession;
+    return setContext(joineryCellId, null, 'Bancada Marcenaria');
+  };
 
   // ─── Concluir peça individual na Marcenaria ───────────────────
   const finishItem = useMutation({
-    mutationFn: async ({ lotItemId, lotId, itemName }) => {
-      const { error } = await supabase.from('lot_step_events').insert({
-        lot_id:      lotId,
-        lot_item_id: lotItemId,
-        step_code:   'joinery',
-        event_type:  'finish',
-        notes:       `Marcenaria concluída: ${itemName}`,
-        quantity:    1,
-      });
-      if (error) throw error;
-      return { lotItemId, itemName };
+    mutationFn: async ({ piece }) => {
+      const activeSession = await ensureJoineryContext();
+      return completeReadyJoineryPiece(piece, activeSession);
     },
-    onSuccess: async ({ itemName }) => {
-      qc.invalidateQueries({ queryKey: ['joinery-events', selectedLotId] });
-      qc.invalidateQueries({ queryKey: ['production-lots'] });
-      await auditLog(AUDIT_ACTIONS.STEP_FINISH, 'lot_item', selectedLotId, {
-        step: 'joinery', item: itemName
+    onSuccess: async (_result, { piece }) => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['joinery-lots'] }),
+        qc.invalidateQueries({ queryKey: ['production-lots'] }),
+        qc.invalidateQueries({ queryKey: ['trace-search'] }),
+        qc.invalidateQueries({ queryKey: ['collection-history'] }),
+        qc.invalidateQueries({ queryKey: ['collection-kpis'] }),
+      ]);
+      await auditLog(AUDIT_ACTIONS.STEP_FINISH, 'production_piece', piece.id, {
+        step: 'joinery', item: piece.piece_name || piece.traceability_code
       });
-      toast.success(`✅ ${itemName} — Marcenaria concluída!`);
+      toast.success(`✅ ${piece.piece_name || piece.traceability_code} — Marcenaria concluída!`);
     },
-    onError: (e) => toast.error(e?.message),
+    onError: (e) => toast.error(e?.message || 'Falha ao concluir a peça na Marcenaria.'),
   });
 
   // ─── Concluir TODA a Marcenaria do lote de uma vez ────────────
   const finishAllJoinery = useMutation({
     mutationFn: async (lot) => {
-      const pendingItems = joineryItems.filter(i => !completedItemIds.has(i.id));
-      const events = pendingItems.map(item => ({
-        lot_id:      lot.id,
-        lot_item_id: item.id,
-        step_code:   'joinery',
-        event_type:  'finish',
-        notes:       'Marcenaria concluída em lote',
-        quantity:    item.quantity || 1,
-      }));
-      if (events.length === 0) throw new Error('Nenhuma peça pendente');
-      const { error } = await supabase.from('lot_step_events').insert(events);
-      if (error) throw error;
+      const pendingItems = lot?.lot_items || [];
+      if (pendingItems.length === 0) throw new Error('Nenhuma peça pendente');
+      const activeSession = await ensureJoineryContext();
+      let completed = 0;
+      try {
+        for (const piece of pendingItems) {
+          await completeReadyJoineryPiece(piece, activeSession);
+          completed += 1;
+        }
+      } catch (error) {
+        throw new Error(`${completed} de ${pendingItems.length} peças concluídas. ${error?.message || 'Falha na baixa.'}`);
+      }
+      return { completed };
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['joinery-events', selectedLotId] });
-      qc.invalidateQueries({ queryKey: ['production-lots'] });
-      toast.success('🎉 Todas as peças de Marcenaria concluídas! O lote pode avançar para Separação.');
+    onSuccess: async ({ completed }) => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['joinery-lots'] }),
+        qc.invalidateQueries({ queryKey: ['production-lots'] }),
+        qc.invalidateQueries({ queryKey: ['trace-search'] }),
+        qc.invalidateQueries({ queryKey: ['collection-history'] }),
+        qc.invalidateQueries({ queryKey: ['collection-kpis'] }),
+      ]);
+      toast.success(`🎉 ${completed} peça(s) concluída(s). O lote pode avançar para Separação.`);
     },
     onError: (e) => toast.error(e?.message),
   });
 
   return (
     <div className="space-y-5">
-      <ManualJoineryQueue />
+      <ManualJoineryQueue ensureJoineryContext={ensureJoineryContext} />
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
       {/* ── Lista de Lotes com Marcenaria ──────────────────────── */}
       <div className="lg:col-span-1 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-            Lotes com Marcenaria
+            Lotes liberados para Marcenaria
           </h3>
           <Badge variant="outline" className="text-xs">
-            {joineryLots.length}
+            {readyPieceCount} peça(s)
           </Badge>
         </div>
 
@@ -142,15 +164,25 @@ export default function JoineryWorkbench({ _trace }) {
           <div className="flex items-center gap-2 text-sm text-muted-foreground p-3">
             <RefreshCw className="w-4 h-4 animate-spin" /> Carregando…
           </div>
+        ) : isError ? (
+          <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-4 space-y-3 text-rose-600">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+              <p className="text-xs font-medium">{joineryError?.message || 'Falha ao carregar a fila da Marcenaria.'}</p>
+            </div>
+            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => refetchJoineryLots()}>
+              <RefreshCw className="w-3 h-3 mr-1.5" /> Tentar novamente
+            </Button>
+          </div>
         ) : joineryLots.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground border border-dashed border-border/40 rounded-2xl">
             <Wrench className="w-6 h-6 mx-auto mb-2 opacity-40" />
-            <p className="text-sm">Nenhum lote com Marcenaria no momento</p>
+            <p className="text-sm">Nenhuma peça liberada para Marcenaria no momento</p>
           </div>
         ) : (
           <div className="space-y-2 max-h-[65vh] overflow-y-auto pr-1">
             {joineryLots.map(lot => {
-              const lotJoineryItems = lot.lot_items?.filter(i => i.requires_joinery) || [];
+              const lotJoineryItems = lot.lot_items || [];
               const isSelected = lot.id === selectedLotId;
               const order = lot.production_orders;
 
@@ -169,18 +201,15 @@ export default function JoineryWorkbench({ _trace }) {
                     <div className="min-w-0">
                       <p className="font-semibold text-sm text-foreground">{lot.lot_code}</p>
                       <p className="text-xs text-muted-foreground truncate">{order?.customer_name}</p>
+                      {lot.general_lot_code && (
+                        <p className="text-[10px] text-muted-foreground mt-0.5">Lote geral: {lot.general_lot_code}</p>
+                      )}
                     </div>
                     <div className="flex items-center gap-1">
                       <Wrench className="w-3.5 h-3.5 text-amber-500" />
                       <span className="text-xs font-medium text-amber-600">{lotJoineryItems.length} pç</span>
                     </div>
                   </div>
-                  {order?.delivery_date && (
-                    <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
-                      <Clock className="w-2.5 h-2.5" />
-                      Entrega: {new Date(order.delivery_date).toLocaleDateString('pt-BR')}
-                    </p>
-                  )}
                 </button>
               );
             })}
@@ -207,29 +236,13 @@ export default function JoineryWorkbench({ _trace }) {
                     {selectedLot?.production_orders?.customer_name} · {selectedLot?.production_orders?.order_code}
                   </p>
                 </div>
-                {allDone && (
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30 px-3 py-1.5 rounded-full">
-                    <CheckCircle className="w-3.5 h-3.5" />
-                    Marcenaria Concluída — Pode ir para Separação
-                  </span>
-                )}
+                <span className="flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-100 dark:bg-amber-900/30 px-3 py-1.5 rounded-full">
+                  <Wrench className="w-3.5 h-3.5" />
+                  {pendingCount} peça(s) aguardando produção
+                </span>
               </div>
 
-              {/* Progresso */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>{completedCount}/{joineryItems.length} peças concluídas</span>
-                  <span>{Math.round((completedCount / Math.max(joineryItems.length, 1)) * 100)}%</span>
-                </div>
-                <div className="h-2 bg-secondary/60 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-amber-500 rounded-full transition-all duration-500"
-                    style={{ width: `${(completedCount / Math.max(joineryItems.length, 1)) * 100}%` }}
-                  />
-                </div>
-              </div>
-
-              {!allDone && (
+              {pendingCount > 0 && (
                 <Button
                   size="sm"
                   className="gap-2 bg-amber-600 hover:bg-amber-700 text-white"
@@ -240,7 +253,7 @@ export default function JoineryWorkbench({ _trace }) {
                     ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                     : <CheckCircle className="w-3.5 h-3.5" />
                   }
-                  Concluir Toda a Marcenaria
+                  Concluir peças liberadas do lote
                 </Button>
               )}
             </div>
@@ -250,33 +263,17 @@ export default function JoineryWorkbench({ _trace }) {
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 Peças de Marcenaria ({joineryItems.length})
               </h4>
-              {joineryItems.map(item => {
-                const isDone = completedItemIds.has(item.id);
-                return (
+              {joineryItems.map(item => (
                   <div
                     key={item.id}
-                    className={cn(
-                      'border rounded-xl p-3.5 flex items-center gap-3 transition-all',
-                      isDone
-                        ? 'bg-emerald-50/30 dark:bg-emerald-950/10 border-emerald-200/60 dark:border-emerald-800/40'
-                        : 'bg-card border-border/60 hover:border-amber-300/60'
-                    )}
+                    className="border rounded-xl p-3.5 flex items-center gap-3 transition-all bg-card border-border/60 hover:border-amber-300/60"
                   >
-                    <div className={cn(
-                      'w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
-                      isDone ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-amber-100 dark:bg-amber-900/30'
-                    )}>
-                      {isDone
-                        ? <CheckCircle className="w-4 h-4 text-emerald-600" />
-                        : <Wrench className="w-4 h-4 text-amber-600" />
-                      }
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-amber-100 dark:bg-amber-900/30">
+                      <Wrench className="w-4 h-4 text-amber-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className={cn(
-                        'text-sm font-medium',
-                        isDone ? 'text-muted-foreground line-through' : 'text-foreground'
-                      )}>
-                        {item.piece_name || item.piece_code}
+                      <p className="text-sm font-medium text-foreground">
+                        {item.piece_name || item.traceability_code || item.piece_uid}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {[
@@ -285,29 +282,24 @@ export default function JoineryWorkbench({ _trace }) {
                           item.material,
                           item.color,
                         ].filter(Boolean).join(' · ')}
-                        {item.quantity > 1 && <> · <strong>×{item.quantity}</strong></>}
+                      </p>
+                      <p className="text-[10px] font-mono text-muted-foreground mt-0.5">
+                        {item.traceability_code || item.piece_uid}
                       </p>
                     </div>
-                    {!isDone && (
-                      <Button
-                        size="sm"
-                        className="h-7 text-xs gap-1.5 bg-amber-600 hover:bg-amber-700 text-white shrink-0"
-                        onClick={() => finishItem.mutate({
-                          lotItemId: item.id,
-                          lotId:     selectedLotId,
-                          itemName:  item.piece_name || item.piece_code,
-                        })}
-                        disabled={finishItem.isPending}
-                      >
-                        <CheckCircle className="w-3 h-3" /> Concluir
-                      </Button>
-                    )}
-                    {isDone && (
-                      <span className="text-xs text-emerald-600 font-medium shrink-0">✓ Pronto</span>
-                    )}
+                    <Button
+                      size="sm"
+                      className="h-7 text-xs gap-1.5 bg-amber-600 hover:bg-amber-700 text-white shrink-0"
+                      onClick={() => finishItem.mutate({ piece: item })}
+                      disabled={finishItem.isPending || finishAllJoinery.isPending}
+                    >
+                      {finishItem.isPending && finishItem.variables?.piece?.id === item.id
+                        ? <RefreshCw className="w-3 h-3 animate-spin" />
+                        : <CheckCircle className="w-3 h-3" />}
+                      Concluir
+                    </Button>
                   </div>
-                );
-              })}
+                ))}
             </div>
           </>
         )}
@@ -317,7 +309,7 @@ export default function JoineryWorkbench({ _trace }) {
   );
 }
 
-function ManualJoineryQueue() {
+function ManualJoineryQueue({ ensureJoineryContext }) {
   const qc = useQueryClient();
   const { session: operatorSession } = useOperatorSession();
   const { data: pieces = [], isLoading } = useQuery({
@@ -328,7 +320,10 @@ function ManualJoineryQueue() {
   });
 
   const finishPiece = useMutation({
-    mutationFn: (piece) => completeManualJoineryPiece(piece, operatorSession),
+    mutationFn: async (piece) => {
+      const activeSession = await ensureJoineryContext();
+      return completeManualJoineryPiece(piece, activeSession);
+    },
     onSuccess: async (_result, piece) => {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['manual-joinery-pieces'] }),

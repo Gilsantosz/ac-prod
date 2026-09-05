@@ -182,13 +182,14 @@ describe('AC.Prod2 asynchronous collection v9.2.3 contract', () => {
     expect(service).toContain('filterConditions.push(`piece_id.eq.${idToSearch}`)');
   });
 
-  it('escuta somente o evento final e consolida invalidações do dashboard', () => {
+  it('escuta a criação e a finalização assíncrona e consolida invalidações do dashboard', () => {
     const service = readRepoFile('src/lib/collectionService.js');
     const queryKeys = readRepoFile('src/config/queryKeys.js');
     const page = readRepoFile('src/pages/TraceabilityCollection.jsx');
 
-    expect(service).toContain("event: 'INSERT'");
+    expect(service).toContain("event: '*'");
     expect(service).toContain("table: 'production_collection_events'");
+    expect(service).toContain('filter = `cell_id=eq.${cellId}`');
     expect(queryKeys).toContain('DEFAULT_INVALIDATION_DELAY_MS = 750');
     expect(queryKeys).toContain('pendingInvalidations = new WeakMap()');
     expect(page).toContain('Leitura recebida e aguardando validação.');
