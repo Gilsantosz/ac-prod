@@ -9,6 +9,7 @@ vi.mock('@/lib/supabaseClient', () => ({
 import {
   DASHBOARD_PRODUCTION_SELECT,
   fetchDashboardProductionEntries,
+  fetchDashboardDailyGoals,
 } from '@/lib/dashboardData';
 
 function productionQuery(page) {
@@ -103,4 +104,15 @@ describe('dashboardData', () => {
       fetchDashboardProductionEntries('2026-08-31', 'disabled'),
     ).rejects.toThrow('query failed');
   });
+  it('carrega metas do período escolhido em vez de usar somente as 200 mais recentes', async () => {
+    const query = productionQuery([{ id: 'goal', date: '2025-08-01', cell: 'Corte', target: 80 }]);
+    fromMock.mockReturnValue(query);
+    const goals = await fetchDashboardDailyGoals('2026-09-05', '2025');
+    expect(fromMock).toHaveBeenCalledWith('daily_goals');
+    expect(query.gte).toHaveBeenCalledWith('date', '2025-01-01');
+    expect(query.lt).toHaveBeenCalledWith('date', '2026-01-01');
+    expect(query.range).toHaveBeenCalledWith(0, 999);
+    expect(goals[0].target).toBe(80);
+  });
+
 });

@@ -12,6 +12,8 @@ import { formatDatePtBr, getDefaultReportPeriod } from '@/lib/reports/reportData
 import ExecutiveDashboard from '@/components/reports/ExecutiveDashboard';
 import DateRangeFilter from '@/components/reports/DateRangeFilter';
 import OperationalInsights from '@/components/reports/OperationalInsights';
+import ProductionUnitFilter from '@/components/reports/ProductionUnitFilter';
+import { filterProductionUnit, productionUnitOptions } from '@/lib/productionSelection';
 import ProductionAnalysisCharts from '@/components/reports/ProductionAnalysisCharts';
 import { Button } from '@/components/ui/button';
 import { normalizeAnalysisEntries } from '@/lib/operationalAnalysis';
@@ -32,6 +34,7 @@ export default function Reports() {
   const { getCell, activeCells = [] } = useCells();
   const [cell, setCell] = useState('all');
   const [shift, setShift] = useState('all');
+  const [selectedUnit, setSelectedUnit] = useState('');
   const { user } = useAuth();
   const requestedTab = searchParams.get('tab');
   const activeTab = ['production', 'trend'].includes(requestedTab) ? requestedTab : 'production';
@@ -45,9 +48,17 @@ export default function Reports() {
     retry: 1,
   });
 
-  const productionReport = useMemo(() => productionQuery.data
-    ? createProductionAnalysisReport(productionQuery.data, { generatedBy: user?.name || user?.email || '' })
-    : null, [productionQuery.data, user?.email, user?.name]);
+  const productionUnits = useMemo(() => productionUnitOptions(productionQuery.data?.entries || [], selectedUnit), [productionQuery.data, selectedUnit]);
+  const productionUnit = selectedUnit || productionUnits[0]?.key;
+  const productionReport = useMemo(() => {
+    if (!productionQuery.data) return null;
+    const snapshot = productionQuery.data;
+    return createProductionAnalysisReport({ ...snapshot,
+      entries: filterProductionUnit(snapshot.entries, productionUnit),
+      comparisonEntries: filterProductionUnit(snapshot.comparisonEntries, productionUnit),
+      filters: { ...snapshot.filters, metric_unit: productionUnit },
+    }, { generatedBy: user?.name || user?.email || '' });
+  }, [productionQuery.data, productionUnit, user?.email, user?.name]);
   const filtered = productionReport?.metadata?.analysis?.entries || [];
   const analysis = productionReport?.metadata?.analysis || {};
 
@@ -56,13 +67,15 @@ export default function Reports() {
     return { from, to: format(endOfMonth(parseISO(from)), 'yyyy-MM-dd') };
   }, [month]);
   const trendQuery = useQuery({
-    queryKey: ['report', 'production-trend', trendPeriod.from, trendPeriod.to],
-    queryFn: () => fetchProductionReportSnapshot({ period: trendPeriod, includeComparison: false }),
+    queryKey: ['report', 'production-trend', trendPeriod.from, trendPeriod.to, cell, shift],
+    queryFn: () => fetchProductionReportSnapshot({ period: trendPeriod, filters: { cell, shift }, includeComparison: false }),
     enabled: activeTab === 'trend',
     staleTime: 5 * 60 * 1000,
     retry: 1,
   });
-  const monthEntries = useMemo(() => normalizeAnalysisEntries(trendQuery.data?.entries || []), [trendQuery.data]);
+  const trendUnits = useMemo(() => productionUnitOptions(trendQuery.data?.entries || [], selectedUnit), [trendQuery.data, selectedUnit]);
+  const trendUnit = selectedUnit || trendUnits[0]?.key;
+  const monthEntries = useMemo(() => normalizeAnalysisEntries(filterProductionUnit(trendQuery.data?.entries || [], trendUnit)), [trendQuery.data, trendUnit]);
   const byCellTrend = useMemo(() => seriesByCell(monthEntries, month, getCell), [monthEntries, month, getCell]);
   const trendCells = useMemo(() => byCellTrend.map((c) => c.cell), [byCellTrend]);
 
@@ -98,14 +111,17 @@ export default function Reports() {
           <TabsTrigger value="production" className="h-9 gap-2"><LineChart className="w-4 h-4" /> Produção</TabsTrigger>
           <TabsTrigger value="trend" className="h-9 gap-2"><TrendingUp className="w-4 h-4" /> Tendência</TabsTrigger>
         </TabsList>
+        <div className="rounded-2xl border border-border/70 bg-card p-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="text-xs font-medium text-muted-foreground space-y-1 min-w-0 flex-1 sm:flex-none">Célula<select aria-label="Célula do relatório" value={cell} onChange={(e) => { setCell(e.target.value); setSelectedUnit(''); }} className="block w-full sm:w-52 h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground"><option value="all">Todas as células</option>{activeCells.map((c) => <option key={c.id || c.name} value={c.name}>{c.name}</option>)}</select></label>
+              <label className="text-xs font-medium text-muted-foreground space-y-1">Turno<select aria-label="Turno do relatório" value={shift} onChange={(e) => setShift(e.target.value)} className="block h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground"><option value="all">Todos os turnos</option>{['1º Turno', '2º Turno', '3º Turno'].map((t) => <option key={t}>{t}</option>)}</select></label>
+              <Button variant="outline" disabled={(activeTab === 'production' && !validRange) || productionQuery.isFetching || trendQuery.isFetching} onClick={() => activeTab === 'production' ? productionQuery.refetch() : trendQuery.refetch()} className="gap-2"><RefreshCw className={`h-4 w-4 ${productionQuery.isFetching || trendQuery.isFetching ? 'animate-spin' : ''}`} />Atualizar análise</Button>
+            </div>
+        </div>
         <TabsContent value="production" className="space-y-5">
           <div className="rounded-2xl border border-border/70 bg-card p-4 space-y-4">
             <DateRangeFilter range={range} setRange={setRange} />
-            <div className="flex flex-wrap items-end gap-3">
-              <label className="text-xs font-medium text-muted-foreground space-y-1 min-w-0 flex-1 sm:flex-none">Célula<select aria-label="Célula do relatório" value={cell} onChange={(e) => setCell(e.target.value)} className="block w-full sm:w-52 h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground"><option value="all">Todas as células</option>{activeCells.map((c) => <option key={c.id || c.name} value={c.name}>{c.name}</option>)}</select></label>
-              <label className="text-xs font-medium text-muted-foreground space-y-1">Turno<select aria-label="Turno do relatório" value={shift} onChange={(e) => setShift(e.target.value)} className="block h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground"><option value="all">Todos os turnos</option>{['1º Turno', '2º Turno', '3º Turno'].map((t) => <option key={t}>{t}</option>)}</select></label>
-              <Button variant="outline" disabled={!validRange || productionQuery.isFetching} onClick={() => productionQuery.refetch()} className="gap-2"><RefreshCw className={`h-4 w-4 ${productionQuery.isFetching ? 'animate-spin' : ''}`} />Atualizar análise</Button>
-            </div>
+            <ProductionUnitFilter units={productionUnits} value={productionUnit} onChange={setSelectedUnit} />
           </div>
           {productionQuery.data?.comparisonPeriod && (
             <p className="text-xs text-muted-foreground px-1">
@@ -132,13 +148,14 @@ export default function Reports() {
           <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-end gap-2.5 w-full sm:w-auto">
             <div className="space-y-1.5 w-full sm:w-48 shrink-0">
               <Label className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider leading-none">Mês</Label>
-              <Input type="month" value={month} onChange={(e) => { if (/^\d{4}-\d{2}$/.test(e.target.value)) setMonth(e.target.value); }} className="w-full bg-card border-border/80 text-foreground rounded-full pl-4 pr-10 shadow-sm [color-scheme:light] dark:[color-scheme:dark]" />
+              <Input aria-label="Mês da tendência" type="month" value={month} onChange={(e) => { if (/^\d{4}-\d{2}$/.test(e.target.value)) setMonth(e.target.value); }} className="w-full bg-card border-border/80 text-foreground rounded-full pl-4 pr-10 shadow-sm [color-scheme:light] dark:[color-scheme:dark]" />
             </div>
             <div className="w-full sm:w-auto shrink-0 flex">
               <ExportTrendButton month={month} targetRef={reportRef} disabled={monthEntries.length === 0} />
             </div>
           </div>
 
+          <ProductionUnitFilter units={trendUnits} value={trendUnit} onChange={setSelectedUnit} />
           {trendQuery.isLoading ? (
             <div className="text-center py-20 text-muted-foreground border border-dashed border-border rounded-2xl">Carregando tendência do mês...</div>
           ) : trendQuery.isError ? (

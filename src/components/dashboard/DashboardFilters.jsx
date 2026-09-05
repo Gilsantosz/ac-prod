@@ -39,7 +39,7 @@ export default function DashboardFilters({ filters, setFilters, cells, years = [
           aria-label="Data do painel"
           type="date" 
           value={filters.date} 
-          onChange={(e) => set('date', e.target.value)} 
+          onChange={(e) => { if (e.target.value) set('date', e.target.value); }}
           disabled={annualMode}
           className="border-0 p-0 h-auto w-full sm:w-36 focus-visible:ring-0 text-foreground bg-transparent font-medium focus:outline-none [color-scheme:light] dark:[color-scheme:dark]" 
         />
@@ -48,7 +48,7 @@ export default function DashboardFilters({ filters, setFilters, cells, years = [
       {/* Seletor de Turno em Cápsula */}
       <div className="w-full sm:w-44 shrink-0">
         <Select value={filters.shift} onValueChange={(v) => set('shift', v)}>
-          <SelectTrigger className="w-full bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full focus:ring-0 focus:ring-offset-0 shadow-sm px-4">
+          <SelectTrigger aria-label="Turno do painel" className="w-full bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full focus:ring-0 focus:ring-offset-0 shadow-sm px-4">
             <SelectValue placeholder="Turno" />
           </SelectTrigger>
           <SelectContent className="rounded-2xl">
@@ -63,7 +63,7 @@ export default function DashboardFilters({ filters, setFilters, cells, years = [
       {/* Seletor de Célula em Cápsula */}
       <div className="w-full sm:w-48 shrink-0">
         <Select value={filters.cell} onValueChange={(v) => set('cell', v)}>
-          <SelectTrigger className="w-full bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full focus:ring-0 focus:ring-offset-0 shadow-sm px-4">
+          <SelectTrigger aria-label="Célula do painel" className="w-full bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full focus:ring-0 focus:ring-offset-0 shadow-sm px-4">
             <SelectValue placeholder="Célula" />
           </SelectTrigger>
           <SelectContent className="rounded-2xl">

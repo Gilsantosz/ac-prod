@@ -1,6 +1,5 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { base44 } from '@/lib/localDb';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Monitor, Minimize2, LayoutDashboard, Sun, Moon } from 'lucide-react';
@@ -11,6 +10,7 @@ import ExecutiveDashboard from '@/components/reports/ExecutiveDashboard';
 import OperationalInsights from '@/components/reports/OperationalInsights';
 import { buildOperationalAnalysis, aggregateAnalysis, normalizeAnalysisEntries } from '@/lib/operationalAnalysis';
 import { getProductionMetricRule } from '@/lib/productionUnitRules';
+import { filterProductionUnit, productionUnitOptions } from '@/lib/productionSelection';
 import PageHeader from '@/components/ui/PageHeader';
 import { useKiosk } from '@/lib/KioskContext';
 import { useCells } from '@/hooks/useCells';
@@ -49,6 +49,7 @@ import {
 import {
   fetchDashboardProductionEntries,
   fetchDashboardYearBounds,
+  fetchDashboardDailyGoals,
 } from '@/lib/dashboardData';
 
 const PANEL_IDS = ['insights', 'realtimeProgress', 'generalLotProgress', 'hourly', 'cellChart', 'shiftChart', 'monthlyTracker', 'goalProgress', 'weeklyTrend'];
@@ -77,9 +78,10 @@ export default function Dashboard({ kioskModeOverride = false }) {
   });
 
   const { data: goals = [] } = useQuery({
-    queryKey: ['dailyGoals'],
-    queryFn: () => base44.entities.DailyGoal.list('-date', 200),
+    queryKey: ['dailyGoals', 'dashboard', filters.date, filters.year],
+    queryFn: () => fetchDashboardDailyGoals(filters.date, filters.year),
     initialData: [],
+    initialDataUpdatedAt: 0,
   });
 
   const { data: yearBounds } = useQuery({
@@ -139,7 +141,7 @@ export default function Dashboard({ kioskModeOverride = false }) {
   }, [kiosk, kioskCell, cells]);
 
 
-  const activeCell = kiosk && kioskCell !== 'all' ? kioskCell : filters.cell;
+  const activeCell = kiosk ? kioskCell : filters.cell;
 
   const filtered = useMemo(() => all.filter((e) => {
     const eCell = (e.cell || '').trim();
@@ -151,18 +153,18 @@ export default function Dashboard({ kioskModeOverride = false }) {
   }), [all, filters, activeCell, validCellNames]);
 
 
-  const analysis = useMemo(() => buildOperationalAnalysis(filtered), [filtered]);
   const [selectedUnit, setSelectedUnit] = useState('');
-  const chartUnits = useMemo(() => {
-    const units = new Map(analysis.units.map((unit) => [unit.key, unit]));
-    goals.filter((g) => validCellNames.includes(g.cell) && (activeCell === 'all' || g.cell === activeCell)).forEach((goal) => {
-      const rule = getProductionMetricRule(goal);
-      if (!units.has(rule.unit)) units.set(rule.unit, { key: rule.unit, unitLabel: rule.unitLabel });
-    });
-    return [...units.values()];
-  }, [analysis.units, goals, validCellNames, activeCell]);
+  const setKioskFilterCell = useCallback((cell) => { setKioskCell(cell); setSelectedUnit(''); }, []);
+  const chartUnits = useMemo(() => productionUnitOptions([
+    ...filtered,
+    ...goals.filter((g) => validCellNames.includes(g.cell)
+      && (activeCell === 'all' || g.cell === activeCell)
+      && (filters.shift === 'all' || g.shift === filters.shift)),
+  ], selectedUnit), [filtered, goals, validCellNames, activeCell, filters.shift, selectedUnit]);
   const chartUnit = chartUnits.find((u) => u.key === selectedUnit) || chartUnits[0];
-  const chartEntries = useMemo(() => analysis.entries.filter((e) => e.metric_unit === chartUnit?.key), [analysis, chartUnit]);
+  const analysis = useMemo(() => buildOperationalAnalysis(filterProductionUnit(filtered, chartUnit?.key)), [filtered, chartUnit?.key]);
+  const chartEntries = analysis.entries;
+  const selectedLotIds = useMemo(() => [...new Set(chartEntries.map((entry) => entry.lot_id).filter(Boolean))].sort(), [chartEntries]);
   const chartHistory = useMemo(() => normalizeAnalysisEntries(all).filter((e) => validCellNames.includes(e.cell)
     && e.metric_unit === chartUnit?.key && (activeCell === 'all' || e.cell === activeCell)
     && (filters.shift === 'all' || e.shift === filters.shift)), [all, validCellNames, chartUnit, activeCell, filters.shift]);
@@ -255,12 +257,12 @@ export default function Dashboard({ kioskModeOverride = false }) {
     if (!annualMode) {
       result.push({
         id: 'realtimeProgress',
-        title: 'Produção em Tempo Real',
-        node: <RealtimeCellProgressPanel date={filters.date} kioskCell={kioskCell} filterCell={kiosk ? kioskCell : filters.cell} />,
+        title: 'Avanço da meta por célula',
+        node: <RealtimeCellProgressPanel analysis={analysis} date={filters.date} shift={filters.shift} loading={productionLoading} />,
       });
     }
 
-    result.push({ id: 'generalLotProgress', title: 'Lotes Gerais PCP', node: <GeneralLotProgressPanel /> });
+    result.push({ id: 'generalLotProgress', title: 'Lotes Gerais PCP', node: <GeneralLotProgressPanel lotIds={selectedLotIds} /> });
     result.push({
       id: 'monthlyTracker',
       title: annualMode ? `Resumo Anual ${filters.year}` : 'Acompanhamento Mensal',
@@ -280,7 +282,7 @@ export default function Dashboard({ kioskModeOverride = false }) {
     result.push({ id: 'cellChart', title: 'Comparativo por célula', node: <ShiftCellPanel title="Produção por célula" subtitle={`Mesmo recorte · ${chartUnit?.unitLabel || ''}`} grouped={byCell} unitLabel={chartUnit?.unitLabel} /> });
 
     return result;
-  }, [annualMode, filters.date, filters.cell, filters.year, monthlyTracking, cellMonthlyTrackings, goalProgress, weeklyTrend, weeklyTrendLabel, performers, byHour, byShift, byCell, kiosk, kioskCell, filtered, productionLoading, analysis, chartEntries, chartUnit]);
+  }, [annualMode, filters.date, filters.cell, filters.year, monthlyTracking, cellMonthlyTrackings, goalProgress, weeklyTrend, weeklyTrendLabel, performers, byHour, byShift, byCell, kiosk, kioskCell, filtered, productionLoading, analysis, chartEntries, chartUnit, filters.shift, selectedLotIds]);
 
   return (
     <div className={kiosk ? 'p-4 space-y-4' : 'p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6'}>
@@ -294,7 +296,7 @@ export default function Dashboard({ kioskModeOverride = false }) {
               : 'Indicadores automáticos por turno, célula e hora.'}
             icon={LayoutDashboard}
             actions={
-              <DashboardFilters filters={filters} setFilters={setFilters} cells={cells} years={availableYears} />
+              <DashboardFilters filters={filters} setFilters={(update) => { const next = typeof update === 'function' ? update(filters) : update; if (next.cell !== filters.cell) setSelectedUnit(''); setFilters(next); }} cells={cells} years={availableYears} />
             }
           />
           <div className="flex flex-wrap items-center gap-2.5">
@@ -304,7 +306,7 @@ export default function Dashboard({ kioskModeOverride = false }) {
               date={annualMode ? null : filters.date}
               periodLabel={annualMode ? `Ano de ${filters.year}` : ''}
             />
-            <ExportMenu entries={filtered} allEntries={all} filters={filters} chartsRef={chartsRef} />
+            <ExportMenu entries={chartEntries} allEntries={all} filters={{ ...filters, cell: activeCell, metric_unit: chartUnit?.key }} chartsRef={chartsRef} />
             <DashboardLayoutSettings disabled={!layoutReady} saving={layoutSaving} panels={panels} hidden={hidden} sizes={sizes} toggleHidden={toggleHidden} toggleSize={toggleSize} />
             <Button
               variant="outline"
@@ -334,7 +336,7 @@ export default function Dashboard({ kioskModeOverride = false }) {
               )}
             </button>
             <DashboardLayoutSettings disabled={!layoutReady} saving={layoutSaving} panels={panels} hidden={hidden} sizes={sizes} toggleHidden={toggleHidden} toggleSize={toggleSize} />
-            <KioskCellControl cells={cells} active={kioskCell} setActive={setKioskCell} rotating={rotating} setRotating={setRotating} />
+            <KioskCellControl cells={cells} active={kioskCell} setActive={setKioskFilterCell} rotating={rotating} setRotating={setRotating} />
             <Button variant="default" className="w-full sm:w-auto gap-2 min-h-[44px]" onClick={handleExitKiosk}>
               <Minimize2 className="w-4 h-4" /> Sair do Quiosque
             </Button>
@@ -346,7 +348,7 @@ export default function Dashboard({ kioskModeOverride = false }) {
       <p role="status" className="text-xs text-muted-foreground">{productionLoading ? 'Atualizando indicadores…' : dataUpdatedAt ? `Última consulta: ${new Date(dataUpdatedAt).toLocaleTimeString('pt-BR')}` : 'Aguardando dados de produção.'}</p>
       {dataUpdatedAt > 0 && <ExecutiveDashboard analysis={analysis} />}
       <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border/70 bg-card p-4">
-        <span className="text-sm font-medium">Unidade dos gráficos</span>
+        <span className="text-sm font-medium">Unidade dos indicadores e gráficos</span>
         {chartUnits.map((unit) => <button type="button" key={unit.key} aria-pressed={unit.key === chartUnit?.key} onClick={() => setSelectedUnit(unit.key)} className={`rounded-full border px-4 py-2 text-sm capitalize ${unit.key === chartUnit?.key ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground'}`}>{unit.unitLabel}</button>)}
         <span className="text-xs text-muted-foreground">Arraste os gráficos ou use as setas para reposicionar. Ajuste tamanho e visibilidade em Layout.</span>
       </div>
