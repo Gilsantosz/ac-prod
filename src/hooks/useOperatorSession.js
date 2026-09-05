@@ -65,7 +65,7 @@ export function useOperatorSession({ purpose = 'production' } = {}) {
     setLoading(true);
     try {
       await clearOperatorSession();
-      setSession(null);
+      setSession(getOperatorSession());
       setError(null);
     } finally {
       setLoading(false);

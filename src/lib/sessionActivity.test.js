@@ -35,4 +35,11 @@ describe('sessionActivity', () => {
     expect(getLastSessionActivity()).toBeNull();
     expect(isSessionInactive(99_999_999)).toBe(false);
   });
+
+  it('respeita o limite configurado em vez de fixar 30 minutos', () => {
+    recordSessionActivity(1_000);
+    expect(isSessionInactive(60_999, 60_000)).toBe(false);
+    expect(isSessionInactive(61_000, 60_000)).toBe(true);
+    expect(isSessionInactive(61_000, 120_000)).toBe(false);
+  });
 });

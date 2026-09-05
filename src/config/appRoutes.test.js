@@ -78,4 +78,16 @@ describe('controle granular de acesso às páginas', () => {
     expect(canUserViewRoute(manager, '/logs-sistema')).toBe(false);
     expect(canUserViewRoute({ role: 'admin', permissions: {} }, '/logs-sistema')).toBe(true);
   });
+
+  it('mantém Configurações no submenu Administração e exige admin mesmo com permissão explícita', () => {
+    const route = activeAppRoutes.find((item) => item.path === '/configuracoes');
+    expect(route).toMatchObject({ group: 'admin', label: 'Configurações', permission: 'adminOnly', showInSidebar: true });
+    ['operator', 'viewer', 'manager', 'supervisor', 'quality_manager'].forEach((role) => {
+      const user = { role, permissions: { manage_system_settings: true } };
+      expect(canUserViewRoute(user, '/configuracoes')).toBe(false);
+      expect(canUserEditRoute(user, '/configuracoes')).toBe(false);
+    });
+    expect(canUserViewRoute({ role: 'admin' }, '/configuracoes')).toBe(true);
+    expect(canUserEditRoute({ role: 'admin' }, '/configuracoes')).toBe(true);
+  });
 });

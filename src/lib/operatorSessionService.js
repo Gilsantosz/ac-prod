@@ -12,6 +12,19 @@ const SESSION_KEY = 'acprod_operator_session';
 // Fallback em memória quando sessionStorage está bloqueado
 let _memorySession = null;
 let _memoryDeviceId = null;
+let _sessionGeneration = 0;
+let _contextRevision = 0;
+
+function persistOperatorSession(session) {
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    _memorySession = null;
+  } catch (_) { _memorySession = session; }
+}
+
+function sessionWasCancelled() {
+  return new Error('A sessão foi encerrada ou alterada. Faça o login novamente.');
+}
 
 function generateDeviceUuid() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -70,6 +83,7 @@ export async function loginOperator(loginName, registration, { purpose = 'produc
   if (!registration?.trim()) throw new Error('Informe a matrícula.');
 
   const deviceId = getDeviceId();
+  const generation = ++_sessionGeneration;
 
   const rpcName = purpose === 'replacement'
     ? 'replacement_operator_login_v2'
@@ -90,6 +104,13 @@ export async function loginOperator(loginName, registration, { purpose = 'produc
   }
 
   const { session_id, session_token, expires_at, operator } = data;
+  if (generation !== _sessionGeneration) {
+    // Uma resposta tardia não pode restaurar um operador após sair da tela.
+    void Promise.resolve(supabase.rpc('logout_operator_session', {
+      p_session_token: session_token,
+    })).catch(() => {});
+    throw sessionWasCancelled();
+  }
 
   const session = {
     id: operator.id,
@@ -109,11 +130,7 @@ export async function loginOperator(loginName, registration, { purpose = 'produc
     device_id: deviceId,
   };
 
-  try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  } catch (_) {
-    _memorySession = session;
-  }
+  persistOperatorSession(session);
 
   notifySessionChange();
   return session;
@@ -125,6 +142,8 @@ export async function loginOperator(loginName, registration, { purpose = 'produc
 export async function setOperatorSessionContext(cellId, machineId = null, stationName = 'Coletor Chão de Fábrica') {
   const session = getOperatorSession();
   if (!session?.token) throw new Error('Nenhuma sessão ativa encontrada.');
+  const generation = _sessionGeneration;
+  const revision = ++_contextRevision;
 
   const { data, error } = await supabase.rpc('set_operator_session_context', {
     p_session_token: session.token,
@@ -135,13 +154,17 @@ export async function setOperatorSessionContext(cellId, machineId = null, statio
 
   if (error) throw error;
   if (!data?.success) throw new Error(data?.error || 'Falha ao definir posto operacional.');
+  const current = getOperatorSession();
+  if (generation !== _sessionGeneration || revision !== _contextRevision || current?.token !== session.token) {
+    throw sessionWasCancelled();
+  }
 
   // Obter detalhes dos nomes para atualizar localmente
   const cellObj = (session.cells || []).find(c => c.id === cellId);
   const machObj = (session.machines || []).find(m => m.id === machineId);
 
   const updatedSession = {
-    ...session,
+    ...current,
     selected_cell_id: cellId,
     selected_cell_name: data.cell_name || cellObj?.name || 'Célula',
     selected_machine_id: machineId,
@@ -149,11 +172,7 @@ export async function setOperatorSessionContext(cellId, machineId = null, statio
     selected_station_name: stationName
   };
 
-  try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(updatedSession));
-  } catch (_) {
-    _memorySession = updatedSession;
-  }
+  persistOperatorSession(updatedSession);
 
   notifySessionChange();
   return updatedSession;
@@ -165,6 +184,7 @@ export async function setOperatorSessionContext(cellId, machineId = null, statio
 export async function heartbeatOperatorSession() {
   const session = getOperatorSession();
   if (!session?.token) return;
+  const generation = _sessionGeneration;
 
   const { data, error } = await supabase.rpc('heartbeat_operator_session', {
     p_session_token: session.token
@@ -175,18 +195,17 @@ export async function heartbeatOperatorSession() {
     return;
   }
 
+  const current = getOperatorSession();
+  if (generation !== _sessionGeneration || current?.token !== session.token) return;
+
   if (data?.success) {
     const renewed = {
-      ...session,
+      ...current,
       expires_at: data.expires_at
         ? new Date(data.expires_at).getTime()
         : Date.now() + 8 * 60 * 60 * 1000
     };
-    try {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(renewed));
-    } catch (_) {
-      _memorySession = renewed;
-    }
+    persistOperatorSession(renewed);
   } else {
     // Sessão expirada/revogada no banco
     clearOperatorSession();
@@ -198,7 +217,7 @@ export async function heartbeatOperatorSession() {
  */
 export function getOperatorSession() {
   if (_memorySession && _memorySession.expires_at > Date.now()) return _memorySession;
-  if (_memorySession) { _memorySession = null; notifySessionChange(); return null; }
+  if (_memorySession) { _sessionGeneration += 1; _memorySession = null; notifySessionChange(); return null; }
 
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
@@ -206,6 +225,7 @@ export function getOperatorSession() {
     const session = JSON.parse(raw);
     if (!session?.expires_at || session.expires_at < Date.now()) {
       sessionStorage.removeItem(SESSION_KEY);
+      _sessionGeneration += 1;
       notifySessionChange();
       return null;
     }
@@ -224,6 +244,11 @@ export function isOperatorLoggedIn() {
  */
 export async function clearOperatorSession({ notifyServer = true } = {}) {
   const session = getOperatorSession();
+  _sessionGeneration += 1;
+  try { sessionStorage.removeItem(SESSION_KEY); } catch (_) { /* ignore */ }
+  _memorySession = null;
+  notifySessionChange();
+
   if (notifyServer && session?.token) {
     try {
       await supabase.rpc('logout_operator_session', {
@@ -233,17 +258,14 @@ export async function clearOperatorSession({ notifyServer = true } = {}) {
       console.warn('Erro ao notificar logout no servidor:', e);
     }
   }
-
-  try { sessionStorage.removeItem(SESSION_KEY); } catch (_) { /* ignore */ }
-  _memorySession = null;
-  notifySessionChange();
 }
 
 /**
- * Remove apenas o estado visual/local. Usado quando ainda existem eventos
- * offline duráveis que precisam reconciliar com o token original.
+ * Remove a credencial local sem encerrar a sessão no servidor.
+ * A fila durável conserva a identidade do evento, nunca o token operacional.
  */
 export function detachOperatorSession() {
+  _sessionGeneration += 1;
   try { sessionStorage.removeItem(SESSION_KEY); } catch (_) { /* ignore */ }
   _memorySession = null;
   notifySessionChange();

@@ -17,6 +17,7 @@ import {
   dispatchCollectionEventBatch,
 } from '@/lib/collectionEventDispatcher';
 import { getOperatorSession } from '@/lib/operatorSessionService';
+import { requestSessionActivity } from '@/lib/sessionActivity';
 import { getCollectionDeviceId } from '@/lib/collectionDeviceIdentity';
 import {
   COLLECTION_PIPELINE_FLAGS_CACHE_MS,
@@ -698,6 +699,9 @@ export function useCollectionQueue(processFn, options = {}) {
   }, [scheduleFlush]);
 
   const enqueue = useCallback(async (inputPayload, enqueueOpts = {}) => {
+    if (!requestSessionActivity()) {
+      throw new Error('Sessão encerrada por inatividade. Faça o login antes de coletar.');
+    }
     const operatorSession = microBatch ? getOperatorSession() : null;
     const payload = microBatch
       ? {
