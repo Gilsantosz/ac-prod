@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "staging_ref": "smnsihksrhzbkhcbdjfu",
+  "parent_ref": "uozuzdfvnufsjsonswag",
+  "is_default": false,
+  "branch_status": "MIGRATIONS_FAILED",
+  "branch_migrations_passed": false,
+  "foundation": {
+    "missing_tables": 0,
+    "rls_disabled": 0,
+    "unexpected_effective_privileges": 0,
+    "identity_differences": 0
+  },
+  "flags_enabled": 0,
+  "migration_drift_count": 170,
+  "structural_health_pass": false,
+  "operator_shift_provenance_validated": false,
+  "physical_restore_drill_pass": false,
+  "active_executors": 0,
+  "idle_in_transaction": 0,
+  "waiting_locks": 0
+}

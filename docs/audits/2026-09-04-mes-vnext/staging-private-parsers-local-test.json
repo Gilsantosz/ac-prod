@@ -1,0 +1,211 @@
+{
+  "schema_version": 1,
+  "environment": "disposable-local-unix-socket",
+  "postgres_version": "postgres (PostgreSQL) 17.11 (Homebrew)",
+  "started_at": "2026-09-05T01:31:17.974Z",
+  "inputs": [
+    {
+      "filename": "0-case.sql",
+      "sha256": "9c1df637f913df4e0690ba03bd7e027ae75c33b6d28f9cdc57034fe24a49e5a8"
+    },
+    {
+      "filename": "1-case.sql",
+      "sha256": "69f0ef841b69ab81891690a783e1a4b79c80c1d1d5bf8a7b50f758267812aff7"
+    },
+    {
+      "filename": "2-case.sql",
+      "sha256": "9eb0a5ce09b572a3b8b09c55e328b36f4d27a4f3c843eb9d95c8ea880a1e8eb1"
+    },
+    {
+      "filename": "3-case.sql",
+      "sha256": "09f1b7ab8ba84fe1ad9d117c57ad341ac893c328dace2b314b9cd9baba0e9175"
+    },
+    {
+      "filename": "4-case.sql",
+      "sha256": "b3c403dec6a4bcaf10de770e5c81e301323250a4a24a98dc4935fdaac4cf730c"
+    },
+    {
+      "filename": "5-case.sql",
+      "sha256": "3e3bd9faa6060c12946bbefd1b2c0bb66b6c118b3109cd5253841e19a70753dc"
+    },
+    {
+      "filename": "6-case.sql",
+      "sha256": "9eb0a5ce09b572a3b8b09c55e328b36f4d27a4f3c843eb9d95c8ea880a1e8eb1"
+    },
+    {
+      "filename": "7-case.sql",
+      "sha256": "09f1b7ab8ba84fe1ad9d117c57ad341ac893c328dace2b314b9cd9baba0e9175"
+    },
+    {
+      "filename": "8-case.sql",
+      "sha256": "ec35bae4dc605c82c44c61ab838284e887b5f5351e9c472b3f81cb560a3c4adb"
+    },
+    {
+      "filename": "9-case.sql",
+      "sha256": "d2daf91019d972112ac1e86c0eb7c321df2fc085500d349e3e035a87172bd2d3"
+    },
+    {
+      "filename": "10-case.sql",
+      "sha256": "09f1b7ab8ba84fe1ad9d117c57ad341ac893c328dace2b314b9cd9baba0e9175"
+    },
+    {
+      "filename": "11-case.sql",
+      "sha256": "9eb0a5ce09b572a3b8b09c55e328b36f4d27a4f3c843eb9d95c8ea880a1e8eb1"
+    },
+    {
+      "filename": "12-case.sql",
+      "sha256": "1de84ce3733cd8cde26f5bac2e91283619c3f70721d2738a0fcfbed1d7ea8f1d"
+    },
+    {
+      "filename": "13-case.sql",
+      "sha256": "9eb0a5ce09b572a3b8b09c55e328b36f4d27a4f3c843eb9d95c8ea880a1e8eb1"
+    },
+    {
+      "filename": "14-case.sql",
+      "sha256": "1de84ce3733cd8cde26f5bac2e91283619c3f70721d2738a0fcfbed1d7ea8f1d"
+    }
+  ],
+  "steps": [
+    {
+      "filename": "0-case.sql",
+      "sha256": "9c1df637f913df4e0690ba03bd7e027ae75c33b6d28f9cdc57034fe24a49e5a8",
+      "duration_ms": 40,
+      "exit_code": 0,
+      "sqlstate": null,
+      "expected_failure_sqlstate": null,
+      "passed": true
+    },
+    {
+      "filename": "1-case.sql",
+      "sha256": "69f0ef841b69ab81891690a783e1a4b79c80c1d1d5bf8a7b50f758267812aff7",
+      "duration_ms": 19,
+      "exit_code": 0,
+      "sqlstate": null,
+      "expected_failure_sqlstate": null,
+      "passed": true
+    },
+    {
+      "filename": "2-case.sql",
+      "sha256": "9eb0a5ce09b572a3b8b09c55e328b36f4d27a4f3c843eb9d95c8ea880a1e8eb1",
+      "duration_ms": 21,
+      "exit_code": 3,
+      "sqlstate": "55000",
+      "expected_failure_sqlstate": "55000",
+      "passed": true
+    },
+    {
+      "filename": "3-case.sql",
+      "sha256": "09f1b7ab8ba84fe1ad9d117c57ad341ac893c328dace2b314b9cd9baba0e9175",
+      "duration_ms": 20,
+      "exit_code": 0,
+      "sqlstate": null,
+      "expected_failure_sqlstate": null,
+      "passed": true
+    },
+    {
+      "filename": "4-case.sql",
+      "sha256": "b3c403dec6a4bcaf10de770e5c81e301323250a4a24a98dc4935fdaac4cf730c",
+      "duration_ms": 17,
+      "exit_code": 0,
+      "sqlstate": null,
+      "expected_failure_sqlstate": null,
+      "passed": true
+    },
+    {
+      "filename": "5-case.sql",
+      "sha256": "3e3bd9faa6060c12946bbefd1b2c0bb66b6c118b3109cd5253841e19a70753dc",
+      "duration_ms": 18,
+      "exit_code": 0,
+      "sqlstate": null,
+      "expected_failure_sqlstate": null,
+      "passed": true
+    },
+    {
+      "filename": "6-case.sql",
+      "sha256": "9eb0a5ce09b572a3b8b09c55e328b36f4d27a4f3c843eb9d95c8ea880a1e8eb1",
+      "duration_ms": 18,
+      "exit_code": 3,
+      "sqlstate": "55000",
+      "expected_failure_sqlstate": "55000",
+      "passed": true
+    },
+    {
+      "filename": "7-case.sql",
+      "sha256": "09f1b7ab8ba84fe1ad9d117c57ad341ac893c328dace2b314b9cd9baba0e9175",
+      "duration_ms": 20,
+      "exit_code": 0,
+      "sqlstate": null,
+      "expected_failure_sqlstate": null,
+      "passed": true
+    },
+    {
+      "filename": "8-case.sql",
+      "sha256": "ec35bae4dc605c82c44c61ab838284e887b5f5351e9c472b3f81cb560a3c4adb",
+      "duration_ms": 19,
+      "exit_code": 0,
+      "sqlstate": null,
+      "expected_failure_sqlstate": null,
+      "passed": true
+    },
+    {
+      "filename": "9-case.sql",
+      "sha256": "d2daf91019d972112ac1e86c0eb7c321df2fc085500d349e3e035a87172bd2d3",
+      "duration_ms": 22,
+      "exit_code": 3,
+      "sqlstate": "P0001",
+      "expected_failure_sqlstate": "P0001",
+      "passed": true
+    },
+    {
+      "filename": "10-case.sql",
+      "sha256": "09f1b7ab8ba84fe1ad9d117c57ad341ac893c328dace2b314b9cd9baba0e9175",
+      "duration_ms": 19,
+      "exit_code": 0,
+      "sqlstate": null,
+      "expected_failure_sqlstate": null,
+      "passed": true
+    },
+    {
+      "filename": "11-case.sql",
+      "sha256": "9eb0a5ce09b572a3b8b09c55e328b36f4d27a4f3c843eb9d95c8ea880a1e8eb1",
+      "duration_ms": 22,
+      "exit_code": 0,
+      "sqlstate": null,
+      "expected_failure_sqlstate": null,
+      "passed": true
+    },
+    {
+      "filename": "12-case.sql",
+      "sha256": "1de84ce3733cd8cde26f5bac2e91283619c3f70721d2738a0fcfbed1d7ea8f1d",
+      "duration_ms": 26,
+      "exit_code": 0,
+      "sqlstate": null,
+      "expected_failure_sqlstate": null,
+      "passed": true
+    },
+    {
+      "filename": "13-case.sql",
+      "sha256": "9eb0a5ce09b572a3b8b09c55e328b36f4d27a4f3c843eb9d95c8ea880a1e8eb1",
+      "duration_ms": 20,
+      "exit_code": 3,
+      "sqlstate": "55000",
+      "expected_failure_sqlstate": "55000",
+      "passed": true
+    },
+    {
+      "filename": "14-case.sql",
+      "sha256": "1de84ce3733cd8cde26f5bac2e91283619c3f70721d2738a0fcfbed1d7ea8f1d",
+      "duration_ms": 23,
+      "exit_code": 0,
+      "sqlstate": null,
+      "expected_failure_sqlstate": null,
+      "passed": true
+    }
+  ],
+  "decision": "REPLAY_PASS_ONLY",
+  "cluster_stopped": true,
+  "limitation": "SQL replay only; this does not validate Supabase services, production data, capacity or rollout.",
+  "finished_at": "2026-09-05T01:31:19.532Z",
+  "artifact": "/private/var/folders/bh/q19pn58573318j9snsn6zydw0000gp/T/acprod-pg17-replay-anEdeq/replay-result.json",
+  "directory": "/private/var/folders/bh/q19pn58573318j9snsn6zydw0000gp/T/acprod-pg17-replay-anEdeq"
+}
