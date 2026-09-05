@@ -23,7 +23,13 @@ function persistOperatorSession(session) {
 }
 
 function sessionWasCancelled() {
-  return new Error('A sessão foi encerrada ou alterada. Faça o login novamente.');
+  const error = new Error('A sessão foi encerrada ou alterada. Faça o login novamente.');
+  error.code = 'OPERATOR_SESSION_SUPERSEDED';
+  return error;
+}
+
+export function isOperatorSessionSupersededError(error) {
+  return error?.code === 'OPERATOR_SESSION_SUPERSEDED';
 }
 
 function generateDeviceUuid() {

@@ -58,6 +58,7 @@ export default function CollectionRecentReadsPanel({
   const [statusFilter, setStatusFilter] = useState('all'); // all, approved, rejected, blocked
   const [operatorScope, setOperatorScope] = useState('cell'); // cell, mine
   const [shiftScope, setShiftScope] = useState('current'); // all, current
+  const [machineScope, setMachineScope] = useState('cell'); // cell, current
   const [realtimeStatus, setRealtimeStatus] = useState(navigator.onLine ? 'connecting' : 'offline');
   const fetchSequenceRef = useRef(0);
 
@@ -74,8 +75,12 @@ export default function CollectionRecentReadsPanel({
       const { dateFrom, dateTo } = getDateRange(period);
       const activeStatus = statusFilter === 'all' ? null : statusFilter;
       const filters = {
+        cellId: cellId || null,
         cellName,
-        workstationId: workstationId || null,
+        // O histórico da célula deve incluir leituras feitas com "Todas as
+        // máquinas" (machine_id nulo). A máquina só restringe quando o
+        // usuário escolhe explicitamente esse escopo neste painel.
+        workstationId: machineScope === 'current' ? (workstationId || null) : null,
         operatorId: operatorScope === 'mine' ? (operatorId || null) : null,
         shift: shiftScope === 'current' ? (shift || null) : null,
         status: activeStatus,
@@ -107,8 +112,10 @@ export default function CollectionRecentReadsPanel({
       if (fetchSequence === fetchSequenceRef.current) setLoading(false);
     }
   }, [
+    cellId,
     cellName,
     workstationId,
+    machineScope,
     operatorId,
     operatorScope,
     shift,
@@ -271,7 +278,7 @@ export default function CollectionRecentReadsPanel({
         </div>
 
         {/* Linha de Filtros Compactos */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 pt-1 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 pt-1 text-xs">
           <div className="flex items-center gap-1 bg-secondary/30 rounded-lg px-2 py-1.5 border border-border/30">
             <Calendar className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
             <select
@@ -295,6 +302,18 @@ export default function CollectionRecentReadsPanel({
             >
               <option value="all">Todos os turnos</option>
               <option value="current">{shift || 'Turno atual'}</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1 bg-secondary/30 rounded-lg px-2 py-1.5 border border-border/30">
+            <Filter className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            <select
+              value={machineScope}
+              onChange={(e) => setMachineScope(e.target.value)}
+              className="bg-transparent w-full text-[11px] font-semibold text-foreground focus-visible:outline-none cursor-pointer"
+            >
+              <option value="cell">Todas as máquinas</option>
+              <option value="current" disabled={!workstationId}>Máquina selecionada</option>
             </select>
           </div>
 

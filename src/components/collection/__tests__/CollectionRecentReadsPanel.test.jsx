@@ -1,4 +1,4 @@
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -51,6 +51,11 @@ describe('CollectionRecentReadsPanel realtime refresh', () => {
       await Promise.resolve();
     });
     expect(realtimeCallback).toEqual(expect.any(Function));
+    expect(mocks.getCollectionHistory).toHaveBeenCalledWith(expect.objectContaining({
+      cellId: 'cell-1',
+      cellName: 'Corte',
+      workstationId: null,
+    }));
     mocks.getCollectionHistory.mockClear();
     mocks.getCollectionHistoryCount.mockClear();
     expect(mocks.subscribeToCollectionHistory).toHaveBeenCalledWith(
@@ -82,5 +87,40 @@ describe('CollectionRecentReadsPanel realtime refresh', () => {
 
     view.unmount();
     expect(mocks.unsubscribeFromCollectionHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('só restringe o histórico à máquina quando o usuário escolhe esse filtro', async () => {
+    const view = render(
+      <CollectionRecentReadsPanel
+        cellId="cell-1"
+        cellName="Usinagem CNC"
+        workstationId="machine-1"
+        operatorId="operator-1"
+        shift="1º Turno"
+        onSelectPiece={vi.fn()}
+      />,
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mocks.getCollectionHistory).toHaveBeenLastCalledWith(
+      expect.objectContaining({ workstationId: null }),
+    );
+
+    mocks.getCollectionHistory.mockClear();
+    fireEvent.change(screen.getByDisplayValue('Todas as máquinas'), {
+      target: { value: 'current' },
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.getCollectionHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ cellId: 'cell-1', workstationId: 'machine-1' }),
+    );
+    view.unmount();
   });
 });
