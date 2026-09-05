@@ -12,7 +12,7 @@
     "identity_differences": 0
   },
   "flags_enabled": 0,
-  "migration_drift_count": 173,
+  "migration_drift_count": 170,
   "structural_health_pass": false,
   "operator_shift_provenance_validated": false,
   "physical_restore_drill_pass": false,

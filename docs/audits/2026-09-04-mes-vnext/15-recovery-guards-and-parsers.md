@@ -1,7 +1,21 @@
 # Guards fail-closed e recuperação de parsers privados
 
-Estado inicial deste artefato: testado localmente, aguardando aplicação específica
-em staging. Esta etapa não conclui a Fase 1 nem autoriza replay/homologação.
+Aplicado exclusivamente ao staging em 05/09/2026 01:36:26 UTC, a partir do
+commit 2ccc6f7d3958b67123075dcbb76845b6b6bdd801.
+Esta etapa não conclui a Fase 1 nem autoriza replay/homologação.
+
+Versão efetiva: `20260905013626_collection_private_parsers_staging_v1`.
+O serviço atribuiu o timestamp efetivo; o arquivo planejado abaixo permanece
+imutável. O SHA-256 do ledger é idêntico ao arquivo testado.
+O staging passou a sete migrations. Conversões e hashes das três funções
+conferem com a origem; todas são SECURITY INVOKER sem execução para papéis API.
+Flags false, recibos/outbox zero e nenhum lock aguardando/idle in transaction.
+Produção permanece com 154 migrations, última 20260903165317, flags false e
+sem journal de recuperação.
+
+O novo probe contabiliza 112 rotinas ausentes e 58 divergentes (170 diferenças).
+O estado da Fase 1 permanece HOLD. Evidências completas:
+[aplicação e comparação antes/depois](staging-private-parsers-application.json).
 
 ## Proteções implementadas
 

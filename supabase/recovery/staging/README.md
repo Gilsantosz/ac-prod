@@ -9,6 +9,11 @@ Estado: foundation já aplicada como `20260905005442` /
 Consulte [evidência e correspondência de versões](../../../docs/audits/2026-09-04-mes-vnext/14-staging-foundation-applied.md).
 Não reaplicar o artefato usando seu prefixo local planejado.
 
+Os três parsers privados também foram aplicados como
+`20260905013626_collection_private_parsers_staging_v1`.
+O arquivo planejado `20260905013000_collection_private_parsers.sql` é imutável.
+Veja [evidência](../../../docs/audits/2026-09-04-mes-vnext/15-recovery-guards-and-parsers.md).
+
 `20260905003000_collection_schema_foundation.sql` materializa 23 tabelas
 ausentes, 39 colunas, 125 constraints e três índices únicos a partir das
 definições qualificadas capturadas do catálogo. Cria também um journal de
