@@ -20,10 +20,10 @@ export async function renderReportChartPng(chart, { width = 1400, height = 620 }
 
   const values = series.flatMap((item) => item.values).map(Number).filter(Number.isFinite);
   const yMax = roundedMax(Math.max(0, ...values));
-  const margin = { top: 95, right: 55, bottom: 100, left: 105 };
+  const margin = { top: 95, right: 55, bottom: 100, left: chart.unit?.length > 2 ? 175 : 105 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
-  const xFor = (index) => margin.left + (categories.length === 1 ? plotWidth / 2 : (index / (categories.length - 1)) * plotWidth);
+  const xFor = (index) => margin.left + (chart.type === 'bar' ? (index + 0.5) / categories.length * plotWidth : categories.length === 1 ? plotWidth / 2 : (index / (categories.length - 1)) * plotWidth);
   const yFor = (value) => margin.top + plotHeight - ((Number(value) || 0) / yMax) * plotHeight;
 
   context.fillStyle = '#ffffff';
@@ -68,15 +68,33 @@ export async function renderReportChartPng(chart, { width = 1400, height = 620 }
   });
 
   series.forEach((item, seriesIndex) => {
-    context.strokeStyle = item.color || DEFAULT_SERIES_COLORS[seriesIndex % DEFAULT_SERIES_COLORS.length];
+    const color = item.color || DEFAULT_SERIES_COLORS[seriesIndex % DEFAULT_SERIES_COLORS.length];
+    if (chart.type === 'bar') {
+      const barWidth = Math.min(60, plotWidth / categories.length * 0.65 / series.length);
+      item.values.forEach((value, index) => {
+        if (value == null || !Number.isFinite(Number(value))) return;
+        const x = xFor(index) + (seriesIndex - series.length / 2) * barWidth;
+        const y = yFor(value);
+        const gradient = context.createLinearGradient(x, y, x, yFor(0));
+        gradient.addColorStop(0, color);
+        gradient.addColorStop(1, '#e2e8f0');
+        context.fillStyle = gradient;
+        context.fillRect(x, y, barWidth - 3, yFor(0) - y);
+      });
+      return;
+    }
+    context.strokeStyle = color;
     context.lineWidth = 5;
     context.lineJoin = 'round';
     context.beginPath();
+    let connected = false;
     item.values.forEach((value, index) => {
+      if (value == null || !Number.isFinite(Number(value))) { connected = false; return; }
       const x = xFor(index);
       const y = yFor(value);
-      if (index === 0) context.moveTo(x, y);
+      if (!connected) context.moveTo(x, y);
       else context.lineTo(x, y);
+      connected = true;
     });
     context.stroke();
   });

@@ -1,3 +1,4 @@
+import GradientBarShape from '@/components/ui/GradientBarShape';
 import { Card } from '@/components/ui/card';
 import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, Cell } from 'recharts';
 import { buildPareto } from '@/lib/paretoMetrics';
@@ -29,7 +30,7 @@ export default function ParetoChart({ occurrences }) {
             <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 12, fontSize: 13 }}
               formatter={(value, name) => name === 'cumulative' ? [`${value}%`, 'Acumulado'] : [formatDuration(value), 'Parada']} />
             <ReferenceLine yAxisId="right" y={80} stroke="hsl(var(--destructive))" strokeDasharray="4 4" />
-            <Bar yAxisId="left" dataKey="value" radius={[6, 6, 0, 0]}>
+            <Bar shape={<GradientBarShape />} yAxisId="left" dataKey="value" radius={[6, 6, 0, 0]}>
               {data.map((d, i) => (
                 <Cell key={i} fill={d.cumulative <= 80 ? 'hsl(var(--chart-3))' : 'hsl(var(--muted))'} />
               ))}

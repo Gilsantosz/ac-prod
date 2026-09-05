@@ -10,6 +10,7 @@ import {
 import { renderReportChartPng } from '@/lib/reports/reportChartImage';
 
 function formatSummaryValue(item, value) {
+  if (value == null) return 'Sem base';
   const number = Number(value) || 0;
   if (item.format === 'percentage') return number.toLocaleString('pt-BR', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 });
   if (item.format === 'duration') return `${number.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} min`;
@@ -44,9 +45,9 @@ function printableCell(value, column) {
   return String(value);
 }
 
-function drawTable(doc, report, startY) {
-  const { table, columns } = pdfColumns(report);
-  if (!table || !columns.length) return;
+function drawTable(doc, report, startY, selectedTable) {
+  const { table, columns } = selectedTable ? { table: selectedTable, columns: selectedTable.columns } : pdfColumns(report);
+  if (!table || !columns.length) return startY;
   const margin = 12;
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -91,6 +92,7 @@ function drawTable(doc, report, startY) {
     });
     y += 7;
   });
+  return y;
 }
 
 export async function createReportPdf(report, options = {}) {
@@ -105,19 +107,81 @@ export async function createReportPdf(report, options = {}) {
   let y = await drawBrandedPdfHeader(doc, {
     title: report.title,
     subtitle: `${periodLabel}${comparisonLabel}`,
-    summary: summaryRows(report),
+    summary: report.metadata?.analysis ? [] : summaryRows(report),
     generatedAt: report.generatedAt,
     logoDataUrl: options.logoDataUrl,
   });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
+  const paragraph = (text, bold = false) => {
+    doc.setFont(undefined, bold ? 'bold' : 'normal');
+    doc.setFontSize(bold ? 10 : 9);
+    doc.setTextColor(...REPORT_BRAND.ink);
+    const lines = doc.splitTextToSize(String(text), pageWidth - 28);
+    lines.forEach((line) => {
+      if (y > pageHeight - 22) { doc.addPage(); y = 16; }
+      doc.text(line, 14, y);
+      y += 4.8;
+    });
+    y += 3;
+  };
+  paragraph(Object.entries(report.filters).map(([key, value]) => `${key}: ${value}`).join(' · '));
+  if (report.metadata?.analysis) {
+    paragraph('Indicadores do período', true);
+    const metrics = report.summary.filter((item) => item.key !== 'downtime');
+    const cardWidth = (pageWidth - 46) / 4;
+    const cardHeight = report.comparisonPeriod ? 30 : 25;
+    metrics.forEach((item, index) => {
+      const column = index % 4;
+      if (column === 0 && y + cardHeight > pageHeight - 22) { doc.addPage(); y = 16; }
+      const x = 14 + column * (cardWidth + 6);
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(...REPORT_BRAND.border);
+      doc.roundedRect(x, y, cardWidth, cardHeight, 2, 2, 'FD');
+      doc.setTextColor(...REPORT_BRAND.muted);
+      doc.setFont(undefined, 'normal');
+      doc.setFontSize(8);
+      doc.text(item.label, x + 4, y + 6, { maxWidth: cardWidth - 8 });
+      doc.setTextColor(...REPORT_BRAND.primary);
+      doc.setFont(undefined, 'bold');
+      doc.setFontSize(15);
+      doc.text(formatSummaryValue(item, item.value), x + 4, y + 17);
+      if (report.comparisonPeriod) {
+        doc.setTextColor(...REPORT_BRAND.muted);
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(7.5);
+        doc.text(`Anterior: ${formatSummaryValue(item, item.previous)}`, x + 4, y + 25);
+      }
+      if (column === 3 || index === metrics.length - 1) y += cardHeight + 5;
+    });
+    summaryRows(report).filter((_, index) => report.summary[index].key === 'downtime')
+      .forEach((row) => paragraph(`${row.label}: ${row.value}`));
+  }
+  for (const insight of report.metadata?.insights || []) {
+    if (y > pageHeight - 55) { doc.addPage(); y = 16; }
+    paragraph(insight.title, true);
+    paragraph(insight.evidence);
+    paragraph(`Verificar: ${insight.action}`);
+  }
+  if (report.metadata?.methodology?.length) {
+    paragraph('Critérios da análise', true);
+    report.metadata.methodology.forEach((text) => paragraph(text));
+  }
+  const cellTable = report.tables.find((table) => table.id === 'production-by-cell');
+  if (cellTable) {
+    if (y > pageHeight - 65) { doc.addPage(); y = 16; }
+    paragraph(cellTable.title, true);
+    y = drawTable(doc, report, y, cellTable) + 10;
+  }
+
   if (options.includeCharts !== false) {
     for (const chart of report.charts || []) {
-      const image = await renderReportChartPng(chart, { width: 1400, height: 560 });
+      const chartHeight = report.metadata?.analysis ? 440 : 560;
+      const image = await renderReportChartPng(chart, { width: 1400, height: chartHeight });
       if (!image) continue;
       const imageWidth = pageWidth - 28;
-      const imageHeight = imageWidth * 0.4;
+      const imageHeight = imageWidth * chartHeight / 1400;
       if (y + imageHeight > pageHeight - 18) {
         doc.addPage();
         y = 14;

@@ -77,6 +77,7 @@ export function useTraceability({ stageFilter = null, searchQuery = '', dateRang
     queryKey: ['production-lots', stageFilter, searchQuery],
     queryFn: () => fetchTraceabilityBoardLots({ stageFilter, searchQuery }),
     initialData: [],
+    initialDataUpdatedAt: 0,
     refetchInterval: 30000,  // atualiza a cada 30s (produção em tempo real)
   });
 
@@ -203,9 +204,11 @@ export function useTraceability({ stageFilter = null, searchQuery = '', dateRang
     advanceLot,
     blockLot,
     unblockLot,
-    refetch: () => {
-      lots.refetch();
-      orders.refetch();
+    refetch: async () => {
+      await Promise.all([
+        lots.refetch({ throwOnError: true }),
+        orders.refetch({ throwOnError: true }),
+      ]);
     },
   };
 }

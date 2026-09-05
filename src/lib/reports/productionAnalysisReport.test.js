@@ -28,15 +28,15 @@ describe('relatório analítico de produção', () => {
       fetchedRowCount: 3,
     });
 
-    const produced = report.summary.find((item) => item.key === 'produced');
-    const oee = report.summary.find((item) => item.key === 'oee');
-    const oeeComparison = report.comparisons.find((item) => item.key === 'oee');
+    const produced = report.summary.find((item) => item.key === 'produced-sheets');
+    const attainment = report.summary.find((item) => item.key === 'attainment-sheets');
+    const attainmentComparison = report.comparisons.find((item) => item.key === 'attainment-sheets');
     const dataTable = report.tables.find((table) => table.primary);
 
-    expect(produced.value).toBe(report.metadata.currentMetrics.produced);
+    expect(produced.value).toBe(report.metadata.analysis.units[0].produced);
     expect(produced.value).toBe(200);
-    expect(oee.value).toBe(1);
-    expect(oeeComparison.delta).toBe(50);
+    expect(attainment.value).toBe(1);
+    expect(attainmentComparison.delta).toBe(50);
     expect(dataTable.rows).toHaveLength(2);
     expect(report.charts[0].series[0].values.reduce((sum, value) => sum + value, 0)).toBe(200);
   });

@@ -1,3 +1,4 @@
+import GradientBarShape from '@/components/ui/GradientBarShape';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -325,7 +326,7 @@ export default function QualityPage() {
                     <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 11 }} label={{ value: '% Acumulado', angle: 90, position: 'insideRight', fontSize: 10 }} />
                     <Tooltip contentStyle={{ borderRadius: '12px', fontSize: '12px' }} />
                     <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                    <Bar yAxisId="left" dataKey="count" name="Quantidade de Ocorrências" fill="url(#paretoBarGrad)" radius={[6, 6, 0, 0]}>
+                    <Bar shape={<GradientBarShape />} yAxisId="left" dataKey="count" name="Quantidade de Ocorrências" fill="url(#paretoBarGrad)" radius={[6, 6, 0, 0]}>
                       <LabelList dataKey="count" position="top" style={{ fontSize: '11px', fontWeight: 'bold', fill: '#d97706' }} />
                     </Bar>
                     <Line yAxisId="right" type="monotone" dataKey="cumulativePercentage" name="% Acumulado" stroke="#ef4444" strokeWidth={2.5} dot={{ r: 5, fill: '#ef4444' }}>
@@ -449,7 +450,7 @@ export default function QualityPage() {
                       <YAxis yAxisId="rate" orientation="right" domain={[0, 100]} tick={{ fontSize: 10 }} label={{ value: 'Taxa de reprovação (%)', angle: 90, position: 'insideRight', fontSize: 10, fill: '#0ea5e9' }} />
                       <Tooltip contentStyle={{ borderRadius: '12px', fontSize: '12px' }} />
                       <Legend wrapperStyle={{ fontSize: '11px' }} />
-                      <Bar yAxisId="quantity" dataKey="rejected" name="Reprovadas" fill="#ef4444" radius={[5, 5, 0, 0]} />
+                      <Bar shape={<GradientBarShape />} yAxisId="quantity" dataKey="rejected" name="Reprovadas" fill="#ef4444" radius={[5, 5, 0, 0]} />
                       <Line yAxisId="rate" type="monotone" dataKey="rejectionRate" name="Taxa de reprovação (%)" stroke="#0ea5e9" strokeWidth={3} dot={{ r: 4 }} />
                     </ComposedChart>
                   </ResponsiveContainer>
@@ -494,7 +495,7 @@ export default function QualityPage() {
                       <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} label={{ value: 'Quantidade de defeitos', position: 'insideBottom', offset: -5, fontSize: 10 }} />
                       <YAxis type="category" dataKey="cell" width={90} tick={{ fontSize: 10 }} />
                       <Tooltip contentStyle={{ borderRadius: '12px', fontSize: '12px' }} />
-                      <Bar dataKey="defects" name="Defeitos" fill="#8b5cf6" radius={[0, 6, 6, 0]}>
+                      <Bar shape={<GradientBarShape horizontal />} dataKey="defects" name="Defeitos" fill="#8b5cf6" radius={[0, 6, 6, 0]}>
                         <LabelList dataKey="defects" position="right" style={{ fontSize: '11px', fontWeight: 'bold', fill: '#7c3aed' }} />
                       </Bar>
                     </ComposedChart>

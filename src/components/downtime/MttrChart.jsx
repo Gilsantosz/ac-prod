@@ -1,3 +1,4 @@
+import GradientBarShape from '@/components/ui/GradientBarShape';
 import { Card } from '@/components/ui/card';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from 'recharts';
 import { Wrench } from 'lucide-react';
@@ -22,7 +23,7 @@ export default function MttrChart({ data = [] }) {
               formatter={(v, n, p) => [`${v} min (${p.payload.count} ocorr.)`, 'MTTR']}
               contentStyle={{ borderRadius: 12, border: '1px solid hsl(var(--border))', fontSize: 12 }}
             />
-            <Bar dataKey="mttr" fill="#7c3aed" radius={[0, 4, 4, 0]} barSize={18}>
+            <Bar shape={<GradientBarShape horizontal />} dataKey="mttr" fill="#7c3aed" radius={[0, 4, 4, 0]} barSize={18}>
               <LabelList dataKey="mttr" position="right" formatter={(v) => `${v}m`} fontSize={11} />
             </Bar>
           </BarChart>

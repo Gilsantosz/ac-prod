@@ -1,3 +1,4 @@
+import GradientBarShape from '@/components/ui/GradientBarShape';
 import { useState, useMemo, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -277,8 +278,8 @@ export default function DailyProductionCard({
                   }}
                 />
                 <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="Meta" fill="hsl(var(--muted-foreground) / 0.2)" radius={[4, 4, 0, 0]} name="Meta" />
-                <Bar dataKey="Produzido" radius={[4, 4, 0, 0]} name="Produzido">
+                <Bar shape={<GradientBarShape />} dataKey="Meta" fill="hsl(var(--muted-foreground) / 0.2)" radius={[4, 4, 0, 0]} name="Meta" />
+                <Bar shape={<GradientBarShape />} dataKey="Produzido" radius={[4, 4, 0, 0]} name="Produzido">
                   {cellChartData.map((d, i) => (
                     <Cell
                       key={i}
@@ -350,8 +351,8 @@ export default function DailyProductionCard({
                     }}
                   />
                   <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="Meta" fill="hsl(var(--muted-foreground) / 0.2)" radius={[4, 4, 0, 0]} name="Meta" />
-                  <Bar dataKey="Produzido" fill="hsl(var(--chart-2))" radius={[4, 4, 0, 0]} name="Produzido" />
+                  <Bar shape={<GradientBarShape />} dataKey="Meta" fill="hsl(var(--muted-foreground) / 0.2)" radius={[4, 4, 0, 0]} name="Meta" />
+                  <Bar shape={<GradientBarShape />} dataKey="Produzido" fill="hsl(var(--chart-2))" radius={[4, 4, 0, 0]} name="Produzido" />
                 </BarChart>
               </ResponsiveContainer>
             </div>

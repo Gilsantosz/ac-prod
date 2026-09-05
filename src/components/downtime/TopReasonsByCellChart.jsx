@@ -1,3 +1,4 @@
+import GradientBarShape from '@/components/ui/GradientBarShape';
 import { Card } from '@/components/ui/card';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Layers } from 'lucide-react';
@@ -25,7 +26,7 @@ export default function TopReasonsByCellChart({ data = [] }) {
                 formatter={(v) => [`${v} min`, 'Parada']}
                 contentStyle={{ borderRadius: 12, border: '1px solid hsl(var(--border))', fontSize: 12 }}
               />
-              <Bar dataKey="downtime" radius={[0, 4, 4, 0]} barSize={16}>
+              <Bar shape={<GradientBarShape horizontal />} dataKey="downtime" radius={[0, 4, 4, 0]} barSize={16}>
                 {cellData.reasons.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
               </Bar>
             </BarChart>
