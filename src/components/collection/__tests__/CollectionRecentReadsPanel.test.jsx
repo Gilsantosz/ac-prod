@@ -37,6 +37,7 @@ describe('CollectionRecentReadsPanel realtime refresh', () => {
   it('limita uma rajada de eventos a uma consulta por janela de cinco segundos', async () => {
     const view = render(
       <CollectionRecentReadsPanel
+        cellId="cell-1"
         cellName="Corte"
         workstationId="workstation-1"
         operatorId="operator-1"
@@ -51,6 +52,10 @@ describe('CollectionRecentReadsPanel realtime refresh', () => {
     });
     expect(realtimeCallback).toEqual(expect.any(Function));
     mocks.getCollectionHistory.mockClear();
+    mocks.getCollectionHistoryCount.mockClear();
+    expect(mocks.subscribeToCollectionHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ cellId: 'cell-1', cellName: 'Corte' }),
+    );
 
     act(() => {
       for (let index = 0; index < 20; index += 1) realtimeCallback();
@@ -59,6 +64,7 @@ describe('CollectionRecentReadsPanel realtime refresh', () => {
       await vi.advanceTimersByTimeAsync(250);
     });
     expect(mocks.getCollectionHistory).toHaveBeenCalledTimes(1);
+    expect(mocks.getCollectionHistoryCount).toHaveBeenCalledTimes(1);
 
     act(() => {
       for (let index = 0; index < 20; index += 1) realtimeCallback();
@@ -72,6 +78,7 @@ describe('CollectionRecentReadsPanel realtime refresh', () => {
       await vi.advanceTimersByTimeAsync(1);
     });
     expect(mocks.getCollectionHistory).toHaveBeenCalledTimes(2);
+    expect(mocks.getCollectionHistoryCount).toHaveBeenCalledTimes(2);
 
     view.unmount();
     expect(mocks.unsubscribeFromCollectionHistory).toHaveBeenCalledTimes(1);
