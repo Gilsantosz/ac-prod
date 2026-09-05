@@ -1,3 +1,4 @@
+import { getUnitLabel } from '@/lib/productionUnitRules';
 import { buildOperationalAnalysis, aggregateAnalysis, ratio } from '@/lib/operationalAnalysis';
 import { createReportDefinition } from '@/lib/reports/reportDefinition';
 import { buildMetricComparison } from '@/lib/reports/reportPeriodComparison';
@@ -56,7 +57,8 @@ export function createProductionAnalysisReport(snapshot, { generatedBy = '' } = 
     subtitle: `Período de ${formatDatePtBr(snapshot.period.from)} a ${formatDatePtBr(snapshot.period.to)}`,
     generatedAt: snapshot.generatedAt, generatedBy, period: snapshot.period, comparisonPeriod: snapshot.comparisonPeriod,
     filters: { Células: !snapshot.filters?.cell || snapshot.filters.cell === 'all' ? 'Todas' : snapshot.filters.cell,
-      Turnos: !snapshot.filters?.shift || snapshot.filters.shift === 'all' ? 'Todos' : snapshot.filters.shift },
+      Turnos: !snapshot.filters?.shift || snapshot.filters.shift === 'all' ? 'Todos' : snapshot.filters.shift,
+      ...(snapshot.filters?.metric_unit ? { Unidade: getUnitLabel(snapshot.filters.metric_unit) } : {}) },
     summary, comparisons, charts,
     tables: [
       { id: 'production-data', title: 'Base detalhada de produção válida', sheet: 'data', primary: true, rows: dataRows,

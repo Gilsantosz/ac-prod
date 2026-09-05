@@ -220,7 +220,8 @@ export function monthlyGoalTracking(entries, goals, now = new Date()) {
   const inMonth = (d) => typeof d === 'string' && d.startsWith(ym);
   const validEntries = validProductionEntries(entries);
 
-  const produced = validEntries.filter((e) => inMonth(e.date)).reduce((a, e) => a + (Number(e.produced) || 0), 0);
+  const referenceDate = `${ym}-${String(now.getDate()).padStart(2, '0')}`;
+  const produced = validEntries.filter((e) => inMonth(e.date) && e.date <= referenceDate).reduce((a, e) => a + (Number(e.produced) || 0), 0);
   // meta mensal = soma das metas diárias definidas no mês; fallback para metas das entradas
   let target = goals.filter((g) => inMonth(g.date)).reduce((a, g) => a + (Number(g.target) || 0), 0);
   if (!target) target = validEntries.filter((e) => inMonth(e.date)).reduce((a, e) => a + (Number(e.target) || 0), 0);

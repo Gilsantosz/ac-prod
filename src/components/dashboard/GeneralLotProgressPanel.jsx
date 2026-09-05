@@ -2,38 +2,32 @@ import { useQuery } from '@tanstack/react-query';
 import { Layers3, PackageCheck, UsersRound } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 
-async function fetchPcpBatchProgress() {
-  const { data, error } = await supabase
-    .from('promob_import_batches')
-    .select(`
-      id, general_lot_code, file_name, status, total_parts,
-      completed_parts, pending_parts, progress_percent,
-      total_operations, completed_operations,
-      client_lots_count, customers_count, imported_at, created_at
-    `)
-    .in('status', ['parsed', 'processed'])
-    .order('created_at', { ascending: false })
-    .limit(20);
-
-  if (error) {
-    if (['42703', '42P01'].includes(error.code)) return [];
-    throw error;
+export async function fetchPcpBatchProgress(lotIds = []) {
+  if (!lotIds.length) return [];
+  const batches = new Map();
+  for (let offset = 0; offset < lotIds.length; offset += 100) {
+    const { data, error } = await supabase.from('promob_import_batches')
+      .select(`id, general_lot_code, file_name, status, total_parts,
+        completed_parts, pending_parts, progress_percent, total_operations, completed_operations,
+        client_lots_count, customers_count, imported_at, created_at, production_lots!inner(id)`)
+      .in('production_lots.id', lotIds.slice(offset, offset + 100))
+      .in('status', ['parsed', 'processed'])
+      .order('created_at', { ascending: false }).limit(20);
+    if (error) throw error;
+    (data || []).forEach((batch) => batches.set(batch.id, batch));
   }
-  return data || [];
+  return [...batches.values()].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, 20);
 }
 
-export default function GeneralLotProgressPanel() {
-  const { data: batches = [], isLoading } = useQuery({
-    queryKey: ['pcp-batches'],
-    queryFn: fetchPcpBatchProgress,
-    initialData: [],
+export default function GeneralLotProgressPanel({ lotIds = [] }) {
+  const { data: batches = [], isLoading, isError } = useQuery({
+    queryKey: ['pcp-batches', 'dashboard', lotIds],
+    queryFn: () => fetchPcpBatchProgress(lotIds),
+    enabled: lotIds.length > 0,
     staleTime: 10_000,
-    // As tabelas produtivas invalidam ['pcp-batches'] via Realtime.
     refetchInterval: 60_000,
   });
-
-  const active = batches.filter((batch) => Number(batch.progress_percent || 0) < 100);
-  const visible = (active.length ? active : batches).slice(0, 8);
+  const visible = batches.slice(0, 8);
   const totalPieces = visible.reduce((sum, batch) => sum + Number(batch.total_parts || 0), 0);
   const completedPieces = visible.reduce((sum, batch) => sum + Number(batch.completed_parts || 0), 0);
   const clientLots = visible.reduce((sum, batch) => sum + Number(batch.client_lots_count || 0), 0);
@@ -44,7 +38,7 @@ export default function GeneralLotProgressPanel() {
         <div>
           <h3 className="font-semibold text-sm text-foreground">Andamento dos lotes gerais PCP</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Consolidação em tempo real das peças coletadas em todas as células e máquinas.
+            Lotes com produção no recorte selecionado. As barras mostram o progresso total atual de cada lote.
           </p>
         </div>
         <span className="text-xs font-medium rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 px-2.5 py-1">
@@ -58,11 +52,11 @@ export default function GeneralLotProgressPanel() {
         <Summary icon={UsersRound} label="Lotes gerais" value={visible.length} />
       </div>
 
-      {isLoading ? (
+      {isError ? <p role="alert" className="text-sm text-destructive">Não foi possível carregar os lotes do recorte.</p> : isLoading ? (
         <p className="text-xs text-muted-foreground py-5 text-center">Carregando lotes PCP…</p>
       ) : visible.length === 0 ? (
         <p className="text-xs text-muted-foreground py-5 text-center border border-dashed border-border/50 rounded-xl">
-          Nenhum lote geral PCP importado.
+          Nenhum lote PCP vinculado aos registros selecionados.
         </p>
       ) : (
         <div className="space-y-2 max-h-72 overflow-y-auto pr-1">

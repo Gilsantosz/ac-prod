@@ -3,6 +3,7 @@ import { format, subDays } from 'date-fns';
 import { useAuth } from '@/lib/AuthContext';
 import { isAnnualFilterActive } from '@/lib/dashboardPeriod';
 import { createProductionAnalysisReport } from '@/lib/reports/productionAnalysisReport';
+import { filterProductionUnit } from '@/lib/productionSelection';
 import ExportReportMenu from '@/components/reports/ExportReportMenu';
 
 export default function ExportMenu({ entries, allEntries, filters }) {
@@ -14,7 +15,7 @@ export default function ExportMenu({ entries, allEntries, filters }) {
     const source = weekly ? allEntries.filter((e) => e.date >= from && e.date <= to
       && (filters.cell === 'all' || e.cell === filters.cell) && (filters.shift === 'all' || e.shift === filters.shift)) : entries;
     return createProductionAnalysisReport({ generatedAt: new Date().toISOString(), period: { from, to },
-      comparisonPeriod: null, entries: source, filters, fetchedRowCount: source.length }, { generatedBy: user?.name || user?.email || '' });
+      comparisonPeriod: null, entries: filterProductionUnit(source, filters.metric_unit), filters, fetchedRowCount: source.length }, { generatedBy: user?.name || user?.email || '' });
   };
   const report = useMemo(() => build(), [entries, filters, user?.name, user?.email]);
   return <div className="flex flex-wrap gap-2"><ExportReportMenu report={report} disabled={!report.metadata.rowCount} />

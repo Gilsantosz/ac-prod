@@ -33,8 +33,9 @@ export default function KioskCellControl({ cells, active, setActive, rotating, s
           <ChevronLeft className="w-4 h-4" />
         </Button>
         <Select value={active} onValueChange={setActive}>
-          <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
+          <SelectTrigger aria-label="Célula do quiosque" className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
           <SelectContent>
+            <SelectItem value="all">Todas as células</SelectItem>
             {cells.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
           </SelectContent>
         </Select>

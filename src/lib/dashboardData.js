@@ -7,6 +7,7 @@ const PAGE_SIZE = 1000;
 // reduz o tráfego sem alterar os cálculos, filtros ou relatórios existentes.
 export const DASHBOARD_PRODUCTION_SELECT = [
   'id',
+  'lot_id',
   'date',
   'shift',
   'cell',
@@ -83,4 +84,19 @@ export async function fetchDashboardYearBounds() {
     oldestDate: oldestResult.data?.[0]?.date,
     newestDate: newestResult.data?.[0]?.date,
   };
+}
+
+export async function fetchDashboardDailyGoals(referenceDate, year) {
+  const { startDate, endDate } = getDashboardPeriodRange(referenceDate, year);
+  const rows = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data, error } = await supabase.from('daily_goals')
+      .select('id,date,shift,cell,target')
+      .gte('date', startDate).lt('date', endDate)
+      .order('date', { ascending: true }).order('id', { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if ((data || []).length < PAGE_SIZE) return rows;
+  }
 }

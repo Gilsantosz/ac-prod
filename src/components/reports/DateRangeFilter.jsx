@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,6 +9,7 @@ import { format, startOfQuarter, endOfQuarter, subMonths } from 'date-fns';
 const fmt = (d) => format(d, 'yyyy-MM-dd');
 
 export default function DateRangeFilter({ range, setRange }) {
+  const id = useId();
   const now = new Date();
 
   const presets = [
@@ -25,12 +27,12 @@ export default function DateRangeFilter({ range, setRange }) {
       <div className="flex flex-col lg:flex-row lg:items-end gap-4">
         <div className="flex items-end gap-3 flex-wrap">
           <div className="space-y-1.5">
-            <Label className="flex items-center gap-1.5 text-xs"><Calendar className="w-3.5 h-3.5" /> De</Label>
-            <Input type="date" value={range.from} onChange={(e) => set('from', e.target.value)} className="w-44" />
+            <Label htmlFor={`${id}-from`} className="flex items-center gap-1.5 text-xs"><Calendar className="w-3.5 h-3.5" /> De</Label>
+            <Input id={`${id}-from`} type="date" value={range.from} onChange={(e) => set('from', e.target.value)} className="w-44" />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Até</Label>
-            <Input type="date" value={range.to} onChange={(e) => set('to', e.target.value)} className="w-44" />
+            <Label htmlFor={`${id}-to`} className="text-xs">Até</Label>
+            <Input id={`${id}-to`} type="date" value={range.to} onChange={(e) => set('to', e.target.value)} className="w-44" />
           </div>
           {active && (
             <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground" onClick={() => setRange({ from: '', to: '' })}>

@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId } from 'react';
 import { Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { formatMetric } from '@/lib/operationalAnalysis';
 
@@ -11,14 +11,13 @@ export function BarGradients({ id, horizontal = false }) {
 export default function ProductionAnalysisCharts({ report }) {
   const id = useId().replace(/:/g, '');
   const { units, cells } = report.metadata.analysis;
-  const [selected, setSelected] = useState('');
-  const unit = units.find((u) => u.key === selected) || units[0];
+  const unit = units[0];
   if (!unit) return null;
   const monthly = report.metadata.monthlyRows.filter((r) => r.metric_unit === unit.key);
   const byCell = cells.filter((c) => c.metric_unit === unit.key).sort((a, b) => (a.attainment ?? Infinity) - (b.attainment ?? Infinity));
   return <section className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">Desempenho por unidade</h2><p className="text-xs text-muted-foreground mt-1">Compare volumes na mesma unidade de produção.</p></div>
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Unidade dos gráficos">{units.map((u) => <button type="button" key={u.key} aria-pressed={u.key === unit.key} onClick={() => setSelected(u.key)} className={`rounded-full border px-4 py-2 text-sm capitalize ${u.key === unit.key ? 'bg-primary text-primary-foreground border-primary' : 'bg-card border-border text-muted-foreground'}`}>{u.unitLabel}</button>)}</div>
+
     </div>
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
       <article className="min-w-0 rounded-2xl border border-border/70 bg-card p-5"><h3 className="font-semibold">Produção e meta por mês</h3><p className="text-xs text-muted-foreground mt-1 mb-4">{unit.unitLabel} · atingimento no eixo direito</p>
