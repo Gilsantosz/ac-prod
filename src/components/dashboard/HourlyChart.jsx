@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import { BarGradients } from '@/components/reports/ProductionAnalysisCharts';
+import BarGradientStops from '@/components/ui/BarGradientStops';
 import { Card } from '@/components/ui/card';
 import { ResponsiveContainer, Bar, XAxis, YAxis, Tooltip, Line, ComposedChart, CartesianGrid, Legend } from 'recharts';
 import { sortByHour } from '@/lib/productionMetrics';
@@ -19,7 +19,7 @@ export default function HourlyChart({ grouped, unitLabel = '' }) {
       <p className="text-sm text-muted-foreground mb-5">{unitLabel} · atingimento no eixo direito</p>
       <ResponsiveContainer width="100%" height={288}>
           <ComposedChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-            <BarGradients id={id} />
+            <defs><BarGradientStops id={id} /></defs>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
             <XAxis dataKey="hora" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} />
             <YAxis yAxisId="volume" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} />
