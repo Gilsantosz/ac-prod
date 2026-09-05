@@ -15,13 +15,14 @@
  * @returns {Array} Lista de objetos de células autorizadas
  */
 export function getOperatorAllowedCells({ user, opSession, allCells = [] }) {
-  // Admins têm acesso irrestrito a todas as células ativas
-  if (user?.role === 'admin') {
-    return allCells;
-  }
+  // A sessão operacional é a autoridade da estação, inclusive quando o
+  // usuário do sistema é administrador. O perfil administrativo não pode
+  // ampliar silenciosamente o escopo do operador que assumiu a coleta.
+  if (opSession) {
+    if (!Array.isArray(opSession.cells) || opSession.cells.length === 0) {
+      return [];
+    }
 
-  // 1. Se houver uma sessão operacional ativa com lista de células
-  if (opSession?.cells && Array.isArray(opSession.cells) && opSession.cells.length > 0) {
     // Pode vir como array de objetos [{ id, name }] ou strings de nomes
     const opCellNamesOrIds = new Set(
       opSession.cells.map(c => (typeof c === 'string' ? c.toLowerCase() : String(c.name || c.id || '').toLowerCase()))
@@ -38,6 +39,12 @@ export function getOperatorAllowedCells({ user, opSession, allCells = [] }) {
 
     // Se não bateu com allCells ou allCells está vazio, constrói lista a partir da sessão
     return opSession.cells.map(c => typeof c === 'string' ? { id: c, name: c } : c);
+  }
+
+  // Fora de uma estação assumida por operador, administradores mantêm o
+  // acesso amplo necessário às telas de gestão.
+  if (user?.role === 'admin') {
+    return allCells;
   }
 
   // 2. Se o usuário do sistema possui células vinculadas (managed_cells ou cell)
@@ -75,7 +82,7 @@ export function getOperatorAllowedCells({ user, opSession, allCells = [] }) {
  */
 export function isCellPermittedForOperator(targetCellNameOrId, context = {}) {
   if (!targetCellNameOrId) return false;
-  if (context.user?.role === 'admin') return true;
+  if (context.user?.role === 'admin' && !context.opSession) return true;
 
   const allowedCells = getOperatorAllowedCells(context);
   if (!allowedCells || allowedCells.length === 0) return false;
@@ -93,6 +100,6 @@ export function isCellPermittedForOperator(targetCellNameOrId, context = {}) {
  * Verifica se o operador atual possui permissão explícita para a Marcenaria.
  */
 export function hasMarcenariaAccess(context = {}) {
-  if (context.user?.role === 'admin') return true;
+  if (context.user?.role === 'admin' && !context.opSession) return true;
   return isCellPermittedForOperator('Marcenaria', context) || isCellPermittedForOperator('marcenaria', context);
 }

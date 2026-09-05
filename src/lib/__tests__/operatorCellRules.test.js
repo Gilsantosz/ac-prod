@@ -21,6 +21,21 @@ describe('operatorCellRules', () => {
     expect(isCellPermittedForOperator('Corte', { user, allCells })).toBe(true);
   });
 
+  it('não deixa o perfil administrativo ampliar a célula da sessão operacional', () => {
+    const user = { role: 'admin' };
+    const opSession = {
+      name: 'Alex',
+      cells: [{ id: '3', name: 'Furação' }],
+    };
+
+    const allowed = getOperatorAllowedCells({ user, opSession, allCells });
+
+    expect(allowed.map((cell) => cell.name)).toEqual(['Furação']);
+    expect(isCellPermittedForOperator('Furação', { user, opSession, allCells })).toBe(true);
+    expect(isCellPermittedForOperator('Borda', { user, opSession, allCells })).toBe(false);
+    expect(hasMarcenariaAccess({ user, opSession, allCells })).toBe(false);
+  });
+
   it('restringe operador à lista de células cadastradas na sessão operacional', () => {
     const opSession = {
       name: 'Carlos Silva',
