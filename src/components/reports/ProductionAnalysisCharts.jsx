@@ -1,12 +1,9 @@
+import BarGradientStops from '@/components/ui/BarGradientStops';
 import { useId } from 'react';
 import { Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { formatMetric } from '@/lib/operationalAnalysis';
 
 export const CHART_TOOLTIP = { background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 12, color: 'hsl(var(--foreground))' };
-export function BarGradients({ id, horizontal = false }) {
-  return <defs>{[['produced', '#34d399', '#15803d'], ['target', '#cbd5e1', '#64748b'], ['warning', '#fbbf24', '#d97706']].map(([key, start, end]) =>
-    <linearGradient key={key} id={`${id}-${key}`} x1="0" y1="0" x2={horizontal ? '1' : '0'} y2={horizontal ? '0' : '1'}><stop offset="0%" stopColor={start} /><stop offset="100%" stopColor={end} /></linearGradient>)}</defs>;
-}
 
 export default function ProductionAnalysisCharts({ report }) {
   const id = useId().replace(/:/g, '');
@@ -22,7 +19,7 @@ export default function ProductionAnalysisCharts({ report }) {
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
       <article className="min-w-0 rounded-2xl border border-border/70 bg-card p-5"><h3 className="font-semibold">Produção e meta por mês</h3><p className="text-xs text-muted-foreground mt-1 mb-4">{unit.unitLabel} · atingimento no eixo direito</p>
         <ResponsiveContainer width="100%" height={300}><ComposedChart data={monthly} margin={{ top: 12, right: 0, left: -12, bottom: 0 }}>
-          <BarGradients id={`${id}-monthly`} /><CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeDasharray="3 5" /><XAxis dataKey="label" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+          <defs><BarGradientStops id={`${id}-monthly`} /></defs><CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeDasharray="3 5" /><XAxis dataKey="label" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
           <YAxis yAxisId="volume" tick={{ fontSize: 11 }} tickFormatter={formatMetric} axisLine={false} tickLine={false} /><YAxis yAxisId="percent" orientation="right" unit="%" domain={[0, 'auto']} width={48} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
           <Tooltip contentStyle={CHART_TOOLTIP} formatter={(value, name) => [`${formatMetric(value)}${name === 'Atingimento' ? '%' : ` ${unit.unitLabel}`}`, name]} /><Legend wrapperStyle={{ fontSize: 12 }} />
           <Bar yAxisId="volume" dataKey="target" name="Meta" fill={`url(#${id}-monthly-target)`} maxBarSize={32} radius={[5, 5, 0, 0]} isAnimationActive={false} />
@@ -32,7 +29,7 @@ export default function ProductionAnalysisCharts({ report }) {
       </article>
       <article className="min-w-0 rounded-2xl border border-border/70 bg-card p-5"><h3 className="font-semibold">Onde atuar primeiro</h3><p className="text-xs text-muted-foreground mt-1 mb-4">Células por atingimento crescente · {unit.unitLabel}</p>
         <div className="max-h-[340px] overflow-y-auto"><ResponsiveContainer width="100%" height={Math.max(280, byCell.length * 64)}><BarChart data={byCell} layout="vertical" margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
-          <BarGradients id={`${id}-cells`} horizontal /><CartesianGrid horizontal={false} stroke="hsl(var(--border))" strokeDasharray="3 5" /><XAxis type="number" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} /><YAxis type="category" dataKey="cell" width={96} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+          <defs><BarGradientStops id={`${id}-cells`} horizontal /></defs><CartesianGrid horizontal={false} stroke="hsl(var(--border))" strokeDasharray="3 5" /><XAxis type="number" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} /><YAxis type="category" dataKey="cell" width={96} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
           <Tooltip contentStyle={CHART_TOOLTIP} formatter={(v, n) => [`${formatMetric(v)} ${unit.unitLabel}`, n]} /><Legend wrapperStyle={{ fontSize: 12 }} />
           <Bar dataKey="target" name="Meta" fill={`url(#${id}-cells-target)`} radius={[0, 5, 5, 0]} maxBarSize={16} isAnimationActive={false} /><Bar dataKey="produced" name="Produzido" fill={`url(#${id}-cells-produced)`} radius={[0, 5, 5, 0]} maxBarSize={16} isAnimationActive={false} />
         </BarChart></ResponsiveContainer></div>

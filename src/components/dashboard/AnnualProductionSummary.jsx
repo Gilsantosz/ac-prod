@@ -1,4 +1,4 @@
-import { BarGradients } from '@/components/reports/ProductionAnalysisCharts';
+import BarGradientStops from '@/components/ui/BarGradientStops';
 import { useMemo, useId } from 'react';
 import { motion } from 'framer-motion';
 import {
@@ -63,7 +63,7 @@ export default function AnnualProductionSummary({ entries = [], year, chartRef, 
           <>
             <ResponsiveContainer width="100%" height={310}>
               <ComposedChart data={months} margin={{ top: 8, right: 0, left: -16, bottom: 0 }}>
-                <BarGradients id={gradientId} />
+                <defs><BarGradientStops id={gradientId} /></defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                 <XAxis dataKey="label" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} />
                 <YAxis yAxisId="quantity" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} />

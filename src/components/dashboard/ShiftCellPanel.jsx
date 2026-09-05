@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import { BarGradients } from '@/components/reports/ProductionAnalysisCharts';
+import BarGradientStops from '@/components/ui/BarGradientStops';
 import { Card } from '@/components/ui/card';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
 
@@ -13,7 +13,7 @@ export default function ShiftCellPanel({ title, subtitle, grouped, unitLabel = '
       <p className="text-sm text-muted-foreground mb-5">{subtitle}</p>
       <div className="max-h-[400px] overflow-y-auto"><ResponsiveContainer width="100%" height={Math.max(240, data.length * 58)}>
         <BarChart data={data} layout="vertical" margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-          <BarGradients id={id} horizontal />
+          <defs><BarGradientStops id={id} horizontal /></defs>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
           <XAxis type="number" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} />
           <YAxis type="category" dataKey="nome" width={80} tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} />
