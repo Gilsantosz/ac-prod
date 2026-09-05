@@ -6,7 +6,7 @@ vi.mock('@/lib/supabaseClient', () => ({ supabase: { rpc } }));
 
 import {
   clearOperatorSession, getOperatorSession, heartbeatOperatorSession,
-  loginOperator, setOperatorSessionContext,
+  isOperatorSessionSupersededError, loginOperator, setOperatorSessionContext,
 } from '@/lib/operatorSessionService';
 
 function loginResult(id = 'session-1') {
@@ -105,6 +105,23 @@ describe('operatorSessionService', () => {
     pending.resolve({ data: { success: true, cell_name: 'Corte' } });
     await expect(context).rejects.toThrow(/encerrada ou alterada/);
     expect(getOperatorSession()).toBeNull();
+  });
+
+  it('identifica uma resposta de contexto substituída sem confundi-la com falha remota', async () => {
+    rpc.mockResolvedValueOnce(loginResult());
+    await loginOperator('operador', '123');
+    const firstPending = deferred();
+    rpc
+      .mockReturnValueOnce(firstPending.promise)
+      .mockResolvedValueOnce({ data: { success: true, cell_name: 'Usinagem' }, error: null });
+
+    const firstContext = setOperatorSessionContext('cell-1');
+    await setOperatorSessionContext('cell-2');
+    firstPending.resolve({ data: { success: true, cell_name: 'Corte' }, error: null });
+
+    const superseded = await firstContext.catch((error) => error);
+    expect(isOperatorSessionSupersededError(superseded)).toBe(true);
+    expect(getOperatorSession()).toMatchObject({ selected_cell_id: 'cell-2' });
   });
 
   it('heartbeat preserva a seleção de célula feita enquanto ele aguardava', async () => {

@@ -33,6 +33,7 @@ import CollectionVolumeEntryPanel from '@/components/collection/CollectionVolume
 import CollectionErrorBoundary from '@/components/ui/CollectionErrorBoundary';
 import { getActiveDowntime } from '@/lib/downtimeService';
 import { recordSessionActivity } from '@/lib/sessionActivity';
+import { isOperatorSessionSupersededError } from '@/lib/operatorSessionService';
 import {
   COLLECTION_STATES,
   collectionStateFromResult,
@@ -370,8 +371,11 @@ export default function TraceabilityCollection({ embedded = false }) {
       try {
         await setOpSessionContext(selectedCellObj.id, desiredMachineId, 'Coletor Chão de Fábrica');
       } catch (err) {
-        console.error('Erro ao sincronizar contexto com o servidor:', err);
-        if (!cancelled) {
+        // Trocas rápidas de célula/máquina substituem legitimamente a RPC
+        // anterior. Essa resposta antiga não é falha de login nem deve
+        // bloquear o contexto mais recente.
+        if (!cancelled && !isOperatorSessionSupersededError(err)) {
+          console.error('Erro ao sincronizar contexto com o servidor:', err);
           setContextSyncError(err?.message || 'Não foi possível confirmar o posto operacional.');
         }
       }
