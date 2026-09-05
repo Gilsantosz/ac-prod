@@ -4,6 +4,11 @@ Alvo exclusivo: `capacity-test`, ref `smnsihksrhzbkhcbdjfu`, branch ID
 `cf279f17-5cdd-4ec5-b0e4-467f87215ed9`. Esta pasta não pertence à cadeia de
 deploy de produção. Aplique cada arquivo explicitamente, após conferir o alvo.
 
+Estado: foundation já aplicada como `20260905005442` /
+`collection_schema_foundation_staging_v1`, sem alteração dos bytes do arquivo.
+Consulte [evidência e correspondência de versões](../../../docs/audits/2026-09-04-mes-vnext/14-staging-foundation-applied.md).
+Não reaplicar o artefato usando seu prefixo local planejado.
+
 `20260905003000_collection_schema_foundation.sql` materializa 23 tabelas
 ausentes, 39 colunas, 125 constraints e três índices únicos a partir das
 definições qualificadas capturadas do catálogo. Cria também um journal de
@@ -38,6 +43,7 @@ o projeto produtivo existente não passa esse preflight.
 ```sh
 node scripts/mes/prove-historical-replay-blockers.mjs /absolute/postgresql17/bin
 node scripts/mes/test-recovery-foundation.mjs /absolute/postgresql17/bin
+node scripts/mes/test-recovery-parsers.mjs /absolute/postgresql17/bin
 ```
 
 O primeiro reproduz `42601` nas funções históricas incompletas sem editar seus

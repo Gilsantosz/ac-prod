@@ -11,6 +11,12 @@ PR obrigatória revisada: [#63 — fix/auth-realtime-capacity-20260902](https://
 
 ## Decisão executiva
 
+Atualização de implementação: a recuperação aditiva foi aplicada **somente ao
+staging** em 05/09 00:54 UTC, sem reset. Consulte o
+[checkpoint de aplicação e pós-flight](14-staging-foundation-applied.md).
+Os números e a declaração de ausência de DDL abaixo pertencem à Fase Zero;
+não descrevem as ações posteriores. O estado global continua NO-GO.
+
 **NO-GO para merge da PR #63, ativação do pipeline v3 e qualquer teste de carga
 no projeto de produção.**
 
@@ -122,6 +128,9 @@ alegação de capacidade sem evidência.
 - [Revalidação do staging, backups e decisão de recuperação](11-staging-revalidation-and-recovery-decision.md)
 - [Revalidação atual de GitHub e runtime](12-current-runtime-revalidation.md)
 - [Plano atual de port seletivo da PR #63](13-pr63-selective-port-plan.md)
+- [Recuperação aditiva aplicada e pós-flight](14-staging-foundation-applied.md)
+- [Guards fail-closed e parsers privados](15-recovery-guards-and-parsers.md)
+- [Overloads e dependências por identidade de tipos](routine-dependencies-evidence.json)
 - [Catálogo qualificado de produção — definições, ACL e hashes](catalog-production-schema-evidence.json)
 - [Catálogo qualificado de staging antes da recuperação](catalog-staging-schema-evidence.json)
 - [Evidências da recuperação aditiva e testes PostgreSQL 17](staging-recovery-foundation-evidence.json)

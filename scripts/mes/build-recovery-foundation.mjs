@@ -6,6 +6,16 @@ import { pathToFileURL } from 'node:url';
 export const quoteIdentifier = (value) => `"${String(value).replaceAll('"', '""')}"`;
 const literal = (value) => `'${String(value).replaceAll("'", "''")}'`;
 const key = (object) => `${object.kind}:${object.identity}`;
+// Archival reproducer ONLY, not a general catalog-to-migration converter.
+// These reviewed multi-page captures are not atomic. Pins detect modification,
+// not source authenticity or simultaneous consistency. Deployment still needs
+// explicit target verification and a current read-only structural preflight.
+const reviewedBundleHashes = Object.freeze({
+  uozuzdfvnufsjsonswag: 'd8d04ca20a6c5ef385f1359fe8162893a0797b3ac12d087bf82bed93be0a31ad',
+  smnsihksrhzbkhcbdjfu: '6dee10b98ccc4c18dbcd18259dc7c5e40c094942d89495be1d0f6a53c8cfe590',
+});
+const reviewedSqlHash = 'cedc858cb918a5b300bfbece3f7a15dafaa8b69f3a30154fee18375bf0f543a0';
+const sha256 = (text) => createHash('sha256').update(text).digest('hex');
 const additiveRelations = new Set([
   'public.operator_sessions', 'public.operators', 'public.production_collection_events',
   'public.production_entries', 'public.production_lots', 'public.production_pieces',
@@ -25,6 +35,9 @@ export function columnSql(column) {
 }
 
 function requireEvidence(bundle, expected) {
+  if (sha256(JSON.stringify(bundle)) !== reviewedBundleHashes[expected]) {
+    throw new Error('Evidence differs from the immutable reviewed capture; a new recovery requires independent review.');
+  }
   if (bundle.schema_version !== 'acprod-catalog-evidence-v3' || bundle.search_path !== '' || bundle.project_ref !== expected) {
     throw new Error('Expected qualified, versioned evidence for the exact project.');
   }
@@ -96,6 +109,7 @@ export function buildFoundation(production, staging) {
     'REVOKE ALL ON TABLE private.mes_recovery_journal FROM PUBLIC, anon, authenticated, service_role;',
     `INSERT INTO private.mes_recovery_journal (recovery_key,target_ref,selection_sha256) VALUES ('collection_foundation_20260905','smnsihksrhzbkhcbdjfu',${literal(fingerprint)});`);
   const generated = sql.join('\n\n') + '\n';
+  if (sha256(generated) !== reviewedSqlHash) throw new Error('Generated SQL differs from the immutable applied artifact.');
   if (/uozuzdfvnufsjsonswag|\b(?:TRUNCATE|DROP|DELETE FROM)\b|https?:\/\/[A-Za-z0-9]/i.test(generated)) {
     throw new Error('Recovery output contains a forbidden destructive or cross-environment operation.');
   }
