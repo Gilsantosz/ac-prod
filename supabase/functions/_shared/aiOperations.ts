@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
+import { resolveReportCellScope } from './reportAccessScope.ts';
 
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -47,9 +48,7 @@ export async function requireAiUser(req: Request, manage = false) {
 }
 
 export function scopedCells(profile: any, requested: string[] = []) {
-  if (profile.role === 'admin') return requested;
-  const allowed = profile.role === 'manager' && profile.managed_cells?.length ? profile.managed_cells : (profile.cell ? [profile.cell] : []);
-  return requested.length ? requested.filter((cell) => allowed.includes(cell)) : allowed;
+  return resolveReportCellScope(profile, requested).cells;
 }
 
 export function aggregate(entries: any[] = [], occurrences: any[] = [], lots: any[] = []) {
@@ -107,7 +106,8 @@ export async function fetchOperationalData(admin: any, profile: any, filters: an
   const endDate = filters.endDate || new Date().toISOString().slice(0, 10);
   const startFallback = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
   const startDate = filters.startDate || startFallback;
-  const cells = scopedCells(profile, Array.isArray(filters.cells) ? filters.cells : []);
+  const cellScope = resolveReportCellScope(profile, Array.isArray(filters.cells) ? filters.cells : []);
+  const cells = cellScope.cells;
   const requestedLots = Array.isArray(filters.lots)
     ? filters.lots.filter(Boolean)
     : [filters.clientLotCode || filters.lotCode].filter(Boolean);
@@ -126,12 +126,14 @@ export async function fetchOperationalData(admin: any, profile: any, filters: an
     generalLotCode = batch?.general_lot_code || generalLotCode;
   } else if (clientLotCode || requestedLots[0]) {
     const code = clientLotCode || requestedLots[0];
-    const { data: lot } = await admin
+    let lotQuery = admin
       .from('production_lots')
       .select('lot_code,pcp_import_batch_id')
       .ilike('lot_code', code)
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+    if (!cellScope.unrestricted) lotQuery = lotQuery.in('current_cell', cells);
+    const { data: lotRows } = await lotQuery;
+    const lot = lotRows?.[0] || null;
     if (lot) {
       clientLotCode = lot.lot_code;
       batchId = lot.pcp_import_batch_id;
@@ -139,7 +141,7 @@ export async function fetchOperationalData(admin: any, profile: any, filters: an
   }
 
   let lotTracking = null;
-  if (batchId) {
+  if (batchId && profile.role === 'admin') {
     const { data: tracking } = await admin.rpc('get_general_lot_tracking', {
       p_batch_id: batchId,
       p_limit: 1,
@@ -148,9 +150,20 @@ export async function fetchOperationalData(admin: any, profile: any, filters: an
     generalLotCode = tracking?.general_lots?.[0]?.general_lot_code || generalLotCode;
   }
 
-  const resolvedClientLots = clientLotCode
+  let resolvedClientLots = clientLotCode
     ? [clientLotCode]
     : (lotTracking?.general_lots?.[0]?.client_lots || []).map((lot: any) => lot.lot_code).filter(Boolean);
+  if (batchId && profile.role !== 'admin' && !resolvedClientLots.length) {
+    const { data: scopedLots, error: scopedLotsError } = await admin
+      .from('production_lots')
+      .select('lot_code')
+      .eq('pcp_import_batch_id', batchId)
+      .in('current_cell', cells)
+      .limit(2000);
+    if (scopedLotsError) throw scopedLotsError;
+    resolvedClientLots = (scopedLots || []).map((lot: any) => lot.lot_code).filter(Boolean);
+    if (!resolvedClientLots.length) throw new Error('ACCESS_DENIED');
+  }
   const lotCodes = resolvedClientLots.length ? resolvedClientLots : requestedLots;
 
   let entriesQuery = admin.from('production_entries').select('*').limit(10000);
@@ -159,22 +172,36 @@ export async function fetchOperationalData(admin: any, profile: any, filters: an
     entriesQuery = entriesQuery.gte('date', startDate).lte('date', endDate);
     occurrencesQuery = occurrencesQuery.gte('date', startDate).lte('date', endDate);
   }
-  if (cells.length) { entriesQuery = entriesQuery.in('cell', cells); occurrencesQuery = occurrencesQuery.in('cell', cells); }
+  if (!cellScope.unrestricted) {
+    entriesQuery = entriesQuery.in('cell', cells);
+    occurrencesQuery = occurrencesQuery.in('cell', cells);
+  }
   if (lotCodes.length) {
     entriesQuery = entriesQuery.in('lot_code', lotCodes);
     occurrencesQuery = occurrencesQuery.in('lot_code', lotCodes);
   }
-  let lotsQuery = admin.from('production_lots').select('*,production_orders(*)').limit(2000);
-  if (lotCodes.length) lotsQuery = lotsQuery.in('lot_code', lotCodes);
-  else if (batchId) lotsQuery = lotsQuery.eq('pcp_import_batch_id', batchId);
-  const [entriesResult, occurrencesResult, lotsResult] = await Promise.all([
+  const [entriesResult, occurrencesResult] = await Promise.all([
     entriesQuery,
     occurrencesQuery,
-    lotsQuery,
   ]);
   if (entriesResult.error) throw entriesResult.error;
+  if (occurrencesResult.error) throw occurrencesResult.error;
+
+  const allowedLotIds = [...new Set([
+    ...(entriesResult.data || []).map((row: any) => row.lot_id),
+    ...(occurrencesResult.data || []).map((row: any) => row.lot_id),
+  ].filter(Boolean))];
+  let lots: any[] = [];
+  if (cellScope.unrestricted || allowedLotIds.length) {
+    let lotsQuery = admin.from('production_lots').select('*,production_orders(*)').limit(2000);
+    if (!cellScope.unrestricted) lotsQuery = lotsQuery.in('id', allowedLotIds);
+    if (lotCodes.length) lotsQuery = lotsQuery.in('lot_code', lotCodes);
+    else if (batchId) lotsQuery = lotsQuery.eq('pcp_import_batch_id', batchId);
+    const lotsResult = await lotsQuery;
+    if (lotsResult.error) throw lotsResult.error;
+    lots = lotsResult.data || [];
+  }
   let entries = entriesResult.data || [];
-  let lots = lotsResult.data || [];
   const includes = (value: any, term: any) => !term || String(value || '').toLowerCase().includes(String(term).toLowerCase());
   entries = entries.filter((row: any) => includes(row.order_number, filters.order)
     && includes(row.load_number, filters.loadNumber)
