@@ -1,0 +1,42 @@
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
+import { expect, it, vi } from 'vitest';
+import { supabase } from '@/lib/supabaseClient';
+import { fetchReadyJoineryLots } from '@/lib/manualJoineryService';
+import { fetchJoineryLotPieces } from '@/lib/joineryMonitoring';
+import JoineryWorkbench from './JoineryWorkbench';
+
+vi.mock('@/lib/manualJoineryService', () => ({ fetchReadyJoineryLots: vi.fn() }));
+vi.mock('@/lib/joineryMonitoring', async (original) => ({ ...await original(), fetchJoineryLotPieces: vi.fn() }));
+
+it('consulta, filtra e acompanha liberação após coleta sem executar baixa ou mudar sessão', async () => {
+  const piece = { id: 'p1', piece_name: 'Porta', traceability_code: '09950035', current_stage: 'joinery', status: 'in_progress', completed_steps: [] };
+  fetchReadyJoineryLots.mockResolvedValue([{ id: 'l1', lot_id: 'l1', lot_code: '940004', lot_items: [piece] }]);
+  fetchJoineryLotPieces.mockResolvedValue([piece]);
+  const handlers = [];
+  const channel = { on: vi.fn((_event, filter, callback) => { handlers.push({ filter, callback }); return channel; }), subscribe: vi.fn().mockReturnThis() };
+  vi.spyOn(supabase, 'channel').mockReturnValue(channel);
+  const remove = vi.spyOn(supabase, 'removeChannel').mockResolvedValue('ok');
+  const rpc = vi.spyOn(supabase, 'rpc');
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const { unmount } = render(<QueryClientProvider client={qc}><MemoryRouter><JoineryWorkbench /></MemoryRouter></QueryClientProvider>);
+  fireEvent.click(await screen.findByRole('button', { name: /940004/ }));
+  expect(await screen.findByText('Na Marcenaria · aguardando coleta')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /concluir|dar baixa/i })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Ir para Coleta / Bipagem' })).toHaveAttribute('href', '/coleta');
+  fireEvent.change(screen.getByLabelText('Buscar peça'), { target: { value: 'outro' } });
+  expect(screen.queryByText('Porta')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Buscar peça'), { target: { value: '09950035' } });
+  expect(screen.getByText('Porta')).toBeInTheDocument();
+  fetchReadyJoineryLots.mockResolvedValue([]);
+  fetchJoineryLotPieces.mockResolvedValue([{ ...piece, current_stage: 'separation', completed_steps: ['joinery'] }]);
+  handlers.find((h) => h.filter.filter === 'lot_id=eq.l1').callback();
+  await waitFor(() => expect(screen.getByText('1 de 1 peças concluídas na Marcenaria · 100%')).toBeInTheDocument());
+  expect(screen.getByText('Lote 940004')).toBeInTheDocument();
+  expect(screen.queryByText('Na Marcenaria · aguardando coleta')).not.toBeInTheDocument();
+  expect(rpc).not.toHaveBeenCalled();
+  unmount();
+  expect(remove).toHaveBeenCalled();
+  qc.clear();
+});
