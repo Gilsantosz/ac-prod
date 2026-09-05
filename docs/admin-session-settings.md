@@ -43,7 +43,7 @@ administrador, todos os valores e a versão editada antes de gravar. A auditoria
 registra os valores anteriores e novos. Uma edição concorrente recebe conflito
 e deve ser recarregada; não sobrescreve silenciosamente a outra edição.
 
-Aplicar a migration aditiva `20260905023632_admin_session_settings.sql` antes
+Aplicar a migration aditiva `20260905025625_admin_session_settings.sql` antes
 de publicar o front. Não requer alterar as flags de coleta nem o tempo de
 expiração dos JWTs. Enquanto a tabela não estiver disponível, a página informa
 falha de carregamento e o login conserva a política em cache ou o padrão.
@@ -87,10 +87,13 @@ ambiente. Portanto, a execução com duas conexões simultâneas está marcada c
 não realizada; o mesmo script oferece essa verificação em um ambiente nativo.
 A validação isolada não equivale a uma homologação do banco produtivo completo.
 
-O Supabase foi consultado somente em leitura para conferir a compatibilidade:
-o projeto `ac-prod` possui os campos necessários em `profiles` e `cells`, RLS
-habilitada nessas tabelas e ainda não contém `system_settings` nesta preparação.
-Nenhuma configuração foi aplicada às sessões de produção.
+Após autorização explícita, a migration foi aplicada ao projeto `ac-prod` em
+05/09/2026, às 02:56 UTC. O arquivo foi alinhado à versão registrada pelo
+Supabase: `20260905025625`. O conteúdo SQL permaneceu idêntico ao ensaiado
+(SHA-256 `199918f53aeb017d56e7b6a6ff46097e8c0c99b09c557141dc19e84e9753c366`).
+A conferência remota confirmou o padrão de 30 minutos e aviso de 60 segundos,
+versão 1, RLS nas duas tabelas e acesso de escrita somente pelo RPC autorizado.
+Não foram criadas regras específicas nem alterados dados de produção.
 
 A abertura do preview local no navegador foi bloqueada pelo ambiente. A
 interação do formulário foi verificada nos testes de componentes; a inspeção

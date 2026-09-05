@@ -21,7 +21,7 @@ const runtime = process.env.ACPROD_SQL_TEST_RUNTIME;
 const requireRuntime = createRequire(runtime ? path.resolve(runtime, '../package.json') : import.meta.url);
 const wasm = process.argv.includes('--wasm');
 const fixture = await readFile(path.join(root, 'supabase/tests/fixtures/system_settings_fixture.sql'), 'utf8');
-const migration = await readFile(path.join(root, 'supabase/migrations/20260905023632_admin_session_settings.sql'), 'utf8');
+const migration = await readFile(path.join(root, 'supabase/migrations/20260905025625_admin_session_settings.sql'), 'utf8');
 const temp = await mkdtemp(path.join(tmpdir(), 'acprod-session-db-'));
 
 // Drop privileges only for this disposable process, without creating OS users.
