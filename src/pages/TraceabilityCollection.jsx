@@ -264,6 +264,7 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   const [shift, setShift] = useState(() => opSession?.shift || currentShift());
   const [machine, setMachine] = useState(null);
+  const [contextSyncError, setContextSyncError] = useState(null);
   const shiftRange = useMemo(() => {
     return getShiftRange(shift, new Date(), opSession?.shift_start_time, opSession?.shift_end_time);
   }, [shift, opSession?.shift_start_time, opSession?.shift_end_time]);
@@ -318,6 +319,11 @@ export default function TraceabilityCollection({ embedded = false }) {
     if (!selectedCellObj) return [];
     return opSession.machines.filter(m => m.cell_id === selectedCellObj.id);
   }, [opSession, machines, cellName]);
+  const selectedMachineId = useMemo(() => (
+    machine?.id && displayMachines.some((candidate) => candidate.id === machine.id)
+      ? machine.id
+      : null
+  ), [displayMachines, machine?.id]);
 
   // Auto-selecionar ou recuperar máquina
   useEffect(() => {
@@ -338,35 +344,64 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   // Sincronizar o contexto da sessão operacional no servidor
   useEffect(() => {
-    if (!opSession?.token || !cellName) return;
-    const selectedCellObj = displayCells.find(c => c.name === cellName);
-    if (!selectedCellObj?.id) return;
+    if (!opSession?.token || !cellName) {
+      setContextSyncError(null);
+      return undefined;
+    }
+    const selectedCellObj = displayCells.find(c => c.name === cellName || c.id === cellName);
+    if (!selectedCellObj?.id) {
+      setContextSyncError('A célula selecionada não está autorizada para este operador.');
+      return undefined;
+    }
 
-    const desiredMachineId = machine?.id || null;
+    const desiredMachineId = selectedMachineId;
     if (
       opSession.selected_cell_id === selectedCellObj.id
       && (opSession.selected_machine_id || null) === desiredMachineId
       && opSession.selected_station_name === 'Coletor Chão de Fábrica'
-    ) return;
+    ) {
+      setContextSyncError(null);
+      return undefined;
+    }
 
+    let cancelled = false;
+    setContextSyncError(null);
     const syncContext = async () => {
       try {
         await setOpSessionContext(selectedCellObj.id, desiredMachineId, 'Coletor Chão de Fábrica');
       } catch (err) {
         console.error('Erro ao sincronizar contexto com o servidor:', err);
+        if (!cancelled) {
+          setContextSyncError(err?.message || 'Não foi possível confirmar o posto operacional.');
+        }
       }
     };
     syncContext();
+    return () => { cancelled = true; };
   }, [
     opSession?.token,
     opSession?.selected_cell_id,
     opSession?.selected_machine_id,
     opSession?.selected_station_name,
     cellName,
-    machine?.id,
+    selectedMachineId,
     displayCells,
     setOpSessionContext,
   ]);
+
+  const collectionContextReady = Boolean(
+    opSession?.token
+    && selectedCellId
+    && opSession.selected_cell_id === selectedCellId
+    && (opSession.selected_machine_id || null) === selectedMachineId
+    && opSession.selected_station_name === 'Coletor Chão de Fábrica'
+    && !contextSyncError
+  );
+  const collectionContextMessage = contextSyncError
+    ? `Coleta bloqueada: ${contextSyncError}`
+    : !selectedCellId
+      ? 'A célula salva não pertence ao operador. Aguarde a correção automática.'
+      : 'Validando a célula e o posto do operador no servidor...';
 
   const handleMachineChange = (selected) => {
     setMachine(selected);
@@ -596,6 +631,17 @@ export default function TraceabilityCollection({ embedded = false }) {
     // teclado/pointer no navegador; a tentativa de coleta é atividade real.
     recordSessionActivity();
 
+    if (!collectionContextReady) {
+      const result = {
+        success: false,
+        status: 'invalid_context',
+        message: collectionContextMessage,
+      };
+      updateFeedback(result);
+      toast.warning(result.message);
+      return result;
+    }
+
     if (activeDowntime) {
       const result = { success: false, status: 'blocked', message: 'Coleta bloqueada! Há uma parada ativa na célula/máquina.' };
       updateFeedback(result);
@@ -710,7 +756,7 @@ export default function TraceabilityCollection({ embedded = false }) {
       updateFeedback(result);
       return result;
     }
-  }, [cellName, shift, operator, operatorId, machine, collectionOnline, enqueue, processNow, updateFeedback, activeDowntime]);
+  }, [cellName, shift, operator, operatorId, machine, collectionOnline, enqueue, processNow, updateFeedback, activeDowntime, collectionContextReady, collectionContextMessage]);
 
   // Aberturas de modais operacionais
   const handleOpenRejectModal = (piece) => {
@@ -876,6 +922,8 @@ export default function TraceabilityCollection({ embedded = false }) {
       shift={shift}
       operator={operator}
       machine={machine}
+      contextReady={collectionContextReady}
+      contextMessage={collectionContextMessage}
       modalOpen={isAnyModalOpen}
       onOpenDowntime={() => setDowntimeDialogOpen(true)}
       onToggleKiosk={() => setKioskOpen(true)}
@@ -885,10 +933,12 @@ export default function TraceabilityCollection({ embedded = false }) {
           cellName={cellName}
           shift={shift}
           operator={operator}
-          disabled={Boolean(activeDowntime)}
+          disabled={Boolean(activeDowntime) || !collectionContextReady}
           disabledReason={activeDowntime
             ? `Parada ativa: ${activeDowntime.reason || 'Parada operacional'}. Encerre a parada antes de contabilizar o volume.`
-            : ''}
+            : !collectionContextReady
+              ? collectionContextMessage
+              : ''}
           onSuccess={(result) => {
             recordSessionActivity();
             refreshData();
@@ -942,6 +992,8 @@ export default function TraceabilityCollection({ embedded = false }) {
     shift,
     operator,
     machine,
+    collectionContextReady,
+    collectionContextMessage,
     currentGeneralLot,
     currentClientLotCode,
     activeDowntime,
@@ -1210,6 +1262,8 @@ export default function TraceabilityCollection({ embedded = false }) {
           handleOpenReadingOccurrence={handleOpenReadingOccurrence}
           handleOpenTraceabilityDrawer={handleOpenTraceabilityDrawer}
           refreshReadsSignal={refreshReadsSignal}
+          contextReady={collectionContextReady}
+          contextMessage={collectionContextMessage}
         />
       </CollectionErrorBoundary>
     </div>

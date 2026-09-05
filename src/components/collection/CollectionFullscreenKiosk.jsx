@@ -41,6 +41,8 @@ export default function CollectionFullscreenKiosk({
   handleOpenReadingOccurrence,
   handleOpenTraceabilityDrawer,
   refreshReadsSignal,
+  contextReady,
+  contextMessage,
 }) {
   // Ativar fullscreen nativo quando o modo kiosk for aberto
   useEffect(() => {
@@ -292,6 +294,8 @@ export default function CollectionFullscreenKiosk({
               shift={shift}
               operator={operator}
               machine={machine}
+              contextReady={contextReady}
+              contextMessage={contextMessage}
               onOpenDowntime={onOpenDowntime}
               activeDowntime={activeDowntime}
             />

@@ -32,6 +32,8 @@ export default function TraceabilityScannerPanel({
   activeDowntime,
   volumeEntry,
   modalOpen = false,
+  contextReady: contextReadyOverride,
+  contextMessage = '',
 }) {
   const [value, setValue] = useState('');
   const [scanError, setScanError] = useState(null);
@@ -42,7 +44,8 @@ export default function TraceabilityScannerPanel({
   const refocusTimerRef = useRef(null);
   const lastApprovalSoundRef = useRef(null);
   const isSuspended = activeDowntime || modalOpen;
-  const contextReady = Boolean(cellName && shift && operator) && !isSuspended;
+  const localContextReady = Boolean(cellName && shift && operator);
+  const contextReady = Boolean(contextReadyOverride ?? localContextReady) && !isSuspended;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -78,7 +81,7 @@ export default function TraceabilityScannerPanel({
 
   const dispatchCapturedReading = useCallback((code, options = {}) => {
     if (!contextReady || activeDowntime) {
-      setScanError('A coleta está bloqueada até que a célula, o turno e o operador estejam disponíveis.');
+      setScanError(contextMessage || 'A coleta está bloqueada até que o contexto do operador seja confirmado.');
       return false;
     }
 
@@ -141,7 +144,7 @@ export default function TraceabilityScannerPanel({
 
     refocus();
     return true;
-  }, [activeDowntime, cellName, contextReady, machine, mode, onRead, operator, refocus, shift]);
+  }, [activeDowntime, cellName, contextMessage, contextReady, machine, mode, onRead, operator, refocus, shift]);
 
   const handleValueChange = useCallback((rawValue) => {
     const parsed = parseProductionScanCode(rawValue);
@@ -262,7 +265,7 @@ export default function TraceabilityScannerPanel({
         <>
           {!contextReady && (
             <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200" role="status">
-              Selecione a célula e confirme o turno para liberar a coleta.
+              {contextMessage || 'Selecione a célula e confirme o turno para liberar a coleta.'}
             </div>
           )}
 

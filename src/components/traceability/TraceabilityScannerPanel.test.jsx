@@ -106,4 +106,17 @@ describe('TraceabilityScannerPanel — captura rápida de 8 dígitos', () => {
     expect(onRead).not.toHaveBeenCalled();
     expect(screen.getByRole('alert')).toHaveTextContent(/somente dígitos/);
   });
+
+  it('mantém o scanner bloqueado até o Supabase confirmar o contexto operacional', async () => {
+    const user = userEvent.setup();
+    const { onRead, input } = renderScanner({
+      contextReady: false,
+      contextMessage: 'Validando a célula do operador no servidor...',
+    });
+
+    expect(input).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent(/validando a célula do operador/i);
+    await user.type(input, '09950001');
+    expect(onRead).not.toHaveBeenCalled();
+  });
 });
