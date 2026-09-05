@@ -9,7 +9,7 @@ import {
   LayoutDashboard, PlusCircle, ClipboardList, Gauge, Boxes,
   Layers, Plug, AlertOctagon, Trophy, LineChart, BrainCircuit,
   Zap, Users, Shield, HardDrive, Truck, Box, BellRing, FolderKanban, GitFork, ShieldCheck, Wrench, HardHat, Edit3,
-  ChartNoAxesCombined, RotateCcw, ShieldAlert
+  ChartNoAxesCombined, RotateCcw, ShieldAlert, Settings
 } from 'lucide-react';
 
 export const routeGroups = {
@@ -286,6 +286,16 @@ export const appRoutes = [
 
   // ─── GRUPO 5: ADMINISTRAÇÃO ────────────────────────────────────────
   {
+    path: '/configuracoes',
+    label: 'Configurações',
+    description: 'Configurações básicas e tempo de inatividade por célula, nível de acesso e setor',
+    icon: Settings,
+    group: 'admin',
+    permission: 'adminOnly',
+    showInSidebar: true,
+    showInDashboardHub: true
+  },
+  {
     path: '/usuarios',
     label: 'Usuários',
     description: 'Gestão de usuários administrativos, e-mails e permissões de acesso',
@@ -385,6 +395,7 @@ const PAGE_ACCESS_OVERRIDES = {
   '/usuarios': { viewPermission: 'view_users', editPermission: 'manage_users' },
   '/operadores': { viewPermission: 'view_operators', editPermission: 'manage_operators' },
   '/celulas-metas': { viewPermission: 'view_cells', editPermission: 'manage_cells' },
+  '/configuracoes': { viewPermission: 'manage_system_settings', editPermission: 'manage_system_settings', adminOnly: true },
   '/logs-sistema': { viewPermission: 'view_audit_logs', adminOnly: true },
   '/downloads-backups': { viewPermission: 'view_backups', editPermission: 'manage_backups', adminOnly: true },
   '/logs-integridade': { viewPermission: 'view_integrity_logs' },
@@ -454,6 +465,7 @@ export const canUserEditRoute = (user, path) => {
 };
 
 export const permissionLabels = {
+  manage_system_settings: 'Gerenciar Configurações do Sistema (Administrador)',
   view_dashboards: 'Visualizar Painéis (Dashboard Principal)',
   register_production: 'Lançar Produção',
   manage_occurrences: 'Gerenciar Ocorrências e Paradas',

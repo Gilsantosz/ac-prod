@@ -30,6 +30,7 @@ import Users from '@/pages/Users';
 import Operators from '@/pages/Operators';
 import PromobIntegration from '@/pages/PromobIntegration';
 import SystemLogs from '@/pages/SystemLogs';
+import SystemSettings from '@/pages/SystemSettings';
 import DownloadsBackups from '@/pages/DownloadsBackups';
 import AiOperations from '@/pages/AiOperations';
 import ProductionRoutes from '@/pages/ProductionRoutes';
@@ -174,6 +175,7 @@ const AuthenticatedApp = () => {
 
           <Route path="/integracoes/promob" element={<Navigate to="/pcp" replace />} />
           <Route path="/logs-sistema" element={<SystemLogs />} />
+          <Route path="/configuracoes" element={<SystemSettings />} />
           <Route path="/downloads-backups" element={<DownloadsBackups />} />
           <Route path="/backups" element={<Navigate to="/downloads-backups" replace />} />
           <Route path="/ordens-producao" element={<Navigate to="/pcp?tab=orders" replace />} />

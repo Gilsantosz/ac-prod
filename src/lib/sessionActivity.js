@@ -1,6 +1,7 @@
 export const SESSION_INACTIVITY_MS = 30 * 60 * 1000;
 
 const LAST_ACTIVITY_KEY = 'acprod_auth_last_activity_v1';
+export const SESSION_ACTIVITY_EVENT = 'acprod-session-human-activity';
 let memoryLastActivity = 0;
 
 function readStorage() {
@@ -12,9 +13,10 @@ function readStorage() {
 }
 
 export function getLastSessionActivity() {
-  const stored = readStorage()?.getItem(LAST_ACTIVITY_KEY);
-  const parsed = Number(stored);
-  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  try {
+    const parsed = Number(readStorage()?.getItem(LAST_ACTIVITY_KEY));
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  } catch { /* fallback em memória */ }
   return memoryLastActivity || null;
 }
 
@@ -31,10 +33,17 @@ export function recordSessionActivity(at = Date.now()) {
   return timestamp;
 }
 
-export function isSessionInactive(now = Date.now()) {
+export function isSessionInactive(now = Date.now(), timeoutMs = SESSION_INACTIVITY_MS) {
   const lastActivity = getLastSessionActivity();
   if (!lastActivity) return false;
-  return Number(now) - lastActivity >= SESSION_INACTIVITY_MS;
+  const timeout = Number(timeoutMs);
+  return Number(now) - lastActivity >= (Number.isFinite(timeout) && timeout > 0 ? timeout : SESSION_INACTIVITY_MS);
+}
+
+/** Scanner/câmera: a captura é atividade; retries e respostas do banco não são. */
+export function requestSessionActivity() {
+  if (typeof window === 'undefined') return true;
+  return window.dispatchEvent(new CustomEvent(SESSION_ACTIVITY_EVENT, { cancelable: true }));
 }
 
 export function clearSessionActivity() {

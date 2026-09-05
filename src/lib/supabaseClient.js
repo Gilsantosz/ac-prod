@@ -17,13 +17,64 @@ const supabaseProjectRef = (() => {
 })();
 const AUTH_STORAGE_KEY = `ac-prod-auth-${supabaseProjectRef}`;
 const FALLBACK_SESSION_KEY = `ac-prod-auth-fallback-${supabaseProjectRef}`;
+export const AUTH_SESSION_LOCK_KEY = `ac-prod-auth-locked-${supabaseProjectRef}`;
 const inMemoryAuthStorage = new Map();
+let memoryAuthLock = null;
+let memoryOnlyAuthLock = false;
+let authSessionGeneration = 0;
+const pendingAuthOperations = new Set();
+
+function trackAuthOperation(operation) {
+  const pending = Promise.resolve(operation);
+  pendingAuthOperations.add(pending);
+  pending.then(
+    () => pendingAuthOperations.delete(pending),
+    () => pendingAuthOperations.delete(pending),
+  );
+  return pending;
+}
+
+export const waitForPendingAuthRestoration = async () => {
+  // Timeouts de interface não cancelam setSession/signInWithPassword no SDK.
+  // Uma nova credencial só desbloqueia a persistência após ambos terminarem.
+  while (pendingAuthOperations.size) await Promise.allSettled([...pendingAuthOperations]);
+};
+export const waitForPendingAuthOperations = waitForPendingAuthRestoration;
+
+export const getAuthSessionLock = () => {
+  try {
+    const stored = window.localStorage?.getItem(AUTH_SESSION_LOCK_KEY);
+    return stored ? JSON.parse(stored) : (memoryOnlyAuthLock ? memoryAuthLock : null);
+  } catch { return memoryAuthLock; }
+};
+
+export const isAuthSessionLocked = () => Boolean(getAuthSessionLock());
+
+// O bloqueio é deste navegador/projeto. Não revoga sessões de outros aparelhos.
+export const lockAuthSession = (reason = 'logout') => {
+  authSessionGeneration += 1;
+  memoryAuthLock = { reason, at: Date.now() };
+  try {
+    window.localStorage?.setItem(AUTH_SESSION_LOCK_KEY, JSON.stringify(memoryAuthLock));
+    memoryOnlyAuthLock = false;
+  } catch { memoryOnlyAuthLock = true; }
+};
+
+// Somente uma tentativa explícita com credenciais pode remover o bloqueio.
+export const unlockAuthSession = () => {
+  authSessionGeneration += 1;
+  memoryAuthLock = null;
+  memoryOnlyAuthLock = false;
+  try { window.localStorage?.removeItem(AUTH_SESSION_LOCK_KEY); }
+  catch { /* fallback em memória */ }
+};
 
 const createBrowserAuthStorage = () => {
   if (typeof window === 'undefined') return undefined;
 
   return {
     getItem: (key) => {
+      if ((key === AUTH_STORAGE_KEY || key === FALLBACK_SESSION_KEY) && isAuthSessionLocked()) return null;
       try {
         const stored = window.localStorage?.getItem(key);
         if (stored) return stored;
@@ -43,6 +94,8 @@ const createBrowserAuthStorage = () => {
       return inMemoryAuthStorage.get(key) || null;
     },
     setItem: (key, value) => {
+      // setSession/refresh já em voo não podem regravar tokens após o logout.
+      if ((key === AUTH_STORAGE_KEY || key === FALLBACK_SESSION_KEY) && isAuthSessionLocked()) return;
       let persisted = false;
       try {
         window.localStorage?.setItem(key, value);
@@ -101,6 +154,17 @@ if (!isSupabaseConfigured) {
   );
 }
 
+// Um link de recuperação é uma nova credencial explícita, validada pelo Auth.
+// Abrir apenas a rota sem token não remove o bloqueio de inatividade.
+if (typeof window !== 'undefined' && /\/reset-password\/?$/.test(window.location.pathname)) {
+  const search = new URLSearchParams(window.location.search);
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const value = (key) => search.get(key) || hash.get(key);
+  if ((value('access_token') && value('refresh_token'))
+      || (value('token_hash') && value('type') === 'recovery')
+      || value('code')) unlockAuthSession();
+}
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
@@ -111,7 +175,29 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
+export const signInWithCredentials = (email, password) => trackAuthOperation(
+  supabase.auth.signInWithPassword({ email, password }),
+);
+
+export const getPersistedAuthAccessToken = () => {
+  for (const key of [AUTH_STORAGE_KEY, FALLBACK_SESSION_KEY]) {
+    try {
+      const session = JSON.parse(authStorage?.getItem(key) || 'null');
+      if (session?.access_token) return session.access_token;
+    } catch { /* Tenta a cópia de recuperação. */ }
+  }
+  return null;
+};
+
+export const endBrowserAuthSession = (accessToken) => Promise.allSettled([
+  // O bloqueio local já apagou os tokens: passa o JWT capturado ao mesmo
+  // endpoint utilizado pelo SDK para revogar apenas o refresh desta sessão.
+  ...(accessToken ? [supabase.auth.admin.signOut(accessToken, 'local')] : []),
+  supabase.auth.signOut({ scope: 'local' }),
+]);
+
 export const persistAuthSession = (session) => {
+  if (isAuthSessionLocked()) return;
   if (!session?.access_token || !session?.refresh_token) return;
   authStorage?.setItem(FALLBACK_SESSION_KEY, JSON.stringify({
     access_token: session.access_token,
@@ -135,6 +221,8 @@ export const clearPersistedAuthSession = () => {
 };
 
 export const restoreAuthSession = async () => {
+  if (isAuthSessionLocked()) return null;
+  const generation = authSessionGeneration;
   const raw = authStorage?.getItem(FALLBACK_SESSION_KEY);
   if (!raw) return null;
 
@@ -143,15 +231,16 @@ export const restoreAuthSession = async () => {
     if (!stored?.access_token || !stored?.refresh_token) return null;
 
     const { data, error } = await Promise.race([
-      supabase.auth.setSession({
+      trackAuthOperation(supabase.auth.setSession({
         access_token: stored.access_token,
         refresh_token: stored.refresh_token,
-      }),
+      })),
       new Promise((resolve) =>
         setTimeout(() => resolve({ data: { session: null }, error: { message: 'Timeout' } }), 4000)
       ),
     ]);
 
+    if (generation !== authSessionGeneration || isAuthSessionLocked()) return null;
     if (error || !data?.session) {
       clearPersistedAuthSession();
       return null;
