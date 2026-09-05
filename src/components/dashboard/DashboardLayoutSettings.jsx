@@ -8,12 +8,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-export default function DashboardLayoutSettings({ panels, hidden, sizes, toggleHidden, toggleSize }) {
+export default function DashboardLayoutSettings({ panels, hidden, sizes, toggleHidden, toggleSize, disabled = false, saving = false }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="gap-2 bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full shadow-sm">
-          <Settings2 className="w-4 h-4" /> Layout
+        <Button disabled={disabled} variant="outline" className="gap-2 bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full shadow-sm">
+          <Settings2 className="w-4 h-4" /> {saving ? 'Salvando…' : 'Layout'}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72">

@@ -1,3 +1,4 @@
+import GradientBarShape from '@/components/ui/GradientBarShape';
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -220,8 +221,8 @@ export default function LotTrackingDashboard() {
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} unit="m" />
                     <Tooltip content={<ForecastTooltip />} />
-                    <Bar dataKey="media" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
-                    <Bar dataKey="segura" fill="#f59e0b" radius={[6, 6, 0, 0]} />
+                    <Bar shape={<GradientBarShape />} dataKey="media" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
+                    <Bar shape={<GradientBarShape />} dataKey="segura" fill="#f59e0b" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

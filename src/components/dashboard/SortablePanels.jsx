@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { GripVertical, EyeOff, Columns2, Square } from 'lucide-react';
+import { GripVertical, EyeOff, Columns2, Square, ArrowUp, ArrowDown } from 'lucide-react';
 
 /**
  * SortablePanels — Grade de 2 colunas com DnD para reordenar,
@@ -21,6 +21,7 @@ export default function SortablePanels({
   onReorder,
   onToggleHide,
   onToggleSize,
+  editable = true,
 }) {
   const [ready, setReady] = useState(false);
 
@@ -42,15 +43,17 @@ export default function SortablePanels({
   };
 
   // Botões de controle flutuam acima do painel ao hover
-  function PanelControls({ panel, dragHandleProps }) {
+  function PanelControls({ panel, index, dragHandleProps }) {
+    if (!editable) return null;
     const size = sizes[panel.id] || 'full';
     return (
-      <div className="absolute -top-3 right-2 z-20 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-150 pointer-events-none group-hover:pointer-events-auto">
+      <div className="relative z-20 flex flex-wrap justify-end items-center gap-1 mb-2">
+        {[[-1, ArrowUp, 'Mover para cima'], [1, ArrowDown, 'Mover para baixo']].map(([delta, Icon, label]) => <button type="button" key={label} aria-label={`${label}: ${panel.title}`} title={label} disabled={index + delta < 0 || index + delta >= ordered.length} onClick={() => { const ids = ordered.map((p) => p.id); [ids[index], ids[index + delta]] = [ids[index + delta], ids[index]]; onReorder(ids); }} className="h-8 w-8 flex items-center justify-center rounded-md border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-30"><Icon className="h-3.5 w-3.5" /></button>)}
         {onToggleSize && (
           <button
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => onToggleSize(panel.id)}
-            className="flex h-6 px-1.5 items-center gap-1 rounded-md border border-border bg-card text-[10px] font-medium text-muted-foreground shadow-sm hover:text-foreground hover:bg-secondary transition-colors"
+            className="flex h-8 px-2 items-center gap-1 rounded-md border border-border bg-card text-[10px] font-medium text-muted-foreground shadow-sm hover:text-foreground hover:bg-secondary transition-colors"
             title={size === 'half' ? 'Expandir para largura total' : 'Dividir em meia largura'}
           >
             {size === 'half' ? (
@@ -64,7 +67,7 @@ export default function SortablePanels({
           <button
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => onToggleHide(panel.id)}
-            className="flex h-6 px-1.5 items-center gap-1 rounded-md border border-border bg-card text-[10px] font-medium text-muted-foreground shadow-sm hover:text-foreground hover:bg-secondary transition-colors"
+            className="flex h-8 px-2 items-center gap-1 rounded-md border border-border bg-card text-[10px] font-medium text-muted-foreground shadow-sm hover:text-foreground hover:bg-secondary transition-colors"
             title="Ocultar este painel"
           >
             <EyeOff className="h-3 w-3" /><span className="hidden sm:inline">Ocultar</span>
@@ -73,7 +76,7 @@ export default function SortablePanels({
         {dragHandleProps && (
           <div
             {...dragHandleProps}
-            className="flex h-6 w-6 items-center justify-center rounded-md border border-border bg-card text-muted-foreground shadow-sm cursor-grab active:cursor-grabbing"
+            className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground shadow-sm cursor-grab active:cursor-grabbing"
             title="Arrastar para reposicionar"
           >
             <GripVertical className="h-3 w-3" />
@@ -92,7 +95,7 @@ export default function SortablePanels({
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
         {ordered.map((panel) => (
-          <div key={panel.id} className={`group relative ${colClass(panel.id)}`}>
+          <div key={panel.id} className={`group relative min-w-0 ${colClass(panel.id)}`}>
             {panel.node}
           </div>
         ))}
@@ -110,14 +113,14 @@ export default function SortablePanels({
             className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6"
           >
             {ordered.map((panel, index) => (
-              <Draggable key={panel.id} draggableId={panel.id} index={index}>
+              <Draggable isDragDisabled={!editable} key={panel.id} draggableId={panel.id} index={index}>
                 {(prov, snapshot) => (
                   <div
                     ref={prov.innerRef}
                     {...prov.draggableProps}
-                    className={`group relative ${colClass(panel.id)} ${snapshot.isDragging ? 'z-50' : ''}`}
+                    className={`group relative min-w-0 ${colClass(panel.id)} ${snapshot.isDragging ? 'z-50' : ''}`}
                   >
-                    <PanelControls panel={panel} dragHandleProps={prov.dragHandleProps} />
+                    <PanelControls panel={panel} index={index} dragHandleProps={prov.dragHandleProps} />
                     <div className={snapshot.isDragging ? 'ring-2 ring-sky-400 rounded-2xl shadow-2xl' : ''}>
                       {panel.node}
                     </div>

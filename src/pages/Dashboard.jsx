@@ -3,10 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/lib/localDb';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { Package, Target, Gauge, AlertTriangle, Monitor, Minimize2, LayoutDashboard, Sun, Moon } from 'lucide-react';
+import { Monitor, Minimize2, LayoutDashboard, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTheme } from '@/hooks/useTheme';
 
+import ExecutiveDashboard from '@/components/reports/ExecutiveDashboard';
+import OperationalInsights from '@/components/reports/OperationalInsights';
+import { buildOperationalAnalysis, aggregateAnalysis, normalizeAnalysisEntries } from '@/lib/operationalAnalysis';
+import { getProductionMetricRule } from '@/lib/productionUnitRules';
 import PageHeader from '@/components/ui/PageHeader';
 import { useKiosk } from '@/lib/KioskContext';
 import { useCells } from '@/hooks/useCells';
@@ -17,21 +21,14 @@ import {
   exitFullscreen
 } from '@/lib/fullscreenService';
 import KioskCellControl from '@/components/dashboard/KioskCellControl';
-import KpiCard from '@/components/dashboard/KpiCard';
 import HourlyChart from '@/components/dashboard/HourlyChart';
-import TrendChart from '@/components/dashboard/TrendChart';
 import ShiftCellPanel from '@/components/dashboard/ShiftCellPanel';
-import HighPerformerPanel from '@/components/dashboard/HighPerformerPanel';
-import GoalProjection from '@/components/dashboard/GoalProjection';
-import EfficiencyAlert from '@/components/dashboard/EfficiencyAlert';
 import GoalProgressPanel from '@/components/dashboard/GoalProgressPanel';
 import DashboardFilters from '@/components/dashboard/DashboardFilters';
 import ExportMenu from '@/components/dashboard/ExportMenu';
 import CellReportButton from '@/components/dashboard/CellReportButton';
-import { sumBy, groupBy, efficiency, scrapRate, isCritical, highPerformers, projectGoal, detectEfficiencyDrop, monthlyGoalTracking, detectSustainedLowEfficiency, efficiencyTrend } from '@/lib/productionMetrics';
+import { highPerformers, detectEfficiencyDrop, monthlyGoalTracking, detectSustainedLowEfficiency, efficiencyTrend } from '@/lib/productionMetrics';
 import WeeklyEfficiencyChart from '@/components/dashboard/WeeklyEfficiencyChart';
-import WeeklyRankingPanel from '@/components/dashboard/WeeklyRankingPanel';
-import { weeklyRanking } from '@/lib/weeklyRanking';
 import { useLowEfficiencyAlert } from '@/hooks/useLowEfficiencyAlert';
 import LowEfficiencyAlertModal from '@/components/dashboard/LowEfficiencyAlertModal';
 import MonthlyGoalTracker from '@/components/dashboard/MonthlyGoalTracker';
@@ -39,7 +36,6 @@ import SortablePanels from '@/components/dashboard/SortablePanels';
 import { useDashboardLayout } from '@/hooks/useDashboardLayout';
 import { usePerformanceAlert } from '@/hooks/usePerformanceAlert';
 import { useEfficiencyDropAlert } from '@/hooks/useEfficiencyDropAlert';
-import DailyProductionCard from '@/components/dashboard/DailyProductionCard';
 import DashboardLayoutSettings from '@/components/dashboard/DashboardLayoutSettings';
 import RealtimeCellProgressPanel from '@/components/dashboard/RealtimeCellProgressPanel';
 import GeneralLotProgressPanel from '@/components/dashboard/GeneralLotProgressPanel';
@@ -55,7 +51,7 @@ import {
   fetchDashboardYearBounds,
 } from '@/lib/dashboardData';
 
-const PANEL_IDS = ['realtimeProgress', 'generalLotProgress', 'monthlyTracker', 'dailyProduction', 'charts', 'weeklyRanking', 'effDrop', 'goalProgress', 'goalProjection', 'weeklyTrend', 'highPerformers'];
+const PANEL_IDS = ['insights', 'realtimeProgress', 'generalLotProgress', 'hourly', 'cellChart', 'shiftChart', 'monthlyTracker', 'goalProgress', 'weeklyTrend'];
 
 export default function Dashboard({ kioskModeOverride = false }) {
   const navigate = useNavigate();
@@ -69,10 +65,11 @@ export default function Dashboard({ kioskModeOverride = false }) {
   });
   const annualMode = isAnnualFilterActive(filters.year);
 
-  const { data: all = [], isFetching: productionLoading } = useQuery({
+  const { data: all = [], isFetching: productionLoading, isError: productionError, dataUpdatedAt } = useQuery({
     queryKey: ['production', 'dashboard', filters.date, filters.year],
     queryFn: () => fetchDashboardProductionEntries(filters.date, filters.year),
     initialData: [],
+    initialDataUpdatedAt: 0,
     staleTime: 10_000,
     refetchOnMount: true,
     // Realtime invalida ['production']; o intervalo é apenas contingência.
@@ -154,59 +151,48 @@ export default function Dashboard({ kioskModeOverride = false }) {
   }), [all, filters, activeCell, validCellNames]);
 
 
-  const totalProduced = sumBy(filtered, 'produced');
-  const totalTarget = sumBy(filtered, 'target');
-  const totalScrap = sumBy(filtered, 'scrap');
-  const eff = efficiency(totalProduced, totalTarget);
-  const critCount = filtered.filter(isCritical).length;
-
-  const byHour = useMemo(() => groupBy(filtered, 'hour'), [filtered]);
-  const byShift = useMemo(() => {
-    const grouped = groupBy(filtered, 'shift');
-    const result = [...grouped];
-    const shifts = ['1º Turno', '2º Turno', '3º Turno'];
-    shifts.forEach(shiftName => {
-      if (!grouped.some(g => g.key === shiftName)) {
-        result.push({ key: shiftName, produced: 0, target: 0, scrap: 0, downtime: 0, count: 0, efficiency: 0, scrapRate: 0 });
-      }
+  const analysis = useMemo(() => buildOperationalAnalysis(filtered), [filtered]);
+  const [selectedUnit, setSelectedUnit] = useState('');
+  const chartUnits = useMemo(() => {
+    const units = new Map(analysis.units.map((unit) => [unit.key, unit]));
+    goals.filter((g) => validCellNames.includes(g.cell) && (activeCell === 'all' || g.cell === activeCell)).forEach((goal) => {
+      const rule = getProductionMetricRule(goal);
+      if (!units.has(rule.unit)) units.set(rule.unit, { key: rule.unit, unitLabel: rule.unitLabel });
     });
-    return result;
-  }, [filtered]);
-  const byCell = useMemo(() => {
-    const grouped = groupBy(filtered, 'cell');
-    const result = [...grouped];
-    cells.forEach(cellName => {
-      if (!grouped.some(g => g.key.toLowerCase().trim() === cellName.toLowerCase().trim())) {
-        result.push({ key: cellName, produced: 0, target: 0, scrap: 0, downtime: 0, count: 0, efficiency: 0, scrapRate: 0 });
-      }
-    });
-    return result;
-  }, [filtered, cells]);
+    return [...units.values()];
+  }, [analysis.units, goals, validCellNames, activeCell]);
+  const chartUnit = chartUnits.find((u) => u.key === selectedUnit) || chartUnits[0];
+  const chartEntries = useMemo(() => analysis.entries.filter((e) => e.metric_unit === chartUnit?.key), [analysis, chartUnit]);
+  const chartHistory = useMemo(() => normalizeAnalysisEntries(all).filter((e) => validCellNames.includes(e.cell)
+    && e.metric_unit === chartUnit?.key && (activeCell === 'all' || e.cell === activeCell)
+    && (filters.shift === 'all' || e.shift === filters.shift)), [all, validCellNames, chartUnit, activeCell, filters.shift]);
+  const byHour = useMemo(() => aggregateAnalysis(chartEntries, (e) => e.hour).map((r) => ({ ...r, efficiency: r.attainment })), [chartEntries]);
+  const byShift = useMemo(() => aggregateAnalysis(chartEntries, (e) => e.shift).map((r) => ({ ...r, efficiency: r.attainment })), [chartEntries]);
+  const byCell = useMemo(() => aggregateAnalysis(chartEntries, (e) => e.cell).map((r) => ({ ...r, efficiency: r.attainment })), [chartEntries]);
   const performers = useMemo(() => highPerformers(filtered, 95), [filtered]);
-  const projection = useMemo(() => projectGoal(annualMode ? [] : filtered, 3), [annualMode, filtered]);
   const effDrop = useMemo(() => detectEfficiencyDrop(annualMode ? [] : filtered, 3, 10), [annualMode, filtered]);
   const dashboardReferenceDate = useMemo(
     () => filters.date ? new Date(`${filters.date}T12:00:00`) : new Date(),
     [filters.date],
   );
   const monthlyTracking = useMemo(() => {
-    const validEntries = all.filter(e => validCellNames.includes(e.cell));
-    const validGoals = goals.filter(g => validCellNames.includes(g.cell));
+    const validEntries = chartHistory;
+    const validGoals = goals.filter(g => validCellNames.includes(g.cell) && getProductionMetricRule(g).unit === chartUnit?.key && (filters.shift === 'all' || g.shift === filters.shift));
     const cellEntries = activeCell === 'all' ? validEntries : validEntries.filter(e => e.cell === activeCell);
     const cellGoals = activeCell === 'all' ? validGoals : validGoals.filter(g => g.cell === activeCell);
     return monthlyGoalTracking(cellEntries, cellGoals, dashboardReferenceDate);
-  }, [all, goals, activeCell, validCellNames, dashboardReferenceDate]);
+  }, [chartHistory, goals, activeCell, validCellNames, dashboardReferenceDate, filters.shift, chartUnit]);
 
   const cellMonthlyTrackings = useMemo(() => {
     if (activeCell !== 'all') return [];
     const cellMap = {};
-    all.forEach(e => {
+    chartHistory.forEach(e => {
       if (!e.cell) return;
       if (!cellMap[e.cell]) cellMap[e.cell] = { entries: [], goals: [] };
       cellMap[e.cell].entries.push(e);
     });
     goals.forEach(g => {
-      if (!g.cell) return;
+      if (!validCellNames.includes(g.cell) || getProductionMetricRule(g).unit !== chartUnit?.key || (filters.shift !== 'all' && g.shift !== filters.shift)) return;
       if (!cellMap[g.cell]) cellMap[g.cell] = { entries: [], goals: [] };
       cellMap[g.cell].goals.push(g);
     });
@@ -218,17 +204,12 @@ export default function Dashboard({ kioskModeOverride = false }) {
       if (tr && tr.target > 0) trackings.push({ cell: cellName, ...tr });
     }
     return trackings.sort((a, b) => b.completedPct - a.completedPct);
-  }, [all, goals, activeCell, validCellNames, dashboardReferenceDate]);
-  const ranking = useMemo(
-    () => weeklyRanking(all.filter(e => validCellNames.includes(e.cell)), goals.filter(g => validCellNames.includes(g.cell)), filters.date ? new Date(filters.date + 'T00:00:00') : new Date()),
-    [all, goals, filters.date, validCellNames]
-  );
-
+  }, [chartHistory, goals, activeCell, validCellNames, dashboardReferenceDate, filters.shift, chartUnit]);
   const weeklyTrend = useMemo(
-    () => efficiencyTrend(all.filter(e => validCellNames.includes(e.cell)), filters.cell, 7, filters.date ? new Date(filters.date + 'T00:00:00') : new Date()),
-    [all, filters.cell, filters.date, validCellNames]
+    () => efficiencyTrend(chartHistory, activeCell, 7, filters.date ? new Date(filters.date + 'T00:00:00') : new Date()),
+    [chartHistory, activeCell, filters.date]
   );
-  const weeklyTrendLabel = filters.cell === 'all' ? 'Todas as células' : filters.cell;
+  const weeklyTrendLabel = `${activeCell === 'all' ? 'Todas as células' : activeCell} · ${chartUnit?.unitLabel || ''}`;
 
   const goalProgress = useMemo(() => {
     if (annualMode) return [];
@@ -237,17 +218,18 @@ export default function Dashboard({ kioskModeOverride = false }) {
         if (!validCellNames.includes(g.cell)) return false;
         if (filters.date && g.date !== filters.date) return false;
         if (filters.shift !== 'all' && g.shift !== filters.shift) return false;
-        if (filters.cell !== 'all' && g.cell !== filters.cell) return false;
+        if (activeCell !== 'all' && g.cell !== activeCell) return false;
+        if (getProductionMetricRule(g).unit !== chartUnit?.key) return false;
         return true;
       })
       .map((g) => {
-        const produced = filtered
+        const produced = chartEntries
           .filter((e) => e.cell === g.cell && e.shift === g.shift && e.date === g.date)
           .reduce((acc, e) => acc + (Number(e.produced) || 0), 0);
         return { cell: g.cell, shift: g.shift, target: Number(g.target) || 0, produced };
       })
       .filter((it) => it.target > 0);
-  }, [annualMode, goals, filtered, filters, validCellNames]);
+  }, [annualMode, goals, chartEntries, filters, activeCell, validCellNames, chartUnit]);
 
   const alertPerformers = useMemo(() => annualMode ? [] : performers, [annualMode, performers]);
   usePerformanceAlert(alertPerformers);
@@ -265,10 +247,10 @@ export default function Dashboard({ kioskModeOverride = false }) {
   const lowEff = useLowEfficiencyAlert(lowEffAlerts);
 
   const chartsRef = useRef(null);
-  const { order, hidden, sizes, reorder, toggleHidden, toggleSize } = useDashboardLayout(PANEL_IDS);
+  const { order, hidden, sizes, reorder, toggleHidden, toggleSize, ready: layoutReady, saving: layoutSaving } = useDashboardLayout(PANEL_IDS);
 
   const panels = useMemo(() => {
-    const result = [];
+    const result = [{ id: 'insights', title: 'Leitura do período', node: <OperationalInsights analysis={analysis} compact /> }];
 
     if (!annualMode) {
       result.push({
@@ -283,67 +265,22 @@ export default function Dashboard({ kioskModeOverride = false }) {
       id: 'monthlyTracker',
       title: annualMode ? `Resumo Anual ${filters.year}` : 'Acompanhamento Mensal',
       node: annualMode
-        ? <AnnualProductionSummary entries={filtered} year={filters.year} chartRef={chartsRef} loading={productionLoading} />
+        ? <AnnualProductionSummary unitLabel={chartUnit?.unitLabel} entries={chartEntries} year={filters.year} chartRef={chartsRef} loading={productionLoading} />
         : <MonthlyGoalTracker tracking={monthlyTracking} cellTrackings={cellMonthlyTrackings} />,
     });
-    result.push({
-      id: 'dailyProduction',
-      title: annualMode ? `Produção Anual ${filters.year}` : 'Produção Diária',
-      node: (
-        <DailyProductionCard
-          filtered={filtered}
-          kiosk={kiosk}
-          kioskCell={kioskCell}
-          periodMode={annualMode ? 'annual' : 'daily'}
-          periodLabel={annualMode ? filters.year : ''}
-        />
-      ),
-    });
-
     if (!annualMode) {
       result.push(
-        { id: 'weeklyRanking', title: 'Ranking Semanal', node: <WeeklyRankingPanel ranking={ranking} /> },
-        { id: 'effDrop', title: 'Alerta de Eficiência', node: <EfficiencyAlert alert={effDrop} /> },
         { id: 'goalProgress', title: 'Progresso do Turno', node: <GoalProgressPanel items={goalProgress} /> },
-        { id: 'goalProjection', title: 'Projeção de Meta', node: <GoalProjection projection={projection} /> },
         { id: 'weeklyTrend', title: 'Tendência Semanal', node: <WeeklyEfficiencyChart data={weeklyTrend} cellLabel={weeklyTrendLabel} /> },
       );
     }
 
-    result.push({
-      id: 'highPerformers',
-      title: annualMode ? 'Operadores Destaque no Ano' : 'Operadores Destaque',
-      node: <HighPerformerPanel performers={performers} />,
-    });
-    result.push({
-      id: 'charts',
-      title: annualMode ? 'Comparativos Anuais' : 'Gráficos de Produtividade',
-      node: (
-        <div ref={annualMode ? undefined : chartsRef} className={kiosk ? 'space-y-4 bg-background' : 'space-y-6 bg-background'}>
-          {!annualMode && (
-            <div className={kiosk ? 'grid grid-cols-1 xl:grid-cols-2 gap-4' : 'grid grid-cols-1 lg:grid-cols-2 gap-6'}>
-              <HourlyChart grouped={byHour} />
-              <TrendChart grouped={byHour} />
-            </div>
-          )}
-          <div className={kiosk ? 'grid grid-cols-1 xl:grid-cols-2 gap-4' : 'grid grid-cols-1 lg:grid-cols-2 gap-6'}>
-            <ShiftCellPanel
-              title={`Produtividade por Turno${annualMode ? ` — ${filters.year}` : ''}`}
-              subtitle={annualMode ? 'Comparativo consolidado do ano' : 'Comparativo entre turnos'}
-              grouped={byShift}
-            />
-            <ShiftCellPanel
-              title={`Produtividade por Célula${annualMode ? ` — ${filters.year}` : ''}`}
-              subtitle={annualMode ? 'Comparativo consolidado do ano' : 'Comparativo entre células'}
-              grouped={byCell}
-            />
-          </div>
-        </div>
-      ),
-    });
+    if (!annualMode) result.push({ id: 'hourly', title: 'Produção por hora', node: <HourlyChart grouped={byHour} unitLabel={chartUnit?.unitLabel} /> });
+    result.push({ id: 'shiftChart', title: 'Comparativo por turno', node: <ShiftCellPanel title="Produção por turno" subtitle={`Mesmo recorte · ${chartUnit?.unitLabel || ''}`} grouped={byShift} unitLabel={chartUnit?.unitLabel} /> });
+    result.push({ id: 'cellChart', title: 'Comparativo por célula', node: <ShiftCellPanel title="Produção por célula" subtitle={`Mesmo recorte · ${chartUnit?.unitLabel || ''}`} grouped={byCell} unitLabel={chartUnit?.unitLabel} /> });
 
     return result;
-  }, [annualMode, filters.date, filters.cell, filters.year, monthlyTracking, cellMonthlyTrackings, ranking, effDrop, goalProgress, projection, weeklyTrend, weeklyTrendLabel, performers, byHour, byShift, byCell, kiosk, kioskCell, filtered, productionLoading]);
+  }, [annualMode, filters.date, filters.cell, filters.year, monthlyTracking, cellMonthlyTrackings, goalProgress, weeklyTrend, weeklyTrendLabel, performers, byHour, byShift, byCell, kiosk, kioskCell, filtered, productionLoading, analysis, chartEntries, chartUnit]);
 
   return (
     <div className={kiosk ? 'p-4 space-y-4' : 'p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6'}>
@@ -368,7 +305,7 @@ export default function Dashboard({ kioskModeOverride = false }) {
               periodLabel={annualMode ? `Ano de ${filters.year}` : ''}
             />
             <ExportMenu entries={filtered} allEntries={all} filters={filters} chartsRef={chartsRef} />
-            <DashboardLayoutSettings panels={panels} hidden={hidden} sizes={sizes} toggleHidden={toggleHidden} toggleSize={toggleSize} />
+            <DashboardLayoutSettings disabled={!layoutReady} saving={layoutSaving} panels={panels} hidden={hidden} sizes={sizes} toggleHidden={toggleHidden} toggleSize={toggleSize} />
             <Button
               variant="outline"
               className="gap-2 bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full shadow-sm"
@@ -396,7 +333,7 @@ export default function Dashboard({ kioskModeOverride = false }) {
                 <Moon className="w-4.5 h-4.5 text-indigo-400" />
               )}
             </button>
-            <DashboardLayoutSettings panels={panels} hidden={hidden} sizes={sizes} toggleHidden={toggleHidden} toggleSize={toggleSize} />
+            <DashboardLayoutSettings disabled={!layoutReady} saving={layoutSaving} panels={panels} hidden={hidden} sizes={sizes} toggleHidden={toggleHidden} toggleSize={toggleSize} />
             <KioskCellControl cells={cells} active={kioskCell} setActive={setKioskCell} rotating={rotating} setRotating={setRotating} />
             <Button variant="default" className="w-full sm:w-auto gap-2 min-h-[44px]" onClick={handleExitKiosk}>
               <Minimize2 className="w-4 h-4" /> Sair do Quiosque
@@ -405,15 +342,17 @@ export default function Dashboard({ kioskModeOverride = false }) {
         </div>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard index={0} title="Total Produzido" value={totalProduced.toLocaleString('pt-BR')} icon={Package} accent="accent" sub={`${annualMode ? `${filters.year} · ` : ''}${filtered.length} registros`} />
-        <KpiCard index={1} title={annualMode ? 'Meta Anual' : 'Meta Total'} value={totalTarget.toLocaleString('pt-BR')} icon={Target} accent="primary" />
-        <KpiCard index={2} title="Eficiência" value={eff} unit="%" icon={Gauge} accent={eff >= 90 ? 'accent' : eff >= 70 ? 'warning' : 'danger'} sub={`Refugo ${scrapRate(totalScrap, totalProduced)}%`} />
-        <KpiCard index={3} title={annualMode ? 'Falhas Críticas no Ano' : 'Falhas Críticas'} value={critCount} icon={AlertTriangle} accent={critCount ? 'danger' : 'accent'} />
+      {productionError && <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">Não foi possível atualizar a produção. Os dados abaixo podem estar desatualizados.</p>}
+      <p role="status" className="text-xs text-muted-foreground">{productionLoading ? 'Atualizando indicadores…' : dataUpdatedAt ? `Última consulta: ${new Date(dataUpdatedAt).toLocaleTimeString('pt-BR')}` : 'Aguardando dados de produção.'}</p>
+      {dataUpdatedAt > 0 && <ExecutiveDashboard analysis={analysis} />}
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border/70 bg-card p-4">
+        <span className="text-sm font-medium">Unidade dos gráficos</span>
+        {chartUnits.map((unit) => <button type="button" key={unit.key} aria-pressed={unit.key === chartUnit?.key} onClick={() => setSelectedUnit(unit.key)} className={`rounded-full border px-4 py-2 text-sm capitalize ${unit.key === chartUnit?.key ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground'}`}>{unit.unitLabel}</button>)}
+        <span className="text-xs text-muted-foreground">Arraste os gráficos ou use as setas para reposicionar. Ajuste tamanho e visibilidade em Layout.</span>
       </div>
 
       <div key="sortable-panels">
-        <SortablePanels panels={panels} order={order} sizes={sizes} onReorder={reorder} onToggleHide={toggleHidden} onToggleSize={toggleSize} />
+        <SortablePanels editable={layoutReady} panels={panels} order={order} sizes={sizes} onReorder={reorder} onToggleHide={toggleHidden} onToggleSize={toggleSize} />
       </div>
     </div>
   );

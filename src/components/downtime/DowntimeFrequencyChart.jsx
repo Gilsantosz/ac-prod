@@ -1,3 +1,4 @@
+import GradientBarShape from '@/components/ui/GradientBarShape';
 import { Card } from '@/components/ui/card';
 import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Activity } from 'lucide-react';
@@ -20,7 +21,7 @@ export default function DowntimeFrequencyChart({ data = [] }) {
             <YAxis yAxisId="right" orientation="right" fontSize={12} tickFormatter={(v) => `${v}m`} />
             <Tooltip contentStyle={{ borderRadius: 12, border: '1px solid hsl(var(--border))', fontSize: 12 }} />
             <Legend iconType="circle" />
-            <Bar yAxisId="left" dataKey="count" name="Nº ocorrências" fill="#2563eb" radius={[4, 4, 0, 0]} barSize={28} />
+            <Bar shape={<GradientBarShape />} yAxisId="left" dataKey="count" name="Nº ocorrências" fill="#2563eb" radius={[4, 4, 0, 0]} barSize={28} />
             <Line yAxisId="right" type="monotone" dataKey="downtime" name="Parada (min)" stroke="#dc2626" strokeWidth={2} dot={{ r: 3 }} />
           </ComposedChart>
         </ResponsiveContainer>

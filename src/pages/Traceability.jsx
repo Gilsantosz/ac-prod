@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -49,9 +50,10 @@ export default function Traceability() {
 
         <div className="flex items-center gap-3 shrink-0 self-center">
           <div className="flex items-center gap-2 text-xs text-muted-foreground bg-secondary/40 px-3 py-2 rounded-xl border border-border/40">
-            <span>Atualizado há 2 min</span>
+            <span>{trace.lots.isFetching ? 'Atualizando…' : trace.lots.dataUpdatedAt ? `Atualizado às ${new Date(trace.lots.dataUpdatedAt).toLocaleTimeString('pt-BR')}` : 'Aguardando consulta'}</span>
             <button
-              onClick={trace.refetch}
+              disabled={trace.lots.isFetching}
+              onClick={() => trace.refetch().catch((e) => toast.error(e?.message || 'Falha ao atualizar indicadores.'))}
               className="hover:text-foreground transition-colors"
               title="Atualizar dados agora"
             >
@@ -70,6 +72,8 @@ export default function Traceability() {
         </div>
       </div>
 
+      {trace.lots.isError && <p role="alert" className="text-sm text-destructive">Falha na última atualização. Os valores podem estar desatualizados; tente atualizar novamente.</p>}
+
       {/* ── StatCards Superiores ─────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Total Lotes */}
@@ -79,23 +83,12 @@ export default function Traceability() {
               <Layers className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-xs font-medium text-muted-foreground">Total Lotes</p>
+              <p className="text-xs font-medium text-muted-foreground">Lotes no painel</p>
               <p className="text-3xl font-extrabold text-foreground mt-0.5">{totalLots}</p>
-              <p className="text-[11px] font-semibold text-muted-foreground mt-1">100% do total</p>
+              <p className="text-[11px] font-semibold text-muted-foreground mt-1">{totalLots ? '100% dos lotes carregados' : 'Sem lotes carregados'}</p>
             </div>
           </div>
-          {/* Sparkline gráfica decorativa */}
-          <div className="w-16 h-10 opacity-70">
-            <svg className="w-full h-full text-emerald-500" viewBox="0 0 100 40">
-              <path
-                d="M 5 35 Q 25 30 45 20 T 85 10 L 95 5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="3"
-                strokeLinecap="round"
-              />
-            </svg>
-          </div>
+
         </div>
 
         {/* Card 2: Bloqueados */}
@@ -181,6 +174,9 @@ export default function Traceability() {
       <UpdateKpiModal
         open={isKpiModalOpen}
         onClose={() => setIsKpiModalOpen(false)}
+        stats={trace.stats}
+        updatedAt={trace.lots.dataUpdatedAt}
+        onRefresh={trace.refetch}
       />
 
     </div>

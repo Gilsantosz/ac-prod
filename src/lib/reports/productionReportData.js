@@ -1,3 +1,4 @@
+import { getProductionMetricRule } from '@/lib/productionUnitRules';
 import { supabase } from '@/lib/supabaseClient';
 import { calculateComparisonPeriod, normalizeReportPeriod } from '@/lib/reports/reportPeriodComparison';
 
@@ -33,8 +34,8 @@ export function normalizeProductionReportEntry(row = {}) {
     downtime: Number(row.downtime ?? row.downtime_minutes) || 0,
     operator: String(row.operator || row.operator_name || ''),
     notes: String(row.notes || ''),
-    metric_unit: String(row.metric_unit || 'pieces'),
-    metric_unit_label: String(row.metric_unit_label || 'Peças'),
+    metric_unit: getProductionMetricRule(row).unit,
+    metric_unit_label: getProductionMetricRule(row).unitLabel,
     approval_status: String(row.approval_status || 'valid'),
     created_at: row.created_at || null,
   };

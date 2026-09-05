@@ -74,7 +74,7 @@ function comparisonCellValue(comparison) {
 }
 
 function assessmentLabel(comparison) {
-  if (!comparison) return 'Não aplicável';
+  if (!comparison || comparison.delta == null) return 'Sem base comparativa';
   const arrow = comparison?.direction === 'up' ? '▲' : comparison?.direction === 'down' ? '▼' : '■';
   const label = comparison?.assessment === 'positive' ? 'Favorável' : comparison?.assessment === 'negative' ? 'Desfavorável' : 'Neutro';
   return `${arrow} ${label}`;
@@ -85,7 +85,7 @@ async function addSummaryWorksheet(workbook, report, options) {
     properties: { tabColor: { argb: rgbToArgb(REPORT_BRAND.primary) } },
     views: [{ state: 'frozen', ySplit: 5 }],
   });
-  worksheet.columns = [18, 18, 18, 18, 18, 18, 18, 18].map((width) => ({ width }));
+  worksheet.columns = [32, 22, 22, 20, 26, 18, 18, 18].map((width) => ({ width }));
 
   for (let rowNumber = 1; rowNumber <= 5; rowNumber += 1) {
     const row = worksheet.getRow(rowNumber);
@@ -155,6 +155,8 @@ async function addSummaryWorksheet(workbook, report, options) {
     row.getCell(4).value = variation.value;
     if (variation.numFmt) row.getCell(4).numFmt = variation.numFmt;
     row.getCell(5).value = assessmentLabel(comparison);
+    row.height = 30;
+    row.alignment = { wrapText: true, vertical: 'middle' };
     row.getCell(1).font = { bold: true };
     row.eachCell((cell) => { cell.border = { top: BORDER, left: BORDER, bottom: BORDER, right: BORDER }; });
     if (rowNumber % 2 === 0) row.eachCell((cell) => { cell.fill = SUBTLE_FILL; });
@@ -207,6 +209,17 @@ async function addDataWorksheet(workbook, table) {
     chunk.forEach((source) => {
       const values = table.columns.map((column) => valueForExcel(getColumnValue(source, column), column));
       const row = worksheet.addRow(values);
+      if (table.id === 'production-data') {
+        const address = (key) => row.getCell(table.columns.findIndex((c) => c.key === key) + 1).address;
+        const p = address('produced'), t = address('target'), s = address('scrap');
+        for (const [key, formula] of [
+          ['attainment', `IF(${t}>0,${p}/${t},"")`],
+          ['scrapRate', `IF((${p}+${s})>0,${s}/(${p}+${s}),"")`],
+          ['gap', `IF(${t}>0,MAX(0,${t}-${p}),"")`],
+        ]) {
+          row.getCell(table.columns.findIndex((c) => c.key === key) + 1).value = { formula, result: source[key] ?? '' };
+        }
+      }
       row.eachCell({ includeEmpty: true }, (cell, columnIndex) => styleDataCell(cell, table.columns[columnIndex - 1], row.number));
     });
     if (offset + 2_000 < table.rows.length) await yieldToBrowser();
@@ -253,6 +266,35 @@ async function addAnalysisWorksheet(workbook, tables) {
   return worksheet;
 }
 
+function addInsightsWorksheet(workbook, report) {
+  if (!report.metadata?.insights?.length && !report.metadata?.methodology?.length) return;
+  const sheet = workbook.addWorksheet('LEITURA E AÇÕES', { views: [{ state: 'frozen', ySplit: 2 }] });
+  sheet.columns = [32, 65, 75, 24, 18, 22].map((width) => ({ width }));
+  sheet.mergeCells('A1:F1');
+  sheet.getCell('A1').value = 'Observações do período e acompanhamento das ações';
+  sheet.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF00522D' } };
+  sheet.getRow(1).height = 30;
+  sheet.addRow(['Observação', 'Evidência nos dados', 'Próxima verificação sugerida', 'Responsável', 'Prazo', 'Situação']);
+  styleHeaderRow(sheet.getRow(2));
+  for (const item of report.metadata.insights || []) {
+    const row = sheet.addRow([item.title, item.evidence, item.action, '', '', 'A avaliar'].map(sanitizeSpreadsheetText));
+    row.height = 84;
+    row.eachCell((cell) => { cell.alignment = { wrapText: true, vertical: 'top' }; cell.border = { bottom: BORDER }; });
+    row.getCell(5).numFmt = 'dd/mm/yyyy';
+    row.getCell(6).dataValidation = { type: 'list', allowBlank: true, formulae: ['"A avaliar,Em andamento,Concluída"'] };
+  }
+  sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: Math.max(2, sheet.rowCount), column: 6 } };
+  sheet.addRow([]);
+  for (const text of [...(report.metadata.methodology || []),
+    'Resumo, gráficos e observações representam a exportação. Edite a base DADOS para simular valores: atingimento, saldo e refugo da linha são recalculados. Gere um novo relatório no sistema para atualizar o resumo e as observações.']) {
+    const row = sheet.addRow([sanitizeSpreadsheetText(text)]);
+    sheet.mergeCells(row.number, 1, row.number, 6);
+    row.height = 32;
+    row.getCell(1).alignment = { wrapText: true, vertical: 'middle' };
+  }
+  sheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
+}
+
 export async function createReportWorkbook(report, options = {}) {
   validateReportDefinition(report);
   assertReportRowLimit(report, 'xlsx');
@@ -268,6 +310,7 @@ export async function createReportWorkbook(report, options = {}) {
   const dataTable = report.tables.find((table) => table.sheet === 'data' || table.primary);
   if (dataTable) await addDataWorksheet(workbook, dataTable);
   await addAnalysisWorksheet(workbook, report.tables.filter((table) => table !== dataTable && table.sheet === 'analysis'));
+  addInsightsWorksheet(workbook, report);
   return workbook;
 }
 
