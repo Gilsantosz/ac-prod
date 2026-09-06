@@ -4,6 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, HashRouter, Route, Routes, useLocation, Navigate } from 'react-router-dom';
 import CustomTitleBar from '@/components/desktop/CustomTitleBar';
+import EnvironmentBanner from '@/components/layout/EnvironmentBanner';
 
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
@@ -255,18 +256,21 @@ function App() {
   const AppRouter = isElectron ? HashRouter : Router;
 
   return (
-    <AuthProvider>
-      <QueryClientProvider client={queryClientInstance}>
-        <AppRouter {...(!isElectron ? { basename: routerBase } : {})}>
-          <CustomTitleBar />
-          <ScrollToTop />
-          <AuthenticatedApp />
-        </AppRouter>
+    <>
+      <EnvironmentBanner />
+      <AuthProvider>
+        <QueryClientProvider client={queryClientInstance}>
+          <AppRouter {...(!isElectron ? { basename: routerBase } : {})}>
+            <CustomTitleBar />
+            <ScrollToTop />
+            <AuthenticatedApp />
+          </AppRouter>
 
-        <Toaster />
-        <SonnerToaster position="top-right" richColors />
-      </QueryClientProvider>
-    </AuthProvider>
+          <Toaster />
+          <SonnerToaster position="top-right" richColors />
+        </QueryClientProvider>
+      </AuthProvider>
+    </>
   )
 }
 

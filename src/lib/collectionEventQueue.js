@@ -17,8 +17,9 @@ import {
   getCollectionDeviceId,
   nextCollectionDeviceSequence,
 } from '@/lib/collectionDeviceIdentity';
+import { projectScopedStorageKey } from '@/lib/runtimeEnvironment';
 
-const DB_NAME = 'acprod_collection_queue';
+const DB_NAME = projectScopedStorageKey('acprod_collection_queue');
 const DB_VERSION = 3;
 const STORE = 'events';
 
@@ -32,10 +33,10 @@ const COLLECTION_QUEUE_MAX_PRUNE_BATCH_SIZE = 250;
 const COLLECTION_QUEUE_MAX_RECOVERY_BATCH_SIZE = 100;
 const COLLECTION_QUEUE_DB_OPEN_TIMEOUT_MS = 5_000;
 
-const MAINTENANCE_LOCK_NAME = 'acprod-collection-queue-maintenance';
-const MAINTENANCE_LAST_RUN_KEY = 'acprod_collection_queue_last_maintenance_at';
-const MAINTENANCE_CURSOR_KEY = 'acprod_collection_queue_maintenance_cursor';
-const RECOVERY_CURSOR_KEY = 'acprod_collection_queue_recovery_cursor';
+const MAINTENANCE_LOCK_NAME = projectScopedStorageKey('acprod-collection-queue-maintenance');
+const MAINTENANCE_LAST_RUN_KEY = projectScopedStorageKey('acprod_collection_queue_last_maintenance_at');
+const MAINTENANCE_CURSOR_KEY = projectScopedStorageKey('acprod_collection_queue_maintenance_cursor');
+const RECOVERY_CURSOR_KEY = projectScopedStorageKey('acprod_collection_queue_recovery_cursor');
 
 let maintenanceInFlight = null;
 let lastMaintenanceAt = 0;
