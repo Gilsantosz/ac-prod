@@ -22,7 +22,7 @@ describe('AC.Prod2 collection fast8 v8.5 contract', () => {
     const input = repoFile('src/components/traceability/ProductionTagInput.jsx');
 
     expect(rules).toContain('PRODUCTION_SCAN_LENGTH = 8');
-    expect(rules).toContain('PRODUCTION_SCAN_PATTERN = /^\\d{8}$/');
+    expect(rules).toContain('PRODUCTION_SCAN_PATTERN = /^[0-9]{8}$/');
     expect(rules).toContain('preservando zeros à esquerda');
     expect(input).toContain('09950001');
     expect(input).toContain('inputMode="numeric"');
