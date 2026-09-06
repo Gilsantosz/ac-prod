@@ -1,17 +1,19 @@
 import { createClient } from '@supabase/supabase-js';
+import { runtimeEnvironment } from '@/lib/runtimeEnvironment';
 
 // ✅ SEGURO: Apenas a chave anon (pública) é usada no frontend.
 // A SERVICE_ROLE_KEY nunca é usada aqui — toda autorização é controlada por RLS no PostgreSQL.
-const configuredSupabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const configuredSupabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const configuredSupabaseUrl = runtimeEnvironment.supabaseUrl;
+const configuredSupabaseAnonKey = runtimeEnvironment.supabaseAnonKey;
 export const isSupabaseConfigured = Boolean(configuredSupabaseUrl && configuredSupabaseAnonKey);
+export const isTestEnvironment = runtimeEnvironment.isTest;
 
 // O cliente exige URL/chave não vazias ainda durante a carga do JavaScript.
 // Os valores abaixo só impedem uma tela branca quando o .env ainda não existe;
 // App.jsx interrompe o sistema antes de qualquer consulta e mostra a orientação.
 const supabaseUrl = configuredSupabaseUrl || 'https://unconfigured-ac-prod.supabase.co';
 const supabaseAnonKey = configuredSupabaseAnonKey || 'public-anon-key-not-configured';
-const supabaseProjectRef = (() => {
+export const supabaseProjectRef = (() => {
   try { return new URL(supabaseUrl).hostname.split('.')[0]; }
   catch { return 'unconfigured'; }
 })();

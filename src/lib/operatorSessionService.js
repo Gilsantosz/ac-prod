@@ -6,8 +6,9 @@
  */
 
 import { supabase } from '@/lib/supabaseClient';
+import { projectScopedStorageKey } from '@/lib/runtimeEnvironment';
 
-const SESSION_KEY = 'acprod_operator_session';
+const SESSION_KEY = projectScopedStorageKey('acprod_operator_session');
 
 // Fallback em memória quando sessionStorage está bloqueado
 let _memorySession = null;

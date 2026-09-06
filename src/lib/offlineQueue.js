@@ -12,8 +12,11 @@
  * Esta fila permanece ativa por compatibilidade com Entry.jsx. Não criar novos
  * usos. Remover somente após Entry.jsx migrar para useCollectionQueue.
  */
-// Fila offline de registros de produção (persistida em localStorage)
-const KEY = 'prodview_offline_queue';
+import { projectScopedStorageKey } from '@/lib/runtimeEnvironment';
+
+// Fila offline de registros de produção (persistida em localStorage).
+// A produção conserva a chave histórica; branches usam uma fila exclusiva.
+const KEY = projectScopedStorageKey('prodview_offline_queue');
 
 export function getQueue() {
   try {
