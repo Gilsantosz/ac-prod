@@ -592,12 +592,12 @@ function ReplacementStation() {
         </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,0.7fr)]">
+      <section className={`grid gap-5 ${queue.on_way?.length > 0 ? 'xl:grid-cols-[minmax(0,1.3fr)_minmax(0,0.7fr)]' : 'grid-cols-1'}`}>
         <QueueGroup title="Disponíveis agora" subtitle="Peças prontas para produção e baixa nesta célula" items={queue.available} icon={PackageCheck} loading={loadingQueue} />
-        <QueueGroup title="A caminho" subtitle="Visão antecipada; a bipagem permanece bloqueada" items={queue.on_way} icon={Truck} informative loading={loadingQueue} />
+        {queue.on_way?.length > 0 && <QueueGroup title="A caminho" subtitle="Visão antecipada; a bipagem permanece bloqueada" items={queue.on_way} icon={Truck} informative loading={loadingQueue} />}
       </section>
 
-      <QueueGroup title="Últimas baixas do turno" subtitle="Confirmações persistidas pelo servidor neste posto" items={queue.completed} icon={CheckCircle2} completed loading={loadingQueue} />
+      {queue.completed?.length > 0 && <QueueGroup title="Últimas baixas do turno" subtitle="Confirmações persistidas pelo servidor neste posto" items={queue.completed} icon={CheckCircle2} completed loading={loadingQueue} />}
     </div>
   );
 }
