@@ -98,13 +98,14 @@ describe('TraceabilityScannerPanel — captura rápida de 8 dígitos', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/excedeu o limite de 8 dígitos/);
   });
 
-  it('bloqueia caracteres não numéricos', () => {
+  it('ignora o enquadramento do scanner e registra os oito dígitos', async () => {
     const { onRead, input } = renderScanner();
 
-    fireEvent.change(input, { target: { value: 'ABC09950001' } });
+    fireEvent.change(input, { target: { value: '\u0002ABC-09906655\u001d\u0003' } });
 
-    expect(onRead).not.toHaveBeenCalled();
-    expect(screen.getByRole('alert')).toHaveTextContent(/somente dígitos/);
+    await waitFor(() => expect(onRead).toHaveBeenCalledTimes(1));
+    expect(onRead).toHaveBeenCalledWith(expect.objectContaining({ rawValue: '09906655' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('mantém o scanner bloqueado até o Supabase confirmar o contexto operacional', async () => {

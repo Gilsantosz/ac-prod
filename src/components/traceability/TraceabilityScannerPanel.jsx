@@ -149,7 +149,7 @@ export default function TraceabilityScannerPanel({
   const handleValueChange = useCallback((rawValue) => {
     const parsed = parseProductionScanCode(rawValue);
 
-    if (parsed.hasUnsupportedCharacters || parsed.overflow) {
+    if (parsed.overflow) {
       setValue('');
       setScanError(getProductionScanCodeError(rawValue));
       refocus();

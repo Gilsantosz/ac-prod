@@ -8,19 +8,29 @@ import {
 
 describe('productionScanCode', () => {
   it('preserva zero à esquerda e aceita exatamente 8 dígitos', () => {
-    const parsed = parseProductionScanCode('09950001');
+    const parsed = parseProductionScanCode('09906655');
 
     expect(PRODUCTION_SCAN_LENGTH).toBe(8);
     expect(parsed.valid).toBe(true);
-    expect(parsed.value).toBe('09950001');
-    expect(normalizeProductionScanCode('09950001')).toBe('09950001');
+    expect(parsed.value).toBe('09906655');
+    expect(normalizeProductionScanCode('09906655')).toBe('09906655');
   });
 
-  it('ignora somente caracteres de controle comuns enviados pelo coletor', () => {
-    const parsed = parseProductionScanCode(' 09950001\r\n\t');
+  it.each(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])(
+    'aceita qualquer numeração iniciada por %s quando contém 8 dígitos',
+    (firstDigit) => {
+      const code = `${firstDigit}1234567`;
+      expect(normalizeProductionScanCode(code)).toBe(code);
+    },
+  );
+
+  it('ignora prefixos, sufixos e caracteres de controle enviados pelo coletor', () => {
+    const parsed = parseProductionScanCode('\u0002ABC-09906655\u001d\u0003');
 
     expect(parsed.valid).toBe(true);
-    expect(parsed.value).toBe('09950001');
+    expect(parsed.value).toBe('09906655');
+    expect(parsed.hasUnsupportedCharacters).toBe(true);
+    expect(getProductionScanCodeError('\u0002ABC-09906655\u001d\u0003')).toBeNull();
   });
 
   it('não aceita leitura incompleta', () => {
@@ -40,11 +50,10 @@ describe('productionScanCode', () => {
     expect(getProductionScanCodeError('099500011')).toMatch(/excedeu o limite/);
   });
 
-  it('bloqueia letras e outros caracteres não produtivos', () => {
-    const parsed = parseProductionScanCode('ABC09950001');
+  it('não aceita texto sem oito dígitos', () => {
+    const parsed = parseProductionScanCode('ABC');
 
     expect(parsed.valid).toBe(false);
-    expect(parsed.hasUnsupportedCharacters).toBe(true);
-    expect(getProductionScanCodeError('ABC09950001')).toMatch(/somente dígitos/);
+    expect(getProductionScanCodeError('ABC')).toMatch(/exatamente 8 dígitos/);
   });
 });
