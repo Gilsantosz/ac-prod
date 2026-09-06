@@ -197,6 +197,27 @@ async function dbPut(item) {
   });
 }
 
+async function dbPatchEnqueueDuration(clientEventId, elapsedMs) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    const objectStore = tx.objectStore(STORE);
+    const request = objectStore.get(clientEventId);
+    request.onsuccess = (event) => {
+      const current = event.target.result;
+      if (!current) return;
+      objectStore.put({
+        ...current,
+        enqueue_duration_ms: elapsedMs,
+      });
+    };
+    request.onerror = (event) => reject(event.target.error);
+    tx.oncomplete = () => resolve();
+    tx.onerror = (event) => reject(tx.error || event.target.error);
+    tx.onabort = (event) => reject(tx.error || event.target.error);
+  });
+}
+
 async function dbProcessCursorSlice(checkpoint, batchSize, processRecord) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
@@ -383,7 +404,8 @@ export async function enqueueCollectionEvent(payload) {
     || safePayload.created_at_client
     || safePayload.createdAtClient
     || now;
-  const clientEventId = safePayload.client_event_id || generateClientEventId();
+  const providedClientEventId = safePayload.client_event_id || null;
+  const clientEventId = providedClientEventId || generateClientEventId();
   const deviceId = safePayload.device_id
     || safePayload.deviceId
     || getCollectionDeviceId();
@@ -398,7 +420,7 @@ export async function enqueueCollectionEvent(payload) {
   const event = {
     client_event_id: clientEventId,
     status: 'pending',
-    collection_state: COLLECTION_STATES.CAPTURED_LOCAL,
+    collection_state: COLLECTION_STATES.PENDING_DATABASE,
     retries: 0,
     created_at_client: capturedAtClient,
     captured_at_client: capturedAtClient,
@@ -428,7 +450,7 @@ export async function enqueueCollectionEvent(payload) {
     // forjar ACK/finalização ou suprimir retentativas no IndexedDB.
     client_event_id: clientEventId,
     status: 'pending',
-    collection_state: COLLECTION_STATES.CAPTURED_LOCAL,
+    collection_state: COLLECTION_STATES.PENDING_DATABASE,
     retries: 0,
     created_at_client: capturedAtClient,
     captured_at_client: capturedAtClient,
@@ -448,17 +470,20 @@ export async function enqueueCollectionEvent(payload) {
     pipeline_version: null,
   };
   // Idempotência: se já existe, não duplica
-  const existing = await dbGet(event.client_event_id);
-  if (existing) return existing.client_event_id;
+  if (providedClientEventId) {
+    const existing = await dbGet(event.client_event_id);
+    if (existing) return existing.client_event_id;
+  }
 
   const t0 = performance.now();
   await dbPut(event);
   const elapsed = performance.now() - t0;
 
-  event.enqueue_duration_ms = elapsed;
-  event.collection_state = COLLECTION_STATES.PENDING_DATABASE;
-  event.updated_at = new Date().toISOString();
-  await dbPut(event);
+  // A durabilidade da captura depende de uma única escrita. A telemetria é
+  // anexada depois sem bloquear o scanner nem alterar estado/resultado atual.
+  void dbPatchEnqueueDuration(event.client_event_id, elapsed).catch((error) => {
+    console.warn('[CollectionQueue] Falha ao registrar a duração local:', error);
+  });
 
   if (elapsed > 800) {
     console.warn(`[Queue] Local save exceeded 800ms: ${elapsed.toFixed(1)}ms`);

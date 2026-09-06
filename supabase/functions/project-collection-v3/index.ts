@@ -4,12 +4,14 @@ import { createClient } from "npm:@supabase/supabase-js@2.106.2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-const CLAIM_RPC = "claim_collection_projection_batch_v3";
-const PROCESS_RPC = "process_collection_projection_batch_v3";
+const CYCLE_RPC = "run_collection_worker_cycle_v3";
+const RELEASE_SLOT_RPC = "release_collection_worker_slot_v3";
+const HANDOFF_RPC = "handoff_collection_worker_v3";
+const WORKER_KIND = "projection";
 const MIN_BATCH_SIZE = 5;
-const DEFAULT_BATCH_SIZE = 10;
+const DEFAULT_BATCH_SIZE = 25;
 const MAX_BATCH_SIZE = 25;
-const DEFAULT_MAX_ROUNDS = 3;
+const DEFAULT_MAX_ROUNDS = 5;
 const MAX_ROUNDS = 5;
 
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
@@ -72,23 +74,19 @@ function safeDatabaseCode(error: unknown): string | null {
   return /^[A-Z0-9_]{1,32}$/.test(code) ? code : null;
 }
 
-function claimedItems(data: unknown): unknown[] {
-  if (data === null || data === undefined) return [];
-  if (!Array.isArray(data)) {
-    throw new WorkerFailure("INVALID_CLAIM_RESPONSE");
+function workerCycle(data: unknown): JsonRecord {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new WorkerFailure("INVALID_CYCLE_RESPONSE");
   }
-  return data;
+  return data as JsonRecord;
 }
 
-async function authorizeInternalWakeup(req: Request): Promise<boolean> {
-  const secret = req.headers.get("x-cron-secret")?.trim() ?? "";
-  if (!secret) return false;
-
-  const { data, error } = await admin.rpc(
-    "verify_collection_worker_cron_secret",
-    { p_secret: secret },
-  );
-  return !error && data === true;
+function safeCount(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new WorkerFailure("INVALID_CYCLE_COUNT");
+  }
+  return parsed;
 }
 
 async function requestBody(req: Request): Promise<JsonRecord> {
@@ -110,7 +108,9 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") {
     return jsonResponse(405, { error: "METHOD_NOT_ALLOWED" });
   }
-  if (!(await authorizeInternalWakeup(req))) {
+
+  const secret = req.headers.get("x-cron-secret")?.trim() ?? "";
+  if (!secret) {
     return jsonResponse(401, { error: "UNAUTHORIZED_COLLECTION_PROJECTOR" });
   }
 
@@ -128,47 +128,59 @@ Deno.serve(async (req: Request) => {
     MAX_ROUNDS,
   );
   const invocationId = crypto.randomUUID();
+  const requestedLeaseOwner = typeof body.lease_owner === "string"
+    && /^[a-zA-Z0-9:_-]{1,160}$/.test(body.lease_owner)
+    ? body.lease_owner
+    : `edge:${invocationId}`;
   const startedAt = performance.now();
 
   let rounds = 0;
   let batchesProcessed = 0;
   let totalClaimed = 0;
+  let leaseRetained = false;
+  let handoffRequired = false;
 
   try {
     for (let round = 0; round < maxRounds; round += 1) {
       const workerId = `projection-v3:${invocationId}:${round}`;
-      const { data: claimData, error: claimError } = await admin.rpc(
-        CLAIM_RPC,
-        {
-          p_worker_id: workerId,
-          p_limit: limit,
-        },
-      );
-      if (claimError) {
-        throw new WorkerFailure("CLAIM_FAILED", safeDatabaseCode(claimError));
+      const { data, error } = await admin.rpc(CYCLE_RPC, {
+        p_worker_kind: WORKER_KIND,
+        p_secret: secret,
+        p_lease_owner: requestedLeaseOwner,
+        p_worker_id: workerId,
+        p_limit: limit,
+      });
+      if (error) {
+        leaseRetained = true;
+        throw new WorkerFailure("WORKER_CYCLE_FAILED", safeDatabaseCode(error));
+      }
+
+      // Em caso de resposta malformada, tente liberar o slot pelo owner. A
+      // liberação é idempotente quando a autorização falhou antes do lease.
+      leaseRetained = true;
+      const cycle = workerCycle(data);
+      if (cycle.authorized !== true) {
+        return jsonResponse(401, { error: "UNAUTHORIZED_COLLECTION_PROJECTOR" });
+      }
+      if (cycle.coalesced === true) {
+        return jsonResponse(202, {
+          ok: true,
+          coalesced: true,
+          invocation_id: invocationId,
+        });
       }
 
       rounds += 1;
-      const items = claimedItems(claimData);
-      if (items.length === 0) break;
-      totalClaimed += items.length;
+      const claimed = safeCount(cycle.claimed);
+      const processed = safeCount(cycle.processed);
+      if (processed > claimed) throw new WorkerFailure("INVALID_CYCLE_COUNT");
 
-      const { error: processError } = await admin.rpc(
-        PROCESS_RPC,
-        {
-          p_worker_id: workerId,
-          p_items: items,
-        },
-      );
-      if (processError) {
-        throw new WorkerFailure(
-          "PROCESS_BATCH_FAILED",
-          safeDatabaseCode(processError),
-        );
-      }
-
+      leaseRetained = cycle.lease_retained === true;
+      totalClaimed += claimed;
+      if (claimed === 0) break;
       batchesProcessed += 1;
-      if (items.length < limit) break;
+      if (claimed < limit) break;
+      handoffRequired = round === maxRounds - 1;
     }
 
     const durationMs = Number((performance.now() - startedAt).toFixed(3));
@@ -206,5 +218,29 @@ Deno.serve(async (req: Request) => {
       invocation_id: invocationId,
       error: failure.publicCode,
     });
+  } finally {
+    if (leaseRetained) {
+      const rpcName = handoffRequired ? HANDOFF_RPC : RELEASE_SLOT_RPC;
+      const rpcArguments = handoffRequired
+        ? {
+          p_worker_kind: WORKER_KIND,
+          p_lease_owner: requestedLeaseOwner,
+          p_limit: limit,
+        }
+        : {
+          p_worker_kind: WORKER_KIND,
+          p_lease_owner: requestedLeaseOwner,
+        };
+      const { error } = await admin.rpc(rpcName, rpcArguments);
+      if (error) {
+        console.error(JSON.stringify({
+          event: handoffRequired
+            ? "collection_v3_projection_handoff_failed"
+            : "collection_v3_projection_slot_release_failed",
+          invocation_id: invocationId,
+          database_code: safeDatabaseCode(error),
+        }));
+      }
+    }
   }
 });

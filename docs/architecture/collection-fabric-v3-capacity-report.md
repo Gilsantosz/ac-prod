@@ -35,6 +35,29 @@ o pipeline anterior e serve para comparação, não como evidência de capacidad
 v3. Registre aqui um health v3 imediatamente antes da rodada, com filas vazias,
 DLQ vazia e sem tráfego concorrente não controlado.
 
+### Auditoria funcional pós-correção — 2026-09-06
+
+Esta verificação confirma o caminho funcional e a ausência do gargalo
+single-flight; ela não substitui os perfis k6 nominal e burst.
+
+| Sinal | Resultado observado |
+| --- | ---: |
+| ACK banco (captura → `received_at_db`) | 113,539 ms |
+| espera até claim | 1.903,027 ms |
+| processamento da decisão | 50,337 ms |
+| decisão → projeção do recibo | 1.607,723 ms |
+| repetição idempotente | 1 linha persistida |
+| filas / DLQ após drenagem | 0 / 0 |
+| erro / retry / deadlock / statement timeout | 0 / 0 / 0 / 0 |
+| leituras aprovadas / fatos | 139 / 139; 0 ausentes |
+| slots concorrentes validados | decisão 8; projeção 4; overflow bloqueado |
+| verificações estruturais | 5 de 5 aprovadas |
+
+O código inexistente `00000000` foi usado de propósito para atravessar ACK,
+fila, decisão rejeitada, Broadcast e projeção sem aprovar uma peça produtiva. O
+perfil `test` ficou `ready=true`; `capacity_estimate` permanece `null` até a
+carga k6 no compute alvo.
+
 | Métrica pré-teste | Valor | Artefato |
 | --- | --- | --- |
 | receipts/estado | a preencher | a preencher |
@@ -89,6 +112,17 @@ específico; elas não são substituídas pelos perfis de throughput/contensão.
 | DLQ | 0 | não medido | health/PGMQ | NÃO VALIDADO |
 | canais privados nominais | 100 por 10 min; cada um recebe finalized | não medido | métricas WebSocket k6 | NÃO VALIDADO |
 | ledger = projeções após reconcile | 100% | não medido | query a preencher | NÃO VALIDADO |
+
+### Perfis de SLO versionados
+
+| Perfil | ACK p95 | Decisão p95 / p99 | Projeção p95 | Queue p99 | Uso |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `production` | < 250 ms | < 800 / 2.000 ms | < 500 ms | < 2.000 ms | promoção final |
+| `test` | < 1.500 ms | < 1.500 / 5.000 ms | < 2.000 ms | < 5.000 ms | homologação global temporária |
+
+Integridade, ausência de deadlock/timeout, DLQ vazia e taxas de erro/retry abaixo
+de 1% continuam iguais nos dois perfis. Um resultado aprovado em `test` não pode
+ser apresentado como capacidade de produção.
 
 O threshold de k6 falhar é NO-GO. Não descarte outliers, aumente timeout, reduza
 VUs ou mude batch/concurrency sem abrir uma nova rodada claramente identificada.

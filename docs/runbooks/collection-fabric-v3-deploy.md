@@ -1,8 +1,7 @@
 # Runbook de implantação — Collection Fabric v3
 
-Status: **implantação técnica executada em 2026-09-02 no AC.Prod autorizado como
-ambiente `test-production`; capacidade k6 e homologação operacional permanecem
-pendentes**.
+Status: **V3 ativa no AC.Prod como ambiente `test-production` desde 2026-09-06;
+capacidade k6 e homologação para produção plena permanecem pendentes**.
 
 Este runbook implanta o caminho v3 sem dupla escrita produtiva. As migrations são
 aditivas e as quatro flags começam desligadas. Aplicar as migrations não autoriza
@@ -46,6 +45,25 @@ Se o ambiente passar a conter operação real, limite ou desligue primeiro as
 flags conforme o [runbook de rollback](collection-fabric-v3-rollback.md), gere a
 fixture em ambiente isolado e conclua os gates de capacidade antes de nova
 expansão.
+
+## Registro da reativação de teste — 2026-09-06
+
+- Migrations `20260906122148` e `20260906123339` aplicadas. Elas removem o lease
+  global single-flight, criam 8 slots de decisão e 4 de projeção, unem
+  autenticação/claim/processamento em um RPC transacional, indexam a resolução
+  de peças e incorporam cinco checagens estruturais fail-closed ao health.
+- Edge Functions `process-collection-v3` e `project-collection-v3` publicadas na
+  versão 4. Ambas validam o segredo dentro do ciclo atômico; chamadas válidas
+  com fila vazia retornaram HTTP 200, sem timeout.
+- As quatro flags estão habilitadas com escopo global somente para a fase de
+  testes e perfil SLO `test`. O perfil `production` não foi relaxado.
+- Smoke funcional controlado: ACK 113,539 ms, queue 1.903,027 ms, decisão
+  50,337 ms e projeção 1.607,723 ms; zero retry, erro, DLQ, deadlock ou statement
+  timeout. A repetição do evento manteve uma única linha.
+- Integridade: 139 leituras aprovadas = 139 fatos consolidados, sem ausências;
+  filas zeradas; health `ready=true` e `structural_ready=true`.
+- Validação local: lint, typecheck, build e 540 testes aprovados. A capacidade
+  nominal/burst continua sem certificação e `capacity_estimate=null`.
 
 ## Papéis e registros obrigatórios
 
@@ -192,6 +210,7 @@ export SUPABASE_URL="https://STAGING-REF.supabase.co"
 export SUPABASE_ANON_KEY="CHAVE-PUBLICA-DE-STAGING"
 export K6_TARGET="staging"
 export K6_CONFIRM_WRITES="staging-v3-load"
+export K6_SLO_PROFILE="production"
 export K6_FIXTURES="/caminho-seguro/collection-v3-fixture.json"
 mkdir -p artifacts
 
@@ -231,6 +250,7 @@ export SUPABASE_URL="https://uozuzdfvnufsjsonswag.supabase.co"
 export SUPABASE_ANON_KEY="CHAVE-PUBLICA-DO-PROJETO"
 export K6_TARGET="test-production"
 export K6_CONFIRM_WRITES="EU-AUTORIZO-ESCRITAS-K6-DESTRUTIVAS-NO-ACPROD-TESTE-uozuzdfvnufsjsonswag"
+export K6_SLO_PROFILE="test"
 export K6_FIXTURES="/caminho-seguro/collection-v3-fixture.json"
 mkdir -p artifacts
 
@@ -252,12 +272,16 @@ carga para esconder falhas. Colete simultaneamente CPU, memória, conexões,
 locks, I/O, WAL, fila, DLQ e heartbeats. O polling do k6 é parte deliberada da
 carga fim a fim e deve ser descrito no relatório.
 
-O gate exige, no mínimo: zero perda, zero dupla aprovação, zero deadlock, zero
-statement timeout, ACK p95 abaixo de 250 ms, decisão p95 abaixo de 800 ms e p99
-abaixo de 2 s, projeção p95 abaixo de 500 ms e queue age p99 abaixo de 2 s no
-nominal. No nominal, os 100 canais privados de dispositivo devem permanecer
-conectados e cada um deve receber ao menos um `collection.finalized`. O p95 de
-IndexedDB (25 ms) vem de instrumentação de browser, não do k6.
+O gate mantém zero perda, zero dupla aprovação, zero deadlock, zero statement
+timeout e DLQ vazia nos dois perfis. Em `production`, os limites continuam ACK
+p95 < 250 ms, decisão p95 < 800 ms/p99 < 2 s, projeção p95 < 500 ms e queue age
+p99 < 2 s. Em `test`, para homologação com clientes fora da região primária de
+São Paulo, os limites são ACK p95 < 1,5 s, decisão p95 < 1,5 s/p99 < 5 s,
+projeção p95 < 2 s e queue age p99 < 5 s. O perfil de teste não certifica
+produção e não permite erro ou perda. No nominal, os 100 canais privados de
+dispositivo devem permanecer conectados e cada um deve receber ao menos um
+`collection.finalized`. O p95 de IndexedDB (25 ms) vem de instrumentação de
+browser, não do k6.
 
 ## 6. Shadow somente leitura
 
