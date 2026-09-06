@@ -1,6 +1,7 @@
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 const mocks = vi.hoisted(() => ({
   authListener: null, settingsListener: null, settings: null, operator: null, lock: null,
@@ -37,6 +38,7 @@ vi.mock('@/lib/systemSettingsService', () => ({
 }));
 
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import ProtectedRoute from '@/components/ProtectedRoute';
 import { clearSessionActivity, getLastSessionActivity, recordSessionActivity, requestSessionActivity } from '@/lib/sessionActivity';
 
 const NOW = Date.UTC(2026, 8, 5, 12);
@@ -213,5 +215,158 @@ describe('AuthProvider inactivity', () => {
     expect(context.isAuthenticated).toBe(true);
     expect(mocks.lock).toBeNull();
     expect(getLastSessionActivity()).toBeGreaterThan(NOW + 119_000);
+  });
+
+  it('um timeout de perfil ao voltar ao posto não desloga nem desmonta a coleta', async () => {
+    mocks.operator = { id: 'op-1', selected_cell_id: 'cell-1' };
+    await start();
+    const lastActivity = getLastSessionActivity();
+    mocks.profile.mockReturnValueOnce(new Promise(() => {}));
+    act(() => mocks.authListener('SIGNED_IN', session));
+    await advance(3001);
+    expect(context.isAuthenticated).toBe(true);
+    expect(context.isLoadingAuth).toBe(false);
+    expect(context.authConnectionError.type).toBe('auth_unavailable');
+    expect(context.authError).toBeNull();
+    expect(mocks.operator.id).toBe('op-1');
+    expect(mocks.signOut).not.toHaveBeenCalled();
+    expect(mocks.clearPersisted).not.toHaveBeenCalled();
+    expect(mocks.lock).toBeNull();
+    await advance(5001);
+    expect(context.isAuthenticated).toBe(true);
+    expect(context.authError).toBeNull();
+    expect(context.authConnectionError).toBeNull();
+    expect(getLastSessionActivity()).toBe(lastActivity);
+  });
+
+  it('inicialização lenta preserva credenciais mas só autoriza após validar o perfil', async () => {
+    mocks.profile.mockResolvedValueOnce({ data: null, error: { status: 503, code: 'PGRST000' } });
+    await start();
+    expect(context.isAuthenticated).toBe(false);
+    expect(context.user).toBeNull();
+    expect(context.authError.type).toBe('auth_unavailable');
+    expect(mocks.signOut).not.toHaveBeenCalled();
+    act(() => { expect(requestSessionActivity()).toBe(false); });
+    await advance(5001);
+    expect(context.isAuthenticated).toBe(true);
+    expect(context.user.id).toBe(authUser.id);
+  });
+
+  it.each([
+    { status: 503, code: 'unexpected_failure' },
+    { status: 429, code: 'over_request_rate_limit' },
+    new TypeError('Failed to fetch'),
+  ])('indisponibilidade de Auth não revoga a sessão: %j', async (error) => {
+    await start();
+    mocks.getUser.mockResolvedValueOnce({ data: { user: null }, error });
+    await act(async () => { await context.checkUserAuth(); });
+    expect(context.isAuthenticated).toBe(true);
+    expect(context.authConnectionError.type).toBe('auth_unavailable');
+    expect(context.authError).toBeNull();
+    expect(mocks.signOut).not.toHaveBeenCalled();
+    expect(mocks.clearOperator).not.toHaveBeenCalled();
+  });
+
+  it('não autentica a partir do token local quando getUser não pode validar a sessão', async () => {
+    mocks.getUser.mockReturnValueOnce(new Promise(() => {}));
+    await start();
+    await advance(3001);
+    expect(context.isAuthenticated).toBe(false);
+    expect(mocks.profile).not.toHaveBeenCalled();
+    expect(mocks.signOut).not.toHaveBeenCalled();
+    await advance(5001);
+    expect(context.isAuthenticated).toBe(true);
+  });
+
+  it.each([
+    { data: { ...profile, active: false } },
+    { data: null },
+    { data: null, error: { code: '42501', message: 'permission denied' } },
+  ])('revogação, perfil ausente e RLS continuam bloqueando acesso: %j', async (result) => {
+    await start();
+    mocks.profile.mockResolvedValueOnce(result);
+    act(() => mocks.authListener('SIGNED_IN', session));
+    await advance(1);
+    expect(context.isAuthenticated).toBe(false);
+    expect(mocks.signOut).toHaveBeenCalledTimes(1);
+    expect(mocks.lock.reason).toBe('access_denied');
+  });
+
+  it('sessão efetivamente expirada no Auth exige novo login', async () => {
+    await start();
+    mocks.getUser.mockResolvedValueOnce({ data: { user: null }, error: { code: 'session_expired', status: 400 } });
+    await act(async () => { await context.checkUserAuth(); });
+    expect(context.isAuthenticated).toBe(false);
+    expect(mocks.lock.reason).toBe('invalid_session');
+  });
+
+  it('dezenas de eventos de foco compartilham uma consulta de perfil em voo', async () => {
+    await start();
+    const pending = deferred();
+    mocks.profile.mockReturnValueOnce(pending.promise);
+    act(() => {
+      for (let i = 0; i < 50; i += 1) mocks.authListener('SIGNED_IN', session);
+    });
+    await advance(1);
+    expect(mocks.profile).toHaveBeenCalledTimes(2); // bootstrap + one revalidation
+    await act(async () => { pending.resolve({ data: profile }); });
+    expect(context.isAuthenticated).toBe(true);
+  });
+
+  it('retry agendado não restaura acesso após logout explícito', async () => {
+    await start();
+    mocks.profile.mockResolvedValueOnce({ data: null, error: { status: 503 } });
+    act(() => mocks.authListener('SIGNED_IN', session));
+    await advance(1);
+    expect(context.authConnectionError.type).toBe('auth_unavailable');
+    const queriesBeforeLogout = mocks.profile.mock.calls.length;
+    await act(async () => { await context.logout(false); });
+    await advance(60_000);
+    expect(context.isAuthenticated).toBe(false);
+    expect(mocks.lock.reason).toBe('logout');
+    expect(mocks.profile).toHaveBeenCalledTimes(queriesBeforeLogout);
+  });
+
+  it('uma conta diferente nunca herda o perfil validado anterior durante indisponibilidade', async () => {
+    mocks.operator = { id: 'op-1' };
+    await start();
+    const pending = deferred();
+    mocks.profile.mockReturnValueOnce(pending.promise);
+    act(() => mocks.authListener('SIGNED_IN', session));
+    await advance(1);
+    mocks.profile.mockResolvedValueOnce({ data: null, error: { status: 503 } });
+    act(() => mocks.authListener('SIGNED_IN', { ...session, user: { id: 'other-account' } }));
+    await advance(1);
+    await act(async () => { pending.resolve({ data: profile }); });
+    expect(context.isAuthenticated).toBe(false);
+    expect(context.user).toBeNull();
+    expect(mocks.operator).toBeNull();
+    expect(context.authError.type).toBe('auth_unavailable');
+    expect(mocks.signOut).not.toHaveBeenCalled();
+  });
+
+  it('ProtectedRoute mantém o posto montado durante revalidação indisponível', async () => {
+    const unmountWorkstation = vi.fn();
+    function Workstation() {
+      React.useEffect(() => () => unmountWorkstation(), []);
+      return <Probe />;
+    }
+    render(<MemoryRouter initialEntries={['/coleta']}>
+      <AuthProvider><Routes>
+        <Route element={<ProtectedRoute unauthenticatedElement={<div>Credenciais exigidas</div>} />}>
+          <Route path="/coleta" element={<Workstation />} />
+        </Route>
+      </Routes></AuthProvider>
+    </MemoryRouter>);
+    await advance(1);
+    expect(screen.getByTestId('auth')).toHaveTextContent('Gestor');
+    mocks.profile.mockResolvedValueOnce({ data: null, error: { status: 503 } });
+    act(() => mocks.authListener('SIGNED_IN', session));
+    await advance(1);
+    expect(screen.queryByText('Credenciais exigidas')).not.toBeInTheDocument();
+    expect(screen.getByTestId('auth')).toHaveTextContent('Gestor');
+    expect(unmountWorkstation).not.toHaveBeenCalled();
+    // This is also the AuthenticatedApp condition for its Realtime subscription.
+    expect(Boolean(context.user && !context.isLoadingAuth && !context.authError)).toBe(true);
   });
 });

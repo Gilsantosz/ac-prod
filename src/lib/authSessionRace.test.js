@@ -106,6 +106,29 @@ describe('Supabase real SDK session races', () => {
     expect(JSON.parse(localStorage.getItem(authKey)).user.id).toBe('new-user');
   });
 
+  it('preserves fallback credentials on timeout and coalesces retries until the SDK settles', async () => {
+    const session = authSession('slow-user');
+    api.persistAuthSession(session);
+    const restoration = api.restoreAuthSession();
+    const request = await nextRequest(0);
+    await vi.advanceTimersByTimeAsync(4001);
+    expect(await restoration).toBeNull();
+    expect(api.getPersistedAuthAccessToken()).toBe(session.access_token);
+    await Promise.all(Array.from({ length: 20 }, () => api.restoreAuthSession()));
+    expect(requests).toHaveLength(1);
+    respond(request, session.user);
+    await api.waitForPendingAuthRestoration();
+    expect(JSON.parse(localStorage.getItem(authKey)).user.id).toBe('slow-user');
+  });
+
+  it('does not retain a fallback credential explicitly rejected by Auth', async () => {
+    api.persistAuthSession(authSession('revoked-user'));
+    const restoration = api.restoreAuthSession();
+    respond(await nextRequest(0), { code: 'session_not_found', message: 'Session not found' }, 401);
+    expect(await restoration).toBeNull();
+    expect(api.getPersistedAuthAccessToken()).toBeNull();
+  });
+
   it('drains a previous password request before unlocking a later login', async () => {
     const oldSession = authSession('old-user');
     const newSession = authSession('new-user');

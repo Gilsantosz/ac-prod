@@ -1,7 +1,11 @@
 # Runbook de implantação — Collection Fabric v3
 
-Status: **V3 ativa no AC.Prod como ambiente `test-production` desde 2026-09-06;
+Status: **recuperação e validação funcional no `capacity-test` isolado;
 capacidade k6 e homologação para produção plena permanecem pendentes**.
+
+Os registros abaixo descrevem janelas históricas, não garantias de saúde atual.
+A antiga exceção de carga `test-production` foi removida. Consulte também o
+[registro de recuperação de 06/09/2026](collection-capacity-recovery-2026-09-06.md).
 
 Este runbook implanta o caminho v3 sem dupla escrita produtiva. As migrations são
 aditivas e as quatro flags começam desligadas. Aplicar as migrations não autoriza
@@ -97,7 +101,10 @@ saída dos testes e cada mudança de flag. Nunca grave chaves ou JWTs no registr
   capacidade contém artefatos, não estimativas.
 - O rollback abaixo foi ensaiado em staging e assinado.
 
-Qualquer item pendente mantém todas as flags v3 desligadas.
+Falhas estruturais, de integridade ou autorização impedem habilitar tráfego novo.
+Gates de capacidade ainda pendentes limitam a execução aos ensaios autorizados
+no ambiente isolado: não autorizam promoção para produção. As flags necessárias
+ao ensaio só são habilitadas nesse alvo, após os pré-requisitos estruturais.
 
 ## 1. Preparar staging isolado
 
@@ -111,15 +118,17 @@ Qualquer item pendente mantém todas as flags v3 desligadas.
 
    ```json
    {
-     "access_token": "JWT-DE-USUARIO-DE-STAGING",
      "devices": [
        {
+         "access_token": "JWT-EXCLUSIVO-DESTE-USUARIO-DE-TESTE",
          "device_id": "00000000-0000-4000-a000-000000000001",
          "operator_session_id": "00000000-0000-4000-a000-000000000002",
-         "machine_id": "00000000-0000-4000-a000-000000000003"
+         "machine_id": "00000000-0000-4000-a000-000000000003",
+         "cell_id": "00000000-0000-4000-a000-000000000005"
        }
      ],
      "codes": ["00000001"],
+     "code_cells": { "00000001": "00000000-0000-4000-a000-000000000005" },
      "contention": {
        "lot_id": "00000000-0000-4000-a000-000000000004",
        "cell_name": "Corte"
@@ -127,8 +136,15 @@ Qualquer item pendente mantém todas as flags v3 desligadas.
    }
    ```
 
-   `access_token` também pode existir por dispositivo. Não use `service_role` no
-   k6. Os perfis de contenção exigem uma `machine_id` distinta por dispositivo;
+   Cada dispositivo da carga deve ter usuário Auth e sessão operacional distintos.
+   Um JWT compartilhado não comprova múltiplos usuários e é recusado. O preflight
+   valida o emissor, papel `authenticated`, pelo menos 15 minutos de validade e
+   confirma o usuário no Auth e a sessão/contexto pela API com RLS, sem imprimir
+   tokens. Não use `service_role` no k6. Nominal, burst e priority exigem pelo
+   menos duas células e `code_cells` para todos os códigos; ordene os códigos
+   conforme a seleção circular de dispositivos do perfil. Um código destinado
+   a outra célula interrompe o envio antes de ingressar o batch.
+   Os perfis de contenção exigem uma `machine_id` distinta por dispositivo;
    os primeiros 50 códigos devem ser peças distintas do mesmo lote/célula, e o
    primeiro código é reutilizado por 20 máquinas no perfil `contention_piece`.
    Não versionar, imprimir nem anexar esse arquivo aos resultados.
@@ -200,13 +216,13 @@ Não envie um evento ao v2 e ao v3. O roteamento do dispositivo é exclusivo.
 ## 5. Executar a carga reproduzível
 
 O script [collection-fabric-v3.js](../../tests/load/collection-fabric-v3.js)
-exige confirmação de staging e nunca habilita flags. Ele bloqueia projetos de
-produção por padrão; a única exceção versionada é o projeto AC.Prod identificado
-abaixo, enquanto seu uso estiver formalmente registrado como ambiente de teste.
+exige confirmação de staging e nunca habilita flags. Ele aceita exclusivamente
+o projeto isolado `capacity-test` (`smnsihksrhzbkhcbdjfu`); a antiga exceção para
+carga no projeto principal foi removida.
 Use uma fixture protegida e execute cada perfil separadamente. Exemplo normal:
 
 ```bash
-export SUPABASE_URL="https://STAGING-REF.supabase.co"
+export SUPABASE_URL="https://smnsihksrhzbkhcbdjfu.supabase.co"
 export SUPABASE_ANON_KEY="CHAVE-PUBLICA-DE-STAGING"
 export K6_TARGET="staging"
 export K6_CONFIRM_WRITES="staging-v3-load"
@@ -232,45 +248,32 @@ K6_SEQUENCE_BASE=170000000 K6_PROFILE=burst K6_RUN_ID=burst-r1 \
   k6 run --summary-export=artifacts/burst-r1.json tests/load/collection-fabric-v3.js
 ```
 
-### Exceção temporária: AC.Prod de produção usado como ambiente de teste
+### Isolamento obrigatório
 
-> **ATENÇÃO — ESCRITAS DESTRUTIVAS:** esta exceção grava recibos, fatos de
-> produção, tentativas, outbox, projeções e KPIs no projeto
-> `uozuzdfvnufsjsonswag`. A carga não possui limpeza automática e pode alterar
-> dashboards, lotes e contadores. Não execute com dados ou usuários reais.
-
-Use esta forma somente com autorização registrada para a janela atual. As três
-travas precisam coincidir exatamente: alvo `test-production`, URL base do project
-ref autorizado e frase forte que nomeia a escrita destrutiva. Uma URL parecida,
-outro project ref ou a confirmação de staging falha antes de qualquer requisição.
-Nunca use `service_role` na fixture.
-
-```bash
-export SUPABASE_URL="https://uozuzdfvnufsjsonswag.supabase.co"
-export SUPABASE_ANON_KEY="CHAVE-PUBLICA-DO-PROJETO"
-export K6_TARGET="test-production"
-export K6_CONFIRM_WRITES="EU-AUTORIZO-ESCRITAS-K6-DESTRUTIVAS-NO-ACPROD-TESTE-uozuzdfvnufsjsonswag"
-export K6_SLO_PROFILE="test"
-export K6_FIXTURES="/caminho-seguro/collection-v3-fixture.json"
-mkdir -p artifacts
-
-K6_SEQUENCE_BASE=180000000 K6_PROFILE=smoke K6_RUN_ID=testprod-smoke-r1 \
-  k6 run --summary-export=artifacts/testprod-smoke-r1.json tests/load/collection-fabric-v3.js
-```
+O projeto principal `uozuzdfvnufsjsonswag` e o antigo alvo `test-production`
+sempre falham no preflight, mesmo com a antiga frase de confirmação. A carga
+grava recibos, fatos, outbox e KPIs somente no teste isolado e não possui limpeza
+automática. Não use dados reais; reserve peças sintéticas exclusivas e preserve
+os dados já existentes no teste.
 
 Comece obrigatoriamente pelo `smoke`. Antes de executar qualquer outro perfil,
 confirme health `ready=true`, filas drenadas, DLQ vazia, reconciliação correta e
 ausência de usuários reais. Registre a autorização, o checksum da fixture
 sanitizado e a faixa de sequência. O perfil nominal grava 18.000 eventos por
-rodada; repetições exigem novos códigos e novas faixas. Quando o projeto deixar de
-ser ambiente de teste, remova esta exceção em uma alteração versionada antes de
-qualquer nova carga.
+rodada; repetições exigem novos códigos e novas faixas.
 
 Use uma nova faixa de sequence para cada comando. Repita nominal e rajada pelo
 menos três vezes depois de aquecimento, sem alterar timeouts, concorrência ou
 carga para esconder falhas. Colete simultaneamente CPU, memória, conexões,
 locks, I/O, WAL, fila, DLQ e heartbeats. O polling do k6 é parte deliberada da
 carga fim a fim e deve ser descrito no relatório.
+
+O sucesso de `ACK/decision_committed_at/projected_at` não demonstra sozinho que
+a coleta foi aprovada: os perfis nominal/burst atuais observam término, inclusive
+rejeições de negócio. Antes de homologar, reconcilie todos os IDs da rodada com
+o resultado esperado da fixture, leituras, lançamentos e projeções; códigos
+inexistentes/rejeitados não substituem a carga de aprovação de peças válidas.
+Os perfis de contenção e idempotência possuem verificações adicionais de ledger.
 
 O gate mantém zero perda, zero dupla aprovação, zero deadlock, zero statement
 timeout e DLQ vazia nos dois perfis. Em `production`, os limites continuam ACK
@@ -284,6 +287,26 @@ dispositivo devem permanecer conectados e cada um deve receber ao menos um
 browser, não do k6.
 
 ## 6. Shadow somente leitura
+
+Para observação do incidente sem ingressar/reprocessar peças, execute os scripts
+[collection_capacity_observation.sql](../../supabase/tests/collection_capacity_observation.sql)
+e [collection_capacity_query_stats.sql](../../supabase/tests/collection_capacity_query_stats.sql)
+com a conexão administrativa já configurada **do teste isolado**. Ambos usam
+`BEGIN READ ONLY`, timeout de 5 segundos e não alteram flags, filas ou estatísticas.
+Repita após um intervalo conhecido para calcular a drenagem e deltas de
+`calls/total_exec_ms`; não zere estatísticas compartilhadas. Os percentis de
+decisão/projeção incluem apenas eventos concluídos e retornam seus denominadores.
+Fila pendente torna esses percentis insuficientes para afirmar que o SLO passou.
+`collection_stage_facts` é uma view de leituras aprovadas: sua igualdade com as
+leituras **não comprova** que outbox, indicadores e notificações foram projetados.
+
+O teste antigo `collection-snapshot-2000.js` usa bearer anônimo e não serve como
+prova de capacidade dos RPCs protegidos. Meça snapshots/KPIs pelo login normal de
+teste, sem fabricar identidade ou usar `service_role` como operador. A carga k6
+não mede IndexedDB, pintura da UI ou recuperação da sessão; valide também o
+browser sob reconexão e renovação de token. A aceitação SQL estrutural antiga
+exige flags inicialmente desligadas e não deve ser executada sem adaptação numa
+célula ativa, mesmo usando rollback.
 
 Shadow não pode chamar o RPC de ingresso nem gravar fato/outbox. Com as flags de
 roteamento produtivo desligadas, reproduza snapshots sanitizados por um avaliador

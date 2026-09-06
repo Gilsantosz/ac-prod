@@ -1,10 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 const repoFile = (path) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
 describe('AC.Prod2 collection rollout contract', () => {
+  it('audita o lock compartilhado e rejeita regressão de escopo, fila ou liberação', () => {
+    const source = repoFile('src/hooks/useCollectionQueue.js');
+    const audit = (hook) => spawnSync('python3', ['-c', [
+      'import importlib.util, sys',
+      "spec = importlib.util.spec_from_file_location('rollout_audit', 'scripts/audit_collection_rollout.py')",
+      'audit = importlib.util.module_from_spec(spec)',
+      'spec.loader.exec_module(audit)',
+      'audit.audit_collection_queue_lock(sys.stdin.read())',
+    ].join('\n')], { cwd: process.cwd(), encoding: 'utf8', input: hook });
+    expect(audit(source).status).toBe(0);
+    const mutations = [
+      source.replace('{ ifAvailable: true }', '{}'),
+      source.replace('`acprod-collection-${operation}:${projectRef}`', '`acprod-collection-${operation}`'),
+      source.replace('fallbackQueueLocks.delete(lockName);', ''),
+      source.replace('return await task();', 'return task();'),
+      source.replace('await withCollectionQueueLock(async () => {', 'await unguardedSend(async () => {'),
+    ];
+    for (const mutated of mutations) {
+      expect(mutated).not.toBe(source);
+      expect(audit(mutated).status).toBe(1);
+    }
+  });
   it('keeps the canonical v2 collection and shift KPI contracts wired', () => {
     const service = repoFile('src/lib/collectionService.js');
     expect(service).toContain('get_collection_dashboard_snapshot_v2');

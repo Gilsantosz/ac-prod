@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { withCollectionQueueLock } from '@/hooks/useCollectionQueue';
 
 const repoFile = (path) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
@@ -40,15 +41,32 @@ describe('AC.Prod2 collection fast8 v8.5 contract', () => {
     expect(dispatcher).toContain('event.fastPath === true');
   });
 
-  it('mantém captura não bloqueante e sincronização FIFO em navegadores sem Web Locks', () => {
+  it('mantém captura durável e exclusão sem fila de promises entre ambientes', async () => {
     const queue = repoFile('src/hooks/useCollectionQueue.js');
 
     expect(queue).toContain('refreshStatsSafely');
-    expect(queue).toContain('fallbackLockRef');
     expect(queue).toContain('const id = await enqueueCollectionEvent(payload)');
     expect(queue).toContain('operator_session_id');
     expect(queue).not.toContain('operatorSessionToken = payload');
     expect(queue).toContain('não bloqueia o próximo código');
+
+    const originalLocks = navigator.locks;
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: undefined });
+    let release;
+    let duplicateRan = false;
+    const held = withCollectionQueueLock(() => new Promise((resolve) => { release = resolve; }), 'sync', 'contract-test');
+    try {
+      expect(await withCollectionQueueLock(() => { duplicateRan = true; }, 'sync', 'contract-test')).toBeNull();
+      expect(duplicateRan).toBe(false);
+      expect(await withCollectionQueueLock(() => 'production-free', 'sync', 'contract-production')).toBe('production-free');
+      release('test-finished');
+      expect(await held).toBe('test-finished');
+      expect(await withCollectionQueueLock(() => 'next-flush', 'sync', 'contract-test')).toBe('next-flush');
+    } finally {
+      release();
+      await held;
+      Object.defineProperty(navigator, 'locks', { configurable: true, value: originalLocks });
+    }
   });
 
   it('versiona o contrato do banco e impede deploy incompatível', () => {
@@ -63,5 +81,14 @@ describe('AC.Prod2 collection fast8 v8.5 contract', () => {
     expect(workflow).toContain('REQUIRED_RELEASE_VERSION: "20260831_acprod_collection_fast8_v8_5"');
     expect(workflow).toContain('collection_exact_8_digit_scan');
     expect(workflow).toContain('collection_active_tags_8_digits');
+  });
+
+  it('autoriza a captura de câmera/RFID antes de enfileirar sem renovar sessão por resposta do servidor', () => {
+    const page = repoFile('src/pages/TraceabilityCollection.jsx');
+    const capture = page.slice(page.indexOf('const handleRead = useCallback'), page.indexOf('// Aberturas de modais operacionais'));
+    expect(capture).toContain('if (!requestSessionActivity())');
+    expect(capture.indexOf('if (!requestSessionActivity())')).toBeLessThan(capture.indexOf('await enqueue('));
+    expect(capture).toContain("status: 'session_expired'");
+    expect(page).not.toContain('recordSessionActivity');
   });
 });

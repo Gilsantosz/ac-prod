@@ -22,7 +22,11 @@ import {
 } from '@/lib/collectionBatchService';
 
 function successfulInsert(rows) {
-  const select = vi.fn().mockResolvedValue({ data: rows, error: null });
+  const select = vi.fn().mockResolvedValue({ data: rows.map((row) => ({
+    id: `receipt-${row.client_event_id}`,
+    server_received_at: '2026-09-01T12:00:01.000Z',
+    ...row,
+  })), error: null });
   const insert = vi.fn(() => ({ select }));
   return { query: { insert }, insert, select };
 }
@@ -159,6 +163,8 @@ describe('processProductionCollectionBatch', () => {
     const selectExisting = vi.fn(() => ({
       in: vi.fn().mockResolvedValue({
         data: [{
+          id: 'receipt-event-a',
+          server_received_at: '2026-09-01T12:00:01.000Z',
           client_event_id: 'event-a',
           tag_lida: '09950001',
           status_sincronizacao: 'sincronizada',
@@ -223,6 +229,57 @@ describe('processProductionCollectionBatch', () => {
       message: 'network unavailable',
       retryable: true,
     });
+  });
+
+  it('libera o próximo lote V2 no ACK durável sem consultar ou esperar a decisão', async () => {
+    const receipt = {
+      client_event_id: 'event-a',
+      status_sincronizacao: 'recebida',
+      resultado: null,
+    };
+    const { query } = successfulInsert([receipt]);
+    from.mockReturnValue(query);
+    const onAcknowledged = vi.fn();
+    const onFinalized = vi.fn();
+
+    const [result] = await processProductionCollectionBatch([{
+      client_event_id: 'event-a',
+      raw_value: '09950001',
+      pipeline_version: 2,
+    }], { onAcknowledged, onFinalized });
+
+    expect(from).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({
+      client_event_id: 'event-a',
+      pipeline_version: 2,
+      collection_state: 'DATABASE_ACKNOWLEDGED',
+      transport_phase: 'database_acknowledged',
+      result: null,
+    });
+    expect(onAcknowledged).toHaveBeenCalledWith([result]);
+    expect(onFinalized).not.toHaveBeenCalled();
+  });
+
+  it('mantém o item V2 sem recibo localmente quando a resposta do INSERT é parcial', async () => {
+    const { query } = successfulInsert([{
+      client_event_id: 'event-b',
+      status_sincronizacao: 'recebida',
+    }]);
+    from.mockReturnValue(query);
+    const onAcknowledged = vi.fn();
+
+    await expect(processProductionCollectionBatch([
+      { client_event_id: 'event-a', raw_value: '09950001', pipeline_version: 2 },
+      { client_event_id: 'event-b', raw_value: '09950002', pipeline_version: 2 },
+    ], { onAcknowledged })).rejects.toMatchObject({
+      code: 'COLLECTION_ACK_INCOMPLETE',
+      pendingClientEventIds: ['event-a'],
+      retryable: true,
+    });
+
+    expect(onAcknowledged.mock.calls[0][0]).toHaveLength(1);
+    expect(onAcknowledged.mock.calls[0][0][0].client_event_id).toBe('event-b');
+    expect(from).toHaveBeenCalledOnce();
   });
 
   it('bloqueia lote acima do limite industrial', async () => {

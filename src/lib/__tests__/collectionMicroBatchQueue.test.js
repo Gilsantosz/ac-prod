@@ -1,18 +1,32 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const store = new Map();
+globalThis.IDBKeyRange = {
+  bound: (lower, upper) => ({ lower, upper }),
+};
 
 const mockDb = {
   transaction: () => {
+    let completionTimer;
+    let activeCursors = 0;
+    let activeRequests = 0;
+    const complete = () => {
+      clearTimeout(completionTimer);
+      if (activeCursors > 0 || activeRequests > 0) return;
+      completionTimer = setTimeout(() => tx.oncomplete?.(), 1);
+    };
     const tx = {
       objectStore: () => ({
         put: (item) => {
           store.set(item.client_event_id, item);
-          setTimeout(() => tx.oncomplete?.(), 1);
+          complete();
         },
         get: (key) => {
+          activeRequests += 1;
           const request = { onsuccess: null };
           setTimeout(() => {
+            activeRequests -= 1;
+            complete();
             request.onsuccess?.({
               target: { result: store.get(key) },
             });
@@ -29,6 +43,36 @@ const mockDb = {
           return request;
         },
         index: (indexName) => ({
+          openCursor: (range) => {
+            activeCursors += 1;
+            const request = { onsuccess: null };
+            const values = [...store.values()]
+              .filter((item) => item.status === range.lower[0]
+                && (item.source_mode || 'live') === range.lower[1])
+              .sort((a, b) => a.created_at_client.localeCompare(b.created_at_client)
+                || a.client_event_id.localeCompare(b.client_event_id));
+            let position = 0;
+            const emit = () => setTimeout(() => {
+              const value = values[position];
+              let continued = false;
+              request.onsuccess?.({ target: { result: value ? {
+                value,
+                primaryKey: value.client_event_id,
+                continue: () => {
+                  continued = true;
+                  clearTimeout(completionTimer);
+                  position += 1;
+                  emit();
+                },
+              } : null } });
+              if (!continued) {
+                activeCursors -= 1;
+                complete();
+              }
+            }, 1);
+            emit();
+            return request;
+          },
           getAll: (value) => {
             const request = { onsuccess: null };
             setTimeout(() => {
@@ -47,6 +91,10 @@ const mockDb = {
       }),
       oncomplete: null,
       onerror: null,
+      abort: () => {
+        clearTimeout(completionTimer);
+        tx.onabort?.({ target: tx });
+      },
     };
     return tx;
   },
@@ -69,6 +117,7 @@ globalThis.indexedDB = {
 import {
   enqueueCollectionEvent,
   markEventDatabaseAcknowledged,
+  markEventFinalized,
 } from '@/lib/collectionEventQueue';
 import {
   flushCollectionMicroBatchQueue,
@@ -102,6 +151,67 @@ describe('flushCollectionMicroBatchQueue', () => {
       'offline_replay',
     ]);
     expect(batches.every((batch) => batch.length <= 25)).toBe(true);
+  });
+
+  it('não mistura sessão, dispositivo, célula nem versão de pipeline no envelope', () => {
+    const base = { source_mode: 'live', device_id: 'd1', operator_session_id: 's1', cell_id: 'c1', pipeline_version: 3 };
+    const events = [
+      { ...base, client_event_id: 'one' },
+      { ...base, client_event_id: 'same' },
+      { ...base, client_event_id: 'session', operator_session_id: 's2' },
+      { ...base, client_event_id: 'device', device_id: 'd2' },
+      { ...base, client_event_id: 'cell', cell_id: 'c2' },
+      { ...base, client_event_id: 'version', pipeline_version: 2 },
+    ];
+    expect(planCollectionMicroBatches(events).map((batch) => batch.map((event) => event.client_event_id)))
+      .toEqual([['one', 'same'], ['session'], ['device'], ['cell'], ['version']]);
+  });
+
+  it('finalização por Broadcast vence timeout HTTP atrasado sem reenvio', async () => {
+    await enqueueCollectionEvent({ client_event_id: 'broadcast-first', rawValue: '09906655' });
+    const summary = await flushCollectionMicroBatchQueue(async () => {
+      await markEventFinalized('broadcast-first', { result: { status: 'approved', success: true } });
+      throw Object.assign(new Error('resposta perdida'), { retryable: true });
+    });
+    expect(summary).toMatchObject({ processed: 1, synced: 1, errors: 0, acknowledged: 0 });
+    expect(store.get('broadcast-first')).toMatchObject({ status: 'synced', collection_state: 'APPROVED', retries: 0 });
+  });
+
+  it('não congela ACK parcial quando o mesmo HTTP também devolve decisão final', async () => {
+    await enqueueCollectionEvent({ client_event_id: 'ack-then-final', rawValue: '09906655' });
+    const summary = await flushCollectionMicroBatchQueue(async (_events, callbacks) => {
+      await callbacks.onAcknowledged([{ client_event_id: 'ack-then-final', status_sincronizacao: 'recebida' }]);
+      return [{ client_event_id: 'ack-then-final', status_sincronizacao: 'sincronizada', result: { status: 'approved' } }];
+    });
+    expect(summary).toMatchObject({ synced: 1, acknowledged: 0 });
+    expect(store.get('ack-then-final').collection_state).toBe('APPROVED');
+  });
+
+  it('relê decisão final antes de publicar um ACK armazenado no cache de progresso', async () => {
+    await enqueueCollectionEvent({ client_event_id: 'cached-ack', rawValue: '09906655' });
+    const onResult = vi.fn();
+    const receipt = { client_event_id: 'cached-ack', status_sincronizacao: 'recebida' };
+    const summary = await flushCollectionMicroBatchQueue(async (_events, callbacks) => {
+      await callbacks.onAcknowledged([receipt]);
+      await markEventFinalized('cached-ack', { result: { status: 'approved', success: true } });
+      return [receipt];
+    }, { onResult });
+    expect(summary).toMatchObject({ synced: 1, acknowledged: 0 });
+    expect(onResult).toHaveBeenCalledWith(expect.objectContaining({
+      state: 'APPROVED', acknowledged: false, result: { status: 'approved', success: true },
+    }));
+  });
+
+  it('publica REJECTED canônico mesmo quando o payload interno contém status error', async () => {
+    await enqueueCollectionEvent({ client_event_id: 'pre-ingress-rejected', rawValue: '09906655' });
+    const onResult = vi.fn();
+    await flushCollectionMicroBatchQueue(async () => [{
+      client_event_id: 'pre-ingress-rejected', persisted: false,
+      collection_state: 'REJECTED', status_sincronizacao: 'sincronizada',
+      result: { status: 'error', reason_code: 'COLLECTION_INGRESS_REJECTED' },
+    }], { onResult });
+    expect(store.get('pre-ingress-rejected').collection_state).toBe('REJECTED');
+    expect(onResult).toHaveBeenCalledWith(expect.objectContaining({ state: 'REJECTED', acknowledged: false }));
   });
 
   it('salva ACK do banco sem marcar a leitura como aprovada/synced', async () => {

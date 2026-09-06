@@ -25,6 +25,7 @@ import {
 } from '@/lib/manualProductionService';
 import { fetchProductionStagePolicies, canonicalProductionStage } from '@/lib/productionStagePolicyService';
 import { invalidateAllMesQueries } from '@/config/queryKeys';
+import { requestSessionActivity } from '@/lib/sessionActivity';
 
 function saoPauloDate() {
   return new Intl.DateTimeFormat('en-CA', {
@@ -124,6 +125,10 @@ export default function CollectionVolumeEntryPanel({
   const submit = async (event) => {
     event.preventDefault();
     if (!canSubmit) return;
+    if (!requestSessionActivity()) {
+      toast.error('Sessão encerrada por inatividade. Faça login novamente antes de contabilizar o volume.');
+      return;
+    }
 
     setSubmitting(true);
     try {

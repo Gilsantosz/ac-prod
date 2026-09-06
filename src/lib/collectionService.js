@@ -184,6 +184,19 @@ export function unsubscribeFromCollectionHistory(channel) {
 /**
  * Retorna os KPIs calculados de acordo com os filtros aplicados
  */
+const SNAPSHOT_SCHEMA_BACKOFF_MS = 60_000;
+let snapshotUnavailableUntil = 0;
+
+function missingCollectionRpc(error) {
+  return error?.code === 'PGRST202' || error?.code === '42883';
+}
+
+function unavailableCollectionMetrics() {
+  return Object.assign(new Error('Indicadores indisponíveis. Aguardando sincronização com o servidor.'), {
+    code: 'COLLECTION_METRICS_UNAVAILABLE',
+  });
+}
+
 export async function getCollectionKpis({
   cellId = null,
   cellName = null,
@@ -195,26 +208,30 @@ export async function getCollectionKpis({
   pcpImportBatchId = null,
   lotId = null,
 }) {
-  // Resolve nome da célula a partir do ID se necessário
-  let resolvedCellName = cellName;
+  let resolvedCellName = cellName?.trim();
   if (cellId && !resolvedCellName) {
-    const { data: cell } = await supabase.from('cells').select('name').eq('id', cellId).maybeSingle();
+    const { data: cell, error } = await supabase.from('cells').select('name').eq('id', cellId).maybeSingle();
+    if (error) throw error;
     resolvedCellName = cell?.name;
   }
-  if (!resolvedCellName) {
-    return { total: 0, approved: 0, rejected: 0, blocked: 0, expected: 0, pending: 0, rework: 0, replacement: 0 };
-  }
+  if (!resolvedCellName) throw unavailableCollectionMetrics();
 
-  // Tentar snapshot canônico v2 com isolamento de lote e versão de estado
-  try {
-    const { data: snapshotV2, error: snapV2Err } = await supabase.rpc('get_collection_dashboard_snapshot_v2', {
+  // A missing deployed RPC is a capability issue, not a reason to download the
+  // entire production database in every browser. Retry discovery after one minute.
+  if (Date.now() >= snapshotUnavailableUntil) {
+    const { data: snapshotV2, error } = await supabase.rpc('get_collection_dashboard_snapshot_v2', {
       p_cell_name: resolvedCellName,
       p_workstation_id: workstationId,
       p_operator_id: operatorId,
       p_pcp_import_batch_id: pcpImportBatchId,
       p_lot_id: lotId,
     });
-    if (!snapV2Err && snapshotV2?.lot_kpis) {
+    if (error) {
+      if (!missingCollectionRpc(error)) throw error;
+      snapshotUnavailableUntil = Date.now() + SNAPSHOT_SCHEMA_BACKOFF_MS;
+    } else {
+      snapshotUnavailableUntil = 0;
+      if (!snapshotV2?.lot_kpis) throw unavailableCollectionMetrics();
       const kpis = snapshotV2.lot_kpis;
       return {
         expected: Number(kpis.expected) || 0,
@@ -227,11 +244,11 @@ export async function getCollectionKpis({
         active_context: snapshotV2.active_context,
       };
     }
-  } catch (e) {
-    console.warn('[CollectionService] Fallback get_collection_dashboard_snapshot_v2:', e);
   }
 
-  const { data: snapshot, error: snapshotError } = await supabase.rpc('get_collection_cell_snapshot', {
+  // Compatibility uses a scoped server aggregate only. Network/permission failures
+  // propagate to React Query, preserving the last successful snapshot (never zero).
+  const { data: snapshot, error } = await supabase.rpc('get_collection_cell_snapshot', {
     p_cell_name: resolvedCellName,
     p_workstation_id: workstationId,
     p_shift: shift,
@@ -240,98 +257,11 @@ export async function getCollectionKpis({
     p_pcp_import_batch_id: pcpImportBatchId,
     p_lot_id: lotId,
   });
-  if (!snapshotError && snapshot && typeof snapshot === 'object' && ('expected' in snapshot || 'approved' in snapshot)) {
+  if (error) throw error;
+  if (snapshot && typeof snapshot === 'object' && ('expected' in snapshot || 'approved' in snapshot)) {
     return snapshot;
   }
-
-  // Mapeamento canônico do código da célula
-  const cellCodeMap = {
-    'corte': 'cut', 'cut': 'cut',
-    'borda': 'edge', 'bordo': 'edge', 'edge': 'edge',
-    'furação': 'drill', 'furacao': 'drill', 'drill': 'drill',
-    'usinagem': 'cnc', 'cnc': 'cnc',
-    'marcenaria': 'joinery', 'joinery': 'joinery',
-    'separaçao': 'separation', 'separacao': 'separation', 'separation': 'separation',
-    'embalagem': 'packaging', 'packaging': 'packaging'
-  };
-  const stepCode = cellCodeMap[resolvedCellName.toLowerCase()] || resolvedCellName.toLowerCase();
-
-  // 1. Buscar peças ativas atreladas a lotes não encerrados/cancelados
-  // CORREÇÃO: 'replaced' NÃO é excluído — peças substituídas continuam no universo de produção
-  // A peça original 'replaced' + a peça de reposição ambas contribuem para o total real do lote
-  const { data: pieces } = await supabase
-    .from('production_pieces')
-    .select('id, status, rework_status, replacement_status, route_steps, requires_cut, requires_edge, requires_cnc, requires_joinery, pcp_import_batch_id, lot_id, production_lots!inner(status, pcp_import_batch_id)')
-    .not('status', 'in', '("cancelled","shipped")')
-    .not('production_lots.status', 'in', '("closed","shipped","cancelled")');
-
-  let activePieces = pieces || [];
-  if (pcpImportBatchId) {
-    activePieces = activePieces.filter(p => (p.pcp_import_batch_id || p.production_lots?.pcp_import_batch_id) === pcpImportBatchId);
-  }
-  if (lotId) {
-    activePieces = activePieces.filter(p => p.lot_id === lotId);
-  }
-
-  // Filtrar peças que passam por esta etapa
-  const cellPieces = activePieces.filter(p => {
-    const route = Array.isArray(p.route_steps) ? p.route_steps : [];
-    if (route.length > 0) return route.includes(stepCode);
-    if (stepCode === 'cut') return p.requires_cut !== false;
-    if (stepCode === 'edge') return !!p.requires_edge;
-    if (stepCode === 'cnc') return !!p.requires_cnc;
-    if (stepCode === 'joinery') return !!p.requires_joinery;
-    return true;
-  });
-
-  const expected = cellPieces.length;
-  const rework = cellPieces.filter(p => ['rework_pending', 'rework_in_progress'].includes(p.status) || p.rework_status === 'in_progress').length;
-  const replacement = cellPieces.filter(p => ['replacement_requested', 'replacement_in_production'].includes(p.status) || p.replacement_status === 'in_production').length;
-
-  // 2. Buscar aprovadas
-  const { data: approvedFacts } = await supabase
-    .from('collection_stage_facts')
-    .select('piece_id')
-    .eq('step_code_canonico', stepCode);
-
-  const approvedPieceIds = new Set((approvedFacts || []).map(f => f.piece_id));
-  // Peças 'replaced' são aprovadas via reposição — contam no cumulativo
-  const replacedPieceIds = new Set(cellPieces.filter(p => p.status === 'replaced').map(p => p.id));
-  // approved_via_replacement e replaced são ambos aprovados nos KPIs (distintos apenas no histórico)
-  const approvedCumulative = cellPieces.filter(p => approvedPieceIds.has(p.id) || replacedPieceIds.has(p.id)).length;
-  const pending = Math.max(expected - approvedCumulative, 0);
-
-  // 3. Leituras do turno/estação
-  let query = supabase
-    .from('production_collection_events')
-    .select('status, result_status');
-
-  if (resolvedCellName) query = query.ilike('cell_name', resolvedCellName);
-  if (workstationId) query = query.eq('machine_id', workstationId);
-  if (operatorId) query = query.eq('operator_id', operatorId);
-  if (shift) query = query.eq('shift', shift);
-  if (dateFrom) query = query.gte('created_at', dateFrom);
-  if (dateTo) query = query.lte('created_at', dateTo);
-
-  const { data: events } = await query;
-  const rows = events || [];
-
-  const shiftApproved = rows.filter(r => r.status === 'synced' && r.result_status === 'approved').length;
-  const shiftRejected = rows.filter(r => r.result_status === 'rejected').length;
-  const shiftBlocked = rows.filter(r => ['blocked', 'duplicated'].includes(r.result_status)).length;
-
-  return {
-    total: rows.length,
-    approved: approvedCumulative,
-    rejected: shiftRejected,
-    blocked: shiftBlocked,
-    expected,
-    pending,
-    rework,
-    replacement,
-    active_lots: new Set(cellPieces.map(p => p.lot_id)).size,
-    active_pcp_batches: new Set(cellPieces.map(p => p.pcp_import_batch_id || p.production_lots?.pcp_import_batch_id).filter(Boolean)).size,
-  };
+  throw unavailableCollectionMetrics();
 }
 
 /**
@@ -754,12 +684,12 @@ export async function requestPieceReplacement({ pieceId, reason, notes, priority
 
 export async function getOperatorShiftKpisV2(operatorId, referenceTime = new Date()) {
   if (!operatorId) return { approved: 0, rejected: 0, blocked: 0 };
-  try {
-    const { data, error } = await supabase.rpc('get_operator_shift_kpis_v2', {
+  const { data, error } = await supabase.rpc('get_operator_shift_kpis_v2', {
       p_operator_id: operatorId,
       p_reference_time: referenceTime instanceof Date ? referenceTime.toISOString() : referenceTime,
     });
-    if (!error && data) {
+    if (error) throw error;
+    if (data) {
       return {
         approved: Number(data.approved) || 0,
         rejected: Number(data.rejected) || 0,
@@ -769,10 +699,7 @@ export async function getOperatorShiftKpisV2(operatorId, referenceTime = new Dat
         shift_work_date: data.shift_work_date,
       };
     }
-  } catch (e) {
-    console.warn('[CollectionService] Erro ao buscar KPIs de turno v2:', e);
-  }
-  return { approved: 0, rejected: 0, blocked: 0 };
+  throw unavailableCollectionMetrics();
 }
 
 export const rejectPiece = rejectPieceFromCollection;

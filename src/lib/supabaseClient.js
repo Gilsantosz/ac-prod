@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { runtimeEnvironment } from '@/lib/runtimeEnvironment';
+import { isAuthAccessDeniedError, isInvalidAuthSessionError } from '@/lib/authErrors';
 
 // ✅ SEGURO: Apenas a chave anon (pública) é usada no frontend.
 // A SERVICE_ROLE_KEY nunca é usada aqui — toda autorização é controlada por RLS no PostgreSQL.
@@ -222,7 +223,9 @@ export const clearPersistedAuthSession = () => {
   authStorage?.removeItem(FALLBACK_SESSION_KEY);
 };
 
-export const restoreAuthSession = async () => {
+let pendingRestoration = null;
+
+const restorePersistedSession = async () => {
   if (isAuthSessionLocked()) return null;
   const generation = authSessionGeneration;
   const raw = authStorage?.getItem(FALLBACK_SESSION_KEY);
@@ -244,14 +247,33 @@ export const restoreAuthSession = async () => {
 
     if (generation !== authSessionGeneration || isAuthSessionLocked()) return null;
     if (error || !data?.session) {
-      clearPersistedAuthSession();
+      // Network loss, overload and a UI timeout cannot revoke the durable
+      // credential. The SDK may still be finishing this request in the background.
+      if (isInvalidAuthSessionError(error) || isAuthAccessDeniedError(error)) clearPersistedAuthSession();
       return null;
     }
 
     persistAuthSession(data.session);
     return data.session;
-  } catch {
-    clearPersistedAuthSession();
+  } catch (error) {
+    if (generation !== authSessionGeneration || isAuthSessionLocked()) return null;
+    if (error instanceof SyntaxError || isInvalidAuthSessionError(error) || isAuthAccessDeniedError(error)) {
+      clearPersistedAuthSession();
+    }
     return null;
   }
+};
+
+export const restoreAuthSession = () => {
+  if (isAuthSessionLocked()) return Promise.resolve(null);
+  if (pendingRestoration) return pendingRestoration;
+  const pending = restorePersistedSession();
+  pendingRestoration = pending;
+  // A UI timeout does not finish the SDK operation. Keep restoration single-
+  // flight until its real token write settles, including across retry ticks.
+  void pending.finally(async () => {
+    await waitForPendingAuthRestoration();
+    if (pendingRestoration === pending) pendingRestoration = null;
+  });
+  return pending;
 };

@@ -20,7 +20,7 @@ import {
 import { projectScopedStorageKey } from '@/lib/runtimeEnvironment';
 
 const DB_NAME = projectScopedStorageKey('acprod_collection_queue');
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE = 'events';
 
 export const COLLECTION_QUEUE_RETENTION_DAYS = 3;
@@ -46,8 +46,10 @@ let lastRecoveryAt = 0;
 let recoveryChangedSinceLastCompletion = false;
 let cachedDb = null;
 let dbOpenPromise = null;
+let queueSnapshotInFlight = null;
 let maintenanceCursor = null;
 let recoveryCursor = null;
+const reconciliationCursors = new Map();
 
 function normalizeNonNegativeNumber(value, fallback) {
   const parsed = Number(value);
@@ -155,6 +157,22 @@ function openDb() {
       if (!store.indexNames.contains('by_device_sequence')) {
         store.createIndex('by_device_sequence', 'device_sequence', { unique: false });
       }
+      if (!store.indexNames.contains('by_status_id')) {
+        store.createIndex('by_status_id', ['status', 'client_event_id'], { unique: false });
+      }
+      if (!store.indexNames.contains('by_status_source_created')) {
+        store.createIndex('by_status_source_created', ['status', 'source_mode', 'created_at_client'], { unique: false });
+        const legacyRows = store.openCursor();
+        legacyRows.onsuccess = (event) => {
+          const cursor = event.target.result;
+          if (!cursor) return;
+          if (!cursor.value.source_mode) {
+            cursor.update({ ...cursor.value,
+              source_mode: cursor.value.queued_offline ? 'offline_replay' : 'live' });
+          }
+          cursor.continue();
+        };
+      }
     };
     req.onsuccess = (e) => {
       const db = e.target.result;
@@ -195,6 +213,40 @@ async function dbPut(item) {
     tx.objectStore(STORE).put(item);
     tx.oncomplete = () => resolve(item);
     tx.onerror = (e) => reject(e.target.error);
+    tx.onabort = (e) => reject(tx.error || e.target.error);
+  });
+}
+
+/** Read, decide and write in ONE transaction: another tab/HTTP/Broadcast cannot
+ * overwrite a newer state between a readonly get and a later put. */
+async function dbMutate(clientEventId, mutate) {
+  return (await dbMutateMany([clientEventId], mutate))[0] ?? null;
+}
+
+async function dbMutateMany(clientEventIds, mutate) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    const objectStore = tx.objectStore(STORE);
+    const result = [];
+    for (const [position, clientEventId] of clientEventIds.entries()) {
+      const request = objectStore.get(clientEventId);
+      request.onsuccess = (event) => {
+        try {
+          const current = event.target.result;
+          const updated = mutate(current) ?? current ?? null;
+          result[position] = updated;
+          if (updated && updated !== current) objectStore.put(updated);
+        } catch (error) {
+          reject(error);
+          tx.abort();
+        }
+      };
+      request.onerror = (event) => reject(event.target.error);
+    }
+    tx.oncomplete = () => resolve(result);
+    tx.onerror = (event) => reject(tx.error || event.target.error);
+    tx.onabort = (event) => reject(tx.error || event.target.error);
   });
 }
 
@@ -286,7 +338,11 @@ async function dbRecoverStaleProcessingBatch(
       const eventTimestamp = new Date(
         event.updated_at || event.created_at_client,
       ).getTime();
-      if (event.status !== 'processing' || !(eventTimestamp < cutoff)) {
+      const state = normalizeCollectionState(event.collection_state);
+      if (event.status !== 'processing' || !(eventTimestamp < cutoff)
+        || state === COLLECTION_STATES.DATABASE_ACKNOWLEDGED
+        || state === COLLECTION_STATES.PROCESSING
+        || isCollectionTerminalState(state)) {
         return false;
       }
       objectStore.put({
@@ -313,6 +369,14 @@ async function dbGetByIndex(indexName, value) {
 }
 
 async function dbGetAll() {
+  if (queueSnapshotInFlight) return queueSnapshotInFlight;
+  queueSnapshotInFlight = readQueueSnapshot().finally(() => {
+    queueSnapshotInFlight = null;
+  });
+  return queueSnapshotInFlight;
+}
+
+async function readQueueSnapshot() {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readonly');
@@ -468,16 +532,17 @@ export async function enqueueCollectionEvent(payload) {
     result: null,
     last_result: null,
     last_error: null,
+    decision_authority: null,
     pipeline_version: null,
   };
-  // Idempotência: se já existe, não duplica
-  if (providedClientEventId) {
-    const existing = await dbGet(event.client_event_id);
-    if (existing) return existing.client_event_id;
-  }
-
   const t0 = performance.now();
-  await dbPut(event);
+  // Supplied IDs can be replayed concurrently by another tab. Never overwrite
+  // their durable result, device sequence or original captured context.
+  if (providedClientEventId) {
+    await dbMutate(event.client_event_id, (existing) => existing || event);
+  } else {
+    await dbPut(event);
+  }
   const elapsed = performance.now() - t0;
 
   // A durabilidade da captura depende de uma única escrita. A telemetria é
@@ -498,59 +563,36 @@ export async function enqueueCollectionEvent(payload) {
  * Retorna estatísticas atuais da fila.
  */
 export async function getQueueStats() {
-  const all = await dbGetAll();
-  const now = Date.now();
-  const staleThreshold = now - 60000;
+  return summarizeQueueStats(await dbGetAll());
+}
 
-  const pending = all.filter((e) => e.status === 'pending');
-  const processing = all.filter((e) => e.status === 'processing');
-
-  const hasStalePending = pending.some(e => new Date(e.created_at_client).getTime() < staleThreshold)
-    || processing.some(e => new Date(e.created_at_client).getTime() < staleThreshold);
-
-  const hasSlowEnqueue = all.some(e => Number(e.enqueue_duration_ms) > 800);
-
-  return {
-    total: all.length,
-    pending: pending.length,
-    processing: processing.length,
-    synced: all.filter((e) => e.status === 'synced').length,
-    error: all.filter((e) => e.status === 'error').length,
-    hasStalePending,
-    hasSlowEnqueue,
-  };
+function summarizeQueueStats(events, matches = () => true) {
+  const cutoff = Date.now() - 60_000;
+  const result = { total: 0, pending: 0, processing: 0, synced: 0, error: 0,
+    hasStalePending: false, hasSlowEnqueue: false };
+  for (const event of events) {
+    if (!matches(event)) continue;
+    result.total += 1;
+    if (['pending', 'processing', 'synced', 'error'].includes(event.status)) result[event.status] += 1;
+    const capturedAt = new Date(event.created_at_client).getTime();
+    if ((event.status === 'pending' || event.status === 'processing') && capturedAt < cutoff) {
+      result.hasStalePending = true;
+    }
+    // A historical slow disk write must not remain a permanent live SLA alarm.
+    if (Number(event.enqueue_duration_ms) > 800 && capturedAt >= cutoff) result.hasSlowEnqueue = true;
+  }
+  return result;
 }
 
 /**
  * Retorna estatísticas da fila filtradas por célula e máquina.
  */
 export async function getQueueStatsByCellMachine(cellName, machineId, eventKind = null) {
-  const all = await dbGetAll();
-  const filtered = all.filter(e =>
+  return summarizeQueueStats(await dbGetAll(), e =>
     (!cellName || e.cellName === cellName || e.cell_name === cellName) &&
     (!machineId || e.machineId === machineId || e.machine_id === machineId) &&
     (!eventKind || e.event_kind === eventKind)
   );
-  const now = Date.now();
-  const staleThreshold = now - 60000;
-
-  const pending = filtered.filter((e) => e.status === 'pending');
-  const processing = filtered.filter((e) => e.status === 'processing');
-
-  const hasStalePending = pending.some(e => new Date(e.created_at_client).getTime() < staleThreshold)
-    || processing.some(e => new Date(e.created_at_client).getTime() < staleThreshold);
-
-  const hasSlowEnqueue = filtered.some(e => Number(e.enqueue_duration_ms) > 800);
-
-  return {
-    total: filtered.length,
-    pending: pending.length,
-    processing: processing.length,
-    synced: filtered.filter((e) => e.status === 'synced').length,
-    error: filtered.filter((e) => e.status === 'error').length,
-    hasStalePending,
-    hasSlowEnqueue,
-  };
 }
 
 /**
@@ -591,25 +633,25 @@ export async function pinCollectionPipelineVersion(events = [], version) {
       candidate.pipeline_version = normalizedVersion;
       continue;
     }
-    const event = await dbGet(clientEventId);
-    const currentVersion = Number(event?.pipeline_version || candidate.pipeline_version);
-    if ([2, 3].includes(currentVersion) && currentVersion !== normalizedVersion) {
-      const error = new Error(
-        `A leitura ${clientEventId} já pertence ao pipeline V${currentVersion}.`,
-      );
-      error.code = 'COLLECTION_PIPELINE_ASSIGNMENT_CONFLICT';
-      error.retryable = false;
-      throw error;
-    }
-    candidate.pipeline_version = normalizedVersion;
-    if (event && currentVersion !== normalizedVersion) {
-      await dbPut({
+    await dbMutate(clientEventId, (event) => {
+      const currentVersion = Number(event?.pipeline_version || candidate.pipeline_version);
+      if ([2, 3].includes(currentVersion) && currentVersion !== normalizedVersion) {
+        const error = new Error(
+          `A leitura ${clientEventId} já pertence ao pipeline V${currentVersion}.`,
+        );
+        error.code = 'COLLECTION_PIPELINE_ASSIGNMENT_CONFLICT';
+        error.retryable = false;
+        throw error;
+      }
+      if (!event || currentVersion === normalizedVersion) return event;
+      return {
         ...event,
         pipeline_version: normalizedVersion,
         pipeline_assigned_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      });
-    }
+      };
+    });
+    candidate.pipeline_version = normalizedVersion;
   }
   notifyChange();
   return normalizedVersion;
@@ -643,34 +685,33 @@ export async function reassignFirstCollectionPipelineAttempt(
       continue;
     }
 
-    const event = await dbGet(clientEventId);
-    const currentVersion = Number(event?.pipeline_version || candidate.pipeline_version);
-    const currentState = normalizeCollectionState(
-      event?.collection_state || candidate.collection_state,
-      COLLECTION_STATES.PENDING_DATABASE,
-    );
-    if (currentVersion !== Number(fromVersion)
-      || isCollectionTerminalState(currentState)
-      || currentState === COLLECTION_STATES.DATABASE_ACKNOWLEDGED
-      || currentState === COLLECTION_STATES.PROCESSING) {
-      const error = new Error(
-        `A leitura ${clientEventId} já cruzou a fronteira do pipeline V${currentVersion || '?'}.`,
+    await dbMutate(clientEventId, (event) => {
+      const currentVersion = Number(event?.pipeline_version || candidate.pipeline_version);
+      const currentState = normalizeCollectionState(
+        event?.collection_state || candidate.collection_state,
+        COLLECTION_STATES.PENDING_DATABASE,
       );
-      error.code = 'COLLECTION_PIPELINE_REASSIGNMENT_UNSAFE';
-      error.retryable = false;
-      throw error;
-    }
-
-    candidate.pipeline_version = Number(toVersion);
-    if (event) {
-      await dbPut({
+      if (currentVersion !== Number(fromVersion)
+        || isCollectionTerminalState(currentState)
+        || currentState === COLLECTION_STATES.DATABASE_ACKNOWLEDGED
+        || currentState === COLLECTION_STATES.PROCESSING) {
+        const error = new Error(
+          `A leitura ${clientEventId} já cruzou a fronteira do pipeline V${currentVersion || '?'}.`,
+        );
+        error.code = 'COLLECTION_PIPELINE_REASSIGNMENT_UNSAFE';
+        error.retryable = false;
+        throw error;
+      }
+      if (!event) return event;
+      return {
         ...event,
         pipeline_version: Number(toVersion),
         pipeline_reassigned_at: new Date().toISOString(),
         pipeline_reassignment_reason: 'V3_INGRESS_DISABLED_BEFORE_PERSISTENCE',
         updated_at: new Date().toISOString(),
-      });
-    }
+      };
+    });
+    candidate.pipeline_version = Number(toVersion);
   }
   notifyChange();
   return Number(toVersion);
@@ -679,32 +720,101 @@ export async function reassignFirstCollectionPipelineAttempt(
 export async function getUnresolvedCollectionEvents(options = {}) {
   const {
     eventKind = 'production_stage',
-    limit = 25,
+    limit = 100,
     olderThanMs = 0,
   } = options;
   const cutoff = Date.now() - Math.max(0, Number(olderThanMs) || 0);
-  const all = await dbGetAll();
-  return all
-    .filter((event) => {
-      const state = normalizeCollectionState(
-        event.collection_state,
-        event.status === 'processing'
-          ? COLLECTION_STATES.PROCESSING
-          : COLLECTION_STATES.PENDING_DATABASE,
+  const safeLimit = Math.max(1, Math.min(100, Number(limit) || 100));
+  const checkpoint = reconciliationCursors.get(eventKind) || { statusIndex: 0, id: '' };
+  const statuses = ['processing', 'pending', 'error'];
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const index = tx.objectStore(STORE).index('by_status_id');
+    const result = [];
+    let examined = 0;
+    let nextCheckpoint = null;
+
+    const readStatus = (statusIndex, afterId = '') => {
+      if (statusIndex >= statuses.length) return;
+      const status = statuses[statusIndex];
+      const range = IDBKeyRange.bound([status, afterId], [status, []], true, true);
+      const request = index.openCursor(range);
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (!cursor) {
+          readStatus(statusIndex + 1);
+          return;
+        }
+        const item = cursor.value;
+        examined += 1;
+        const state = normalizeCollectionState(item.collection_state);
+        const attempted = item.sync_started_at || item.database_acknowledged_at;
+        const updatedAt = new Date(
+          item.database_acknowledged_at || item.updated_at || item.created_at_client,
+        ).getTime();
+        if (item.event_kind === eventKind && [2, 3].includes(Number(item.pipeline_version))
+          && attempted && (!isCollectionTerminalState(state) || isLocalTransportFailure(item))
+          && updatedAt <= cutoff) {
+          result.push(item);
+        }
+        // Bound both records materialized and work per turn. Rotate even when
+        // missing receipts / not-yet-due items occupy the head of the queue.
+        if (result.length >= safeLimit || examined >= 500) {
+          nextCheckpoint = { statusIndex, id: item.client_event_id };
+          return;
+        }
+        cursor.continue();
+      };
+      request.onerror = (event) => reject(event.target.error);
+    };
+    readStatus(checkpoint.statusIndex, checkpoint.id);
+    tx.oncomplete = () => {
+      if (nextCheckpoint) reconciliationCursors.set(eventKind, nextCheckpoint);
+      else reconciliationCursors.delete(eventKind);
+      Object.defineProperty(result, 'hasMore', { value: nextCheckpoint !== null });
+      resolve(result);
+    };
+    tx.onerror = (event) => reject(tx.error || event.target.error);
+    tx.onabort = (event) => reject(tx.error || event.target.error);
+  });
+}
+
+/** Only materialize a bounded number of due unsent events, not the retained
+ * receipt history. The caller can request one extra item to detect backlog. */
+export async function getPendingCollectionEvents(options = {}) {
+  const { eventKind = null, limit = 126, now = Date.now() } = options;
+  const safeLimit = Math.max(1, Math.min(501, Number(limit) || 126));
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const events = [];
+    // Read each source independently so a large replay backlog cannot hide
+    // fresh scans from the live:replay scheduler. Memory remains bounded.
+    for (const sourceMode of ['live', 'offline_replay']) {
+      const request = tx.objectStore(STORE).index('by_status_source_created').openCursor(
+        IDBKeyRange.bound(['pending', sourceMode, ''], ['pending', sourceMode, []], false, true),
       );
-      const updatedAt = new Date(
-        event.database_acknowledged_at
-          || event.updated_at
-          || event.created_at_client,
-      ).getTime();
-      return event.event_kind === eventKind
-        && !isCollectionTerminalState(state)
-        && updatedAt <= cutoff;
-    })
-    .sort((left, right) => (
-      left.created_at_client.localeCompare(right.created_at_client)
-    ))
-    .slice(0, Math.max(1, Math.min(25, Number(limit) || 25)));
+      let sourceCount = 0;
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (!cursor) return;
+        const item = cursor.value;
+        if ((!eventKind || item.event_kind === eventKind)
+          && (!item.next_attempt_at || new Date(item.next_attempt_at).getTime() <= now)) {
+          events.push(item);
+          sourceCount += 1;
+        }
+        if (sourceCount < safeLimit) cursor.continue();
+      };
+      request.onerror = (event) => reject(event.target.error);
+    }
+    tx.oncomplete = () => resolve(events.sort((a, b) => (
+      a.created_at_client.localeCompare(b.created_at_client)
+    )));
+    tx.onerror = (event) => reject(tx.error || event.target.error);
+    tx.onabort = (event) => reject(tx.error || event.target.error);
+  });
 }
 
 function readSharedCursor(storageKey, memoryCursor) {
@@ -830,55 +940,81 @@ export function runStaleProcessingRecovery(options = {}) {
  * Retorna o evento pendente mais antigo.
  */
 export async function getOldestPendingEvent() {
-  const pending = await dbGetByIndex('by_status', 'pending');
-  if (!pending || pending.length === 0) return null;
-  const now = Date.now();
-  const due = pending.filter((event) =>
-    !event.next_attempt_at || new Date(event.next_attempt_at).getTime() <= now
-  );
-  due.sort((a, b) => a.created_at_client.localeCompare(b.created_at_client));
-  return due[0] || null;
+  return (await getPendingCollectionEvents({ limit: 1 }))[0] || null;
 }
 
 /**
  * Funções de marcação de status
  */
 export async function markEventPending(clientEventId) {
-  const event = await dbGet(clientEventId);
-  if (!event) return;
-  event.status = 'pending';
-  const currentState = normalizeCollectionState(
-    event.collection_state,
-    COLLECTION_STATES.CAPTURED_LOCAL,
-  );
-  event.collection_state = currentState === COLLECTION_STATES.RETRYING
-    ? COLLECTION_STATES.RETRYING
-    : COLLECTION_STATES.PENDING_DATABASE;
-  event.next_attempt_at = new Date().toISOString();
-  event.updated_at = new Date().toISOString();
-  await dbPut(event);
+  const event = await dbMutate(clientEventId, (current) => {
+    if (!current || hasServerDecision(current)) return current;
+    const now = new Date().toISOString();
+    return {
+      ...current,
+      status: 'pending',
+      collection_state: current.collection_state === COLLECTION_STATES.RETRYING
+        ? COLLECTION_STATES.RETRYING : COLLECTION_STATES.PENDING_DATABASE,
+      next_attempt_at: now,
+      updated_at: now,
+    };
+  });
   notifyChange();
+  return event;
+}
+
+function hasServerDecision(event) {
+  const state = normalizeCollectionState(event.collection_state);
+  return isCollectionTerminalState(state)
+    || state === COLLECTION_STATES.DATABASE_ACKNOWLEDGED
+    || state === COLLECTION_STATES.PROCESSING;
+}
+
+function isLocalTransportFailure(event) {
+  return normalizeCollectionState(event.collection_state) === COLLECTION_STATES.DEAD_LETTERED
+    && event.decision_authority !== 'server'
+    && !event.processed_at;
+}
+
+export async function claimCollectionEventsForTransport(events = []) {
+  if (!events.length) return [];
+  const claimedIds = new Set();
+  const now = new Date().toISOString();
+  const updated = await dbMutateMany(events.map((event) => event.client_event_id), (current) => {
+    if (!current || current.status !== 'pending' || hasServerDecision(current)
+      || (current.next_attempt_at && current.next_attempt_at > now)) return current;
+    claimedIds.add(current.client_event_id);
+    return {
+      ...current,
+      status: 'processing',
+      collection_state: COLLECTION_STATES.PENDING_DATABASE,
+      next_attempt_at: null,
+      sync_started_at: now,
+      updated_at: now,
+    };
+  });
+  return updated.filter((event) => event && claimedIds.has(event.client_event_id));
 }
 
 export async function markEventProcessing(clientEventId, options = {}) {
-  const event = await dbGet(clientEventId);
-  if (!event) return;
-  event.status = 'processing';
-  // Antes do ACK do banco este é apenas o estado do transporte local.
-  event.collection_state = event.collection_state === COLLECTION_STATES.RETRYING
-    ? COLLECTION_STATES.PENDING_DATABASE
-    : (event.collection_state || COLLECTION_STATES.PENDING_DATABASE);
-  event.next_attempt_at = null;
-  event.sync_started_at = new Date().toISOString();
-  event.updated_at = new Date().toISOString();
-  await dbPut(event);
+  const event = await dbMutate(clientEventId, (current) => {
+    if (!current || hasServerDecision(current)) return current;
+    const now = new Date().toISOString();
+    return {
+      ...current,
+      status: 'processing',
+      // Local transport is not server PROCESSING until a receipt exists.
+      collection_state: COLLECTION_STATES.PENDING_DATABASE,
+      next_attempt_at: null,
+      sync_started_at: now,
+      updated_at: now,
+    };
+  });
   if (options.notify !== false) notifyChange();
   return event;
 }
 
 export async function markEventSynced(clientEventId, result, options = {}) {
-  const event = await dbGet(clientEventId);
-  if (!event) return;
   const canonicalResult = result?.result ?? result?.resultado ?? result;
   let finalState = collectionStateFromResult(canonicalResult);
   if (!finalState && canonicalResult?.success === true) {
@@ -887,18 +1023,10 @@ export async function markEventSynced(clientEventId, result, options = {}) {
   if (!finalState || !isCollectionTerminalState(finalState)) {
     finalState = COLLECTION_STATES.REJECTED;
   }
-  event.status = 'synced';
-  event.collection_state = finalState;
-  event.next_attempt_at = null;
-  event.result = canonicalResult;
-  event.sync_finished_at = new Date().toISOString();
-  if (event.sync_started_at) {
-    event.sync_duration_ms = new Date(event.sync_finished_at).getTime() - new Date(event.sync_started_at).getTime();
-  }
-  event.processed_at = new Date().toISOString();
-  event.updated_at = new Date().toISOString();
-  await dbPut(event);
-  if (options.notify !== false) notifyChange();
+  return markEventFinalized(clientEventId, {
+    collection_state: finalState,
+    result: canonicalResult,
+  }, options);
 }
 
 export async function markEventError(
@@ -907,76 +1035,73 @@ export async function markEventError(
   maxRetries = 8,
   options = {},
 ) {
-  const event = await dbGet(clientEventId);
-  if (!event) return;
-  const currentState = normalizeCollectionState(event.collection_state);
-  // Um ACK/PROCESSING observado por Broadcast é mais forte que uma falha ou
-  // resposta perdida do transporte HTTP. Não reenviar um recibo já confirmado.
-  if (currentState === COLLECTION_STATES.DATABASE_ACKNOWLEDGED
-    || currentState === COLLECTION_STATES.PROCESSING) {
+  const event = await dbMutate(clientEventId, (current) => {
+  // The check must occur inside the transaction, including terminal decisions.
+    if (!current || hasServerDecision(current)) return current;
+    const event = { ...current };
+    const retries = (event.retries || 0) + 1;
+    const retryable = error?.retryable !== false;
+    event.status = retryable && retries < maxRetries ? 'pending' : 'error';
+    event.collection_state = event.status === 'pending'
+      ? COLLECTION_STATES.RETRYING
+      : COLLECTION_STATES.DEAD_LETTERED;
+    event.decision_authority = 'transport';
+    event.retries = retries;
+    event.last_error = error?.message || String(error);
+    event.last_result = error?.result || null;
+    const baseDelayMs = Math.min(300_000, 1_000 * (2 ** Math.max(retries - 1, 0)));
+    const jitterMs = Math.round(baseDelayMs * Math.random() * 0.25);
+    event.next_attempt_at = event.status === 'pending'
+      ? new Date(Date.now() + baseDelayMs + jitterMs).toISOString()
+      : null;
+    event.sync_finished_at = new Date().toISOString();
+    if (event.sync_started_at) {
+      event.sync_duration_ms = new Date(event.sync_finished_at).getTime() - new Date(event.sync_started_at).getTime();
+    }
+    event.updated_at = new Date().toISOString();
     return event;
-  }
-  const retries = (event.retries || 0) + 1;
-  const retryable = error?.retryable !== false;
-  event.status = retryable && retries < maxRetries ? 'pending' : 'error';
-  event.collection_state = event.status === 'pending'
-    ? COLLECTION_STATES.RETRYING
-    : COLLECTION_STATES.DEAD_LETTERED;
-  event.retries = retries;
-  event.last_error = error?.message || String(error);
-  event.last_result = error?.result || null;
-  const baseDelayMs = Math.min(300_000, 1_000 * (2 ** Math.max(retries - 1, 0)));
-  const jitterMs = Math.round(baseDelayMs * Math.random() * 0.25);
-  event.next_attempt_at = event.status === 'pending'
-    ? new Date(Date.now() + baseDelayMs + jitterMs).toISOString()
-    : null;
-  event.sync_finished_at = new Date().toISOString();
-  if (event.sync_started_at) {
-    event.sync_duration_ms = new Date(event.sync_finished_at).getTime() - new Date(event.sync_started_at).getTime();
-  }
-  event.updated_at = new Date().toISOString();
-  await dbPut(event);
+  });
   if (options.notify !== false) notifyChange();
   return event;
 }
 
 async function transitionCollectionEvent(clientEventId, nextState, patch = {}, options = {}) {
-  const event = await dbGet(clientEventId);
-  if (!event) return null;
-  const currentState = normalizeCollectionState(
-    event.collection_state,
-    event.status === 'processing'
-      ? COLLECTION_STATES.PENDING_DATABASE
-      : COLLECTION_STATES.CAPTURED_LOCAL,
-  );
-  // Uma decisão terminal só pode ser substituída por uma correção autoritativa
-  // explicitamente marcada pelo servidor/projetor. Entregas normais continuam
-  // monotônicas e idempotentes.
-  if (isCollectionTerminalState(currentState) && options.force !== true) return event;
-  const stateRank = {
-    [COLLECTION_STATES.CAPTURED_LOCAL]: 0,
-    [COLLECTION_STATES.PENDING_DATABASE]: 1,
-    [COLLECTION_STATES.RETRYING]: 1,
-    [COLLECTION_STATES.DATABASE_ACKNOWLEDGED]: 2,
-    [COLLECTION_STATES.PROCESSING]: 3,
-  };
-  const normalizedCandidate = normalizeCollectionState(nextState);
-  if (options.force !== true
+  const updated = await dbMutate(clientEventId, (event) => {
+    if (!event) return event;
+    const currentState = isLocalTransportFailure(event) ? COLLECTION_STATES.RETRYING : normalizeCollectionState(
+      event.collection_state,
+      event.status === 'processing'
+        ? COLLECTION_STATES.PENDING_DATABASE
+        : COLLECTION_STATES.CAPTURED_LOCAL,
+    );
+    // Uma decisão terminal só pode ser substituída por uma correção autoritativa
+    // explicitamente marcada pelo servidor/projetor. Entregas normais continuam
+    // monotônicas e idempotentes.
+    if (isCollectionTerminalState(currentState) && options.force !== true) return event;
+    const stateRank = {
+      [COLLECTION_STATES.CAPTURED_LOCAL]: 0,
+      [COLLECTION_STATES.PENDING_DATABASE]: 1,
+      [COLLECTION_STATES.RETRYING]: 1,
+      [COLLECTION_STATES.DATABASE_ACKNOWLEDGED]: 2,
+      [COLLECTION_STATES.PROCESSING]: 3,
+    };
+    const normalizedCandidate = normalizeCollectionState(nextState);
+    if (options.force !== true
     && stateRank[normalizedCandidate] < stateRank[currentState]) {
-    return event;
-  }
-  const normalizedNext = options.force === true
-    ? normalizedCandidate
-    : assertCollectionTransition(currentState, nextState);
-  const now = new Date().toISOString();
-  const updated = {
-    ...event,
-    ...sanitizeCollectionEventPayload(patch),
-    collection_state: normalizedNext,
-    status: legacyQueueStatusForCollectionState(normalizedNext),
-    updated_at: now,
-  };
-  await dbPut(updated);
+      return event;
+    }
+    const normalizedNext = options.force === true
+      ? normalizedCandidate
+      : assertCollectionTransition(currentState, nextState);
+    const now = new Date().toISOString();
+    return {
+      ...event,
+      ...sanitizeCollectionEventPayload(patch),
+      collection_state: normalizedNext,
+      status: legacyQueueStatusForCollectionState(normalizedNext),
+      updated_at: now,
+    };
+  });
   if (options.notify !== false) notifyChange();
   return updated;
 }
@@ -996,6 +1121,7 @@ export async function markEventDatabaseAcknowledged(
         || new Date().toISOString(),
       batch_id: acknowledgement.batch_id || acknowledgement.batchId || null,
       next_attempt_at: null,
+      decision_authority: 'server',
     },
     options,
   );
@@ -1036,6 +1162,7 @@ export async function markEventFinalized(
     state,
     {
       result,
+      decision_authority: 'server',
       next_attempt_at: null,
       sync_finished_at: new Date().toISOString(),
       processed_at: finalPayload.processed_at
@@ -1057,6 +1184,7 @@ export async function markEventDeadLettered(
     {
       last_error: payload.error || payload.message || 'Evento enviado para dead letter.',
       last_result: payload,
+      decision_authority: 'server',
       next_attempt_at: null,
       sync_finished_at: new Date().toISOString(),
       processed_at: new Date().toISOString(),
@@ -1124,18 +1252,25 @@ export async function flushCollectionQueue(processFn, opts = {}) {
  */
 export async function retryErrors() {
   const errorEvents = await dbGetByIndex('by_status', 'error');
-  for (const event of errorEvents) {
-    await dbPut({
-      ...event,
-      status: 'pending',
-      collection_state: COLLECTION_STATES.RETRYING,
-      retries: 0,
-      next_attempt_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+  let retried = 0;
+  for (let offset = 0; offset < errorEvents.length; offset += 100) {
+    await dbMutateMany(errorEvents.slice(offset, offset + 100).map((event) => event.client_event_id), (current) => {
+      // An authoritative correction/ACK may arrive during manual replay.
+      if (!current || current.status !== 'error') return current;
+      retried += 1;
+      return {
+        ...current,
+        status: 'pending',
+        collection_state: COLLECTION_STATES.RETRYING,
+        retries: 0,
+        decision_authority: null,
+        next_attempt_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
     });
   }
   notifyChange();
-  return errorEvents.length;
+  return retried;
 }
 
 /**

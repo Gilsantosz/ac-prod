@@ -78,13 +78,14 @@ describe('Collection Fabric V3 Edge workers contract', () => {
     expect(source).toContain('coalesced: true');
   });
 
-  it.each(WORKERS)('$label enforces batches of at most 25 and five short cycles', ({ path }) => {
+  it.each(WORKERS)('$label enforces its measured transaction budget and five short cycles', ({ path, label }) => {
     const source = readWorker(path);
     const loop = roundLoop(source);
 
     expect(source).toContain('const MIN_BATCH_SIZE = 5');
-    expect(source).toContain('const DEFAULT_BATCH_SIZE = 25');
-    expect(source).toContain('const MAX_BATCH_SIZE = 25');
+    const batchSize = label === 'projection' ? 5 : 25;
+    expect(source).toContain(`const DEFAULT_BATCH_SIZE = ${batchSize}`);
+    expect(source).toContain(`const MAX_BATCH_SIZE = ${batchSize}`);
     expect(source).toContain('const MAX_ROUNDS = 5');
     expect(source).toContain('body.limit,\n    DEFAULT_BATCH_SIZE,\n    MIN_BATCH_SIZE,\n    MAX_BATCH_SIZE');
     expect(source).toContain('body.max_rounds,\n    DEFAULT_MAX_ROUNDS,\n    1,\n    MAX_ROUNDS');
