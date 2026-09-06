@@ -6,11 +6,9 @@ import { Button } from '@/components/ui/button';
 import PageHeader from '@/components/ui/PageHeader';
 import JoineryWorkbench from '@/components/traceability/JoineryWorkbench';
 import OperationalLoginGate from '@/components/entry/OperationalLoginGate';
-import { useTraceability } from '@/hooks/useTraceability';
 import { Wrench, LogOut, ShieldAlert, ArrowLeft } from 'lucide-react';
 
 export default function JoineryPage() {
-  const trace = useTraceability();
   const { isLoggedIn, session, logout } = useOperatorSession();
   const { user } = useAuth();
   const { cells } = useCells();
@@ -24,8 +22,8 @@ export default function JoineryPage() {
       <div className="p-2 sm:p-6 lg:p-8 max-w-[1600px] mx-auto">
         <OperationalLoginGate
           pageTitle="Marcenaria"
-          pageSubtitle="BANCADA OPERACIONAL DE MARCENARIA"
-          pageDescription="Identificação do operador para início do trabalho na bancada de Marcenaria."
+          pageSubtitle="ACOMPANHAMENTO DA MARCENARIA"
+          pageDescription="Identifique-se para visualizar as peças e o andamento da Marcenaria. As coletas são registradas em Coleta / Bipagem."
           icon={Wrench}
         />
       </div>
@@ -38,7 +36,7 @@ export default function JoineryPage() {
       <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto space-y-6 animate-in fade-in duration-300">
         <PageHeader
           title="Marcenaria"
-          subtitle="Bancada operacional de Marcenaria — gestão de peças, lotes e fluxo produtivo manual."
+          subtitle="Consulta de peças, status e andamento produtivo."
           icon={Wrench}
         />
 
@@ -97,7 +95,7 @@ export default function JoineryPage() {
     <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-5 sm:space-y-6">
       <PageHeader
         title="Marcenaria"
-        subtitle="Bancada operacional de Marcenaria — gestão de peças, lotes e fluxo produtivo manual."
+        subtitle="Consulta de peças, status e andamento produtivo."
         icon={Wrench}
         actions={
           <div className="flex items-center gap-3">
@@ -113,7 +111,7 @@ export default function JoineryPage() {
           </div>
         }
       />
-      <JoineryWorkbench trace={trace} />
+      <JoineryWorkbench />
     </div>
   );
 }
