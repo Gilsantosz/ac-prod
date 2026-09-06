@@ -18,6 +18,7 @@ const supabaseUrl = (__ENV.SUPABASE_URL || '').replace(/\/$/, '');
 const anonKey = __ENV.SUPABASE_ANON_KEY || '';
 const fixturePath = __ENV.K6_FIXTURES || '';
 const profile = (__ENV.K6_PROFILE || 'smoke').toLowerCase();
+const sloProfile = (__ENV.K6_SLO_PROFILE || 'production').toLowerCase();
 const runId = __ENV.K6_RUN_ID || '';
 const sequenceBase = Number(__ENV.K6_SEQUENCE_BASE || 0);
 const productionProjectRef = 'uozuzdfvnufsjsonswag';
@@ -56,6 +57,29 @@ if (!/^[a-zA-Z0-9_-]{1,32}$/.test(runId)) {
 if (!Number.isSafeInteger(sequenceBase) || sequenceBase < 1) {
   fail('K6_SEQUENCE_BASE deve ser um inteiro positivo, reservado para esta rodada.');
 }
+if (!['production', 'test'].includes(sloProfile)) {
+  fail('K6_SLO_PROFILE deve ser production ou test.');
+}
+
+const sloProfiles = {
+  production: {
+    ingressP95Ms: 250,
+    decisionP95Ms: 800,
+    decisionP99Ms: 2000,
+    projectionP95Ms: 500,
+    queueP99Ms: 2000,
+  },
+  // Homologação intercontinental: preserva integridade estrita e permite o
+  // RTT até o banco primário em São Paulo. Não promove capacidade de produção.
+  test: {
+    ingressP95Ms: 1500,
+    decisionP95Ms: 1500,
+    decisionP99Ms: 5000,
+    projectionP95Ms: 2000,
+    queueP99Ms: 5000,
+  },
+};
+const activeSlo = sloProfiles[sloProfile];
 
 const fixture = JSON.parse(open(fixturePath));
 const devices = Array.isArray(fixture.devices) ? fixture.devices : [];
@@ -124,14 +148,17 @@ const commonThresholds = {
   collection_unfinalized_events: ['count==0'],
   collection_unprojected_events: ['count==0'],
   collection_dead_lettered_events: ['count==0'],
-  collection_ingress_ack_ms: ['p(95)<250'],
-  collection_decision_ms: ['p(95)<800', 'p(99)<2000'],
-  collection_projection_ms: ['p(95)<500'],
-  collection_queue_age_ms: ['p(99)<2000'],
-  collection_server_processing_p95_ms: ['max<800'],
-  collection_server_processing_p99_ms: ['max<2000'],
-  collection_server_projection_p95_ms: ['max<500'],
-  collection_server_queue_p99_ms: ['max<2000'],
+  collection_ingress_ack_ms: [`p(95)<${activeSlo.ingressP95Ms}`],
+  collection_decision_ms: [
+    `p(95)<${activeSlo.decisionP95Ms}`,
+    `p(99)<${activeSlo.decisionP99Ms}`,
+  ],
+  collection_projection_ms: [`p(95)<${activeSlo.projectionP95Ms}`],
+  collection_queue_age_ms: [`p(99)<${activeSlo.queueP99Ms}`],
+  collection_server_processing_p95_ms: [`max<${activeSlo.decisionP95Ms}`],
+  collection_server_processing_p99_ms: [`max<${activeSlo.decisionP99Ms}`],
+  collection_server_projection_p95_ms: [`max<${activeSlo.projectionP95Ms}`],
+  collection_server_queue_p99_ms: [`max<${activeSlo.queueP99Ms}`],
   collection_server_retry_rate: ['max<0.01'],
   collection_server_deadlocks: ['count==0'],
   collection_server_statement_timeouts: ['count==0'],
@@ -255,7 +282,10 @@ const profileThresholds = profile === 'idempotency'
   ? { collection_idempotency_violations: ['count==0'] }
   : {};
 if (profile === 'priority') {
-  profileThresholds.collection_live_decision_ms = ['p(95)<800', 'p(99)<2000'];
+  profileThresholds.collection_live_decision_ms = [
+    `p(95)<${activeSlo.decisionP95Ms}`,
+    `p(99)<${activeSlo.decisionP99Ms}`,
+  ];
 }
 if (profile === 'nominal') {
   profileThresholds.collection_realtime_devices_without_finalized = ['count==0'];

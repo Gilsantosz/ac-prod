@@ -47,6 +47,26 @@ A versão incremental `20260901032000` endurece o mesmo probe para validar as du
 
 Esse alinhamento não substitui uma baseline completa do schema: migrações históricas anteriores ainda incluem marcadores de reconciliação. Portanto, a reconstrução integral de um banco vazio deve partir de um schema dump validado, seguido pelo ledger incremental.
 
+## Collection Fabric v3 — capacidade e baixa latência
+
+As versões `20260902164000`, `20260902164500`, `20260902165000`,
+`20260902165500` e `20260902170500` foram aplicadas pelo canal controlado do
+Supabase durante a recuperação do primeiro CAPTEST. Como já constam no ledger
+remoto, os arquivos locais são marcadores `SELECT 1` e não reaplicam objetos.
+
+A versão executável `20260906122148` substitui o lease global single-flight por
+slots distribuídos limitados, une autenticação/claim/processamento em um ciclo
+transacional por lote, indexa as três rotas case-insensitive de resolução de
+peça e separa os perfis SLO `test` e `production`. O perfil de teste nunca altera
+automaticamente o perfil de produção; a troca exige RPC restrita a
+`service_role`.
+
+A versão `20260906123339` corrige os achados estruturais da auditoria: troca o
+`regprocedure` não portável por assinatura textual, otimiza as políticas RLS de
+recibos com initplan, indexa a busca de correção do outbox e restringe o RPC de
+assert estrutural ao `service_role`. Essas condições passaram a integrar o
+`structural_ready` do health check V3.
+
 ## Gate de publicação atual
 
 O workflow de produção só gera o artefato depois de consultar os três marcadores públicos e comprovar simultaneamente:
