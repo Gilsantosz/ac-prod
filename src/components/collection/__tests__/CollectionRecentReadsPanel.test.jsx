@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const mocks = vi.hoisted(() => ({
   getCollectionHistory: vi.fn(),
@@ -17,11 +18,16 @@ import CollectionRecentReadsPanel from '../CollectionRecentReadsPanel';
 
 describe('CollectionRecentReadsPanel realtime refresh', () => {
   let realtimeCallback;
+  let queryClient;
+  const renderPanel = (children) => render(children, {
+    wrapper: ({ children: content }) => <QueryClientProvider client={queryClient}>{content}</QueryClientProvider>,
+  });
 
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     realtimeCallback = null;
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
     mocks.getCollectionHistory.mockResolvedValue([]);
     mocks.getCollectionHistoryCount.mockResolvedValue(0);
     mocks.subscribeToCollectionHistory.mockImplementation(({ callback }) => {
@@ -31,11 +37,13 @@ describe('CollectionRecentReadsPanel realtime refresh', () => {
   });
 
   afterEach(() => {
+    queryClient.clear();
+    vi.clearAllTimers();
     vi.useRealTimers();
   });
 
-  it('limita uma rajada de eventos a uma consulta por janela de cinco segundos', async () => {
-    const view = render(
+  it('limita uma rajada de eventos a uma consulta por janela de 750 ms', async () => {
+    const view = renderPanel(
       <CollectionRecentReadsPanel
         cellId="cell-1"
         cellName="Corte"
@@ -66,7 +74,7 @@ describe('CollectionRecentReadsPanel realtime refresh', () => {
       for (let index = 0; index < 20; index += 1) realtimeCallback();
     });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(250);
+      await vi.advanceTimersByTimeAsync(750);
     });
     expect(mocks.getCollectionHistory).toHaveBeenCalledTimes(1);
     expect(mocks.getCollectionHistoryCount).toHaveBeenCalledTimes(1);
@@ -75,7 +83,7 @@ describe('CollectionRecentReadsPanel realtime refresh', () => {
       for (let index = 0; index < 20; index += 1) realtimeCallback();
     });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(4_999);
+      await vi.advanceTimersByTimeAsync(749);
     });
     expect(mocks.getCollectionHistory).toHaveBeenCalledTimes(1);
 
@@ -90,7 +98,7 @@ describe('CollectionRecentReadsPanel realtime refresh', () => {
   });
 
   it('só restringe o histórico à máquina quando o usuário escolhe esse filtro', async () => {
-    const view = render(
+    const view = renderPanel(
       <CollectionRecentReadsPanel
         cellId="cell-1"
         cellName="Usinagem CNC"
@@ -121,6 +129,32 @@ describe('CollectionRecentReadsPanel realtime refresh', () => {
     expect(mocks.getCollectionHistory).toHaveBeenCalledWith(
       expect.objectContaining({ cellId: 'cell-1', workstationId: 'machine-1' }),
     );
+    view.unmount();
+  });
+
+  it('compartilha a consulta entre painel e modo foco e não sobrepõe sinais ao GET inicial', async () => {
+    let finish;
+    mocks.getCollectionHistory.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const props = {
+      cellId: 'cell-1', cellName: 'Corte', workstationId: 'machine-1',
+      operatorId: 'operator-1', shift: '1º Turno', onSelectPiece: vi.fn(),
+    };
+    const view = renderPanel(<>
+      <CollectionRecentReadsPanel {...props} />
+      <CollectionRecentReadsPanel {...props} />
+    </>);
+    await act(async () => { await Promise.resolve(); });
+    expect(mocks.getCollectionHistory).toHaveBeenCalledTimes(1);
+    act(() => {
+      for (let index = 0; index < 100; index += 1) realtimeCallback();
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    expect(mocks.getCollectionHistory).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finish([]);
+      await vi.advanceTimersByTimeAsync(750);
+    });
+    expect(mocks.getCollectionHistory).toHaveBeenCalledTimes(2);
     view.unmount();
   });
 });

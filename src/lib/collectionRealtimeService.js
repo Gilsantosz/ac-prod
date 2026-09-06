@@ -100,7 +100,7 @@ export async function persistCollectionBroadcastMessage(payload = {}) {
 
   if (eventName === 'collection.received') {
     const event = await markEventDatabaseAcknowledged(clientEventId, payload);
-    return { event, state: COLLECTION_STATES.DATABASE_ACKNOWLEDGED, payload };
+    return { event, state: collectionStateFromResult(event || {}) || COLLECTION_STATES.DATABASE_ACKNOWLEDGED, payload };
   }
   if (eventName === 'collection.processing') {
     const existing = await getCollectionEvent(clientEventId);
@@ -108,11 +108,11 @@ export async function persistCollectionBroadcastMessage(payload = {}) {
       await markEventDatabaseAcknowledged(clientEventId, payload, { notify: false });
     }
     const event = await markEventServerProcessing(clientEventId, payload);
-    return { event, state: COLLECTION_STATES.PROCESSING, payload };
+    return { event, state: collectionStateFromResult(event || {}) || COLLECTION_STATES.PROCESSING, payload };
   }
   if (eventName === 'collection.dead_lettered') {
     const event = await markEventDeadLettered(clientEventId, payload);
-    return { event, state: COLLECTION_STATES.DEAD_LETTERED, payload };
+    return { event, state: collectionStateFromResult(event || {}) || COLLECTION_STATES.DEAD_LETTERED, payload };
   }
 
   const state = collectionStateFromResult(payload)
@@ -121,7 +121,7 @@ export async function persistCollectionBroadcastMessage(payload = {}) {
     ...payload,
     collection_state: state,
   });
-  return { event, state, payload };
+  return { event, state: collectionStateFromResult(event || {}) || state, payload };
 }
 
 const RECONCILIATION_SELECT = [
@@ -135,29 +135,59 @@ const RECONCILIATION_SELECT = [
   'server_received_at',
   'processado_em',
   'last_error_code',
+  'pipeline_version',
 ].join(',');
 
+export const COLLECTION_RECONCILIATION_TIMEOUT_MS = 10_000;
+
+async function readReceiptsWithDeadline(ids, timeoutMs) {
+  const controller = new AbortController();
+  const query = supabase.from('coletas_producao').select(RECONCILIATION_SELECT)
+    .in('client_event_id', ids);
+  const request = typeof query.abortSignal === 'function' ? query.abortSignal(controller.signal) : query;
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const error = Object.assign(new Error('Tempo limite ao reconciliar recibos de coleta.'), {
+        code: 'COLLECTION_RECONCILIATION_TIMEOUT', retryable: true,
+      });
+      reject(error);
+      controller.abort();
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([request, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
- * Reconciliação leve por um único IN de no máximo 25 IDs ainda abertos.
- * O chamador decide o limiar de idade conforme a saúde do WebSocket.
+ * Bounded catch-up independent of ingress and WebSocket delivery. Pages rotate
+ * past missing receipts, with exact V2/V3 assignment checked before any write.
+ * `hasMore` describes the scanned page, even if all its server rows are missing.
  */
 export async function reconcileCollectionEventsV3(options = {}) {
   const unresolved = await getUnresolvedCollectionEvents({
     eventKind: options.eventKind || 'production_stage',
-    limit: Math.min(25, Number(options.limit) || 25),
+    limit: Math.min(100, Number(options.limit) || 100),
     olderThanMs: options.olderThanMs || 0,
   });
-  if (!unresolved.length) return [];
+  const updates = [];
+  Object.defineProperty(updates, 'hasMore', { value: unresolved.hasMore === true });
+  if (!unresolved.length) return updates;
 
+  const expectedPipeline = new Map(unresolved.map((event) => (
+    [event.client_event_id, Number(event.pipeline_version)]
+  )));
   const ids = unresolved.map((event) => event.client_event_id);
-  const { data, error } = await supabase
-    .from('coletas_producao')
-    .select(RECONCILIATION_SELECT)
-    .in('client_event_id', ids);
+  const timeoutMs = Math.max(250, Math.min(COLLECTION_RECONCILIATION_TIMEOUT_MS,
+    Number(options.timeoutMs) || COLLECTION_RECONCILIATION_TIMEOUT_MS));
+  const { data, error } = await readReceiptsWithDeadline(ids, timeoutMs);
   if (error) throw error;
 
-  const updates = [];
   for (const row of data || []) {
+    if (Number(row.pipeline_version) !== expectedPipeline.get(row.client_event_id)) continue;
     let broadcastEvent = 'collection.received';
     if (row.status_sincronizacao === 'processando') {
       broadcastEvent = 'collection.processing';
@@ -171,6 +201,8 @@ export async function reconcileCollectionEventsV3(options = {}) {
     const payload = {
       ...row,
       ...(row.resultado || {}),
+      client_event_id: row.client_event_id,
+      pipeline_version: row.pipeline_version,
       result: row.resultado || null,
       broadcast_event: broadcastEvent,
     };

@@ -9,10 +9,12 @@ const RELEASE_SLOT_RPC = "release_collection_worker_slot_v3";
 const HANDOFF_RPC = "handoff_collection_worker_v3";
 const WORKER_KIND = "projection";
 const MIN_BATCH_SIZE = 5;
-const DEFAULT_BATCH_SIZE = 25;
-const MAX_BATCH_SIZE = 25;
+const DEFAULT_BATCH_SIZE = 5;
+const MAX_BATCH_SIZE = 5;
 const DEFAULT_MAX_ROUNDS = 5;
 const MAX_ROUNDS = 5;
+// Leave time for a final transactional RPC and handoff before pg_net's 30s cap.
+const MAX_RUN_DURATION_MS = 12000;
 
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
   throw new Error("COLLECTION_V3_PROJECTOR_ENVIRONMENT_INCOMPLETE");
@@ -37,12 +39,14 @@ type JsonRecord = Record<string, unknown>;
 class WorkerFailure extends Error {
   readonly publicCode: string;
   readonly databaseCode: string | null;
+  readonly databaseReason: string | null;
 
-  constructor(publicCode: string, databaseCode: string | null = null) {
+  constructor(publicCode: string, databaseCode: string | null = null, databaseReason: string | null = null) {
     super(publicCode);
     this.name = "WorkerFailure";
     this.publicCode = publicCode;
     this.databaseCode = databaseCode;
+    this.databaseReason = databaseReason;
   }
 }
 
@@ -72,6 +76,20 @@ function safeDatabaseCode(error: unknown): string | null {
   if (!error || typeof error !== "object" || !("code" in error)) return null;
   const code = String(error.code ?? "").trim().toUpperCase();
   return /^[A-Z0-9_]{1,32}$/.test(code) ? code : null;
+}
+
+function safeDatabaseReason(error: unknown): string | null {
+  if (!error || typeof error !== "object" || !("message" in error)) return null;
+  // Whitelist only fixed reason labels; never expose SQL, payloads or details.
+  const reasons: Record<string, string> = {
+    "more than one row returned by a subquery used as an expression": "SCALAR_SUBQUERY_MULTIPLE_ROWS",
+    "query returned more than one row": "QUERY_MULTIPLE_ROWS",
+    "ON CONFLICT DO UPDATE command cannot affect row a second time": "UPSERT_DUPLICATE_TARGET",
+    "UPDATE requires a WHERE clause": "SAFEUPDATE_UPDATE_WITHOUT_WHERE",
+    "DELETE requires a WHERE clause": "SAFEUPDATE_DELETE_WITHOUT_WHERE",
+  };
+  const message = String(Reflect.get(error, "message")).toLowerCase();
+  return Object.entries(reasons).find(([reason]) => message.includes(reason.toLowerCase()))?.[1] ?? null;
 }
 
 function workerCycle(data: unknown): JsonRecord {
@@ -152,7 +170,7 @@ Deno.serve(async (req: Request) => {
       });
       if (error) {
         leaseRetained = true;
-        throw new WorkerFailure("WORKER_CYCLE_FAILED", safeDatabaseCode(error));
+        throw new WorkerFailure("WORKER_CYCLE_FAILED", safeDatabaseCode(error), safeDatabaseReason(error));
       }
 
       // Em caso de resposta malformada, tente liberar o slot pelo owner. A
@@ -181,6 +199,10 @@ Deno.serve(async (req: Request) => {
       batchesProcessed += 1;
       if (claimed < limit) break;
       handoffRequired = round === maxRounds - 1;
+      if (performance.now() - startedAt >= MAX_RUN_DURATION_MS) {
+        handoffRequired = leaseRetained;
+        break;
+      }
     }
 
     const durationMs = Number((performance.now() - startedAt).toFixed(3));
@@ -207,6 +229,7 @@ Deno.serve(async (req: Request) => {
       invocation_id: invocationId,
       error_code: failure.publicCode,
       database_code: failure.databaseCode,
+      database_reason: failure.databaseReason,
       rounds,
       batches_processed: batchesProcessed,
       claimed: totalClaimed,
@@ -217,6 +240,11 @@ Deno.serve(async (req: Request) => {
       ok: false,
       invocation_id: invocationId,
       error: failure.publicCode,
+      // Safe SQLSTATE only: persisted by pg_net even when the database batch
+      // rolled back, so a failed claim cannot make health falsely look clean.
+      database_code: failure.databaseCode,
+      database_reason: failure.databaseReason,
+      duration_ms: durationMs,
     });
   } finally {
     if (leaseRetained) {

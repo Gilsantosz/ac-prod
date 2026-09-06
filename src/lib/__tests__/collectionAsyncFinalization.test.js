@@ -15,7 +15,10 @@ vi.mock('@/lib/operatorSessionService', () => ({
 import { processProductionCollectionBatch } from '@/lib/collectionBatchService';
 
 function insertResponse(rows) {
-  const select = vi.fn().mockResolvedValue({ data: rows, error: null });
+  const select = vi.fn().mockResolvedValue({ data: rows.map((row) => ({
+    server_received_at: '2026-08-31T23:00:00.000Z',
+    ...row,
+  })), error: null });
   const insert = vi.fn(() => ({ select }));
   return { insert, select };
 }
@@ -68,7 +71,7 @@ describe('collectionBatchService asynchronous finalization', () => {
       client_event_id: 'event-a',
       raw_value: '09950001',
       event_kind: 'production_stage',
-    }]).finally(() => {
+    }], { waitForFinalization: true }).finally(() => {
       settled = true;
     });
 
@@ -133,7 +136,7 @@ describe('collectionBatchService asynchronous finalization', () => {
       client_event_id: 'event-slow',
       raw_value: '09950002',
       event_kind: 'production_stage',
-    }]);
+    }], { waitForFinalization: true });
 
     await vi.runAllTimersAsync();
     const result = await promise;
@@ -225,7 +228,7 @@ describe('collectionBatchService asynchronous finalization', () => {
         raw_value: '09950002',
         event_kind: 'production_stage',
       },
-    ], { onFinalized });
+    ], { onFinalized, waitForFinalization: true });
 
     await vi.advanceTimersByTimeAsync(150);
     expect(onFinalized).toHaveBeenCalledTimes(1);
@@ -295,7 +298,7 @@ describe('collectionBatchService asynchronous finalization', () => {
         raw_value: '09950002',
         event_kind: 'production_stage',
       },
-    ]).catch((error) => error);
+    ], { waitForFinalization: true }).catch((error) => error);
 
     await vi.runAllTimersAsync();
     const error = await outcome;

@@ -19,6 +19,8 @@ import {
 import { getOperatorSession } from '@/lib/operatorSessionService';
 import { requestSessionActivity } from '@/lib/sessionActivity';
 import { getCollectionDeviceId } from '@/lib/collectionDeviceIdentity';
+import { runtimeEnvironment } from '@/lib/runtimeEnvironment';
+import { scheduleCollectionQueryInvalidation } from '@/hooks/collectionQueryInvalidation';
 import {
   COLLECTION_PIPELINE_FLAGS_CACHE_MS,
   getCollectionPipelineFlagsV3,
@@ -40,8 +42,29 @@ import {
 const QUEUE_MAINTENANCE_IDLE_TIMEOUT_MS = 5_000;
 const QUEUE_STATS_REFRESH_DEBOUNCE_MS = 100;
 const COLLECTION_RECONCILIATION_INTERVAL_MS = 15_000;
-const COLLECTION_RECONCILIATION_CONNECTED_STALE_MS = 30_000;
-const COLLECTION_RECONCILIATION_DISCONNECTED_STALE_MS = 5_000;
+const COLLECTION_RECONCILIATION_CONNECTED_STALE_MS = 5_000;
+const COLLECTION_RECONCILIATION_DISCONNECTED_STALE_MS = 2_000;
+const COLLECTION_RECONCILIATION_CATCHUP_MS = 250;
+const COLLECTION_RECONCILIATION_BATCH_SIZE = 100;
+const fallbackQueueLocks = new Set();
+
+export async function withCollectionQueueLock(task, operation = 'sync', projectRef = runtimeEnvironment.projectRef) {
+  const lockName = `acprod-collection-${operation}:${projectRef}`;
+  if (globalThis.navigator?.locks?.request) {
+    return navigator.locks.request(lockName, { ifAvailable: true }, (lock) => (
+      lock ? task() : null
+    ));
+  }
+  // Sem Web Locks, não criamos uma cadeia de Promises nem em outra montagem
+  // do hook. Idempotência no servidor continua protegendo outros dispositivos.
+  if (fallbackQueueLocks.has(lockName)) return null;
+  fallbackQueueLocks.add(lockName);
+  try {
+    return await task();
+  } finally {
+    fallbackQueueLocks.delete(lockName);
+  }
+}
 
 function emitBatchResult(payload) {
   try {
@@ -162,7 +185,10 @@ export function invalidateAffectedCollectionQueries(queryClient, payload = {}, d
     || defaults.operatorId;
   const affected = (query) => {
     const key = query.queryKey || [];
-    if (key[0] === 'collection-kpis') return !cellName || key[1] === cellName;
+    if (key[0] === 'collection-kpis') {
+      return (!cellName || key[1] === cellName)
+        && (!machineId || !key[2] || key[2] === machineId);
+    }
     if (key[0] === 'operator-shift-kpis') {
       return !affectedOperatorId || key[1] === affectedOperatorId;
     }
@@ -172,7 +198,11 @@ export function invalidateAffectedCollectionQueries(queryClient, payload = {}, d
     }
     return false;
   };
-  queryClient.invalidateQueries({ predicate: affected });
+  scheduleCollectionQueryInvalidation(
+    queryClient,
+    { predicate: affected },
+    JSON.stringify(['collection-scope', cellName || null, machineId || null, affectedOperatorId || null]),
+  );
 }
 
 /**
@@ -222,9 +252,11 @@ export function useCollectionQueue(processFn, options = {}) {
   const scheduledStatsRefreshRef = useRef(null);
   const statsRefreshInFlightRef = useRef(false);
   const statsRefreshQueuedRef = useRef(false);
-  const fallbackLockRef = useRef(Promise.resolve());
   const realtimeStatusRef = useRef('DISCONNECTED');
+  const reconciliationWakeRef = useRef(null);
   const appliedProjectionIdsRef = useRef(new Set());
+  const publishedFinalIdsRef = useRef(new Set());
+  const terminalEventIdsRef = useRef(new Set());
   const pipelineFlagModesRef = useRef({ ingress: null, broadcast: null });
   const processFnRef = useRef(processFn);
   const processBatchFnRef = useRef(processBatchFn);
@@ -267,15 +299,15 @@ export function useCollectionQueue(processFn, options = {}) {
   }, [refreshStats]);
 
   const refreshStatsSafely = useCallback((immediate = false) => {
-    if (scheduledStatsRefreshRef.current !== null) {
-      clearTimeout(scheduledStatsRefreshRef.current);
-      scheduledStatsRefreshRef.current = null;
-    }
-
     if (immediate) {
+      if (scheduledStatsRefreshRef.current !== null) {
+        clearTimeout(scheduledStatsRefreshRef.current);
+        scheduledStatsRefreshRef.current = null;
+      }
       runStatsRefresh();
       return;
     }
+    if (scheduledStatsRefreshRef.current !== null) return;
 
     scheduledStatsRefreshRef.current = setTimeout(() => {
       scheduledStatsRefreshRef.current = null;
@@ -283,17 +315,34 @@ export function useCollectionQueue(processFn, options = {}) {
     }, QUEUE_STATS_REFRESH_DEBOUNCE_MS);
   }, [runStatsRefresh]);
 
-  const withQueueLock = useCallback(async (task) => {
-    if (navigator.locks?.request) {
-      return navigator.locks.request('acprod-collection-sync', task);
-    }
-
-    const currentTask = fallbackLockRef.current.then(task, task);
-    fallbackLockRef.current = currentTask.catch(() => undefined);
-    return currentTask;
-  }, []);
-
   const handleBatchResult = useCallback((payload) => {
+    const state = payload.state || collectionStateFromResult(payload.result);
+    const clientEventId = payload.event?.client_event_id || payload.result?.client_event_id;
+    const terminal = isCollectionTerminalState(state);
+    // O Broadcast pode finalizar antes da resposta HTTP do lote. Um ACK
+    // atrasado nunca rebaixa uma decisão já exibida para "aguardando". A
+    // proteção é por evento: a próxima leitura continua recebendo seu ACK.
+    if (clientEventId && !terminal && terminalEventIdsRef.current.has(clientEventId)) return;
+    if (clientEventId && terminal) {
+      terminalEventIdsRef.current.add(clientEventId);
+      if (terminalEventIdsRef.current.size > 2_000) {
+        terminalEventIdsRef.current.delete(terminalEventIdsRef.current.values().next().value);
+      }
+    }
+    if (state === COLLECTION_STATES.DATABASE_ACKNOWLEDGED || state === COLLECTION_STATES.PROCESSING) {
+      reconciliationWakeRef.current?.();
+    }
+    if (clientEventId && terminal) {
+      const correction = payload.result?.projection_kind === 'correction'
+        ? payload.result.outbox_id || payload.result.projected_at || 'correction'
+        : 'decision';
+      const key = `${clientEventId}:${state}:${correction}`;
+      if (publishedFinalIdsRef.current.has(key)) return;
+      publishedFinalIdsRef.current.add(key);
+      if (publishedFinalIdsRef.current.size > 2_000) {
+        publishedFinalIdsRef.current.delete(publishedFinalIdsRef.current.values().next().value);
+      }
+    }
     emitBatchResult(payload);
     if (typeof onResultRef.current === 'function') {
       onResultRef.current(payload);
@@ -303,11 +352,9 @@ export function useCollectionQueue(processFn, options = {}) {
   }, []);
 
   useEffect(() => {
-    const realtimeRequested = microBatch
-      && eventKind === COLLECTION_EVENT_KINDS.PRODUCTION_STAGE
-      && Boolean(cellId)
-      && options.enableV3Realtime !== false;
-    if (!realtimeRequested) {
+    const reconciliationRequested = microBatch
+      && eventKind === COLLECTION_EVENT_KINDS.PRODUCTION_STAGE;
+    if (!reconciliationRequested) {
       setPipelineV3Enabled(false);
       setRealtimeStatusSafely('DISABLED');
       return undefined;
@@ -315,7 +362,10 @@ export function useCollectionQueue(processFn, options = {}) {
 
     let cancelled = false;
     let subscription = null;
-    let reconciliationInterval = null;
+    let reconciliationTimer = null;
+    let reconciliationDueAt = 0;
+    let reconciliationInFlight = false;
+    let reconciliationWakePending = false;
     let flagRefreshInterval = null;
     const channelStatuses = new Map();
 
@@ -326,7 +376,7 @@ export function useCollectionQueue(processFn, options = {}) {
         flags,
         'collection_pipeline_v3_broadcast',
         { deviceId, cellId, machineId },
-      ),
+      ) && options.enableV3Realtime !== false,
     });
 
     // Uma tela aberta durante rollout/rollback não pode ficar eternamente com
@@ -366,6 +416,11 @@ export function useCollectionQueue(processFn, options = {}) {
       if (cancelled || !update) return;
       const payload = update.payload || {};
       const eventName = payload.broadcast_event;
+      const affectedDefaults = {
+        cellName: update.event?.cellName || cellName,
+        machineId: update.event?.machineId || null,
+        operatorId: update.event?.operatorId || null,
+      };
       if (eventName === 'collection.projection_delta') {
         const projectionKey = getCollectionProjectionDedupeKey(payload);
         if (projectionKey && appliedProjectionIdsRef.current.has(projectionKey)) return;
@@ -376,10 +431,11 @@ export function useCollectionQueue(processFn, options = {}) {
             appliedProjectionIdsRef.current.delete(oldest);
           }
         }
-        applyCollectionProjectionDelta(queryClient, payload, {
-          cellName,
-          machineId,
-        });
+        // A fotografia pode já conter este evento quando o Broadcast chega.
+        // Sem watermark transacional, somar o delta causaria dupla contagem.
+        // Confirmação individual é imediata; agregados vêm do servidor juntos
+        // em uma janela limitada, inclusive para eventos de outro dispositivo.
+        invalidateAffectedCollectionQueries(queryClient, payload, affectedDefaults);
         options.onProjectionDelta?.(payload);
         if (update.event && update.state) {
           handleBatchResult({
@@ -392,18 +448,13 @@ export function useCollectionQueue(processFn, options = {}) {
             batchIndex: 0,
             batchCount: 1,
           });
-          invalidateAffectedCollectionQueries(queryClient, payload, {
-            cellName,
-            machineId,
-            operatorId,
-          });
           options.onFinalized?.(payload);
         }
         return;
       }
 
       const state = update.state || collectionStateFromResult(payload);
-      handleBatchResult({
+      if (update.event) handleBatchResult({
         event: update.event,
         result: payload.result ?? payload.resultado ?? payload,
         error: state === COLLECTION_STATES.DEAD_LETTERED
@@ -416,11 +467,7 @@ export function useCollectionQueue(processFn, options = {}) {
         batchCount: 1,
       });
       if (isCollectionTerminalState(state)) {
-        invalidateAffectedCollectionQueries(queryClient, payload, {
-          cellName,
-          machineId,
-          operatorId,
-        });
+        invalidateAffectedCollectionQueries(queryClient, payload, affectedDefaults);
         options.onFinalized?.(payload);
       }
     };
@@ -434,24 +481,64 @@ export function useCollectionQueue(processFn, options = {}) {
       }
     };
 
+    const scheduleReconciliation = (delay) => {
+      if (cancelled) return;
+      const dueAt = Date.now() + delay;
+      if (reconciliationTimer !== null && reconciliationDueAt <= dueAt) return;
+      if (reconciliationTimer !== null) window.clearTimeout(reconciliationTimer);
+      reconciliationDueAt = dueAt;
+      reconciliationTimer = window.setTimeout(() => {
+        reconciliationTimer = null;
+        reconcile();
+      }, delay);
+    };
+
+    const requestReconciliation = () => {
+      if (cancelled) return;
+      if (reconciliationInFlight) {
+        reconciliationWakePending = true;
+        return;
+      }
+      scheduleReconciliation(realtimeStatusRef.current === 'SUBSCRIBED'
+        ? COLLECTION_RECONCILIATION_CONNECTED_STALE_MS
+        : COLLECTION_RECONCILIATION_DISCONNECTED_STALE_MS);
+    };
+    reconciliationWakeRef.current = requestReconciliation;
+
     const reconcile = async () => {
-      if (cancelled || globalThis.navigator?.onLine === false) return;
+      if (cancelled || reconciliationInFlight) return;
+      reconciliationInFlight = true;
+      let hasMore = false;
       const connected = realtimeStatusRef.current === 'SUBSCRIBED';
       try {
-        const updates = await reconcileCollectionEventsV3({
+        const updates = globalThis.navigator?.onLine === false ? null : await withCollectionQueueLock(() => reconcileCollectionEventsV3({
           eventKind,
-          limit: 25,
+          limit: COLLECTION_RECONCILIATION_BATCH_SIZE,
           olderThanMs: connected
             ? COLLECTION_RECONCILIATION_CONNECTED_STALE_MS
             : COLLECTION_RECONCILIATION_DISCONNECTED_STALE_MS,
-        });
-        for (const update of updates) await publishUpdate(update);
+        }), 'reconcile');
+        hasMore = updates?.hasMore === true;
+        for (const update of updates || []) await publishUpdate(update);
       } catch (error) {
         if (!cancelled) {
           console.warn('[CollectionQueue] Reconciliação V3 indisponível:', error);
         }
+      } finally {
+        reconciliationInFlight = false;
+        const delay = hasMore ? COLLECTION_RECONCILIATION_CATCHUP_MS
+          : reconciliationWakePending ? (connected
+            ? COLLECTION_RECONCILIATION_CONNECTED_STALE_MS
+            : COLLECTION_RECONCILIATION_DISCONNECTED_STALE_MS)
+            : COLLECTION_RECONCILIATION_INTERVAL_MS;
+        reconciliationWakePending = false;
+        scheduleReconciliation(delay);
       }
     };
+
+    // ACKs V2 também são duráveis. A reconciliação não depende de flag V3,
+    // conexão Broadcast nem sucesso na consulta de flags de rollout.
+    reconcile();
 
     Promise.resolve(options.pipelineFlags || getCollectionPipelineFlagsV3())
       .then((flags) => {
@@ -496,11 +583,6 @@ export function useCollectionQueue(processFn, options = {}) {
           setRealtimeStatusSafely('DISCONNECTED');
         }
 
-        reconciliationInterval = window.setInterval(
-          reconcile,
-          COLLECTION_RECONCILIATION_INTERVAL_MS,
-        );
-        reconcile();
       })
       .catch((error) => {
         if (cancelled) return;
@@ -512,7 +594,8 @@ export function useCollectionQueue(processFn, options = {}) {
 
     return () => {
       cancelled = true;
-      if (reconciliationInterval) window.clearInterval(reconciliationInterval);
+      if (reconciliationWakeRef.current === requestReconciliation) reconciliationWakeRef.current = null;
+      if (reconciliationTimer) window.clearTimeout(reconciliationTimer);
       if (flagRefreshInterval) window.clearInterval(flagRefreshInterval);
       window.removeEventListener('focus', requestFlagRefresh);
       window.removeEventListener('online', requestFlagRefresh);
@@ -540,7 +623,7 @@ export function useCollectionQueue(processFn, options = {}) {
   const flush = useCallback(async () => {
     if (flushingRef.current || !navigator.onLine) return;
 
-    await withQueueLock(async () => {
+    await withCollectionQueueLock(async () => {
       if (flushingRef.current || !navigator.onLine) return;
       flushingRef.current = true;
       setFlushing(true);
@@ -574,7 +657,6 @@ export function useCollectionQueue(processFn, options = {}) {
     eventKind,
     microBatch,
     refreshStats,
-    withQueueLock,
   ]);
 
   const scheduleFlush = useCallback(() => {
@@ -750,16 +832,30 @@ export function useCollectionQueue(processFn, options = {}) {
       };
     }
 
-    const result = await withQueueLock(() => (
+    const result = await withCollectionQueueLock(() => (
       processCollectionEvent(clientEventId, processFnRef.current)
     ));
     refreshStatsSafely();
+    if (result === null) {
+      scheduleFlush();
+      const error = new Error('Leitura preservada na fila. Outro envio está em andamento; a sincronização continuará automaticamente.');
+      error.code = 'COLLECTION_SYNC_BUSY';
+      error.retryable = true;
+      error.result = {
+        success: false,
+        pending: true,
+        result_status: 'pending_database',
+        collection_state: COLLECTION_STATES.PENDING_DATABASE,
+        message: error.message,
+        client_event_id: clientEventId,
+      };
+      throw error;
+    }
     return result;
   }, [
     microBatch,
     refreshStatsSafely,
     scheduleFlush,
-    withQueueLock,
   ]);
 
   const retryQueueErrors = useCallback(async () => {

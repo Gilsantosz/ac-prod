@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
+import { scheduleCollectionQueryInvalidation } from '@/hooks/collectionQueryInvalidation';
 
 // Somente tabelas que realmente precisam refletir movimentações produtivas em tempo real.
 // Cadastros, alertas, perfis, automações e históricos administrativos usam consultas sob demanda.
@@ -64,6 +65,7 @@ const TABLE_TO_QUERY_KEYS = {
   ],
   production_stage_readings: [
     ['stageReadings'],
+    ['operator-shift-kpis'],
     ['production-lots'],
     ['collection-history'],
     ['collection-kpis'],
@@ -211,7 +213,6 @@ export function useProductionRealtimeSync(options = {}) {
     enabled = true,
     cellName,
     machineId,
-    debounceMs = 300,
     channelName = 'production-realtime-sync',
   } = options;
   const queryClient = useQueryClient();
@@ -219,18 +220,20 @@ export function useProductionRealtimeSync(options = {}) {
   useEffect(() => {
     if (!enabled) return undefined;
 
-    const debounceTimers = new Map();
-
-    const triggerInvalidate = (queryKey) => {
-      const keyStr = JSON.stringify(queryKey);
-      if (debounceTimers.has(keyStr)) {
-        clearTimeout(debounceTimers.get(keyStr));
-      }
-      const timer = setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey });
-        debounceTimers.delete(keyStr);
-      }, debounceMs);
-      debounceTimers.set(keyStr, timer);
+    const triggerInvalidate = (queryKey, eventCell = null, eventMachine = null, eventOperator = null) => {
+      const scoped = ['stageReadings', 'collection-kpis'].includes(queryKey[0]);
+      const predicate = scoped ? (query) => (
+        (!eventCell || !query.queryKey?.[1]
+          || String(query.queryKey[1]).toLowerCase() === String(eventCell).toLowerCase())
+        && (!eventMachine || !query.queryKey?.[2] || query.queryKey[2] === eventMachine)
+      ) : queryKey[0] === 'operator-shift-kpis' ? (query) => (
+        !eventOperator || query.queryKey?.[1] === eventOperator
+      ) : undefined;
+      scheduleCollectionQueryInvalidation(
+        queryClient,
+        { queryKey, predicate },
+        JSON.stringify([queryKey, eventCell, eventMachine, eventOperator]),
+      );
     };
 
     const invalidateOperationalBootstrap = () => {
@@ -241,9 +244,7 @@ export function useProductionRealtimeSync(options = {}) {
         ['cellKpis'],
         ['cells'],
         ['production-stage-policies'],
-      ].forEach((queryKey) => {
-        queryClient.invalidateQueries({ queryKey, refetchType: 'active' });
-      });
+      ].forEach((queryKey) => triggerInvalidate(queryKey));
     };
 
     // Dashboard.jsx usa initialData=[] para evitar layout vazio. Quando essa query
@@ -317,7 +318,7 @@ export function useProductionRealtimeSync(options = {}) {
       }
 
       queryKeys.forEach((queryKey) => {
-        triggerInvalidate(queryKey);
+        triggerInvalidate(queryKey, eventCell, eventMachine, newRow.operator_id || oldRow.operator_id);
       });
     };
 
@@ -351,13 +352,13 @@ export function useProductionRealtimeSync(options = {}) {
           console.warn('[Production Realtime] Canal websocket temporariamente indisponível. Ativando fallback de atualização periódica.');
           if (!fallbackInterval) {
             fallbackInterval = setInterval(() => {
-              queryClient.invalidateQueries({ queryKey: ['production'] });
-              queryClient.invalidateQueries({ queryKey: ['production-lots'] });
-              queryClient.invalidateQueries({ queryKey: ['occurrences'] });
-              queryClient.invalidateQueries({ queryKey: ['collection-kpis'] });
-              queryClient.invalidateQueries({ queryKey: ['cellKpis'] });
-              queryClient.invalidateQueries({ queryKey: ['cells'] });
-              queryClient.invalidateQueries({ queryKey: ['production-stage-policies'] });
+              triggerInvalidate(['production']);
+              triggerInvalidate(['production-lots']);
+              triggerInvalidate(['occurrences']);
+              triggerInvalidate(['collection-kpis']);
+              triggerInvalidate(['cellKpis']);
+              triggerInvalidate(['cells']);
+              triggerInvalidate(['production-stage-policies']);
             }, 15000);
           }
         } else if (status === 'SUBSCRIBED') {
@@ -375,13 +376,13 @@ export function useProductionRealtimeSync(options = {}) {
       console.warn('[Production Realtime] Erro ao registrar canal realtime:', err);
       if (!fallbackInterval) {
         fallbackInterval = setInterval(() => {
-          queryClient.invalidateQueries({ queryKey: ['production'] });
-          queryClient.invalidateQueries({ queryKey: ['production-lots'] });
-          queryClient.invalidateQueries({ queryKey: ['occurrences'] });
-          queryClient.invalidateQueries({ queryKey: ['collection-kpis'] });
-          queryClient.invalidateQueries({ queryKey: ['cellKpis'] });
-          queryClient.invalidateQueries({ queryKey: ['cells'] });
-          queryClient.invalidateQueries({ queryKey: ['production-stage-policies'] });
+          triggerInvalidate(['production']);
+          triggerInvalidate(['production-lots']);
+          triggerInvalidate(['occurrences']);
+          triggerInvalidate(['collection-kpis']);
+          triggerInvalidate(['cellKpis']);
+          triggerInvalidate(['cells']);
+          triggerInvalidate(['production-stage-policies']);
         }, 15000);
       }
     }
@@ -396,7 +397,6 @@ export function useProductionRealtimeSync(options = {}) {
           /* noop */
         }
       }
-      debounceTimers.forEach(clearTimeout);
     };
-  }, [queryClient, enabled, cellName, machineId, debounceMs, channelName]);
+  }, [queryClient, enabled, cellName, machineId, channelName]);
 }

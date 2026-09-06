@@ -33,6 +33,7 @@ function cancelTransactionComplete(tx) {
 
 function scheduleTransactionComplete(tx) {
   cancelTransactionComplete(tx);
+  if (tx.pendingCursors > 0 || tx.pendingRequests > 0) return;
   tx.completeTimer = setTimeout(() => {
     tx.completeTimer = null;
     if (tx.mode === 'readwrite') {
@@ -45,34 +46,58 @@ function scheduleTransactionComplete(tx) {
 }
 
 function createCursorRequest(tx, range, source) {
+  tx.pendingCursors = (tx.pendingCursors || 0) + 1;
   metrics.cursorReads.push({ source, range });
+  const keyFor = (item) => {
+    if (source === 'by_status_id') return [item.status, item.client_event_id];
+    if (source === 'by_status_source_created') return [item.status, item.source_mode || 'live', item.created_at_client];
+    return item.client_event_id;
+  };
+  const compare = (a, b) => {
+    if (Array.isArray(a) && Array.isArray(b)) {
+      for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+        const difference = compare(a[index], b[index]);
+        if (difference) return difference;
+      }
+      return a.length - b.length;
+    }
+    if (Array.isArray(a)) return 1;
+    if (Array.isArray(b)) return -1;
+    return String(a).localeCompare(String(b));
+  };
   const eligible = Array.from(store.values())
     .filter((item) => {
-      if (!range || range.type !== 'lowerBound') return true;
-      const comparison = item.client_event_id.localeCompare(String(range.lower));
-      return range.lowerOpen ? comparison > 0 : comparison >= 0;
+      if (!range) return true;
+      const lower = compare(keyFor(item), range.lower);
+      const upper = range.upper === undefined ? -1 : compare(keyFor(item), range.upper);
+      return (range.lowerOpen ? lower > 0 : lower >= 0)
+        && (range.upperOpen ? upper < 0 : upper <= 0);
     })
-    .sort((a, b) => a.client_event_id.localeCompare(b.client_event_id));
+    .sort((a, b) => compare(keyFor(a), keyFor(b))
+      || a.client_event_id.localeCompare(b.client_event_id));
   const req = { onsuccess: null, onerror: null };
   let position = 0;
 
   const emitCursor = () => {
     setTimeout(() => {
       const item = eligible[position];
-      scheduleTransactionComplete(tx);
       if (!item) {
         req.onsuccess?.({ target: { result: null } });
+        tx.pendingCursors -= 1;
+        scheduleTransactionComplete(tx);
         return;
       }
 
       tx.cursorItems += 1;
+      let continued = false;
       req.onsuccess?.({
         target: {
           result: {
-            key: item.client_event_id,
+            key: keyFor(item),
             primaryKey: item.client_event_id,
             value: item,
             continue: () => {
+              continued = true;
               cancelTransactionComplete(tx);
               position += 1;
               emitCursor();
@@ -80,6 +105,10 @@ function createCursorRequest(tx, range, source) {
           },
         },
       });
+      if (!continued) {
+        tx.pendingCursors -= 1;
+        scheduleTransactionComplete(tx);
+      }
     }, metrics.indexDelayMs);
   };
 
@@ -102,6 +131,10 @@ const mockDb = {
       deleteCalls: 0,
       putCalls: 0,
       mode,
+      abort: () => {
+        cancelTransactionComplete(tx);
+        tx.onabort?.({ target: tx });
+      },
     };
     tx.objectStore = () => ({
       put: (item) => {
@@ -111,8 +144,11 @@ const mockDb = {
         scheduleTransactionComplete(tx);
       },
       get: (key) => {
+        tx.pendingRequests = (tx.pendingRequests || 0) + 1;
         const req = { onsuccess: null };
         setTimeout(() => {
+          tx.pendingRequests -= 1;
+          scheduleTransactionComplete(tx);
           req.onsuccess?.({ target: { result: store.get(key) } });
         }, 5);
         return req;
@@ -127,6 +163,7 @@ const mockDb = {
       },
       openCursor: (range) => createCursorRequest(tx, range, 'objectStore'),
       index: (indexName) => ({
+        openCursor: (range) => createCursorRequest(tx, range, indexName),
         getAll: (value) => {
           metrics.indexReads.push({ indexName, value });
           const req = { onsuccess: null };
@@ -153,6 +190,7 @@ const mockDb = {
 
 const originalIdbKeyRange = globalThis.IDBKeyRange;
 globalThis.IDBKeyRange = {
+  bound: (lower, upper, lowerOpen, upperOpen) => ({ lower, upper, lowerOpen, upperOpen }),
   lowerBound: (lower, lowerOpen) => ({
     type: 'lowerBound',
     lower,
@@ -189,6 +227,12 @@ import {
   getQueueStats,
   getQueueStatsByCellMachine,
   markEventError,
+  markEventProcessing,
+  markEventDatabaseAcknowledged,
+  markEventFinalized,
+  getUnresolvedCollectionEvents,
+  getPendingCollectionEvents,
+  claimCollectionEventsForTransport,
   pinCollectionPipelineVersion,
   reassignFirstCollectionPipelineAttempt,
   pruneOldSynced,
@@ -482,6 +526,122 @@ describe('Collection Local Queue SLA & Concurrency', () => {
 
     const recentEvent = store.get(recentEventId);
     expect(recentEvent.status).toBe('processing');
+  });
+
+  it('preserva aprovação contra erro HTTP, ACK e claim locais atrasados', async () => {
+    const id = await enqueueCollectionEvent({ client_event_id: 'terminal-race', rawValue: '09906655' });
+    await markEventFinalized(id, { result: { success: true, status: 'approved' } });
+    await Promise.all([
+      markEventError(id, Object.assign(new Error('HTTP timeout'), { retryable: true })),
+      markEventProcessing(id),
+      markEventDatabaseAcknowledged(id),
+    ]);
+    expect(store.get(id)).toMatchObject({
+      status: 'synced', collection_state: 'APPROVED', retries: 0,
+      result: { status: 'approved', success: true },
+    });
+  });
+
+  it('recibo canônico tardio recupera erro de transporte esgotado mas não DLQ do servidor', async () => {
+    const id = await enqueueCollectionEvent({ client_event_id: 'late-receipt', rawValue: '09906655' });
+    await markEventError(id, Object.assign(new Error('resposta perdida'), { retryable: true }), 1);
+    expect(store.get(id)).toMatchObject({ collection_state: 'DEAD_LETTERED', decision_authority: 'transport' });
+    await markEventFinalized(id, { result: { status: 'approved' } });
+    expect(store.get(id)).toMatchObject({ collection_state: 'APPROVED', decision_authority: 'server' });
+  });
+
+  it('não sobrescreve evento existente ao capturar o mesmo client_event_id', async () => {
+    const id = await enqueueCollectionEvent({ client_event_id: 'capture-replay', rawValue: '09906655', operator_id: 'old' });
+    await markEventFinalized(id, { result: { status: 'approved' } });
+    await enqueueCollectionEvent({ client_event_id: id, rawValue: '99999999', operator_id: 'other' });
+    expect(store.get(id)).toMatchObject({ rawValue: '09906655', operator_id: 'old', status: 'synced' });
+  });
+
+  it('não reenfileira recibos ACK/PROCESSING antigos durante recuperação', async () => {
+    const old = new Date(Date.now() - 300_000).toISOString();
+    for (const state of ['DATABASE_ACKNOWLEDGED', 'PROCESSING']) {
+      store.set(state, { client_event_id: state, status: 'processing', collection_state: state,
+        created_at_client: old, updated_at: old });
+    }
+    expect(await recoverStaleProcessingEvents(120000)).toBe(0);
+    expect([...store.values()].every((event) => event.status === 'processing')).toBe(true);
+  });
+
+  it('claim de micro-lote usa uma transação e não recupera snapshots já reclamados', async () => {
+    const now = new Date(Date.now() - 5000).toISOString();
+    const events = Array.from({ length: 25 }, (_, index) => ({
+      client_event_id: `claim-${index}`, status: 'pending', collection_state: 'PENDING_DATABASE',
+      created_at_client: now, next_attempt_at: now,
+    }));
+    events.forEach((event) => store.set(event.client_event_id, event));
+    const claimed = await claimCollectionEventsForTransport(events);
+    expect(claimed).toHaveLength(25);
+    expect(metrics.readwriteTransactions).toBe(1);
+    expect(metrics.putCallsPerTransaction).toEqual([25]);
+    expect(await claimCollectionEventsForTransport(events)).toHaveLength(0);
+  });
+
+  it('busca pendentes FIFO limitados sem materializar histórico sincronizado', async () => {
+    for (let index = 0; index < 1000; index += 1) {
+      store.set(`old-${index}`, { client_event_id: `old-${index}`, status: 'synced' });
+    }
+    const now = Date.now();
+    for (let index = 0; index < 10; index += 1) {
+      store.set(`due-${index}`, { client_event_id: `due-${index}`, status: 'pending',
+        event_kind: 'production_stage', created_at_client: new Date(now - (10 - index) * 1000).toISOString() });
+    }
+    expect((await getPendingCollectionEvents({ limit: 3 })).map((event) => event.client_event_id))
+      .toEqual(['due-0', 'due-1', 'due-2']);
+    expect(metrics.fullScanCalls).toBe(0);
+    expect(metrics.cursorReads).toHaveLength(2);
+    expect(metrics.cursorReads[0].source).toBe('by_status_source_created');
+  });
+
+  it('compartilha snapshot concorrente e não mantém alarme de gravação histórica', async () => {
+    store.set('historic-slow', { client_event_id: 'historic-slow', status: 'synced', cellName: 'Corte',
+      created_at_client: new Date(Date.now() - 300_000).toISOString(), enqueue_duration_ms: 5000 });
+    const [all, cell] = await Promise.all([getQueueStats(), getQueueStatsByCellMachine('Corte')]);
+    expect(all).toMatchObject({ total: 1, hasSlowEnqueue: false });
+    expect(cell).toMatchObject({ total: 1, hasSlowEnqueue: false });
+    expect(metrics.fullScanCalls).toBe(1);
+  });
+
+  it('consulta live separadamente para não esconder novas leituras atrás de replay', async () => {
+    const old = new Date(Date.now() - 5000).toISOString();
+    for (let index = 0; index < 200; index += 1) {
+      const id = `offline-${index}`;
+      store.set(id, { client_event_id: id, status: 'pending', source_mode: 'offline_replay', created_at_client: old });
+    }
+    store.set('fresh-live', { client_event_id: 'fresh-live', status: 'pending', source_mode: 'live',
+      created_at_client: new Date().toISOString() });
+    const pending = await getPendingCollectionEvents({ limit: 25 });
+    expect(pending).toHaveLength(26);
+    expect(pending.some((event) => event.client_event_id === 'fresh-live')).toBe(true);
+    expect(metrics.fullScanCalls).toBe(0);
+  });
+
+  it('reconciliação rotativa ultrapassa IDs ausentes e inclui recibos V2 e V3', async () => {
+    const old = new Date(Date.now() - 300000).toISOString();
+    for (let index = 0; index < 205; index += 1) {
+      const id = `receipt-${String(index).padStart(3, '0')}`;
+      store.set(id, { client_event_id: id, status: 'processing', collection_state: 'DATABASE_ACKNOWLEDGED',
+        pipeline_version: index % 2 ? 2 : 3, event_kind: 'production_stage',
+        created_at_client: old, database_acknowledged_at: old });
+    }
+    store.set('unsent', { client_event_id: 'unsent', status: 'pending', event_kind: 'production_stage',
+      pipeline_version: null, created_at_client: old });
+    const first = await getUnresolvedCollectionEvents({ limit: 100 });
+    const second = await getUnresolvedCollectionEvents({ limit: 100 });
+    const last = await getUnresolvedCollectionEvents({ limit: 100 });
+    expect(first).toHaveLength(100);
+    expect(second).toHaveLength(100);
+    expect(last).toHaveLength(5);
+    expect(new Set([...first, ...second, ...last].map((event) => event.client_event_id)).size).toBe(205);
+    expect(first.hasMore).toBe(true);
+    expect(second.hasMore).toBe(true);
+    expect(last.hasMore).toBe(false);
+    expect(metrics.fullScanCalls).toBe(0);
+    expect([...first, ...second, ...last].some((event) => event.client_event_id === 'unsent')).toBe(false);
   });
 
   it('remove synced expirados por cursor com leitura e transação limitadas', async () => {

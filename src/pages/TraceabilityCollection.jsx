@@ -10,7 +10,8 @@ import OccurrenceQuickDialog from '@/components/entry/OccurrenceQuickDialog';
 import CollectionQueuePanel from '@/components/entry/CollectionQueuePanel';
 import { useAuth } from '@/lib/AuthContext';
 import { useOperatorSession } from '@/hooks/useOperatorSession';
-import { useCollectionQueue } from '@/hooks/useCollectionQueue';
+import { invalidateAffectedCollectionQueries, useCollectionQueue } from '@/hooks/useCollectionQueue';
+import { COLLECTION_QUERY_REFRESH_INTERVAL_MS } from '@/hooks/collectionQueryInvalidation';
 import { useCells } from '@/hooks/useCells';
 import { getOperatorAllowedCells } from '@/lib/operatorCellRules';
 import { fetchProductionMachines } from '@/lib/traceabilityService';
@@ -32,7 +33,7 @@ import CollectionFullscreenKiosk from '@/components/collection/CollectionFullscr
 import CollectionVolumeEntryPanel from '@/components/collection/CollectionVolumeEntryPanel';
 import CollectionErrorBoundary from '@/components/ui/CollectionErrorBoundary';
 import { getActiveDowntime } from '@/lib/downtimeService';
-import { recordSessionActivity } from '@/lib/sessionActivity';
+import { requestSessionActivity } from '@/lib/sessionActivity';
 import { isOperatorSessionSupersededError } from '@/lib/operatorSessionService';
 import {
   COLLECTION_STATES,
@@ -153,6 +154,7 @@ export default function TraceabilityCollection({ embedded = false }) {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [pieceToReject, setPieceToReject] = useState(null);
   const [refreshReadsSignal, setRefreshReadsSignal] = useState(0);
+  const refreshReadsTimerRef = useRef(null);
 
   // Estado para registro de paradas operacionais e modo kiosk em tela cheia
   const [downtimeDialogOpen, setDowntimeDialogOpen] = useState(false);
@@ -417,7 +419,7 @@ export default function TraceabilityCollection({ embedded = false }) {
   };
 
   // KPIs consistentes com a fonte do histórico de coletas
-  const { data: kpis = {} } = useQuery({
+  const { data: kpis = {}, isError: kpisUnavailable, dataUpdatedAt: kpisUpdatedAt } = useQuery({
     queryKey: [
       'collection-kpis',
       cellName,
@@ -436,17 +438,17 @@ export default function TraceabilityCollection({ embedded = false }) {
       pcpImportBatchId: feedback?.lot?.pcp_import_batch_id || null,
     }),
     enabled: !!cellName,
-    initialData: { total: 0, approved: 0, rejected: 0, blocked: 0 },
     staleTime: 0,
     refetchOnMount: true,
     retry: false,
     refetchInterval: false,
   });
 
-  const { data: shiftKpis = {} } = useQuery({
+  const { data: shiftKpis = {}, isError: shiftKpisUnavailable, dataUpdatedAt: shiftKpisUpdatedAt } = useQuery({
     queryKey: ['operator-shift-kpis', opSession?.id, shift, shiftRange.dateFrom, shiftRange.dateTo],
     queryFn: () => getOperatorShiftKpisV2(opSession?.id),
     enabled: !!opSession?.id,
+    retry: false,
     refetchInterval: false,
   });
 
@@ -465,23 +467,26 @@ export default function TraceabilityCollection({ embedded = false }) {
   const currentClientLotCode = feedback?.lot?.lot_code || selectedPiece?.lot_code || null;
 
   const refreshKpis = useCallback(() => {
-    queryClient.invalidateQueries({
-      predicate: (query) => query.queryKey?.[0] === 'collection-kpis'
-        && query.queryKey?.[1] === cellName,
-    });
-    queryClient.invalidateQueries({
-      predicate: (query) => query.queryKey?.[0] === 'operator-shift-kpis'
-        && query.queryKey?.[1] === opSession?.id,
-    });
-    queryClient.invalidateQueries({
-      queryKey: ['stageReadings', cellName, machine?.id],
+    invalidateAffectedCollectionQueries(queryClient, {
+      cellName,
+      machineId: machine?.id,
+      operatorId: opSession?.id,
     });
   }, [queryClient, cellName, machine?.id, opSession?.id]);
 
   const refreshData = useCallback(() => {
     refreshKpis();
-    setRefreshReadsSignal((value) => value + 1);
+    if (refreshReadsTimerRef.current !== null) return;
+    refreshReadsTimerRef.current = setTimeout(() => {
+      refreshReadsTimerRef.current = null;
+      setRefreshReadsSignal((value) => value + 1);
+    }, COLLECTION_QUERY_REFRESH_INTERVAL_MS);
   }, [refreshKpis]);
+
+  useEffect(() => () => {
+    if (refreshReadsTimerRef.current !== null) clearTimeout(refreshReadsTimerRef.current);
+    refreshReadsTimerRef.current = null;
+  }, [cellName, machine?.id, opSession?.id]);
 
   // Busca silenciosa da timeline da peça ativa
   useEffect(() => {
@@ -573,20 +578,20 @@ export default function TraceabilityCollection({ embedded = false }) {
     const message = domainResult?.message || error?.message;
     if (state === COLLECTION_STATES.APPROVED) {
       toast.success(message || 'Leitura aprovada.', {
-        id: `collection-final-${clientEventId}`,
+        id: 'collection-final-approved',
       });
-      navigator.vibrate?.([70, 40, 70]);
+      if (isLatest) navigator.vibrate?.([70, 40, 70]);
     } else if ([
       COLLECTION_STATES.BLOCKED,
       COLLECTION_STATES.DUPLICATED,
       COLLECTION_STATES.PENDING_REVIEW,
     ].includes(state)) {
       toast.warning(message || 'Leitura requer atenção.', {
-        id: `collection-final-${clientEventId}`,
+        id: 'collection-final-warning',
       });
     } else {
       toast.error(message || 'Leitura não aprovada.', {
-        id: `collection-final-${clientEventId}`,
+        id: 'collection-final-error',
       });
     }
 
@@ -633,7 +638,19 @@ export default function TraceabilityCollection({ embedded = false }) {
   const handleRead = useCallback(async (payload) => {
     // Leitores RFID e alguns coletores integrados não disparam eventos de
     // teclado/pointer no navegador; a tentativa de coleta é atividade real.
-    recordSessionActivity();
+    // A política de expiração deve autorizar a atividade antes de renovar o
+    // prazo. Uma câmera retomada após suspensão não pode ressuscitar sessão.
+    if (!requestSessionActivity()) {
+      const result = {
+        success: false,
+        status: 'session_expired',
+        alert_level: 'red',
+        message: 'Sessão encerrada por inatividade. Faça login novamente antes de coletar.',
+      };
+      updateFeedback(result);
+      toast.error(result.message, { id: 'collection-session-expired' });
+      return result;
+    }
 
     if (!collectionContextReady) {
       const result = {
@@ -944,7 +961,6 @@ export default function TraceabilityCollection({ embedded = false }) {
               ? collectionContextMessage
               : ''}
           onSuccess={(result) => {
-            recordSessionActivity();
             refreshData();
             updateFeedback({
               success: true,
@@ -1083,6 +1099,11 @@ export default function TraceabilityCollection({ embedded = false }) {
       {/* Detalhamento de Peças da Estação / Célula */}
       {cellName && (
         <div className="space-y-4">
+          {(kpisUnavailable || shiftKpisUnavailable) && (
+            <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
+              Indicadores temporariamente indisponíveis. Os últimos valores confirmados são preservados; isso não significa produção zerada. A captura das leituras continua independente.
+            </div>
+          )}
           {/* Painel de Integridade da Estação */}
           <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-4">
             <div className="flex justify-between items-center pb-2">
@@ -1091,12 +1112,14 @@ export default function TraceabilityCollection({ embedded = false }) {
               </h4>
               <div className="flex items-center gap-2">
                 <span className={`h-2 w-2 rounded-full ${
-                  collectionOnline && (!pipelineV3Enabled || realtimeStatus === 'SUBSCRIBED')
+                  collectionOnline && !kpisUnavailable && !shiftKpisUnavailable && (!pipelineV3Enabled || realtimeStatus === 'SUBSCRIBED')
                     ? 'bg-emerald-500 animate-pulse'
                     : 'bg-slate-400'
                 }`} />
                 <span className="text-xs text-muted-foreground font-medium">
-                  {!collectionOnline
+                  {kpisUnavailable || shiftKpisUnavailable
+                    ? 'Indicadores aguardando atualização'
+                    : !collectionOnline
                     ? 'Offline — leituras preservadas localmente'
                     : pipelineV3Enabled && realtimeStatus !== 'SUBSCRIBED'
                       ? 'Reconciliação segura ativa'
@@ -1108,37 +1131,37 @@ export default function TraceabilityCollection({ embedded = false }) {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               <div className="bg-secondary/10 border border-border/30 rounded-xl p-3">
                 <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Previsto</p>
-                <p className="text-xl font-extrabold text-foreground mt-1 tabular-nums">{cellStats.expected}</p>
+                <p className="text-xl font-extrabold text-foreground mt-1 tabular-nums">{kpisUpdatedAt ? cellStats.expected : '—'}</p>
               </div>
               <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-xl p-3">
                 <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Aprovado</p>
-                <p className="text-xl font-extrabold text-emerald-600 mt-1 tabular-nums">{cellStats.approved}</p>
+                <p className="text-xl font-extrabold text-emerald-600 mt-1 tabular-nums">{kpisUpdatedAt ? cellStats.approved : '—'}</p>
               </div>
               <div className="bg-rose-500/5 border border-rose-500/10 rounded-xl p-3">
                 <p className="text-[10px] text-rose-600 font-bold uppercase tracking-wider">Reprovado</p>
-                <p className="text-xl font-extrabold text-rose-600 mt-1 tabular-nums">{cellStats.rejected}</p>
+                <p className="text-xl font-extrabold text-rose-600 mt-1 tabular-nums">{kpisUpdatedAt ? cellStats.rejected : '—'}</p>
               </div>
               <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3">
                 <p className="text-[10px] text-amber-600 font-bold uppercase tracking-wider">Pendente</p>
-                <p className="text-xl font-extrabold text-amber-600 mt-1 tabular-nums">{cellStats.pending}</p>
+                <p className="text-xl font-extrabold text-amber-600 mt-1 tabular-nums">{kpisUpdatedAt ? cellStats.pending : '—'}</p>
               </div>
               <div className="bg-purple-500/5 border border-purple-500/10 rounded-xl p-3">
                 <p className="text-[10px] text-purple-600 font-bold uppercase tracking-wider">Retrabalho</p>
-                <p className="text-xl font-extrabold text-purple-600 mt-1 tabular-nums">{cellStats.rework}</p>
+                <p className="text-xl font-extrabold text-purple-600 mt-1 tabular-nums">{kpisUpdatedAt ? cellStats.rework : '—'}</p>
               </div>
               <div className="bg-sky-500/5 border border-sky-500/10 rounded-xl p-3">
                 <p className="text-[10px] text-sky-600 font-bold uppercase tracking-wider">Reposição</p>
-                <p className="text-xl font-extrabold text-sky-600 mt-1 tabular-nums">{cellStats.replacement}</p>
+                <p className="text-xl font-extrabold text-sky-600 mt-1 tabular-nums">{kpisUpdatedAt ? cellStats.replacement : '—'}</p>
               </div>
             </div>
           </div>
 
           {/* Segunda linha: Leituras do Turno, Aprovadas, Reprovadas, Bloqueadas */}
-          <TraceabilityKpiCards kpis={{
+          {shiftKpisUpdatedAt ? <TraceabilityKpiCards kpis={{
             ...kpis,
             ...shiftKpis,
             total: (shiftKpis.approved || 0) + (shiftKpis.rejected || 0) + (shiftKpis.blocked || 0),
-          }} />
+          }} /> : <p className="text-sm text-muted-foreground">Indicadores do turno aguardando confirmação do servidor.</p>}
         </div>
       )}
 

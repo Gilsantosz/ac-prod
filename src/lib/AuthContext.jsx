@@ -16,6 +16,7 @@ import {
 import { getCachedSystemSettings, loadSystemSettings, subscribeSystemSettings } from '@/lib/systemSettingsService';
 import { resolveSessionPolicy } from '@/lib/sessionPolicy';
 import SessionTimeoutWarning from '@/components/auth/SessionTimeoutWarning';
+import { isAuthAccessDeniedError, isInvalidAuthSessionError } from '@/lib/authErrors';
 
 const AuthContext = createContext();
 const AUTH_STEP_TIMEOUT_MS = 3000;
@@ -25,13 +26,14 @@ const withTimeout = (promise, timeoutMs, fallback) => new Promise((resolve, reje
   Promise.resolve(promise).then(resolve, reject).finally(() => clearTimeout(timer));
 });
 const profileAccessError = (code, message) => Object.assign(new Error(message), { code });
-const isAccessDeniedError = (error) => ['USER_NOT_REGISTERED', 'USER_INACTIVE'].includes(error?.code);
+const isAccessDeniedError = isAuthAccessDeniedError;
 const inactivityError = (minutes) => ({
   type: 'inactivity_logout',
   message: `Sessão encerrada após ${minutes} minuto(s) sem atividade. Digite suas credenciais para continuar. As coletas pendentes neste aparelho foram preservadas.`,
 });
 
-const fetchProfile = async (supabaseUser) => {
+const pendingProfiles = new Map();
+const readProfile = async (supabaseUser) => {
   if (!supabaseUser) return null;
   const { data: profile, error } = await withTimeout(
     supabase.from('profiles').select('*').eq('id', supabaseUser.id).maybeSingle(),
@@ -51,13 +53,30 @@ const fetchProfile = async (supabaseUser) => {
   };
 };
 
+// SIGNED_IN is also emitted when a tab regains focus. Coalesce concurrent
+// checks, but do not cache authorization: a completed check must see revocation.
+const fetchProfile = (supabaseUser, generation) => {
+  if (!supabaseUser?.id) return Promise.resolve(null);
+  const key = `${supabaseUser.id}:${generation}`;
+  if (pendingProfiles.has(key)) return pendingProfiles.get(key);
+  const pending = readProfile(supabaseUser).finally(() => {
+    if (pendingProfiles.get(key) === pending) pendingProfiles.delete(key);
+  });
+  pendingProfiles.set(key, pending);
+  return pending;
+};
+
 const resolveSessionUser = async (session) => {
   if (!session?.user) return { user: null, shouldSignOut: false };
   const result = await withTimeout(supabase.auth.getUser(), AUTH_STEP_TIMEOUT_MS,
-    { data: { user: null }, error: { message: 'Timeout' } });
+    { data: { user: null }, error: { code: 'TIMEOUT' } });
   if (result?.data?.user && !result.error) return { user: result.data.user, shouldSignOut: false };
-  if (result?.error?.message === 'Timeout') return { user: session.user, shouldSignOut: false };
-  return { user: null, shouldSignOut: true };
+  if (isInvalidAuthSessionError(result?.error) || isAccessDeniedError(result?.error)) {
+    return { user: null, shouldSignOut: true };
+  }
+  // Never accept an unvalidated profile on startup, nor revoke a working
+  // session solely because Auth is slow/offline/rate-limited.
+  throw result?.error || profileAccessError('AUTH_UNAVAILABLE', 'Validação de sessão indisponível.');
 };
 
 export const AuthProvider = ({ children }) => {
@@ -66,6 +85,7 @@ export const AuthProvider = ({ children }) => {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [authError, setAuthError] = useState(() => getAuthSessionLock()?.reason === 'inactivity'
     ? { type: 'inactivity_logout', message: 'Sessão encerrada por inatividade. Digite suas credenciais para continuar.' } : null);
+  const [authConnectionError, setAuthConnectionError] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [settings, setSettings] = useState(() => getCachedSystemSettings());
   const [operatorSession, setOperatorSession] = useState(() => getOperatorSession());
@@ -77,6 +97,7 @@ export const AuthProvider = ({ children }) => {
   const initializingRef = useRef(true);
   const loginPendingRef = useRef(false);
   const logoutTaskRef = useRef(null);
+  const authCheckInFlightRef = useRef(false);
   const checkInactivityRef = useRef(() => false);
   const policy = resolveSessionPolicy(settings, user, operatorSession);
   const policyRef = useRef(policy);
@@ -96,6 +117,7 @@ export const AuthProvider = ({ children }) => {
     setIsLoadingAuth(false);
     setAuthChecked(true);
     setWarningSeconds(null);
+    setAuthConnectionError(null);
     setAuthError(error || (reason === 'inactivity' ? inactivityError(policyRef.current.timeoutMinutes) : null));
     // O operador desaparece imediatamente. Nenhuma fila IndexedDB é apagada.
     const operatorLogout = clearOperatorSession();
@@ -107,12 +129,36 @@ export const AuthProvider = ({ children }) => {
     return withTimeout(task, AUTH_STEP_TIMEOUT_MS, null);
   }, []);
   const expireInactiveSession = useCallback((options) => endSession('inactivity', options), [endSession]);
-  const rejectUnauthorizedSession = useCallback((error) => endSession('access_denied', {
-    redirect: false, error: {
-      type: isAccessDeniedError(error) ? 'user_not_registered' : 'auth_required',
-      message: error?.message || 'Não foi possível validar o acesso.',
-    },
-  }), [endSession]);
+  const alignSessionIdentity = useCallback((session) => {
+    if (userRef.current && session?.user?.id && userRef.current.id !== session.user.id) {
+      // A different account never inherits the last account's validated profile
+      // while its own validation is unavailable. Cancel any older profile read.
+      generationRef.current += 1;
+      userRef.current = null;
+      setUser(null);
+      setIsAuthenticated(false);
+      void clearOperatorSession({ notifyServer: false });
+    }
+    return generationRef.current;
+  }, []);
+  const rejectUnauthorizedSession = useCallback((error) => {
+    if (!isAccessDeniedError(error) && !isInvalidAuthSessionError(error)) {
+      const connectionError = { type: 'auth_unavailable',
+        message: 'Conexão de autenticação temporariamente indisponível. Tentando novamente sem apagar sua sessão ou coletas pendentes.',
+      };
+      setAuthConnectionError(connectionError);
+      // ProtectedRoute and Realtime treat authError as a blocking error.
+      // Keep an already validated workstation mounted during retry.
+      if (!userRef.current) setAuthError(connectionError);
+      return Promise.resolve(null);
+    }
+    return endSession('access_denied', {
+      redirect: false, error: {
+        type: isAccessDeniedError(error) ? 'user_not_registered' : 'auth_required',
+        message: error?.message || 'Não foi possível validar o acesso.',
+      },
+    });
+  }, [endSession]);
 
   const commitSession = useCallback(async (profile, session, generation, { freshLogin = false } = {}) => {
     const loaded = await withTimeout(loadSystemSettings().catch(() => settingsRef.current),
@@ -132,6 +178,7 @@ export const AuthProvider = ({ children }) => {
     setUser(profile);
     setIsAuthenticated(true);
     setAuthError(null);
+    setAuthConnectionError(null);
     return profile;
   }, [expireInactiveSession]);
 
@@ -155,14 +202,19 @@ export const AuthProvider = ({ children }) => {
         const result = await withTimeout(supabase.auth.getSession(), AUTH_STEP_TIMEOUT_MS,
           { data: { session: null }, timedOut: true });
         if (!isCurrent()) return;
+        if (result?.timedOut || result?.error) throw result.error || { code: 'TIMEOUT' };
         const session = result?.data?.session || (!result?.timedOut
           ? await withTimeout(restoreAuthSession(), AUTH_STEP_TIMEOUT_MS, null) : null);
-        if (!isCurrent() || !session?.user) return;
+        if (!isCurrent()) return;
+        if (!session?.user) {
+          if (getPersistedAuthAccessToken()) throw { code: 'AUTH_UNAVAILABLE' };
+          return;
+        }
         const resolved = await resolveSessionUser(session);
         if (!isCurrent()) return;
         if (resolved.shouldSignOut) { await endSession('invalid_session', { redirect: false }); return; }
         if (resolved.user) {
-          const profile = await fetchProfile(resolved.user);
+          const profile = await fetchProfile(resolved.user, generation);
           if (isCurrent()) await commitSession(profile, session, generation);
         }
       } catch (error) {
@@ -180,6 +232,9 @@ export const AuthProvider = ({ children }) => {
         generationRef.current += 1;
         lockAuthSession('logout');
       }
+      if (event === 'SIGNED_IN' && !loginPendingRef.current && !isAuthSessionLocked()) {
+        alignSessionIdentity(session);
+      }
       const eventGeneration = generationRef.current;
       const loginInProgress = loginPendingRef.current;
       const initializationInProgress = initializingRef.current;
@@ -193,6 +248,7 @@ export const AuthProvider = ({ children }) => {
           setUser(null);
           setIsAuthenticated(false);
           setWarningSeconds(null);
+          setAuthConnectionError(null);
           void clearOperatorSession({ notifyServer: false });
           return;
         }
@@ -202,7 +258,7 @@ export const AuthProvider = ({ children }) => {
         if (loginInProgress || initializationInProgress) return;
         if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user) {
           try {
-            const profile = await fetchProfile(session.user);
+            const profile = await fetchProfile(session.user, eventGeneration);
             if (isCurrent(eventGeneration)) await commitSession(profile, session, eventGeneration);
           } catch (error) {
             if (isCurrent(eventGeneration)) await rejectUnauthorizedSession(error);
@@ -218,7 +274,7 @@ export const AuthProvider = ({ children }) => {
       eventTimers.forEach(clearTimeout);
       subscription.unsubscribe();
     };
-  }, [commitSession, endSession, rejectUnauthorizedSession]);
+  }, [alignSessionIdentity, commitSession, endSession, rejectUnauthorizedSession]);
 
   useEffect(() => {
     const rejectUnauthenticatedCapture = (event) => {
@@ -337,28 +393,53 @@ export const AuthProvider = ({ children }) => {
   }, [endSession, expireInactiveSession, isAuthenticated]);
 
   const checkUserAuth = useCallback(async () => {
-    const generation = generationRef.current;
-    if (isAuthSessionLocked() || checkInactivityRef.current()) return;
-    setIsLoadingAuth(true);
+    let generation = generationRef.current;
+    if (authCheckInFlightRef.current || isAuthSessionLocked() || checkInactivityRef.current()) return;
+    authCheckInFlightRef.current = true;
+    // Background recovery must not unmount the active workstation/scanner.
+    if (!userRef.current) setIsLoadingAuth(true);
     try {
       const result = await withTimeout(supabase.auth.getSession(), AUTH_STEP_TIMEOUT_MS,
         { data: { session: null }, timedOut: true });
+      if (result?.timedOut || result?.error) throw result.error || { code: 'TIMEOUT' };
       const session = result?.data?.session || (!result?.timedOut
         ? await withTimeout(restoreAuthSession(), AUTH_STEP_TIMEOUT_MS, null) : null);
       if (generation !== generationRef.current || isAuthSessionLocked()) return;
+      if (!session?.user && getPersistedAuthAccessToken()) throw { code: 'AUTH_UNAVAILABLE' };
+      generation = alignSessionIdentity(session);
       const resolved = await resolveSessionUser(session);
       if (generation !== generationRef.current || isAuthSessionLocked()) return;
       if (resolved.shouldSignOut) await endSession('invalid_session');
       else if (resolved.user) {
-        const profile = await fetchProfile(resolved.user);
+        const profile = await fetchProfile(resolved.user, generation);
         await commitSession(profile, session, generation);
       }
     } catch (error) {
       if (generation === generationRef.current && !isAuthSessionLocked()) await rejectUnauthorizedSession(error);
     } finally {
+      authCheckInFlightRef.current = false;
       if (mountedRef.current) { setIsLoadingAuth(false); setAuthChecked(true); }
     }
-  }, [commitSession, endSession, rejectUnauthorizedSession]);
+  }, [alignSessionIdentity, commitSession, endSession, rejectUnauthorizedSession]);
+
+  useEffect(() => {
+    if (authConnectionError?.type !== 'auth_unavailable') return undefined;
+    let stopped = false;
+    let timer;
+    let delay = 5000;
+    const retry = async () => {
+      if (stopped || isAuthSessionLocked()) return;
+      if (navigator.onLine !== false && document.visibilityState === 'visible') {
+        await checkUserAuth();
+      }
+      if (!stopped) {
+        delay = Math.min(delay * 2, 30_000);
+        timer = setTimeout(retry, delay);
+      }
+    };
+    timer = setTimeout(retry, delay);
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [authConnectionError?.type, checkUserAuth]);
 
   const login = async (email, password) => {
     setIsLoadingAuth(true);
@@ -379,7 +460,7 @@ export const AuthProvider = ({ children }) => {
       if (generation !== generationRef.current || isAuthSessionLocked()) throw new Error('A tentativa de login foi encerrada. Tente novamente.');
       if (!result) throw new Error('O servidor demorou para responder. Tente novamente.');
       if (result.error) throw new Error('E-mail ou senha incorretos.');
-      const profile = await fetchProfile(result.data.user);
+      const profile = await fetchProfile(result.data.user, generation);
       const accepted = await commitSession(profile, result.data.session, generation, { freshLogin: true });
       if (!accepted) throw new Error('A tentativa de login foi encerrada. Tente novamente.');
       setAuthChecked(true);
@@ -409,7 +490,7 @@ export const AuthProvider = ({ children }) => {
   const logout = (shouldRedirect = true) => endSession('logout', { redirect: shouldRedirect });
   const navigateToLogin = () => navTo('/login');
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, isLoadingAuth, authError, authChecked,
+    <AuthContext.Provider value={{ user, isAuthenticated, isLoadingAuth, authError, authConnectionError, authChecked,
       login, register, logout, navigateToLogin, checkUserAuth,
       sessionInactivityMs: policy.timeoutMs, sessionPolicy: policy,
     }}>

@@ -51,6 +51,41 @@ def require_none(content: str, markers: tuple[str, ...], label: str) -> None:
             fail(f"{label} contém marcador proibido: {marker}")
 
 
+def audit_collection_queue_lock(queue_hook: str) -> None:
+    """Verify the current shared, project-scoped lock rather than a retired ref."""
+    require_all(
+        queue_hook,
+        (
+            "const fallbackQueueLocks = new Set();",
+            "export async function withCollectionQueueLock(",
+            "await withCollectionQueueLock(async () => {",
+            "const result = await withCollectionQueueLock(() => (",
+        ),
+        "proprietário único do envio da fila",
+    )
+    start = queue_hook.index("export async function withCollectionQueueLock(")
+    end = queue_hook.find("\nfunction ", start)
+    lock = queue_hook[start:end if end != -1 else len(queue_hook)]
+    require_all(
+        lock,
+        (
+            "operation = 'sync'",
+            "projectRef = runtimeEnvironment.projectRef",
+            "`acprod-collection-${operation}:${projectRef}`",
+            "navigator.locks.request(lockName, { ifAvailable: true }",
+            "lock ? task() : null",
+            "if (fallbackQueueLocks.has(lockName)) return null;",
+            "fallbackQueueLocks.add(lockName);",
+        ),
+        "lock limitado por projeto e operação",
+    )
+    require_all(
+        "".join(lock.split()),
+        ("try{returnawaittask();}finally{fallbackQueueLocks.delete(lockName);}",),
+        "liberação garantida do lock após sucesso ou falha",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", type=Path, default=Path("."))
@@ -556,12 +591,12 @@ def main() -> int:
         queue_hook,
         (
             "refreshStatsSafely",
-            "fallbackLockRef",
             "const id = await enqueueCollectionEvent(payload)",
             "não bloqueia o próximo código",
         ),
         "fila rápida e FIFO",
     )
+    audit_collection_queue_lock(queue_hook)
 
     realtime = read(repo / "src" / "hooks" / "useProductionRealtimeSync.js")
     require_all(realtime, ("production_cell_lot_states", "production_cell_active_contexts"), "mapa Realtime")

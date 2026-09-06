@@ -7,6 +7,13 @@ import {
   fetchAvailableGeneralLots,
   registerManualQuantitativeEntry,
 } from '@/lib/manualProductionService';
+import {
+  SESSION_ACTIVITY_EVENT,
+  clearSessionActivity,
+  getLastSessionActivity,
+  recordSessionActivity,
+} from '@/lib/sessionActivity';
+import { toast } from 'sonner';
 
 vi.mock('@/components/ui/select', () => ({
   Select: ({ value, onValueChange, disabled, children }) => (
@@ -152,5 +159,29 @@ describe('CollectionVolumeEntryPanel', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Parada ativa: Ajuste de setup');
     expect(screen.getByRole('button', { name: 'Contabilizar volume produzido' })).toBeDisabled();
+  });
+
+  it('não grava volume nem renova atividade quando a política recusa sessão expirada', async () => {
+    const onSuccess = vi.fn();
+    const view = renderPanel({ onSuccess });
+    await screen.findByRole('option', { name: 'Lote 26072640 · saldo 39' });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Lote Geral ativo' }), { target: { value: lot.batchId } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Usar saldo 39' }));
+
+    const expiredActivity = Date.now() - 60 * 60 * 1000;
+    recordSessionActivity(expiredActivity);
+    const refuseExpiredSession = (event) => event.preventDefault();
+    window.addEventListener(SESSION_ACTIVITY_EVENT, refuseExpiredSession);
+    try {
+      fireEvent.submit(screen.getByTestId('collection-volume-entry'));
+      expect(registerManualQuantitativeEntry).not.toHaveBeenCalled();
+      expect(onSuccess).not.toHaveBeenCalled();
+      expect(getLastSessionActivity()).toBe(expiredActivity);
+      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Sessão encerrada por inatividade'));
+    } finally {
+      window.removeEventListener(SESSION_ACTIVITY_EVENT, refuseExpiredSession);
+      clearSessionActivity();
+      view.unmount();
+    }
   });
 });

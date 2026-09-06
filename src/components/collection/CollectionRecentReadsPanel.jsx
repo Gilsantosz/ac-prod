@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Layers, RefreshCw, AlertCircle, Filter, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -8,9 +9,7 @@ import {
   unsubscribeFromCollectionHistory,
 } from '@/lib/collectionService';
 import CollectionReadItem from './CollectionReadItem';
-
-const REALTIME_HISTORY_REFRESH_WINDOW_MS = 5_000;
-const REALTIME_HISTORY_REFRESH_MIN_DELAY_MS = 250;
+import { scheduleCollectionQueryInvalidation } from '@/hooks/collectionQueryInvalidation';
 
 function getDateRange(selectedPeriod) {
   const now = new Date();
@@ -47,11 +46,8 @@ export default function CollectionRecentReadsPanel({
   refreshSignal = 0,
   canReject = false
 }) {
-  const [readings, setReadings] = useState([]);
-  const [totalCount, setTotalCount] = useState(0);
   const [limit, setLimit] = useState(50);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const queryClient = useQueryClient();
 
   // Filtros Locais adicionais
   const [period, setPeriod] = useState('24h'); // 24h, 7days, month, all
@@ -60,18 +56,27 @@ export default function CollectionRecentReadsPanel({
   const [shiftScope, setShiftScope] = useState('current'); // all, current
   const [machineScope, setMachineScope] = useState('cell'); // cell, current
   const [realtimeStatus, setRealtimeStatus] = useState(navigator.onLine ? 'connecting' : 'offline');
-  const fetchSequenceRef = useRef(0);
+  const previousRefreshSignalRef = useRef(refreshSignal);
+  const queryKey = useMemo(() => [
+    'stageReadings',
+    cellName,
+    machineScope === 'current' ? (workstationId || null) : null,
+    cellId || null,
+    operatorScope === 'mine' ? (operatorId || null) : null,
+    shiftScope === 'current' ? (shift || null) : null,
+    period,
+    statusFilter,
+    limit,
+  ], [cellName, machineScope, workstationId, cellId, operatorScope, operatorId, shiftScope, shift, period, statusFilter, limit]);
 
-  const fetchReadings = useCallback(async (
-    showLoading = true,
-    refreshCount = true,
-  ) => {
-    if (!cellName) return;
-    const fetchSequence = fetchSequenceRef.current + 1;
-    fetchSequenceRef.current = fetchSequence;
-    if (showLoading) setLoading(true);
-    setError(null);
-    try {
+  // O histórico passa a compartilhar o cache e a mesma janela de atualização
+  // dos KPIs. Sinal local, Realtime, fallback e modo foco não abrem GETs
+  // concorrentes para os mesmos filtros nem exibem resposta de filtro antigo.
+  const { data, isFetching: loading, isError } = useQuery({
+    queryKey,
+    enabled: Boolean(cellName),
+    retry: false,
+    queryFn: async () => {
       const { dateFrom, dateTo } = getDateRange(period);
       const activeStatus = statusFilter === 'all' ? null : statusFilter;
       const filters = {
@@ -90,92 +95,42 @@ export default function CollectionRecentReadsPanel({
         dateTo,
       };
 
-      if (refreshCount) {
-        const [data, count] = await Promise.all([
-          getCollectionHistory(filters),
-          getCollectionHistoryCount(filters),
-        ]);
-        if (fetchSequence === fetchSequenceRef.current) {
-          setReadings(data);
-          setTotalCount(count);
-        }
-      } else {
-        const data = await getCollectionHistory(filters);
-        if (fetchSequence === fetchSequenceRef.current) setReadings(data);
-      }
-    } catch (e) {
-      console.error('CollectionRecentReadsPanel Error:', e);
-      if (fetchSequence === fetchSequenceRef.current) {
-        setError('Falha ao carregar o histórico de coletas do banco.');
-      }
-    } finally {
-      if (fetchSequence === fetchSequenceRef.current) setLoading(false);
-    }
-  }, [
-    cellId,
-    cellName,
-    workstationId,
-    machineScope,
-    operatorId,
-    operatorScope,
-    shift,
-    shiftScope,
-    period,
-    statusFilter,
-    limit,
-  ]);
+      const [readings, totalCount] = await Promise.all([
+        getCollectionHistory(filters),
+        getCollectionHistoryCount(filters),
+      ]);
+      return { readings, totalCount };
+    },
+  });
+  const readings = data?.readings || [];
+  const totalCount = data?.totalCount || 0;
+  const error = isError ? 'Falha ao carregar o histórico de coletas do banco.' : null;
+  const fetchReadings = useCallback(() => {
+    scheduleCollectionQueryInvalidation(queryClient, { queryKey });
+  }, [queryClient, queryKey]);
 
   // Recarrega quando filtros, limit ou sinal mudar
   useEffect(() => {
-    fetchReadings(true);
+    if (previousRefreshSignalRef.current === refreshSignal) return;
+    previousRefreshSignalRef.current = refreshSignal;
+    fetchReadings();
   }, [fetchReadings, refreshSignal]);
 
   // Inscrição Realtime
   useEffect(() => {
     if (!cellName) return;
 
-    let disposed = false;
-    let refreshTimer = null;
-    let refreshInFlight = false;
-    let refreshPending = false;
-    let lastRefreshAt = 0;
-
-    const scheduleRealtimeRefresh = () => {
-      if (disposed) return;
-      refreshPending = true;
-      if (refreshTimer !== null || refreshInFlight) return;
-
-      const elapsed = Date.now() - lastRefreshAt;
-      const delay = Math.max(
-        REALTIME_HISTORY_REFRESH_MIN_DELAY_MS,
-        REALTIME_HISTORY_REFRESH_WINDOW_MS - elapsed,
-      );
-      refreshTimer = window.setTimeout(async () => {
-        refreshTimer = null;
-        if (disposed || !refreshPending) return;
-
-        refreshPending = false;
-        refreshInFlight = true;
-        lastRefreshAt = Date.now();
-        try {
-          // Atualiza lista e contador porque um UPDATE do worker pode mover o
-          // mesmo evento de "processando" para "aprovado".
-          await fetchReadings(false, true);
-        } finally {
-          refreshInFlight = false;
-          if (refreshPending) scheduleRealtimeRefresh();
-        }
-      }, delay);
-    };
-
     setRealtimeStatus(navigator.onLine ? 'connecting' : 'offline');
     const channel = subscribeToCollectionHistory({
       cellId,
       cellName,
       channelSuffix: 'panel',
-      callback: scheduleRealtimeRefresh,
+      callback: fetchReadings,
       onStatus: (status) => {
-        if (status === 'SUBSCRIBED') setRealtimeStatus('online');
+        if (status === 'SUBSCRIBED') {
+          setRealtimeStatus('online');
+          fetchReadings();
+        }
         else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') setRealtimeStatus('offline');
         else setRealtimeStatus('connecting');
       },
@@ -187,8 +142,6 @@ export default function CollectionRecentReadsPanel({
     window.addEventListener('online', onOnline);
 
     return () => {
-      disposed = true;
-      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
       window.removeEventListener('offline', onOffline);
       window.removeEventListener('online', onOnline);
       unsubscribeFromCollectionHistory(channel);
@@ -201,7 +154,7 @@ export default function CollectionRecentReadsPanel({
   useEffect(() => {
     if (!cellName) return undefined;
     const intervalId = window.setInterval(() => {
-      void fetchReadings(false, true);
+      if (navigator.onLine !== false) fetchReadings();
     }, 15000);
     return () => window.clearInterval(intervalId);
   }, [cellName, fetchReadings]);
@@ -354,12 +307,16 @@ export default function CollectionRecentReadsPanel({
         </p>
       </div>
 
+      {error && readings.length > 0 && (
+        <p role="status" className="text-xs text-amber-600">{error} Exibindo a última lista confirmada.</p>
+      )}
+
       {loading && readings.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
           <RefreshCw className="w-6 h-6 animate-spin mb-2" />
           <p className="text-xs">Carregando leituras do banco...</p>
         </div>
-      ) : error ? (
+      ) : error && readings.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-rose-500 gap-2 border border-dashed border-rose-500/20 rounded-xl bg-rose-500/5">
           <AlertCircle className="w-8 h-8" />
           <p className="text-xs font-bold">{error}</p>

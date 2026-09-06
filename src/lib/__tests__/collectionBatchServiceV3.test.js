@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { rpc, from, getOperatorSession } = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -30,6 +30,7 @@ vi.mock('@/lib/collectionEventQueue', () => ({
 
 import {
   clearCollectionPipelineFlagsCache,
+  COLLECTION_TRANSPORT_TIMEOUT_MS,
   processProductionCollectionBatch,
 } from '@/lib/collectionBatchService';
 import { COLLECTION_STATES } from '@/lib/collectionStateMachine';
@@ -58,6 +59,8 @@ describe('processProductionCollectionBatch V3', () => {
     });
     from.mockReset();
   });
+
+  afterEach(() => vi.useRealTimers());
 
   it('envia o envelope V3 sem token e retorna somente o ACK do banco', async () => {
     rpc.mockImplementation(async (name, args) => {
@@ -127,7 +130,7 @@ describe('processProductionCollectionBatch V3', () => {
         };
       }
       return {
-        data: [{ client_event_id: 'event-v3', persisted: true }],
+        data: [{ client_event_id: 'event-v3', persisted: true, received_at_db: '2026-09-01T12:00:01.000Z' }],
         error: null,
       };
     });
@@ -183,7 +186,7 @@ describe('processProductionCollectionBatch V3', () => {
   it('mantém evento previamente atribuído ao V3 sem reconsultar a flag', async () => {
     rpc.mockResolvedValue({
       data: {
-        results: [{ client_event_id: 'event-v3', persisted: true }],
+        results: [{ client_event_id: 'event-v3', persisted: true, received_at_db: '2026-09-01T12:00:01.000Z' }],
       },
       error: null,
     });
@@ -228,6 +231,8 @@ describe('processProductionCollectionBatch V3', () => {
         select: async () => ({
           data: rows.map((row) => ({
             ...row,
+            id: `receipt-${row.client_event_id}`,
+            server_received_at: '2026-09-01T12:00:01.000Z',
             status_sincronizacao: 'sincronizada',
             resultado: {
               success: true,
@@ -261,5 +266,152 @@ describe('processProductionCollectionBatch V3', () => {
       event({ pipeline_version: 3 }),
     ])).rejects.toMatchObject({ code: '55000' });
     expect(from).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    null,
+    {},
+    { results: [] },
+    { results: [{ client_event_id: 'another-event', persisted: true, received_at_db: '2026-09-01T12:00:01.000Z' }] },
+    { results: [{ client_event_id: 'event-v3' }] },
+    { results: [{ client_event_id: 'event-v3', persisted: true }] },
+    { results: [{ client_event_id: 'event-v3', persisted: true, received_at_db: 'invalid' }] },
+    { received_at_db: '2026-09-01T12:00:01.000Z', results: [
+      { client_event_id: 'event-v3', persisted: true },
+      { client_event_id: 'event-v3', persisted: true },
+    ] },
+  ])('não inventa recibo para resposta ausente, trocada, ambígua ou sem persistência: %j', async (data) => {
+    rpc.mockResolvedValue({ data, error: null });
+    const onAcknowledged = vi.fn();
+    const onFinalized = vi.fn();
+    const captured = event({ pipeline_version: 3 });
+
+    await expect(processProductionCollectionBatch([captured], {
+      onAcknowledged,
+      onFinalized,
+    })).rejects.toMatchObject({
+      code: 'COLLECTION_ACK_INCOMPLETE',
+      retryable: true,
+      acknowledgementUnknown: true,
+      pendingClientEventIds: ['event-v3'],
+    });
+
+    expect(onAcknowledged).not.toHaveBeenCalled();
+    expect(onFinalized).not.toHaveBeenCalled();
+    expect(captured.pipeline_version).toBe(3);
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it('confirma somente os IDs exatos de uma resposta parcial fora de ordem', async () => {
+    rpc.mockResolvedValue({
+      data: {
+        received_at_db: '2026-09-01T12:00:01.000Z',
+        results: [
+          { client_event_id: 'event-c', persisted: true },
+          { client_event_id: 'unrelated-event', persisted: true },
+          { client_event_id: 'event-a', persisted: true },
+        ],
+      },
+      error: null,
+    });
+    const onAcknowledged = vi.fn();
+    const events = ['event-a', 'event-b', 'event-c'].map((id, index) => event({
+      client_event_id: id,
+      device_sequence: 41 + index,
+      pipeline_version: 3,
+    }));
+    const result = await processProductionCollectionBatch(events, { onAcknowledged })
+      .catch((error) => error);
+
+    expect(result).toMatchObject({
+      code: 'COLLECTION_ACK_INCOMPLETE',
+      pendingClientEventIds: ['event-b'],
+    });
+    expect(onAcknowledged).toHaveBeenCalledOnce();
+    expect(onAcknowledged.mock.calls[0][0].map((receipt) => receipt.client_event_id))
+      .toEqual(['event-a', 'event-c']);
+    expect(result.acknowledgedEnvelopes).toEqual(onAcknowledged.mock.calls[0][0]);
+  });
+
+  it('não troca o pipeline nem o ID quando fetch demora após possível commit', async () => {
+    vi.useFakeTimers();
+    const abortSignal = vi.fn(() => new Promise(() => {}));
+    rpc.mockReturnValue({ abortSignal });
+    const captured = event({ pipeline_version: 3 });
+    const outcome = processProductionCollectionBatch([captured]).catch((error) => error);
+
+    await vi.advanceTimersByTimeAsync(COLLECTION_TRANSPORT_TIMEOUT_MS + 1);
+
+    expect(await outcome).toMatchObject({
+      code: 'COLLECTION_TRANSPORT_TIMEOUT',
+      retryable: true,
+      acknowledgementUnknown: true,
+    });
+    expect(abortSignal.mock.calls[0][0].aborted).toBe(true);
+    expect(captured.pipeline_version).toBe(3);
+    expect(captured.client_event_id).toBe('event-v3');
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it('não fixa V2 quando a configuração falha e compartilha o backoff de configuração', async () => {
+    rpc.mockResolvedValue({ data: null, error: { code: 'PGRST202', message: 'RPC unavailable' } });
+    const captured = event();
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await expect(processProductionCollectionBatch([captured])).rejects.toMatchObject({
+        code: 'COLLECTION_PIPELINE_FLAGS_UNAVAILABLE',
+        retryable: true,
+      });
+    }
+
+    expect(captured.pipeline_version).toBeUndefined();
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it('não considera configuração vazia como autorização para escolher V2', async () => {
+    rpc.mockResolvedValue({ data: {}, error: null });
+    const captured = event();
+
+    await expect(processProductionCollectionBatch([captured])).rejects.toMatchObject({
+      code: 'COLLECTION_PIPELINE_FLAGS_UNAVAILABLE',
+      cause: { code: 'COLLECTION_PIPELINE_FLAGS_INVALID' },
+    });
+    expect(captured.pipeline_version).toBeUndefined();
+  });
+
+  it('mantém micro-lotes contíguos durante transição V2/V3 e não transporta por item', async () => {
+    from.mockImplementation(() => ({
+      insert: (rows) => ({
+        select: async () => ({
+          data: rows.map((row) => ({
+            ...row,
+            id: `receipt-${row.client_event_id}`,
+            server_received_at: '2026-09-01T12:00:01.000Z',
+          })),
+          error: null,
+        }),
+      }),
+    }));
+    rpc.mockImplementation(async (_name, args) => ({
+      data: {
+        received_at_db: '2026-09-01T12:00:01.000Z',
+        results: args.p_events.events.map((item) => ({ client_event_id: item.client_event_id, persisted: true })),
+      },
+      error: null,
+    }));
+    const events = [2, 2, 3, 3].map((version, index) => event({
+      pipeline_version: version,
+      client_event_id: `event-${index}`,
+      device_sequence: 41 + index,
+    }));
+
+    const results = await processProductionCollectionBatch(events);
+
+    expect(from).toHaveBeenCalledOnce();
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(rpc.mock.calls[0][1].p_events.events).toHaveLength(2);
+    expect(results.map((item) => item.client_event_id)).toEqual(events.map((item) => item.client_event_id));
+    expect(results.every((item) => item.transport_phase === 'database_acknowledged')).toBe(true);
   });
 });

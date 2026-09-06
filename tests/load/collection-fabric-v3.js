@@ -3,14 +3,15 @@ import ws from 'k6/ws';
 import execution from 'k6/execution';
 import { check, fail, sleep } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
+import encoding from 'k6/encoding';
+import { assertIsolatedCollectionTarget, assertVerifiedCollectionSession, validateCollectionIdentities } from './collection-load-preflight.js';
 
 /*
  * AC.Prod Collection Fabric v3 — workload mutante de capacidade.
  *
  * Este arquivo NAO prepara massa nem habilita flags. O alvo normal continua
- * sendo staging. A unica excecao aceita e o projeto AC.Prod explicitamente
- * autorizado enquanto ele ainda e um ambiente de teste; essa excecao exige
- * tres confirmacoes exatas abaixo. Cada execucao escreve recibos, fatos e
+ * sendo o capacity-test isolado. Nao ha excecao para o projeto principal.
+ * Cada execucao escreve recibos, fatos e
  * projecoes produtivas persistentes. Consulte o runbook antes de executar.
  */
 
@@ -21,36 +22,14 @@ const profile = (__ENV.K6_PROFILE || 'smoke').toLowerCase();
 const sloProfile = (__ENV.K6_SLO_PROFILE || 'production').toLowerCase();
 const runId = __ENV.K6_RUN_ID || '';
 const sequenceBase = Number(__ENV.K6_SEQUENCE_BASE || 0);
-const productionProjectRef = 'uozuzdfvnufsjsonswag';
-const authorizedTestProductionUrl = `https://${productionProjectRef}.supabase.co`;
-const authorizedTestProductionConfirmation =
-  'EU-AUTORIZO-ESCRITAS-K6-DESTRUTIVAS-NO-ACPROD-TESTE-uozuzdfvnufsjsonswag';
 const target = __ENV.K6_TARGET || '';
 const writesConfirmation = __ENV.K6_CONFIRM_WRITES || '';
 
 if (!supabaseUrl || !anonKey || !fixturePath) {
   fail('Defina SUPABASE_URL, SUPABASE_ANON_KEY e K6_FIXTURES.');
 }
-if (target === 'staging') {
-  if (writesConfirmation !== 'staging-v3-load') {
-    fail('Carga mutante bloqueada: staging exige K6_CONFIRM_WRITES=staging-v3-load.');
-  }
-  if (supabaseUrl.includes(productionProjectRef)) {
-    fail('Carga staging bloqueada no projeto AC.Prod de teste/producao. Use K6_TARGET=test-production somente com a autorizacao documentada.');
-  }
-} else if (target === 'test-production') {
-  if (
-    supabaseUrl !== authorizedTestProductionUrl
-    || writesConfirmation !== authorizedTestProductionConfirmation
-  ) {
-    fail(
-      'Carga test-production bloqueada: exige a URL exata do projeto AC.Prod de teste '
-      + 'e a frase forte/especifica documentada no runbook.',
-    );
-  }
-} else {
-  fail('Carga mutante bloqueada: K6_TARGET deve ser staging ou test-production.');
-}
+try { assertIsolatedCollectionTarget(supabaseUrl, target, writesConfirmation); }
+catch (error) { fail(error.message); }
 if (!/^[a-zA-Z0-9_-]{1,32}$/.test(runId)) {
   fail('K6_RUN_ID deve ter de 1 a 32 caracteres [a-zA-Z0-9_-] e ser unico por rodada.');
 }
@@ -307,6 +286,7 @@ if (profile === 'contention_cell_lot') {
 }
 
 export const options = {
+  setupTimeout: '2m',
   scenarios: scenarioProfiles[profile],
   thresholds: { ...commonThresholds, ...profileThresholds },
   discardResponseBodies: false,
@@ -315,10 +295,10 @@ export const options = {
 
 const profileRequirements = {
   smoke: { devices: 1, codes: 1 },
-  nominal: { devices: 100, codes: 18000 },
-  burst: { devices: 100, codes: 6000 },
+  nominal: { devices: 100, codes: 18000, cells: 2 },
+  burst: { devices: 100, codes: 6000, cells: 2 },
   microbatch: { devices: 5, codes: 125 },
-  priority: { devices: 100, codes: 1625 },
+  priority: { devices: 100, codes: 1625, cells: 2 },
   idempotency: { devices: 20, codes: 20 },
   contention_piece: { devices: 20, codes: 1 },
   contention_cell_lot: { devices: 50, codes: 50 },
@@ -432,14 +412,21 @@ function createEvents(scenarioName, sourceMode, batchSize, iteration) {
       : 0),
   ).toISOString();
 
-  return Array.from({ length: batchSize }, (_, eventIndex) => ({
+  const device = selectDevice(iteration);
+  return Array.from({ length: batchSize }, (_, eventIndex) => {
+    const code = eventCode(codeOffset, iteration, batchSize, eventIndex);
+    if (fixture.code_cells?.[code] && fixture.code_cells[code] !== device.cell_id) {
+      fail('Fixture recusada: codigo destinado a outra celula; nenhuma coleta deste batch foi enviada.');
+    }
+    return {
     client_event_id: `k6-v3:${runId}:${scenarioName}:${iteration}:${eventIndex}`,
-    raw_value: eventCode(codeOffset, iteration, batchSize, eventIndex),
+    raw_value: code,
     reader_type: 'keyboard_barcode',
     captured_at_client: capturedAt,
     device_sequence: sequenceBase + offset + (iteration * 25) + eventIndex + 1,
     quantity: 1,
-  }));
+    };
+  });
 }
 
 function submitBatch(scenarioName, sourceMode, batchSize, iteration = iterationNumber()) {
@@ -660,6 +647,11 @@ function fetchHealth(device) {
 
 function validateFixture() {
   const requirement = profileRequirements[profile];
+  try {
+    validateCollectionIdentities(fixture, requirement, (token) => (
+      JSON.parse(encoding.b64decode(token.split('.')[1], 'rawurl', 's'))
+    ));
+  } catch (error) { fail(error.message); }
   if (devices.length < requirement.devices) {
     fail(`Fixture insuficiente: ${profile} exige ${requirement.devices} dispositivos distintos.`);
   }
@@ -705,6 +697,22 @@ function validateFixture() {
 
 export function setup() {
   validateFixture();
+  // Decoding JWTs is not authentication: confirm each identity and operational
+  // scope against the isolated backend before the first mutating request.
+  for (const device of devices) {
+    const params = { headers: authHeaders(device), timeout: '10s', tags: { operation: 'identity_preflight', profile } };
+    const userResponse = http.get(`${supabaseUrl}/auth/v1/user`, params);
+    const sessionResponse = http.get(
+      `${supabaseUrl}/rest/v1/operator_sessions?select=id,auth_user_id,cell_id,machine_id,ended_at,revoked_at,expires_at&id=eq.${device.operator_session_id}`,
+      params,
+    );
+    const sessions = jsonResponse(sessionResponse);
+    if (userResponse.status !== 200 || sessionResponse.status !== 200 || !Array.isArray(sessions) || sessions.length !== 1) {
+      fail('Preflight remoto recusado: usuario ou sessao operacional nao verificavel.');
+    }
+    try { assertVerifiedCollectionSession(device, jsonResponse(userResponse), sessions[0]); }
+    catch (error) { fail(error.message); }
+  }
   const health = fetchHealth(devices[0]);
   if (!health) fail('Health v3 indisponivel antes da carga.');
 
