@@ -10,6 +10,10 @@ const structuralMigration = readFileSync(resolve(
   process.cwd(),
   'supabase/migrations/20260906123339_collection_v3_structural_hardening.sql',
 ), 'utf8');
+const runtimeHealthCompatibilityMigration = readFileSync(resolve(
+  process.cwd(),
+  'supabase/migrations/20260906125900_collection_runtime_health_rls_initplan_compat.sql',
+), 'utf8');
 const loadTest = readFileSync(resolve(
   process.cwd(),
   'tests/load/collection-fabric-v3.js',
@@ -104,5 +108,26 @@ describe('Collection Fabric V3 low-latency database contract', () => {
     );
     expect(structuralMigration).toContain("'structural_checks'");
     expect(structuralMigration).toContain("'{structural_ready}'");
+  });
+
+  it('keeps the legacy release gate compatible with the optimized RLS initplan', () => {
+    expect(runtimeHealthCompatibilityMigration).toContain(
+      'get_public_collection_runtime_health_pre_initplan_v3',
+    );
+    expect(runtimeHealthCompatibilityMigration).toContain(
+      "'(auth_user_id=(selectauth.uid()asuid))'",
+    );
+    expect(runtimeHealthCompatibilityMigration).toContain(
+      "'collection_runtime_inbox_rls', coalesce(v_inbox_rls, false)",
+    );
+    expect(runtimeHealthCompatibilityMigration).toContain(
+      "'collection_sync_async_base_ready', v_async_base_ready",
+    );
+    expect(runtimeHealthCompatibilityMigration).toContain(
+      "WHERE flag.value <> 'true'::jsonb",
+    );
+    expect(runtimeHealthCompatibilityMigration).not.toContain(
+      "jsonb_set(v_health, '{ready}', 'true'::jsonb",
+    );
   });
 });

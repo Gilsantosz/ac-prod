@@ -67,6 +67,12 @@ recibos com initplan, indexa a busca de correção do outbox e restringe o RPC d
 assert estrutural ao `service_role`. Essas condições passaram a integrar o
 `structural_ready` do health check V3.
 
+A versão `20260906125900` mantém o gate público v9.2.3 compatível com as
+políticas RLS otimizadas por initplan. O probe valida no catálogo os comandos,
+roles, privilégios e a expressão `(select auth.uid())`, recalcula o agregado
+assíncrono e só retorna `ready = true` quando todos os flags estruturais estão
+verdadeiros.
+
 ## Gate de publicação atual
 
 O workflow de produção só gera o artefato depois de consultar os três marcadores públicos e comprovar simultaneamente:
