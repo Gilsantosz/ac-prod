@@ -1,5 +1,5 @@
 export const PRODUCTION_SCAN_LENGTH = 8;
-export const PRODUCTION_SCAN_PATTERN = /^[0-9]{8}$/;
+export const PRODUCTION_SCAN_PATTERN = /^\d{8}$/;
 
 const NON_ASCII_DIGIT = /[^0-9]/g;
 const UNSUPPORTED_SCAN_CHARACTER = /[^0-9\s\r\n\t]/;
