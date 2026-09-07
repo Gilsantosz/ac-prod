@@ -1,0 +1,16 @@
+{
+  "name": "ac-prod-mes-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:integration": "node test/run-integration.mjs"
+  },
+  "dependencies": {
+    "fastify": "^5.12.3",
+    "pg": "^8.23.0"
+  }
+}

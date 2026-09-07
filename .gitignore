@@ -41,3 +41,14 @@ playwright-report
 test-results
 .tools
 
+
+# Serviços MES: exemplos públicos; credenciais apenas no ambiente privado
+!.env.example
+!**/.env.example
+**/.streamlit/secrets.toml
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+
+# Credenciais privadas da implantação MES
+.mes-runtime/
