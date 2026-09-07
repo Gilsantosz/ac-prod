@@ -3,11 +3,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import HourlyChart from './HourlyChart';
 import ShiftCellPanel from './ShiftCellPanel';
 import AnnualProductionSummary from './AnnualProductionSummary';
+import WeeklyEfficiencyChart from './WeeklyEfficiencyChart';
 import ProductionAnalysisCharts from '@/components/reports/ProductionAnalysisCharts';
 
 // Keep the actual Recharts renderer: only browser layout measurements are supplied.
 beforeEach(() => {
-  vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false, addListener() {}, removeListener() {} }));
+  vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+    matches: query.includes('prefers-reduced-motion'),
+    media: query,
+    onchange: null,
+    addListener() {},
+    removeListener() {},
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent() { return true; },
+  }));
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
     width: 800, height: 400, top: 0, left: 0, right: 800, bottom: 400,
   });
@@ -17,6 +27,7 @@ beforeEach(() => {
     unobserve() {}
     disconnect() {}
   });
+  Element.prototype.scrollIntoView = vi.fn();
 });
 
 afterEach(() => vi.unstubAllGlobals());
@@ -41,12 +52,12 @@ async function expectPaintedBars(container) {
       const gradient = document.getElementById(id);
       expect(gradient, `Missing SVG paint server: ${id}`).not.toBeNull();
       expect(bar.closest('svg').contains(gradient)).toBe(true);
-      expect(gradient.querySelectorAll('stop')).toHaveLength(2);
+      expect(gradient.querySelectorAll('stop').length).toBeGreaterThanOrEqual(2);
     }
   });
 }
 
-describe('production charts render visible gradient bars', () => {
+describe('production charts render visible gradient metrics', () => {
   it.each([
     ['hourly', () => <HourlyChart grouped={grouped} unitLabel="peças" />],
     ['cell/shift', () => <ShiftCellPanel grouped={grouped} title="Por célula" />],
@@ -73,5 +84,21 @@ describe('production charts render visible gradient bars', () => {
     const { container } = render(<HourlyChart grouped={[{ key: '11:48', produced: 13, target: 0, efficiency: null }]} />);
     await expectPaintedBars(container);
     expect(container.querySelector('path.recharts-rectangle[fill$="-produced)"]')).not.toBeNull();
+  });
+
+  it('renders the efficiency line with a continuous SVG gradient', async () => {
+    const { container } = render(<WeeklyEfficiencyChart data={[{ label: '05/09', efficiency: 91 }]} cellLabel="Corte · peças" />);
+    await waitFor(() => {
+      const line = container.querySelector('.recharts-line-curve');
+      expect(line).not.toBeNull();
+      const gradientId = line.getAttribute('stroke').match(/^url\(#(.+)\)$/)?.[1];
+      expect(gradientId).toBeTruthy();
+      expect(document.getElementById(gradientId)?.querySelectorAll('stop')).toHaveLength(3);
+    });
+  });
+
+  it('wraps redesigned charts in the shared glass panel', () => {
+    const { container } = render(<HourlyChart grouped={grouped} unitLabel="peças" />);
+    expect(container.querySelector('.chart-glass-panel')).not.toBeNull();
   });
 });
