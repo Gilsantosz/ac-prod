@@ -3,6 +3,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from '@/App.jsx'
 import '@/index.css'
+import '@/components/charts/glassCharts.css'
 
 // Patches de segurança globais para evitar que erros de desalocação e inserção de bibliotecas de terceiros (Recharts, Drag&Drop) travem o React
 if (typeof window !== 'undefined' && window.Node && window.Node.prototype) {
