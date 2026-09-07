@@ -2,9 +2,11 @@ import '@/preflight.js'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from '@/App.jsx'
+import LegacyChartEnhancer from '@/components/charts/LegacyChartEnhancer.jsx'
 import '@/index.css'
 import '@/components/charts/glassCharts.css'
 import '@/components/charts/dashboardPanelControls.css'
+import '@/components/charts/legacyChartEnhancer.css'
 
 // Patches de segurança globais para evitar que erros de desalocação e inserção de bibliotecas de terceiros (Recharts, Drag&Drop) travem o React
 if (typeof window !== 'undefined' && window.Node && window.Node.prototype) {
@@ -37,5 +39,8 @@ if (import.meta.env.DEV && typeof window !== 'undefined' && 'serviceWorker' in n
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <App />
+  <>
+    <App />
+    <LegacyChartEnhancer />
+  </>
 )
