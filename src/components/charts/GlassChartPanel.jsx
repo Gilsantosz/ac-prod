@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Eye, EyeOff, Maximize2, Minimize2, MoreHorizontal } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Maximize2,
+  Minimize2,
+  MoreHorizontal,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function GlassChartPanel({
@@ -22,6 +30,7 @@ export default function GlassChartPanel({
   const [expanded, setExpanded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
+  const panelRef = useRef(null);
 
   useEffect(() => {
     if (!expanded) return undefined;
@@ -52,8 +61,21 @@ export default function GlassChartPanel({
     onCollapseChange?.(next);
   };
 
+  const navigateChart = (delta) => {
+    if (!panelRef.current) return;
+    const panels = [...document.querySelectorAll('.chart-glass-panel:not(.chart-glass-panel--expanded)')]
+      .filter((panel) => panel.getClientRects().length > 0);
+    const currentIndex = panels.indexOf(panelRef.current);
+    const next = panels[currentIndex + delta];
+    if (!next) return;
+    next.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center', inline: 'nearest' });
+    next.setAttribute('tabindex', '-1');
+    next.focus({ preventScroll: true });
+  };
+
   const panel = (
     <motion.section
+      ref={panelRef}
       layout={!reduceMotion}
       initial={reduceMotion ? false : { opacity: 0, y: 14, scale: 0.992 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -80,6 +102,24 @@ export default function GlassChartPanel({
             {actions}
             {controls && (
               <div className="chart-panel-controls" aria-label={`Controles de ${title || 'gráfico'}`}>
+                <button
+                  type="button"
+                  className="chart-control-button"
+                  onClick={() => navigateChart(-1)}
+                  aria-label="Ir para o gráfico anterior"
+                  title="Gráfico anterior"
+                >
+                  <ChevronLeft aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="chart-control-button"
+                  onClick={() => navigateChart(1)}
+                  aria-label="Ir para o próximo gráfico"
+                  title="Próximo gráfico"
+                >
+                  <ChevronRight aria-hidden="true" />
+                </button>
                 <button
                   type="button"
                   className="chart-control-button"
@@ -117,7 +157,7 @@ export default function GlassChartPanel({
                         role="menu"
                         initial={reduceMotion ? false : { opacity: 0, y: -5, scale: 0.97 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4, scale: 0.98 }}
+                        exit={{ opacity: 0, y: -4, scale: 0.98 }}
                         transition={{ duration: reduceMotion ? 0 : 0.16 }}
                         className="chart-panel-menu"
                       >
@@ -144,7 +184,7 @@ export default function GlassChartPanel({
             key="chart-content"
             initial={reduceMotion ? false : { opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
-            exit={reduceMotion ? { display: 'none' } : { opacity: 0, height: 0 }}
+            exit={{ opacity: 0, height: 0 }}
             transition={{ duration: reduceMotion ? 0 : 0.28, ease: 'easeOut' }}
             className={cn('chart-glass-panel__content', contentClassName)}
           >
