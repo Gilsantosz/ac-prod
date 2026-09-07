@@ -82,6 +82,7 @@ export default function SortablePanels({
     const size = sizes[panel.id] || 'full';
     const expanded = expandedId === panel.id;
     const menuOpen = openMenuId === panel.id;
+    const SizeIcon = size === 'half' ? Square : Columns2;
 
     return (
       <div className="dashboard-panel-controls" aria-label={`Controles de ${panel.title || 'painel'}`}>
@@ -141,11 +142,13 @@ export default function SortablePanels({
                 <button
                   type="button"
                   role="menuitem"
+                  className="flex items-center gap-2"
                   onClick={() => {
                     onToggleSize(panel.id);
                     setOpenMenuId(null);
                   }}
                 >
+                  <SizeIcon className="h-3.5 w-3.5" aria-hidden="true" />
                   {size === 'half' ? 'Usar largura total' : 'Usar meia largura'}
                 </button>
               )}
