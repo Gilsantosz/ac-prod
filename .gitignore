@@ -41,3 +41,6 @@ playwright-report
 test-results
 .tools
 
+# Supabase CLI state is machine-local. Never version a linked project ref:
+# a stale ref can redirect destructive CLI commands to the wrong environment.
+supabase/.temp/
