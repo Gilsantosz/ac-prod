@@ -21,6 +21,8 @@ try {
   await page.screenshot({path:'artifacts/charts-glass-desktop.png',fullPage:true});
   await page.getByRole('button',{name:'Expandir gráfico',exact:true}).first().click();
   await page.getByRole('dialog').waitFor();
+  // ResizeObserver supplies the new dialog dimensions after it becomes visible.
+  await page.getByRole('dialog').locator('.recharts-bar-rectangle path').first().waitFor({state:'visible'});
   assert.equal(await page.locator('.recharts-wrapper').count(),4, 'Expansion must not duplicate the plot');
   await page.keyboard.press('Escape');
   await page.getByRole('dialog').waitFor({state:'hidden'});
