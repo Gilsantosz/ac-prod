@@ -3,6 +3,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from '@/App.jsx'
 import LegacyChartEnhancer from '@/components/charts/LegacyChartEnhancer.jsx'
+import LegacyChartGradientBridge from '@/components/charts/LegacyChartGradientBridge.jsx'
 import '@/index.css'
 import '@/components/charts/glassCharts.css'
 import '@/components/charts/dashboardPanelControls.css'
@@ -42,5 +43,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <>
     <App />
     <LegacyChartEnhancer />
+    <LegacyChartGradientBridge />
   </>
 )
