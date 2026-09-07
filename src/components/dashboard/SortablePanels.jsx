@@ -1,18 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { GripVertical, EyeOff, Columns2, Square, ArrowUp, ArrowDown } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Columns2,
+  EyeOff,
+  GripVertical,
+  Maximize2,
+  Minimize2,
+  MoreHorizontal,
+  Square,
+} from 'lucide-react';
 
 /**
- * SortablePanels — Grade de 2 colunas com DnD para reordenar,
- * controles de visibilidade e redimensionamento por painel.
- *
- * Props:
- *   panels   : { id, node }[]     — todos os painéis disponíveis
- *   order    : string[]            — ids dos painéis visíveis em ordem
- *   sizes    : Record<string, 'full'|'half'>
- *   onReorder(ids): void
- *   onToggleHide(id): void
- *   onToggleSize(id): void
+ * Grade modular dos painéis do dashboard.
+ * Mantém DnD, ordenação por teclado, largura configurável, ocultação e expansão.
  */
 export default function SortablePanels({
   panels,
@@ -24,64 +26,165 @@ export default function SortablePanels({
   editable = true,
 }) {
   const [ready, setReady] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const menuRootRef = useRef(null);
 
   useEffect(() => {
     setReady(true);
   }, []);
 
-  // Resolve a lista de painéis visíveis ordenados
+  useEffect(() => {
+    if (!expandedId) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setExpandedId(null);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [expandedId]);
+
+  useEffect(() => {
+    if (!openMenuId) return undefined;
+    const closeMenu = (event) => {
+      if (!menuRootRef.current?.contains(event.target)) setOpenMenuId(null);
+    };
+    document.addEventListener('pointerdown', closeMenu);
+    return () => document.removeEventListener('pointerdown', closeMenu);
+  }, [openMenuId]);
+
   const ordered = order
-    .map((id) => panels.find((p) => p.id === id))
+    .map((id) => panels.find((panel) => panel.id === id))
     .filter(Boolean);
+
+  const movePanel = (index, delta) => {
+    const destination = index + delta;
+    if (destination < 0 || destination >= ordered.length) return;
+    const ids = ordered.map((panel) => panel.id);
+    [ids[index], ids[destination]] = [ids[destination], ids[index]];
+    onReorder(ids);
+  };
 
   const handleDragEnd = (result) => {
     if (!result.destination || result.source.index === result.destination.index) return;
-    const ids = ordered.map((p) => p.id);
+    const ids = ordered.map((panel) => panel.id);
     const [moved] = ids.splice(result.source.index, 1);
     ids.splice(result.destination.index, 0, moved);
     onReorder(ids);
   };
 
-  // Botões de controle flutuam acima do painel ao hover
   function PanelControls({ panel, index, dragHandleProps }) {
     if (!editable) return null;
     const size = sizes[panel.id] || 'full';
+    const expanded = expandedId === panel.id;
+    const menuOpen = openMenuId === panel.id;
+
     return (
-      <div className="relative z-20 flex flex-wrap justify-end items-center gap-1 mb-2">
-        {[[-1, ArrowUp, 'Mover para cima'], [1, ArrowDown, 'Mover para baixo']].map(([delta, Icon, label]) => <button type="button" key={label} aria-label={`${label}: ${panel.title}`} title={label} disabled={index + delta < 0 || index + delta >= ordered.length} onClick={() => { const ids = ordered.map((p) => p.id); [ids[index], ids[index + delta]] = [ids[index + delta], ids[index]]; onReorder(ids); }} className="h-8 w-8 flex items-center justify-center rounded-md border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-30"><Icon className="h-3.5 w-3.5" /></button>)}
-        {onToggleSize && (
+      <div className="dashboard-panel-controls" aria-label={`Controles de ${panel.title || 'painel'}`}>
+        <button
+          type="button"
+          className="dashboard-panel-control"
+          aria-label={`Mover ${panel.title || 'painel'} para a esquerda`}
+          title="Mover para a esquerda"
+          disabled={index === 0}
+          onClick={() => movePanel(index, -1)}
+        >
+          <ArrowLeft aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="dashboard-panel-control"
+          aria-label={`Mover ${panel.title || 'painel'} para a direita`}
+          title="Mover para a direita"
+          disabled={index === ordered.length - 1}
+          onClick={() => movePanel(index, 1)}
+        >
+          <ArrowRight aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="dashboard-panel-control"
+          aria-label={expanded ? `Reduzir ${panel.title || 'painel'}` : `Expandir ${panel.title || 'painel'}`}
+          title={expanded ? 'Reduzir' : 'Expandir'}
+          onClick={() => setExpandedId(expanded ? null : panel.id)}
+        >
+          {expanded ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
+        </button>
+        <button
+          type="button"
+          className="dashboard-panel-control"
+          aria-label={`Ocultar ${panel.title || 'painel'}`}
+          title="Ocultar painel"
+          onClick={() => onToggleHide?.(panel.id)}
+        >
+          <EyeOff aria-hidden="true" />
+        </button>
+        <div className="relative" ref={menuOpen ? menuRootRef : undefined}>
           <button
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={() => onToggleSize(panel.id)}
-            className="flex h-8 px-2 items-center gap-1 rounded-md border border-border bg-card text-[10px] font-medium text-muted-foreground shadow-sm hover:text-foreground hover:bg-secondary transition-colors"
-            title={size === 'half' ? 'Expandir para largura total' : 'Dividir em meia largura'}
+            type="button"
+            className="dashboard-panel-control"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-label={`Mais opções de ${panel.title || 'painel'}`}
+            title="Mais opções"
+            onClick={() => setOpenMenuId(menuOpen ? null : panel.id)}
           >
-            {size === 'half' ? (
-              <><Square className="h-3 w-3" /><span className="hidden sm:inline">Expandir</span></>
-            ) : (
-              <><Columns2 className="h-3 w-3" /><span className="hidden sm:inline">Dividir</span></>
-            )}
+            <MoreHorizontal aria-hidden="true" />
           </button>
-        )}
-        {onToggleHide && (
-          <button
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={() => onToggleHide(panel.id)}
-            className="flex h-8 px-2 items-center gap-1 rounded-md border border-border bg-card text-[10px] font-medium text-muted-foreground shadow-sm hover:text-foreground hover:bg-secondary transition-colors"
-            title="Ocultar este painel"
-          >
-            <EyeOff className="h-3 w-3" /><span className="hidden sm:inline">Ocultar</span>
-          </button>
-        )}
+          {menuOpen && (
+            <div className="dashboard-panel-menu" role="menu">
+              {onToggleSize && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onToggleSize(panel.id);
+                    setOpenMenuId(null);
+                  }}
+                >
+                  {size === 'half' ? 'Usar largura total' : 'Usar meia largura'}
+                </button>
+              )}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setExpandedId(expanded ? null : panel.id);
+                  setOpenMenuId(null);
+                }}
+              >
+                {expanded ? 'Sair da tela ampliada' : 'Abrir em tela ampliada'}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onToggleHide?.(panel.id);
+                  setOpenMenuId(null);
+                }}
+              >
+                Ocultar este painel
+              </button>
+              <p>Também é possível arrastar o painel pelo ícone de movimentação.</p>
+            </div>
+          )}
+        </div>
         {dragHandleProps && (
-          <div
+          <button
+            type="button"
             {...dragHandleProps}
-            className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground shadow-sm cursor-grab active:cursor-grabbing"
+            className="dashboard-panel-control cursor-grab active:cursor-grabbing"
+            aria-label={`Arrastar ${panel.title || 'painel'} para reposicionar`}
             title="Arrastar para reposicionar"
           >
-            <GripVertical className="h-3 w-3" />
-          </div>
+            <GripVertical aria-hidden="true" />
+          </button>
         )}
+        <span className="sr-only">{size === 'half' ? 'Meia largura' : 'Largura total'}</span>
       </div>
     );
   }
@@ -90,12 +193,36 @@ export default function SortablePanels({
     return (sizes[id] || 'full') === 'half' ? 'col-span-1' : 'col-span-1 md:col-span-2';
   }
 
-  // Renderização estática antes de montar o DnD (evita flash de layout)
+  const renderPanel = (panel, index, provided, snapshot = {}) => {
+    const expanded = expandedId === panel.id;
+    return (
+      <div
+        ref={provided?.innerRef}
+        {...provided?.draggableProps}
+        className={`dashboard-panel-shell group relative min-w-0 ${colClass(panel.id)} ${snapshot.isDragging ? 'z-50' : ''} ${expanded ? 'dashboard-panel-shell--expanded' : ''}`}
+      >
+        {expanded && (
+          <button
+            type="button"
+            className="chart-expanded-backdrop"
+            aria-label={`Fechar ${panel.title || 'painel'} ampliado`}
+            onClick={() => setExpandedId(null)}
+          />
+        )}
+        <div className={`relative z-[92] ${snapshot.isDragging ? 'ring-2 ring-emerald-400 rounded-3xl shadow-2xl' : ''}`}>
+          <PanelControls panel={panel} index={index} dragHandleProps={provided?.dragHandleProps} />
+          {panel.node}
+        </div>
+      </div>
+    );
+  };
+
   if (!ready) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-        {ordered.map((panel) => (
-          <div key={panel.id} className={`group relative min-w-0 ${colClass(panel.id)}`}>
+      <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2">
+        {ordered.map((panel, index) => (
+          <div key={panel.id} className={`dashboard-panel-shell group relative min-w-0 ${colClass(panel.id)}`}>
+            <PanelControls panel={panel} index={index} />
             {panel.node}
           </div>
         ))}
@@ -110,22 +237,11 @@ export default function SortablePanels({
           <div
             ref={provided.innerRef}
             {...provided.droppableProps}
-            className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6"
+            className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2"
           >
             {ordered.map((panel, index) => (
-              <Draggable isDragDisabled={!editable} key={panel.id} draggableId={panel.id} index={index}>
-                {(prov, snapshot) => (
-                  <div
-                    ref={prov.innerRef}
-                    {...prov.draggableProps}
-                    className={`group relative min-w-0 ${colClass(panel.id)} ${snapshot.isDragging ? 'z-50' : ''}`}
-                  >
-                    <PanelControls panel={panel} index={index} dragHandleProps={prov.dragHandleProps} />
-                    <div className={snapshot.isDragging ? 'ring-2 ring-sky-400 rounded-2xl shadow-2xl' : ''}>
-                      {panel.node}
-                    </div>
-                  </div>
-                )}
+              <Draggable isDragDisabled={!editable || expandedId === panel.id} key={panel.id} draggableId={panel.id} index={index}>
+                {(dragProvided, snapshot) => renderPanel(panel, index, dragProvided, snapshot)}
               </Draggable>
             ))}
             {provided.placeholder}
