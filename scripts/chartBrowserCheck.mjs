@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import { strict as assert } from 'node:assert';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 await mkdir('artifacts', {recursive:true});
 const browser = await chromium.launch();
 try {
@@ -18,7 +18,12 @@ try {
     return id && node.closest('svg').querySelector(`[id="${id}"]`) && node.getBBox().width>0 && node.getBBox().height>0;
   }));
   assert.equal(fills,true);
+  await writeFile('artifacts/charts-glass-dom.html', await page.content());
+  console.log('Paint diagnostics', JSON.stringify(await page.locator('.recharts-bar-rectangle, .recharts-line-curve').evaluateAll(nodes => nodes.slice(0,3).map(n=>({html:n.outerHTML,transform:getComputedStyle(n).transform,clip:getComputedStyle(n).clipPath,animation:getComputedStyle(n).animation,box:n.getBoundingClientRect().toJSON()})))));
   await page.screenshot({path:'artifacts/charts-glass-desktop.png',fullPage:true});
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.screenshot({path:'artifacts/charts-glass-no-motion.png',fullPage:true});
+  await page.emulateMedia({reducedMotion:'no-preference'});
   await page.getByRole('button',{name:'Expandir gráfico',exact:true}).first().click();
   await page.getByRole('dialog').waitFor();
   // ResizeObserver supplies the new dialog dimensions after it becomes visible.
