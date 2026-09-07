@@ -1,0 +1,85 @@
+.dashboard-panel-shell {
+  position: relative;
+  min-width: 0;
+}
+
+.dashboard-panel-shell .dashboard-panel-controls {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 40;
+  opacity: 0.72;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.dashboard-panel-shell:hover .dashboard-panel-controls,
+.dashboard-panel-shell:focus-within .dashboard-panel-controls,
+.dashboard-panel-shell--expanded .dashboard-panel-controls {
+  opacity: 1;
+}
+
+.dashboard-panel-shell .chart-glass-panel__header {
+  padding-right: 14.5rem;
+}
+
+.dashboard-panel-shell--expanded {
+  position: fixed !important;
+  inset: 1rem !important;
+  z-index: 91 !important;
+  grid-column: 1 / -1 !important;
+  width: auto !important;
+  max-height: calc(100dvh - 2rem);
+}
+
+.dashboard-panel-shell--expanded > div:last-child,
+.dashboard-panel-shell--expanded .chart-glass-panel {
+  height: 100%;
+  max-height: calc(100dvh - 2rem);
+}
+
+.dashboard-panel-shell--expanded > div:last-child {
+  overflow: auto;
+  border-radius: 1.5rem;
+}
+
+.dashboard-panel-shell--expanded .chart-glass-panel {
+  overflow: auto;
+  background: hsl(var(--card) / 0.96);
+  box-shadow: 0 32px 120px hsl(220 55% 4% / 0.45);
+}
+
+.dashboard-panel-shell--expanded .recharts-responsive-container {
+  min-height: 360px;
+}
+
+@media (max-width: 900px) {
+  .dashboard-panel-shell .dashboard-panel-controls {
+    position: relative;
+    top: auto;
+    right: auto;
+    z-index: 40;
+    margin: 0 0 0.45rem auto;
+    width: max-content;
+    opacity: 1;
+  }
+
+  .dashboard-panel-shell .chart-glass-panel__header {
+    padding-right: 1rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard-panel-shell--expanded {
+    inset: 0.35rem !important;
+    max-height: calc(100dvh - 0.7rem);
+  }
+
+  .dashboard-panel-shell .dashboard-panel-controls {
+    max-width: 100%;
+  }
+
+  .dashboard-panel-shell .dashboard-panel-control {
+    width: 1.9rem;
+    height: 1.9rem;
+  }
+}
