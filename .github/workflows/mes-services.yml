@@ -57,4 +57,24 @@ jobs:
       - run: python services/tests/verify_database.py
         env:
           MES_TEST_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/postgres
+      - name: Criar banco vazio exclusivo para aprendizado de ciclo
+        env:
+          MES_TEST_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/postgres
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg2
+
+          connection = psycopg2.connect(os.environ['MES_TEST_DATABASE_URL'])
+          connection.autocommit = True
+          try:
+              with connection.cursor() as cursor:
+                  cursor.execute('CREATE DATABASE mes_cycle_learning_test TEMPLATE template0')
+          finally:
+              connection.close()
+          PY
+      - name: Validar aprendizado de ciclo no banco isolado
+        run: python services/tests/verify_cycle_learning.py
+        env:
+          MES_TEST_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/mes_cycle_learning_test
       - run: docker build -t mes-dashboard:validation services/mes-dashboard

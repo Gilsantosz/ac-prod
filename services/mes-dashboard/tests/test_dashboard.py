@@ -25,12 +25,12 @@ REGISTRO = [
 
 
 class ConexaoSimulada:
-    def __init__(self, dados, erro=None):
+    def __init__(self, dados, erro=None, colunas=None):
         self.dados = dados
         self.erro = erro
         self.closed = False
         self.sql = None
-        self.description = [SimpleNamespace(name=coluna) for coluna in COLUNAS]
+        self.description = [SimpleNamespace(name=coluna) for coluna in (colunas or COLUNAS)]
 
     def set_session(self, **kwargs):
         assert kwargs == {"readonly": True, "autocommit": True}
@@ -131,6 +131,79 @@ class DashboardTest(unittest.TestCase):
             app = self.entrar(AppTest.from_file(APP).run())
             self.assertEqual(app.metric[3].value, "0.00%")
             self.assertTrue(app.get("vega_lite_chart"))
+
+    def test_aprendendo_exibe_nulos_sem_inventar_oee(self):
+        registro = REGISTRO.copy()
+        registro[3] = None
+        registro[5] = None
+        colunas = COLUNAS + ["estado_ciclo", "cobertura_ciclo_percentual", "referencia_estimada", "produtos_em_aprendizado"]
+        registro += ["aprendendo", 66.67, True, 2]
+        conexao = ConexaoSimulada([registro], colunas=colunas)
+        with patch("psycopg2.connect", return_value=conexao):
+            app = self.entrar(AppTest.from_file(APP).run())
+            self.assertEqual([metrica.value for metrica in app.metric], ["90.00%", "N/D", "95.00%", "N/D"])
+            self.assertTrue(any("Referência de ciclo: Aprendendo" == legenda.value for legenda in app.caption))
+            self.assertTrue(any("66.67%" in legenda.value and "Produtos em aprendizado: 2" in legenda.value for legenda in app.caption))
+            self.assertTrue(any("Desempenho e OEE ficam N/D" in mensagem.value for mensagem in app.info))
+            self.assertFalse(app.get("vega_lite_chart"))
+            self.assertTrue(conexao.closed)
+
+    def test_referencia_estimada_e_amostras_vem_do_banco(self):
+        colunas = COLUNAS + ["estado_ciclo", "cobertura_ciclo_percentual", "referencia_estimada", "quantidade_amostras", "dias_observados"]
+        registro = REGISTRO + ["estimado", 100, True, 27, 4]
+        with patch("psycopg2.connect", return_value=ConexaoSimulada([registro], colunas=colunas)):
+            app = self.entrar(AppTest.from_file(APP).run())
+            self.assertEqual([metrica.value for metrica in app.metric], ["90.00%", "80.00%", "95.00%", "68.40%"])
+            self.assertTrue(any("Referência de ciclo: Estimado (ciclo observado)" == legenda.value for legenda in app.caption))
+            self.assertTrue(any("100.00%" in legenda.value and "Amostras válidas: 27" in legenda.value
+                and "Dias observados: 4" in legenda.value for legenda in app.caption))
+            self.assertTrue(app.get("vega_lite_chart"))
+
+    def test_padrao_informado_nao_e_rotulado_como_estimativa(self):
+        colunas = COLUNAS + ["estado_ciclo", "cobertura_ciclo_percentual", "referencia_estimada"]
+        registro = REGISTRO + ["padrao", 100, False]
+        with patch("psycopg2.connect", return_value=ConexaoSimulada([registro], colunas=colunas)):
+            app = self.entrar(AppTest.from_file(APP).run())
+            self.assertTrue(any("Referência de ciclo: Padrão informado" == legenda.value for legenda in app.caption))
+            self.assertFalse(any("Referência de ciclo: Estimado" in legenda.value for legenda in app.caption))
+            self.assertFalse(any("Amostras válidas" in legenda.value or "Dias observados" in legenda.value for legenda in app.caption))
+            self.assertEqual(app.metric[3].value, "68.40%")
+
+    def test_sem_producao_novo_contrato_mantem_indicadores_indisponiveis(self):
+        registro = REGISTRO.copy()
+        registro[2:6] = [100, None, 0, None]
+        registro[8] = False
+        colunas = COLUNAS + ["estado_ciclo", "cobertura_ciclo_percentual", "referencia_estimada"]
+        registro += ["sem_producao", None, False]
+        with patch("psycopg2.connect", return_value=ConexaoSimulada([registro], colunas=colunas)):
+            app = self.entrar(AppTest.from_file(APP).run())
+            self.assertEqual([metrica.value for metrica in app.metric], ["N/D"] * 4)
+            self.assertTrue(any("Referência de ciclo: Sem produção no período" == legenda.value for legenda in app.caption))
+            self.assertFalse(any("Produção com referência de ciclo" in legenda.value for legenda in app.caption))
+            self.assertFalse(app.get("vega_lite_chart"))
+
+    def test_coluna_numerica_com_nulo_e_numero_nao_cria_barra_zero(self):
+        colunas = COLUNAS + ["estado_ciclo", "cobertura_ciclo_percentual", "referencia_estimada"]
+        aprendendo = REGISTRO.copy()
+        aprendendo[3] = None
+        aprendendo[5] = None
+        aprendendo += ["aprendendo", 0, False]
+        estimado = REGISTRO.copy()
+        estimado[0] = "00000000-0000-4000-8000-000000000002"
+        estimado[1] = "Linha 2"
+        estimado += ["estimado", 100, True]
+        with patch("psycopg2.connect", return_value=ConexaoSimulada([aprendendo, estimado], colunas=colunas)):
+            app = self.entrar(AppTest.from_file(APP).run())
+            self.assertEqual(app.metric[1].value, "N/D")
+            self.assertEqual(app.metric[3].value, "N/D")
+            self.assertEqual(app.metric[7].value, "68.40%")
+            self.assertTrue(app.get("vega_lite_chart"))
+
+    def test_marca_estimada_e_preservada_sem_coluna_de_estado(self):
+        registro = REGISTRO + [True]
+        with patch("psycopg2.connect", return_value=ConexaoSimulada([registro], colunas=COLUNAS + ["referencia_estimada"])):
+            app = self.entrar(AppTest.from_file(APP).run())
+            self.assertTrue(any("Referência de ciclo: Estimado (ciclo observado)" == legenda.value for legenda in app.caption))
 
     def test_erro_de_consulta_fecha_conexao_sem_vazar_detalhes(self):
         conexao = ConexaoSimulada([], psycopg2.OperationalError("senha-super-secreta"))

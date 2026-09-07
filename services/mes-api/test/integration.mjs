@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import pg from 'pg';
 import { createApp } from '../app.mjs';
@@ -13,29 +14,27 @@ test('PostgreSQL temporário: privilégios mínimos, 1.000 POSTs e idempotência
   t.after(() => admin.end());
   const equipamento = randomUUID();
   const produto = randomUUID();
+  // As tabelas já existentes no MES são dependências das migrations reais.
+  // O cron é um stub somente neste cluster efêmero: não há agendamento externo.
   await admin.query(`
-    CREATE TABLE public.equipamentos(id uuid PRIMARY KEY);
-    CREATE TABLE public.produtos(id uuid PRIMARY KEY);
-    CREATE TABLE public.apontamentos_producao(
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      equipamento_id uuid NOT NULL REFERENCES public.equipamentos(id),
-      produto_id uuid NOT NULL REFERENCES public.produtos(id),
-      qte_boa integer NOT NULL CHECK(qte_boa >= 0),
-      qte_refugo integer NOT NULL CHECK(qte_refugo >= 0),
-      data_hora timestamptz NOT NULL DEFAULT NOW()
-    );
+    CREATE ROLE anon;
+    CREATE ROLE authenticated;
+    CREATE TABLE public.production_orders(id uuid PRIMARY KEY);
+    CREATE TABLE public.operators(id uuid PRIMARY KEY);
+    CREATE TABLE public.production_machines(id uuid PRIMARY KEY, name text, cell_name text, active boolean);
+    CREATE SCHEMA cron;
+    CREATE FUNCTION cron.schedule(text, text, text) RETURNS bigint LANGUAGE sql AS 'SELECT 1::bigint';
+  `);
+  const migration = (name) => readFileSync(new URL(`../../../supabase/migrations/${name}`, import.meta.url), 'utf8');
+  await admin.query(migration('20260907011551_mes_layer1.sql'));
+  await admin.query(`
     CREATE MATERIALIZED VIEW public.oee_tempo_real AS
       SELECT id AS equipamento_id, 85.50::numeric AS oee_percentual FROM public.equipamentos;
-    CREATE ROLE mes_api LOGIN;
-    REVOKE ALL ON SCHEMA public FROM PUBLIC;
-    GRANT USAGE ON SCHEMA public TO mes_api;
-    GRANT INSERT, SELECT ON public.apontamentos_producao TO mes_api;
-    GRANT SELECT ON public.oee_tempo_real TO mes_api;
-    ALTER ROLE mes_api SET statement_timeout = '5s';
-    ALTER ROLE mes_api SET lock_timeout = '1s';
+    ALTER ROLE mes_api LOGIN CONNECTION LIMIT 50;
   `);
-  await admin.query('INSERT INTO public.equipamentos VALUES($1)', [equipamento]);
-  await admin.query('INSERT INTO public.produtos VALUES($1)', [produto]);
+  await admin.query(migration('20260907015138_mes_cycle_learning.sql'));
+  await admin.query("INSERT INTO public.equipamentos(id,nome,celula_linha,status_atual) VALUES($1,'Equipamento de teste','Linha de teste','Operando')", [equipamento]);
+  await admin.query("INSERT INTO public.produtos(id,sku,descricao,tempo_ciclo_padrao) VALUES($1,'TESTE','Produto sem padrão',NULL)", [produto]);
   await admin.query('REFRESH MATERIALIZED VIEW public.oee_tempo_real');
 
   const apiUrl = new URL(adminUrl);
@@ -76,7 +75,70 @@ test('PostgreSQL temporário: privilégios mínimos, 1.000 POSTs e idempotência
   assert.equal((await post(randomUUID(), { ...payload, equipamento_id: randomUUID() })).statusCode, 422);
   const oee = await app.inject({ url: '/api/oee', headers: { authorization: `Bearer ${token}` } });
   assert.equal(oee.statusCode, 200);
-  assert.equal(oee.json()[0].oee_percentual, '85.50');
+  assert.equal(oee.json()[0].oee_percentual, null);
+  assert.equal(oee.json()[0].estado_ciclo, 'sem_producao');
+  assert.equal((await admin.query('SELECT count(*)::integer AS n FROM public.amostras_ciclo')).rows[0].n, 0);
+
+  await t.test('medição completa cria uma amostra pelo trigger e reenvio equivalente não duplica', async () => {
+    const measuredKey = randomUUID();
+    const measured = { ...payload, qte_refugo: 0,
+      inicio_operacao: '2026-01-06T10:00:00.123456-03:00',
+      fim_operacao: '2026-01-06T10:01:00.123456-03:00',
+      origem_tempo: 'sensor', teve_interrupcao: false, retrabalho: false };
+    const created = await post(measuredKey, measured);
+    assert.equal(created.statusCode, 201, created.body);
+    const equivalent = { ...measured,
+      inicio_operacao: '2026-01-06T13:00:00.123456Z',
+      fim_operacao: '2026-01-06T13:01:00.123456Z' };
+    const replays = await Promise.all(Array.from({ length: 20 }, () => post(measuredKey, equivalent)));
+    assert.ok(replays.every((response) => response.statusCode === 200));
+    assert.ok(replays.every((response) => response.headers['idempotency-replayed'] === 'true'));
+    const samples = await admin.query('SELECT quantidade, ciclo_minutos FROM public.amostras_ciclo WHERE apontamento_id=$1', [measuredKey]);
+    assert.equal(samples.rowCount, 1);
+    assert.equal(samples.rows[0].quantidade, '5');
+    assert.equal(Number(samples.rows[0].ciclo_minutos), 0.2);
+    await assert.rejects(pool.query('SELECT * FROM public.amostras_ciclo'), { code: '42501' });
+    await assert.rejects(pool.query('INSERT INTO public.amostras_ciclo DEFAULT VALUES'), { code: '42501' });
+
+    for (const changed of [
+      { equipamento_id: randomUUID() }, { produto_id: randomUUID() },
+      { qte_boa: 6 }, { qte_refugo: 1 }, { origem_tempo: 'operador' },
+      { teve_interrupcao: true }, { retrabalho: true },
+      { inicio_operacao: '2026-01-06T13:00:00.123455Z' },
+      { fim_operacao: '2026-01-06T13:01:00.123457Z' },
+    ]) {
+      const conflict = await post(measuredKey, { ...equivalent, ...changed });
+      assert.equal(conflict.statusCode, 409, JSON.stringify(changed));
+    }
+    assert.equal((await post(measuredKey, payload)).statusCode, 409);
+    assert.equal((await post(key, measured)).statusCode, 409);
+  });
+
+  await t.test('refugo, interrupção e retrabalho são registrados sem virar ciclo aprendido', async () => {
+    const measured = { ...payload, qte_refugo: 0,
+      inicio_operacao: '2026-01-06T10:00:00Z', fim_operacao: '2026-01-06T10:01:00Z',
+      origem_tempo: 'operador', teve_interrupcao: false, retrabalho: false };
+    for (const flags of [{ qte_refugo: 1 }, { teve_interrupcao: true }, { retrabalho: true }]) {
+      const id = randomUUID();
+      assert.equal((await post(id, { ...measured, ...flags })).statusCode, 201);
+      assert.equal((await admin.query('SELECT count(*)::integer AS n FROM public.amostras_ciclo WHERE apontamento_id=$1', [id])).rows[0].n, 0);
+    }
+  });
+
+  await t.test('banco recusa intervalo invertido, fim futuro e medição sem peças', async () => {
+    const measured = { ...payload, qte_refugo: 0,
+      inicio_operacao: '2026-01-06T10:00:00Z', fim_operacao: '2026-01-06T10:01:00Z',
+      origem_tempo: 'sensor', teve_interrupcao: false, retrabalho: false };
+    for (const changed of [
+      { fim_operacao: measured.inicio_operacao },
+      { inicio_operacao: '2026-01-06T10:02:00Z' },
+      { fim_operacao: '2999-01-01T00:00:00Z' }, { qte_boa: 0 },
+    ]) {
+      const id = randomUUID();
+      assert.equal((await post(id, { ...measured, ...changed })).statusCode, 400);
+      assert.equal((await admin.query('SELECT count(*)::integer AS n FROM public.apontamentos_producao WHERE id=$1', [id])).rows[0].n, 0);
+    }
+  });
 
   // Mantém lock incompatível para provar que timeout não duplica o evento.
   const blocker = await admin.connect();

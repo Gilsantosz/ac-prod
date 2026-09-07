@@ -22,6 +22,12 @@ METRICAS = (
     ("OEE Final", "oee_percentual"),
 )
 FUSO_EXIBICAO = ZoneInfo("America/Sao_Paulo")
+ESTADOS_CICLO = {
+    "aprendendo": "Aprendendo",
+    "estimado": "Estimado (ciclo observado)",
+    "padrao": "Padrão informado",
+    "sem_producao": "Sem produção no período",
+}
 
 
 class ConfiguracaoIncompleta(ValueError):
@@ -168,6 +174,36 @@ def horario_banco(valor) -> str:
     return str(valor)
 
 
+def referencia_ciclo(registro: dict, tem_producao: bool) -> tuple[str, str]:
+    """Apresenta a classificação do banco; não estima tempos no dashboard."""
+    if not tem_producao:
+        return "sem_producao", ESTADOS_CICLO["sem_producao"]
+    estado = registro.get("estado_ciclo")
+    if isinstance(estado, str) and estado in ESTADOS_CICLO:
+        return estado, ESTADOS_CICLO[estado]
+    # Compatibilidade com snapshots que fornecem somente a marca de estimativa.
+    if registro.get("referencia_estimada") is True:
+        return "estimado", ESTADOS_CICLO["estimado"]
+    return "nao_informado", "Referência de ciclo não informada"
+
+
+def detalhes_aprendizado(registro: dict) -> list[str]:
+    """Só formata campos opcionais já calculados na materialized view."""
+    detalhes = []
+    cobertura = numero_para_exibicao(registro.get("cobertura_ciclo_percentual"))
+    if cobertura is not None:
+        detalhes.append(f"Produção com referência de ciclo: {percentual(cobertura)}")
+    for campo, rotulo in (
+        ("produtos_em_aprendizado", "Produtos em aprendizado"),
+        ("quantidade_amostras", "Amostras válidas"),
+        ("dias_observados", "Dias observados"),
+    ):
+        numero = numero_para_exibicao(registro.get(campo))
+        if numero is not None:
+            detalhes.append(f"{rotulo}: {numero:.0f}")
+    return detalhes
+
+
 @st.fragment(run_every="60s")
 def atualizar_dashboard() -> None:
     # Fragmentos também verificam a sessão antes de acessar dados industriais.
@@ -204,6 +240,7 @@ def atualizar_dashboard() -> None:
         nome = str(nome) if nome is not None and not pd.isna(nome) else equipamento_id
         tem_producao = registro.get("tem_producao") is True
         tem_indicadores = tem_indicadores or tem_producao
+        estado, referencia = referencia_ciclo(registro, tem_producao)
         with st.container(border=True):
             st.subheader(nome)
             if nome != equipamento_id:
@@ -212,19 +249,38 @@ def atualizar_dashboard() -> None:
                 f"Referência: {horario_banco(registro.get('data_referencia'))} · "
                 f"Atualizado no banco: {horario_banco(registro.get('atualizado_em'))}"
             )
+            st.caption(f"Referência de ciclo: {referencia}")
+            detalhes = detalhes_aprendizado(registro)
+            if detalhes:
+                st.caption(" · ".join(detalhes))
             if not tem_producao:
                 st.caption("Sem apontamentos nesta camada para a data de referência.")
+            elif estado == "aprendendo":
+                st.info(
+                    "Aprendendo: ainda faltam medições de operações para definir uma "
+                    "referência de ciclo para toda a produção. Desempenho e OEE "
+                    "ficam N/D enquanto essa referência estiver incompleta."
+                )
+            elif estado == "estimado":
+                st.caption(
+                    "O desempenho e o OEE usam uma referência observada na produção. "
+                    "Essa estimativa ainda não é um tempo padrão informado pela engenharia."
+                )
             for coluna, (rotulo, campo) in zip(st.columns(4), METRICAS):
                 coluna.metric(rotulo, percentual(registro.get(campo)) if tem_producao else "N/D")
         oee = numero_para_exibicao(registro["oee_percentual"])
         if tem_producao and oee is not None:
             # O ID diferencia nomes repetidos; não agregamos equipamentos.
-            barras.append({"Equipamentos": f"{nome} ({equipamento_id})", "OEE Final (%)": oee})
+            rotulo_barra = f"{nome} ({equipamento_id})"
+            if estado == "estimado":
+                rotulo_barra += " · Estimado (ciclo observado)"
+            barras.append({"Equipamentos": rotulo_barra, "OEE Final (%)": oee})
 
     if not tem_indicadores:
         st.info(
             "Ainda não há apontamentos de produção nesta camada para a data de referência. "
-            "Os indicadores serão exibidos quando houver dados com tempo de ciclo cadastrado."
+            "Os indicadores aparecerão conforme os dados chegarem; a referência de ciclo "
+            "poderá ser aprendida a partir de operações medidas."
         )
     st.subheader("OEE por equipamento")
     if barras:
