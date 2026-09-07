@@ -60,7 +60,7 @@ try {
   await firstBar.hover();
   await firstHost.locator('.recharts-tooltip-wrapper').waitFor({ state: 'visible' });
   await firstBar.click();
-  await page.getByRole('status').waitFor();
+  await page.getByRole('status', { name: 'Detalhes do ponto selecionado', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Fechar detalhes', exact: true }).click();
   await page.emulateMedia({ reducedMotion: 'reduce' });
   assert.equal(await firstHost.locator('.recharts-bar-rectangle').first().evaluate(node => getComputedStyle(node).animationName), 'none');
