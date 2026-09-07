@@ -64,7 +64,7 @@ jobs:
           pathlib.Path(os.environ['K6_FIXTURES']).write_text(json.dumps(fixture))
           PY
           # inspect evaluates imports/options only, never setup or HTTP requests.
-          k6 inspect tests/load/collection-capacity-per-cell.js > artifacts/k6-capacity/compiled-options.json
+          k6 inspect --include-system-env-vars tests/load/collection-capacity-per-cell.js > artifacts/k6-capacity/compiled-options.json
           printf 'Offline reporter tests and k6 module compilation passed. Not a system load test.\n' >> "$GITHUB_STEP_SUMMARY"
       - name: Check protected staging prerequisites
         id: prerequisites
