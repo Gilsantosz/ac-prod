@@ -1,4 +1,4 @@
-name: MES isolated capacity 150 operators + 1000 management
+name: MES 1150 - offline engineering validation, NOT live capacity
 on:
   push:
     branches: [test/k6-capacity-2026-09-07]
@@ -6,26 +6,96 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-  id-token: write
 concurrency:
   group: acprod-isolated-k6-capacity
   cancel-in-progress: false
 jobs:
   investigation:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
+    env:
+      K6_NO_USAGE_REPORT: 'true'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
-      - name: Snapshot versioned sources for engineering review (no credentials)
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install verified runtime and prepare sanitized artifacts
         run: |
           set -euo pipefail
           mkdir -p artifacts/mes-1150
-          git archive --format=tar HEAD > artifacts/mes-1150/source.tar
+          bash scripts/capacity/install-k6.sh
           git rev-parse HEAD > artifacts/mes-1150/source-sha.txt
+      - name: Validate 1150 identity allocation and generate planning-only manifest
+        run: |
+          set -euo pipefail
+          node --test scripts/capacity/mes-1150/plan.test.mjs | tee artifacts/mes-1150/plan-tests.tap
+          node --input-type=module - <<'JS'
+          import { writeFileSync } from 'node:fs';
+          import { buildPlan } from './scripts/capacity/mes-1150/plan.mjs';
+          writeFileSync('artifacts/mes-1150/plan-not-provisioned.json', JSON.stringify(buildPlan(), null, 2));
+          JS
+      - name: Compile k6 script and prove missing fixtures block before remote traffic
+        run: |
+          set -euo pipefail
+          export SUPABASE_URL=https://smnsihksrhzbkhcbdjfu.supabase.co
+          export SUPABASE_ANON_KEY=OFFLINE_NON_AUTHENTICATING_PLACEHOLDER
+          export K6_TARGET=staging K6_CONFIRM_WRITES=staging-v3-load
+          export K6_SEQUENCE_BASE=100000000 MES_MODE=access
+          export K6_FIXTURES="$RUNNER_TEMP/inspect-only.json"
+          trap 'rm -f "$K6_FIXTURES"' EXIT
+          printf '{"project_ref":"smnsihksrhzbkhcbdjfu","run_id":"offline-inspect","operators":[],"management":[]}' > "$K6_FIXTURES"
+          k6 inspect --include-system-env-vars tests/load/mes-1150.js > artifacts/mes-1150/k6-compiled-options.json
+          set +e
+          k6 run tests/load/mes-1150.js > artifacts/mes-1150/k6-preflight-block.log 2>&1
+          result=$?
+          set -e
+          test "$result" -eq 107
+          python3 - <<'PY'
+          import json, pathlib
+          report = json.loads(pathlib.Path('artifacts/mes-1150/api-result.json').read_text())
+          assert report['status'] == 'NO_MEASUREMENT'
+          summary = json.loads(pathlib.Path('artifacts/mes-1150/api-summary.json').read_text())
+          assert summary.get('metrics', {}).get('http_reqs', {}).get('values', {}).get('count', 0) == 0
+          PY
+          printf 'Offline harness passed. No users/posts were provisioned and no MES load was sent.\n' >> "$GITHUB_STEP_SUMMARY"
+      - name: Install application dependencies
+        run: npm ci --silent
+      - name: Existing MES unit regressions (not a capacity benchmark)
+        run: |
+          set -euo pipefail
+          npm run test:unit -- --reporter=json --outputFile=artifacts/mes-1150/vitest.json > artifacts/mes-1150/vitest.log 2>&1
+      - name: Build test-target application without production credentials
+        env:
+          VITE_SUPABASE_URL: https://smnsihksrhzbkhcbdjfu.supabase.co
+          VITE_SUPABASE_ANON_KEY: OFFLINE_NON_AUTHENTICATING_PLACEHOLDER
+          VITE_APP_BASE: /ac-prod/
+        run: npm run build > artifacts/mes-1150/build.log 2>&1
+      - name: Chromium regression using existing mocked backend (not 1150 browsers)
+        env:
+          PLAYWRIGHT_STATIC_DIST: '1'
+          PLAYWRIGHT_BASE_URL: http://app.test/ac-prod/
+          PLAYWRIGHT_SKIP_WEBSERVER: '1'
+        run: |
+          set -euo pipefail
+          npx playwright install --with-deps chromium > artifacts/mes-1150/browser-install.log 2>&1
+          npx playwright test tests/e2e/collection-fabric-v3.spec.js --reporter=json > artifacts/mes-1150/playwright.json
+      - name: Preserve sanitized evidence even if validation fails
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: mes-1150-validation-${{ github.run_id }}
+          path: artifacts/mes-1150/
+          retention-days: 14
+      - name: Preserve reviewed source snapshot without credentials
+        if: always()
+        run: git archive --format=tar HEAD > "$RUNNER_TEMP/mes-1150-source.tar"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
         with:
           name: mes-1150-sources-${{ github.run_id }}
-          path: artifacts/mes-1150/
+          path: ${{ runner.temp }}/mes-1150-source.tar
           retention-days: 2
