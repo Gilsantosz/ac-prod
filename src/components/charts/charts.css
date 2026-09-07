@@ -20,7 +20,7 @@
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
-.ac-chart-host { position: relative; display: flex; flex-direction: column; min-width: 0; color: hsl(var(--foreground)); animation: ac-chart-enter .3s ease-out both; }
+.ac-chart-host { position: relative; display: flex; flex-direction: column; min-width: 0; color: hsl(var(--foreground)); animation: ac-chart-enter .3s ease-out backwards; }
 .ac-chart-toolbar { display: flex; flex: 0 0 auto; justify-content: flex-end; align-items: center; gap: 4px; padding: 0 0 8px; position: relative; z-index: 2; }
 .ac-chart-toolbar-hint { margin-right: auto; font-size: 10px; color: hsl(var(--muted-foreground)); }
 .ac-chart-button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; padding: 0; border: 1px solid var(--ac-chart-border); border-radius: 10px; background: var(--ac-chart-glass); color: hsl(var(--foreground)); cursor: pointer; transition: background .16s, box-shadow .16s; list-style: none; }
@@ -41,7 +41,7 @@
 .ac-chart-point-heading { margin-bottom: 6px; }
 .ac-chart-point-row { padding: 3px 0; font-variant-numeric: tabular-nums; }
 .ac-chart-overlay { position: fixed; inset: 0; z-index: 150; background: rgb(15 23 42 / .45); backdrop-filter: blur(5px); }
-.ac-chart-dialog { position: fixed; inset: 4vh 4vw; z-index: 151; display: flex; flex-direction: column; min-height: 0; padding: 24px; border: 1px solid var(--ac-chart-border); border-radius: 24px; background: var(--ac-chart-tooltip); color: hsl(var(--foreground)); box-shadow: 0 24px 80px rgb(0 0 0 / .25); animation: ac-chart-enter .22s ease-out both; }
+.ac-chart-dialog { position: fixed; inset: 4vh 4vw; z-index: 151; display: flex; flex-direction: column; min-height: 0; padding: 24px; border: 1px solid var(--ac-chart-border); border-radius: 24px; background: var(--ac-chart-tooltip); color: hsl(var(--foreground)); box-shadow: 0 24px 80px rgb(0 0 0 / .25); animation: ac-chart-enter .22s ease-out backwards; }
 .ac-chart-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 20px; font-weight: 600; }
 .ac-chart-description { font-size: 12px; color: hsl(var(--muted-foreground)); margin: 8px 0 18px; }
 .ac-chart-table-scroll { height: 100%; overflow: auto; border: 1px solid var(--ac-chart-border); border-radius: 12px; }
@@ -50,11 +50,12 @@
 .ac-chart-table th, .ac-chart-table td { padding: 10px 12px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--ac-chart-border); }
 .ac-chart-table th:first-child { text-align: left; }
 .ac-chart-table thead th { position: sticky; top: 0; background: var(--ac-chart-tooltip); }
-.ac-lot-progress-fill { background: linear-gradient(90deg, #38bdf8, #2563eb); transform-origin: left center; animation: ac-chart-grow-x .7s cubic-bezier(.22,.7,.25,1) both; transition: width .25s ease-out; }
+.ac-lot-progress-fill { background: linear-gradient(90deg, #38bdf8, #2563eb); transform-origin: left center; animation: ac-chart-grow-x .7s cubic-bezier(.22,.7,.25,1) backwards; transition: width .25s ease-out; }
+/* Release transform/clip compositing after entry; keep native SVG paint and hit-testing. */
 @media (prefers-reduced-motion: no-preference) {
-  .ac-chart-body[data-motion="on"] .recharts-bar-rectangle { transform-box: fill-box; transform-origin: center bottom; animation: ac-chart-grow-y .65s cubic-bezier(.22,.7,.25,1) both; }
+  .ac-chart-body[data-motion="on"] .recharts-bar-rectangle { transform-box: fill-box; transform-origin: center bottom; animation: ac-chart-grow-y .65s cubic-bezier(.22,.7,.25,1) backwards; }
   .ac-chart-horizontal[data-motion="on"] .recharts-bar-rectangle { transform-origin: left center; animation-name: ac-chart-grow-x; }
-  .ac-chart-body[data-motion="on"] :is(.recharts-line-curve, .recharts-area-curve, .recharts-area-area) { animation: ac-chart-draw .8s cubic-bezier(.22,.7,.25,1) both; }
+  .ac-chart-body[data-motion="on"] :is(.recharts-line-curve, .recharts-area-curve, .recharts-area-area) { animation: ac-chart-draw .8s cubic-bezier(.22,.7,.25,1) backwards; }
 }
 @keyframes ac-chart-grow-y { from { transform: scaleY(0); } to { transform: scaleY(1); } }
 @keyframes ac-chart-grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
