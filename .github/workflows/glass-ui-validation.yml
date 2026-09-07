@@ -5,29 +5,25 @@ on:
 permissions:
   contents: read
 jobs:
-  inspect:
+  prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Package frontend sources for isolated validation
-        run: |
-          python3 - <<'PY'
-          import pathlib, subprocess, zipfile
-          files = subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0')
-          with zipfile.ZipFile('frontend-source.zip', 'w', zipfile.ZIP_DEFLATED) as out:
-              for name in files:
-                  p = pathlib.Path(name)
-                  if not name or not p.is_file() or any(part.startswith('.env') for part in p.parts):
-                      continue
-                  if name.startswith(('src/', 'tests/', 'e2e/', 'scripts/', 'public/')) or (len(p.parts) == 1 and p.suffix in ('.json', '.js', '.mjs', '.cjs', '.ts', '.html')):
-                      out.write(name)
-          PY
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install pinned dependencies without application scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Package isolated validation dependencies
+        run: tar -czf ui-dependencies.tar.gz node_modules
       - uses: actions/upload-artifact@v7.0.1
         with:
-          name: frontend-source
-          path: frontend-source.zip
+          name: ui-dependencies
+          path: ui-dependencies.tar.gz
+          compression-level: 0
           retention-days: 1
           if-no-files-found: error
