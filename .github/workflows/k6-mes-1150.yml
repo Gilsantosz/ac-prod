@@ -2,7 +2,7 @@ name: MES 1150 - offline engineering validation, NOT live capacity
 on:
   push:
     branches: [test/k6-capacity-2026-09-07]
-    paths: ['.github/workflows/k6-mes-1150.yml', 'scripts/capacity/mes-1150/**', 'tests/load/mes-1150.js']
+    paths: ['.github/workflows/k6-mes-1150.yml', 'scripts/capacity/mes-1150/**', 'tests/load/mes-1150.js', 'tests/e2e/collection-fabric-v3.spec.js']
   workflow_dispatch:
 permissions:
   contents: read
