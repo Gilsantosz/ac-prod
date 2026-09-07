@@ -1,0 +1,519 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-09-04T16:30:00Z",
+  "captured_at_precision": "minute",
+  "captured_at_note": "Rounded consolidation time; the exact connector-call instant was not exported.",
+  "repository": "Gilsantosz/ac-prod",
+  "pull_request": {
+    "number": 63,
+    "url": "https://github.com/Gilsantosz/ac-prod/pull/63",
+    "state": "open",
+    "draft": false,
+    "merged": false,
+    "base": "main",
+    "base_sha": "111501f503cc6c2c61b1c768c5f1dcc8901ba120",
+    "head": "fix/auth-realtime-capacity-20260902",
+    "head_sha": "95f95df7ff83c3f37d997c62ba64c55d374be23b",
+    "commits": 11,
+    "changed_files": 56,
+    "additions": 6933,
+    "deletions": 326
+  },
+  "source_anomalies": [
+    {
+      "kind": "timestamp_order",
+      "check_names": [
+        "Publicar GitHub Pages",
+        "Gerar artefato do release comprovado"
+      ],
+      "observation": "Source completed_at is one second earlier than started_at for these skipped jobs; raw values were preserved and no duration was derived."
+    }
+  ],
+  "privacy": {
+    "omitted": [
+      "authors",
+      "emails",
+      "avatars",
+      "comment bodies",
+      "raw logs",
+      "tokens"
+    ],
+    "note": "URLs, immutable commit IDs, paths, line positions, timestamps and status are retained for review traceability."
+  },
+  "reviews": [
+    {
+      "id": 5092891641,
+      "state": "COMMENTED",
+      "commit_id": "3e477a2c3b367ce89257b50e5ff79ff45339b917",
+      "submitted_at": "2026-09-02T17:21:12Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#pullrequestreview-5092891641"
+    },
+    {
+      "id": 5102891356,
+      "state": "COMMENTED",
+      "commit_id": "4f3a29de3ecc54d1747a5c190b9cd7a646f62352",
+      "submitted_at": "2026-09-03T14:01:37Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#pullrequestreview-5102891356"
+    },
+    {
+      "id": 5102891576,
+      "state": "COMMENTED",
+      "commit_id": "4f3a29de3ecc54d1747a5c190b9cd7a646f62352",
+      "submitted_at": "2026-09-03T14:01:38Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#pullrequestreview-5102891576"
+    },
+    {
+      "id": 5102891907,
+      "state": "COMMENTED",
+      "commit_id": "4f3a29de3ecc54d1747a5c190b9cd7a646f62352",
+      "submitted_at": "2026-09-03T14:01:41Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#pullrequestreview-5102891907"
+    },
+    {
+      "id": 5102892447,
+      "state": "COMMENTED",
+      "commit_id": "4f3a29de3ecc54d1747a5c190b9cd7a646f62352",
+      "submitted_at": "2026-09-03T14:01:43Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#pullrequestreview-5102892447"
+    },
+    {
+      "id": 5102892698,
+      "state": "COMMENTED",
+      "commit_id": "4f3a29de3ecc54d1747a5c190b9cd7a646f62352",
+      "submitted_at": "2026-09-03T14:01:44Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#pullrequestreview-5102892698"
+    },
+    {
+      "id": 5102967041,
+      "state": "COMMENTED",
+      "commit_id": "4f3a29de3ecc54d1747a5c190b9cd7a646f62352",
+      "submitted_at": "2026-09-03T14:08:23Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#pullrequestreview-5102967041"
+    },
+    {
+      "id": 5103201942,
+      "state": "COMMENTED",
+      "commit_id": "5d901dc41d9af10aedce9c8953baafc5c70f4736",
+      "submitted_at": "2026-09-03T14:30:46Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#pullrequestreview-5103201942"
+    },
+    {
+      "id": 5103202177,
+      "state": "COMMENTED",
+      "commit_id": "5d901dc41d9af10aedce9c8953baafc5c70f4736",
+      "submitted_at": "2026-09-03T14:30:47Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#pullrequestreview-5103202177"
+    },
+    {
+      "id": 5103202474,
+      "state": "COMMENTED",
+      "commit_id": "5d901dc41d9af10aedce9c8953baafc5c70f4736",
+      "submitted_at": "2026-09-03T14:30:49Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#pullrequestreview-5103202474"
+    },
+    {
+      "id": 5103256421,
+      "state": "COMMENTED",
+      "commit_id": "5d901dc41d9af10aedce9c8953baafc5c70f4736",
+      "submitted_at": "2026-09-03T14:35:54Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#pullrequestreview-5103256421"
+    },
+    {
+      "id": 5103327723,
+      "state": "COMMENTED",
+      "commit_id": "95f95df7ff83c3f37d997c62ba64c55d374be23b",
+      "submitted_at": "2026-09-03T14:43:07Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#pullrequestreview-5103327723"
+    },
+    {
+      "id": 5103328034,
+      "state": "COMMENTED",
+      "commit_id": "95f95df7ff83c3f37d997c62ba64c55d374be23b",
+      "submitted_at": "2026-09-03T14:43:09Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#pullrequestreview-5103328034"
+    },
+    {
+      "id": 5103328306,
+      "state": "COMMENTED",
+      "commit_id": "95f95df7ff83c3f37d997c62ba64c55d374be23b",
+      "submitted_at": "2026-09-03T14:43:11Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#pullrequestreview-5103328306"
+    }
+  ],
+  "review_comments": [
+    {
+      "id": 3916782879,
+      "path": "supabase/migrations/20260902165000_capacity_test_control_plane.sql",
+      "line": 120,
+      "side": "RIGHT",
+      "commit_id": "95f95df7ff83c3f37d997c62ba64c55d374be23b",
+      "created_at": "2026-09-02T17:21:12Z",
+      "updated_at": "2026-09-02T17:21:12Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3916782879",
+      "in_reply_to_id": null
+    },
+    {
+      "id": 3916782884,
+      "path": "src/lib/AuthContext.jsx",
+      "line": 146,
+      "side": "RIGHT",
+      "commit_id": "95f95df7ff83c3f37d997c62ba64c55d374be23b",
+      "created_at": "2026-09-02T17:21:12Z",
+      "updated_at": "2026-09-02T17:21:12Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3916782884",
+      "in_reply_to_id": null
+    },
+    {
+      "id": 3916782890,
+      "path": "src/pages/CapacityTests.jsx",
+      "line": 36,
+      "side": "RIGHT",
+      "commit_id": "95f95df7ff83c3f37d997c62ba64c55d374be23b",
+      "created_at": "2026-09-02T17:21:12Z",
+      "updated_at": "2026-09-02T17:21:12Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3916782890",
+      "in_reply_to_id": null
+    },
+    {
+      "id": 3916782899,
+      "path": "supabase/functions/project-collection-v3/index.ts",
+      "line": null,
+      "side": "RIGHT",
+      "commit_id": "a685fdd3cb6a6fe2ee982058412df905261b351e",
+      "created_at": "2026-09-02T17:21:12Z",
+      "updated_at": "2026-09-02T17:21:12Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3916782899",
+      "in_reply_to_id": null
+    },
+    {
+      "id": 3916782909,
+      "path": "src/lib/collectionRealtimeService.js",
+      "line": 136,
+      "side": "RIGHT",
+      "commit_id": "95f95df7ff83c3f37d997c62ba64c55d374be23b",
+      "created_at": "2026-09-02T17:21:12Z",
+      "updated_at": "2026-09-02T17:21:12Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3916782909",
+      "in_reply_to_id": null
+    },
+    {
+      "id": 3925329867,
+      "path": "src/lib/AuthContext.jsx",
+      "line": 146,
+      "side": "RIGHT",
+      "commit_id": "95f95df7ff83c3f37d997c62ba64c55d374be23b",
+      "created_at": "2026-09-03T14:01:37Z",
+      "updated_at": "2026-09-03T14:01:37Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3925329867",
+      "in_reply_to_id": 3916782884
+    },
+    {
+      "id": 3925330096,
+      "path": "supabase/migrations/20260902165000_capacity_test_control_plane.sql",
+      "line": 120,
+      "side": "RIGHT",
+      "commit_id": "95f95df7ff83c3f37d997c62ba64c55d374be23b",
+      "created_at": "2026-09-03T14:01:38Z",
+      "updated_at": "2026-09-03T14:01:38Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3925330096",
+      "in_reply_to_id": 3916782879
+    },
+    {
+      "id": 3925330352,
+      "path": "src/pages/CapacityTests.jsx",
+      "line": 36,
+      "side": "RIGHT",
+      "commit_id": "95f95df7ff83c3f37d997c62ba64c55d374be23b",
+      "created_at": "2026-09-03T14:01:41Z",
+      "updated_at": "2026-09-03T14:01:41Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3925330352",
+      "in_reply_to_id": 3916782890
+    },
+    {
+      "id": 3925330690,
+      "path": "src/lib/collectionRealtimeService.js",
+      "line": 136,
+      "side": "RIGHT",
+      "commit_id": "95f95df7ff83c3f37d997c62ba64c55d374be23b",
+      "created_at": "2026-09-03T14:01:43Z",
+      "updated_at": "2026-09-03T14:01:43Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3925330690",
+      "in_reply_to_id": 3916782909
+    },
+    {
+      "id": 3925330926,
+      "path": "supabase/functions/project-collection-v3/index.ts",
+      "line": null,
+      "side": "RIGHT",
+      "commit_id": "a685fdd3cb6a6fe2ee982058412df905261b351e",
+      "created_at": "2026-09-03T14:01:44Z",
+      "updated_at": "2026-09-03T14:01:44Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3925330926",
+      "in_reply_to_id": 3916782899
+    },
+    {
+      "id": 3925387183,
+      "path": "tests/capacity/seed-capacity-fixture.mjs",
+      "line": null,
+      "side": "RIGHT",
+      "commit_id": "4f3a29de3ecc54d1747a5c190b9cd7a646f62352",
+      "created_at": "2026-09-03T14:08:24Z",
+      "updated_at": "2026-09-03T14:08:24Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3925387183",
+      "in_reply_to_id": null
+    },
+    {
+      "id": 3925387198,
+      "path": "tests/capacity/prepare-auth-fixture.mjs",
+      "line": null,
+      "side": "RIGHT",
+      "commit_id": "4f3a29de3ecc54d1747a5c190b9cd7a646f62352",
+      "created_at": "2026-09-03T14:08:24Z",
+      "updated_at": "2026-09-03T14:08:24Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3925387198",
+      "in_reply_to_id": null
+    },
+    {
+      "id": 3925387203,
+      "path": "supabase/migrations/20260903131718_pr63_capacity_go_no_go_hardening.sql",
+      "line": 264,
+      "side": "RIGHT",
+      "commit_id": "95f95df7ff83c3f37d997c62ba64c55d374be23b",
+      "created_at": "2026-09-03T14:08:24Z",
+      "updated_at": "2026-09-03T14:08:24Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3925387203",
+      "in_reply_to_id": null
+    },
+    {
+      "id": 3925579311,
+      "path": "tests/capacity/prepare-auth-fixture.mjs",
+      "line": null,
+      "side": "RIGHT",
+      "commit_id": "4f3a29de3ecc54d1747a5c190b9cd7a646f62352",
+      "created_at": "2026-09-03T14:30:46Z",
+      "updated_at": "2026-09-03T14:30:46Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3925579311",
+      "in_reply_to_id": 3925387198
+    },
+    {
+      "id": 3925579525,
+      "path": "supabase/migrations/20260903131718_pr63_capacity_go_no_go_hardening.sql",
+      "line": 264,
+      "side": "RIGHT",
+      "commit_id": "95f95df7ff83c3f37d997c62ba64c55d374be23b",
+      "created_at": "2026-09-03T14:30:47Z",
+      "updated_at": "2026-09-03T14:30:47Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3925579525",
+      "in_reply_to_id": 3925387203
+    },
+    {
+      "id": 3925579782,
+      "path": "tests/capacity/seed-capacity-fixture.mjs",
+      "line": null,
+      "side": "RIGHT",
+      "commit_id": "4f3a29de3ecc54d1747a5c190b9cd7a646f62352",
+      "created_at": "2026-09-03T14:30:49Z",
+      "updated_at": "2026-09-03T14:30:49Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3925579782",
+      "in_reply_to_id": 3925387183
+    },
+    {
+      "id": 3925622944,
+      "path": "tests/capacity/cleanup-capacity-fixture.mjs",
+      "line": null,
+      "side": "RIGHT",
+      "commit_id": "5d901dc41d9af10aedce9c8953baafc5c70f4736",
+      "created_at": "2026-09-03T14:35:54Z",
+      "updated_at": "2026-09-03T14:35:54Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3925622944",
+      "in_reply_to_id": null
+    },
+    {
+      "id": 3925622952,
+      "path": "tests/capacity/prepare-auth-fixture.mjs",
+      "line": 73,
+      "side": "RIGHT",
+      "commit_id": "95f95df7ff83c3f37d997c62ba64c55d374be23b",
+      "created_at": "2026-09-03T14:35:54Z",
+      "updated_at": "2026-09-03T14:35:54Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3925622952",
+      "in_reply_to_id": null
+    },
+    {
+      "id": 3925622956,
+      "path": "tests/capacity/run-controlled-capacity.mjs",
+      "line": 166,
+      "side": "RIGHT",
+      "commit_id": "95f95df7ff83c3f37d997c62ba64c55d374be23b",
+      "created_at": "2026-09-03T14:35:54Z",
+      "updated_at": "2026-09-03T14:35:54Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3925622956",
+      "in_reply_to_id": null
+    },
+    {
+      "id": 3925683078,
+      "path": "tests/capacity/run-controlled-capacity.mjs",
+      "line": 166,
+      "side": "RIGHT",
+      "commit_id": "95f95df7ff83c3f37d997c62ba64c55d374be23b",
+      "created_at": "2026-09-03T14:43:07Z",
+      "updated_at": "2026-09-03T14:43:07Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3925683078",
+      "in_reply_to_id": 3925622956
+    },
+    {
+      "id": 3925683337,
+      "path": "tests/capacity/prepare-auth-fixture.mjs",
+      "line": 73,
+      "side": "RIGHT",
+      "commit_id": "95f95df7ff83c3f37d997c62ba64c55d374be23b",
+      "created_at": "2026-09-03T14:43:09Z",
+      "updated_at": "2026-09-03T14:43:09Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3925683337",
+      "in_reply_to_id": 3925622952
+    },
+    {
+      "id": 3925683591,
+      "path": "tests/capacity/cleanup-capacity-fixture.mjs",
+      "line": null,
+      "side": "RIGHT",
+      "commit_id": "5d901dc41d9af10aedce9c8953baafc5c70f4736",
+      "created_at": "2026-09-03T14:43:11Z",
+      "updated_at": "2026-09-03T14:43:11Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#discussion_r3925683591",
+      "in_reply_to_id": 3925622944
+    }
+  ],
+  "issue_comments": [
+    {
+      "id": 5513474197,
+      "created_at": "2026-09-02T17:16:27Z",
+      "updated_at": "2026-09-03T14:50:04Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#issuecomment-5513474197"
+    },
+    {
+      "id": 5513573354,
+      "created_at": "2026-09-02T17:24:12Z",
+      "updated_at": "2026-09-03T14:47:09Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#issuecomment-5513573354"
+    },
+    {
+      "id": 5526955521,
+      "created_at": "2026-09-03T14:02:22Z",
+      "updated_at": "2026-09-03T14:50:44Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#issuecomment-5526955521"
+    },
+    {
+      "id": 5527315461,
+      "created_at": "2026-09-03T14:31:02Z",
+      "updated_at": "2026-09-03T14:31:02Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#issuecomment-5527315461"
+    },
+    {
+      "id": 5527470699,
+      "created_at": "2026-09-03T14:43:23Z",
+      "updated_at": "2026-09-03T14:43:23Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#issuecomment-5527470699"
+    },
+    {
+      "id": 5527514300,
+      "created_at": "2026-09-03T14:46:42Z",
+      "updated_at": "2026-09-03T14:46:42Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#issuecomment-5527514300"
+    },
+    {
+      "id": 5527524376,
+      "created_at": "2026-09-03T14:47:30Z",
+      "updated_at": "2026-09-03T14:47:30Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#issuecomment-5527524376"
+    },
+    {
+      "id": 5527556908,
+      "created_at": "2026-09-03T14:50:03Z",
+      "updated_at": "2026-09-03T14:50:03Z",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/pull/63#issuecomment-5527556908"
+    }
+  ],
+  "check_runs": [
+    {
+      "id": 100693024991,
+      "name": "Publicar GitHub Pages",
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-09-03T14:45:01Z",
+      "completed_at": "2026-09-03T14:45:00Z",
+      "details_url": "https://github.com/Gilsantosz/ac-prod/actions/runs/33768438255/job/100693024991",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/actions/runs/33768438255/job/100693024991"
+    },
+    {
+      "id": 100693023675,
+      "name": "Gerar artefato do release comprovado",
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-09-03T14:45:01Z",
+      "completed_at": "2026-09-03T14:45:00Z",
+      "details_url": "https://github.com/Gilsantosz/ac-prod/actions/runs/33768438255/job/100693023675",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/actions/runs/33768438255/job/100693023675"
+    },
+    {
+      "id": 100693022865,
+      "name": "Comprovar release do Supabase",
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-09-03T14:45:00Z",
+      "completed_at": "2026-09-03T14:45:00Z",
+      "details_url": "https://github.com/Gilsantosz/ac-prod/actions/runs/33768438255/job/100693022865",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/actions/runs/33768438255/job/100693022865"
+    },
+    {
+      "id": 100692658081,
+      "name": "Workers Builds: ac-prod2",
+      "status": "completed",
+      "conclusion": "failure",
+      "started_at": "2026-09-03T14:43:55Z",
+      "completed_at": "2026-09-03T14:43:55Z",
+      "details_url": "https://dash.cloudflare.com/ba7c0b12a6721edd8f4395e4b49da264/workers/services/view/ac-prod2/production/builds/a357b5d2-06d4-416b-8b92-a2b5aa745840",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/runs/100692658081"
+    },
+    {
+      "id": 100692218398,
+      "name": "Lint, tipos, testes, segurança e build de validação",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-09-03T14:42:44Z",
+      "completed_at": "2026-09-03T14:45:00Z",
+      "details_url": "https://github.com/Gilsantosz/ac-prod/actions/runs/33768438255/job/100692218398",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/actions/runs/33768438255/job/100692218398"
+    },
+    {
+      "id": 100692173348,
+      "name": "Contrato estático do rollout",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-09-03T14:42:30Z",
+      "completed_at": "2026-09-03T14:42:35Z",
+      "details_url": "https://github.com/Gilsantosz/ac-prod/actions/runs/33768438255/job/100692173348",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/actions/runs/33768438255/job/100692173348"
+    },
+    {
+      "id": 100692173138,
+      "name": "validate",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-09-03T14:42:30Z",
+      "completed_at": "2026-09-03T14:43:53Z",
+      "details_url": "https://github.com/Gilsantosz/ac-prod/actions/runs/33768438153/job/100692173138",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/actions/runs/33768438153/job/100692173138"
+    },
+    {
+      "id": 100692173126,
+      "name": "security",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-09-03T14:42:30Z",
+      "completed_at": "2026-09-03T14:43:10Z",
+      "details_url": "https://github.com/Gilsantosz/ac-prod/actions/runs/33768438262/job/100692173126",
+      "html_url": "https://github.com/Gilsantosz/ac-prod/actions/runs/33768438262/job/100692173126"
+    }
+  ]
+}

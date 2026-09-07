@@ -1,0 +1,1420 @@
+{
+  "schema_version": 1,
+  "phase": "staging_additive_foundation",
+  "status": "APPLIED_TO_STAGING_STRUCTURAL_POSTFLIGHT_PASS",
+  "decision": "NO-GO_FOR_ROLLOUT",
+  "preflight": [
+    {
+      "captured_at": "2026-09-05 00:40:04.154153+00",
+      "idle_in_transaction": 0,
+      "waiting_locks": 0,
+      "active_runs": 0,
+      "receipt_table": null,
+      "migrations": 5
+    }
+  ],
+  "preservation_method": "Per-table row count and ordered primary-key hash; no application row data exported. Full-row hash query was aborted and replaced by bounded primary-key checks.",
+  "before": [
+    {
+      "relation": "public.ai_action_runs",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.ai_capabilities",
+      "rows": 3,
+      "identity_hash": "7805bd30b16e76dd173c0bc03bed37ad"
+    },
+    {
+      "relation": "public.ai_requests",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.ai_system_logs",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.alert_action_history",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.alert_logs",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.automation_rules",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.backup_files",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.backup_policies",
+      "rows": 2,
+      "identity_hash": "08225022974496bf1399567bf2538e8a"
+    },
+    {
+      "relation": "public.capacity_test_agents",
+      "rows": 599,
+      "identity_hash": "a09d0b9d36b288bde1e354b9339d056a"
+    },
+    {
+      "relation": "public.capacity_test_commands",
+      "rows": 14,
+      "identity_hash": "8e27318b5ebf5bc31670e8714675f2a9"
+    },
+    {
+      "relation": "public.capacity_test_entities",
+      "rows": 43800,
+      "identity_hash": "7ced6cd465ab2ab7e86c4a4758cc7751"
+    },
+    {
+      "relation": "public.capacity_test_errors",
+      "rows": 11,
+      "identity_hash": "44a922ae438996371699c59bca528d0d"
+    },
+    {
+      "relation": "public.capacity_test_metric_samples",
+      "rows": 498,
+      "identity_hash": "8d81c8b7c6ab60336f7dcd672a8531ff"
+    },
+    {
+      "relation": "public.capacity_test_reports",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.capacity_test_runs",
+      "rows": 10,
+      "identity_hash": "ee956199a7c34915a739a4458780e83a"
+    },
+    {
+      "relation": "public.cells",
+      "rows": 5,
+      "identity_hash": "71b15693ec2900bdbdf236e7e3cbd76a"
+    },
+    {
+      "relation": "public.customer_cover_events",
+      "rows": 20,
+      "identity_hash": "077e8144cb6cb3d96581adb457094cce"
+    },
+    {
+      "relation": "public.customer_covers",
+      "rows": 20,
+      "identity_hash": "133a70afc90858a494b0e7941abb558c"
+    },
+    {
+      "relation": "public.daily_goals",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.downtime_reason_catalog",
+      "rows": 15,
+      "identity_hash": "01b6e8dc587db44de689906757fc6e20"
+    },
+    {
+      "relation": "public.email_provider_config",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.email_recipient_group_members",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.email_recipient_groups",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.flow_exceptions",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.integration_inbox",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.integration_outbox",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.internal_edge_secrets",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.label_templates",
+      "rows": 9,
+      "identity_hash": "67bdffe27b89991ee90c082be62aa0a9"
+    },
+    {
+      "relation": "public.lot_items",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.lot_step_events",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.manual_production_records",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.monthly_goals",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.notification_configs",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.occurrences",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.offline_event_queue",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.operator_access_attempts",
+      "rows": 193,
+      "identity_hash": "c01fc358521b2ee010a40346673d4886"
+    },
+    {
+      "relation": "public.operator_cell_assignments",
+      "rows": 83,
+      "identity_hash": "c18cb04661f3ce398e261e792855e837"
+    },
+    {
+      "relation": "public.operator_machine_assignments",
+      "rows": 83,
+      "identity_hash": "dfa1edcf130b6a5fd0f3b6c3a7730ae2"
+    },
+    {
+      "relation": "public.operator_sessions",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.operators",
+      "rows": 83,
+      "identity_hash": "b9dc93abfefa3c85ffdeb00c54d189e8"
+    },
+    {
+      "relation": "public.package_items",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.packages",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.packing_scans",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.packing_volume_items",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.packing_volumes",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.password_recovery_requests",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.pcp_import_logs",
+      "rows": 2,
+      "identity_hash": "7d0b6520a0a6863ef8fb7d5a85869815"
+    },
+    {
+      "relation": "public.pcp_import_rows",
+      "rows": 20000,
+      "identity_hash": "d95b69ba75a9d11559a2ea55efdfe49b"
+    },
+    {
+      "relation": "public.pcp_integration_settings",
+      "rows": 6,
+      "identity_hash": "050116630c360de98c2ba344e2582cb1"
+    },
+    {
+      "relation": "public.pcp_mapping_profiles",
+      "rows": 2,
+      "identity_hash": "9402e7de979cfc4450cf0485bab0e952"
+    },
+    {
+      "relation": "public.piece_instances",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.production_collection_events",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.production_daily_goals",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.production_entries",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.production_events",
+      "rows": 20000,
+      "identity_hash": "d578ecd7d100e1478f336757547e07a9"
+    },
+    {
+      "relation": "public.production_lot_items",
+      "rows": 20000,
+      "identity_hash": "4697060c33f732a221a464873b3ec693"
+    },
+    {
+      "relation": "public.production_lots",
+      "rows": 40,
+      "identity_hash": "b01dc75ab520ec6016e7f96574d1679e"
+    },
+    {
+      "relation": "public.production_machines",
+      "rows": 83,
+      "identity_hash": "e133af46cadda2b9f1406179487672dc"
+    },
+    {
+      "relation": "public.production_order_items",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.production_orders",
+      "rows": 40,
+      "identity_hash": "75fb2030e9976e9e9a2e9721f8f9c18d"
+    },
+    {
+      "relation": "public.production_pieces",
+      "rows": 20000,
+      "identity_hash": "5d3ab8c459cb8812c940b65ead70a7fa"
+    },
+    {
+      "relation": "public.production_realtime_counters",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.production_routes",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.production_search_index",
+      "rows": 40,
+      "identity_hash": "82ed90d6c352076f99b7c48bb87e3c7e"
+    },
+    {
+      "relation": "public.production_stage_policies",
+      "rows": 7,
+      "identity_hash": "58faf7c658de15f85d48f6870eb6c728"
+    },
+    {
+      "relation": "public.production_stage_readings",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.production_tags",
+      "rows": 20000,
+      "identity_hash": "23ba223fed9d6389cc3dea4f674a9a12"
+    },
+    {
+      "relation": "public.profiles",
+      "rows": 1,
+      "identity_hash": "132d1b0fe6e19f23f817290528f982d6"
+    },
+    {
+      "relation": "public.promob_import_batches",
+      "rows": 2,
+      "identity_hash": "817b91013c5ab582d7087e1c04bc8cb7"
+    },
+    {
+      "relation": "public.promob_import_differences",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.promob_integrations",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.quality_actions",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.quality_defect_catalog",
+      "rows": 13,
+      "identity_hash": "67b9cb979d747962b0cb38e77fbd9827"
+    },
+    {
+      "relation": "public.quality_nonconformities",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.reader_devices",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.replacement_label_prints",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.replacement_labels",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.replacement_orders",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.replacement_report_exports",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.report_deliveries",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.report_delivery_logs",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.report_email_logs",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.report_jobs",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.report_recipients",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.report_schedule_recipients",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.report_schedule_runs",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.report_schedules",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.report_templates",
+      "rows": 4,
+      "identity_hash": "20290b1c225cf4e57a832b69eca7a566"
+    },
+    {
+      "relation": "public.rework_orders",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.rework_reasons",
+      "rows": 14,
+      "identity_hash": "48e70d4799eb113bc7b8ef1fa30e6b77"
+    },
+    {
+      "relation": "public.route_template_steps",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.route_templates",
+      "rows": 7,
+      "identity_hash": "0a9db2c7e796d3013755f8b74f56fcec"
+    },
+    {
+      "relation": "public.routing_steps",
+      "rows": 18,
+      "identity_hash": "13ad077500f2ff2f37521fd880d64d5c"
+    },
+    {
+      "relation": "public.scheduled_reports",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.shipment_exceptions",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.shipment_items",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.shipment_scans",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.shipments",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.system_audit_logs",
+      "rows": 100357,
+      "identity_hash": "8eca62770edcf0cbd084dbaacede5d30"
+    },
+    {
+      "relation": "public.traceability_logs",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.workday_calendar",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.workstation_operator_authorizations",
+      "rows": 83,
+      "identity_hash": "2922945c1a123cf8146ede34ccf75a72"
+    }
+  ],
+  "local_postgres_tests": [
+    {
+      "schema_version": 1,
+      "environment": "disposable-local-unix-socket",
+      "postgres_version": "postgres (PostgreSQL) 17.11 (Homebrew)",
+      "started_at": "2026-09-05T00:37:34.912Z",
+      "inputs": [
+        {
+          "filename": "0-fixture.sql",
+          "sha256": "cf7c0e970a2c955ceaf1bb896fda1ce5c8272aabfa7c7740dec69e53020f7acb"
+        },
+        {
+          "filename": "1-fixture.sql",
+          "sha256": "4f2020e9d69b2c44740afa2572649e87edf67102eaa3f4753dea8e4230282abb"
+        },
+        {
+          "filename": "2-fixture.sql",
+          "sha256": "96c31ec5717664910857a71272dd98f58b2bf7ccf6b1ab1ec4135a2af236de92"
+        },
+        {
+          "filename": "3-fixture.sql",
+          "sha256": "cedc858cb918a5b300bfbece3f7a15dafaa8b69f3a30154fee18375bf0f543a0"
+        },
+        {
+          "filename": "4-fixture.sql",
+          "sha256": "c1d7c82f7dd68b85ef17cc7199a116959522d4da0c810bc28725ede40994163b"
+        },
+        {
+          "filename": "5-fixture.sql",
+          "sha256": "cedc858cb918a5b300bfbece3f7a15dafaa8b69f3a30154fee18375bf0f543a0"
+        },
+        {
+          "filename": "6-fixture.sql",
+          "sha256": "c1d7c82f7dd68b85ef17cc7199a116959522d4da0c810bc28725ede40994163b"
+        }
+      ],
+      "steps": [
+        {
+          "filename": "0-fixture.sql",
+          "sha256": "cf7c0e970a2c955ceaf1bb896fda1ce5c8272aabfa7c7740dec69e53020f7acb",
+          "duration_ms": 267,
+          "exit_code": 0,
+          "sqlstate": null,
+          "expected_failure_sqlstate": null,
+          "passed": true
+        },
+        {
+          "filename": "1-fixture.sql",
+          "sha256": "4f2020e9d69b2c44740afa2572649e87edf67102eaa3f4753dea8e4230282abb",
+          "duration_ms": 145,
+          "exit_code": 3,
+          "sqlstate": "P0001",
+          "expected_failure_sqlstate": "P0001",
+          "passed": true
+        },
+        {
+          "filename": "2-fixture.sql",
+          "sha256": "96c31ec5717664910857a71272dd98f58b2bf7ccf6b1ab1ec4135a2af236de92",
+          "duration_ms": 20,
+          "exit_code": 0,
+          "sqlstate": null,
+          "expected_failure_sqlstate": null,
+          "passed": true
+        },
+        {
+          "filename": "3-fixture.sql",
+          "sha256": "cedc858cb918a5b300bfbece3f7a15dafaa8b69f3a30154fee18375bf0f543a0",
+          "duration_ms": 126,
+          "exit_code": 0,
+          "sqlstate": null,
+          "expected_failure_sqlstate": null,
+          "passed": true
+        },
+        {
+          "filename": "4-fixture.sql",
+          "sha256": "c1d7c82f7dd68b85ef17cc7199a116959522d4da0c810bc28725ede40994163b",
+          "duration_ms": 22,
+          "exit_code": 0,
+          "sqlstate": null,
+          "expected_failure_sqlstate": null,
+          "passed": true
+        },
+        {
+          "filename": "5-fixture.sql",
+          "sha256": "cedc858cb918a5b300bfbece3f7a15dafaa8b69f3a30154fee18375bf0f543a0",
+          "duration_ms": 17,
+          "exit_code": 3,
+          "sqlstate": "55000",
+          "expected_failure_sqlstate": "55000",
+          "passed": true
+        },
+        {
+          "filename": "6-fixture.sql",
+          "sha256": "c1d7c82f7dd68b85ef17cc7199a116959522d4da0c810bc28725ede40994163b",
+          "duration_ms": 19,
+          "exit_code": 0,
+          "sqlstate": null,
+          "expected_failure_sqlstate": null,
+          "passed": true
+        }
+      ],
+      "decision": "REPLAY_PASS_ONLY",
+      "cluster_stopped": true,
+      "limitation": "SQL replay only; this does not validate Supabase services, production data, capacity or rollout.",
+      "finished_at": "2026-09-05T00:37:36.708Z"
+    },
+    {
+      "schema_version": 1,
+      "environment": "disposable-local-unix-socket",
+      "postgres_version": "postgres (PostgreSQL) 17.11 (Homebrew)",
+      "started_at": "2026-09-05T00:37:36.727Z",
+      "inputs": [
+        {
+          "filename": "0-fixture.sql",
+          "sha256": "cf7c0e970a2c955ceaf1bb896fda1ce5c8272aabfa7c7740dec69e53020f7acb"
+        },
+        {
+          "filename": "1-fixture.sql",
+          "sha256": "4f2020e9d69b2c44740afa2572649e87edf67102eaa3f4753dea8e4230282abb"
+        },
+        {
+          "filename": "2-fixture.sql",
+          "sha256": "96c31ec5717664910857a71272dd98f58b2bf7ccf6b1ab1ec4135a2af236de92"
+        },
+        {
+          "filename": "3-fixture.sql",
+          "sha256": "cedc858cb918a5b300bfbece3f7a15dafaa8b69f3a30154fee18375bf0f543a0"
+        },
+        {
+          "filename": "4-fixture.sql",
+          "sha256": "c1d7c82f7dd68b85ef17cc7199a116959522d4da0c810bc28725ede40994163b"
+        },
+        {
+          "filename": "5-fixture.sql",
+          "sha256": "cedc858cb918a5b300bfbece3f7a15dafaa8b69f3a30154fee18375bf0f543a0"
+        },
+        {
+          "filename": "6-fixture.sql",
+          "sha256": "c1d7c82f7dd68b85ef17cc7199a116959522d4da0c810bc28725ede40994163b"
+        }
+      ],
+      "steps": [
+        {
+          "filename": "0-fixture.sql",
+          "sha256": "cf7c0e970a2c955ceaf1bb896fda1ce5c8272aabfa7c7740dec69e53020f7acb",
+          "duration_ms": 345,
+          "exit_code": 0,
+          "sqlstate": null,
+          "expected_failure_sqlstate": null,
+          "passed": true
+        },
+        {
+          "filename": "1-fixture.sql",
+          "sha256": "4f2020e9d69b2c44740afa2572649e87edf67102eaa3f4753dea8e4230282abb",
+          "duration_ms": 133,
+          "exit_code": 3,
+          "sqlstate": "P0001",
+          "expected_failure_sqlstate": "P0001",
+          "passed": true
+        },
+        {
+          "filename": "2-fixture.sql",
+          "sha256": "96c31ec5717664910857a71272dd98f58b2bf7ccf6b1ab1ec4135a2af236de92",
+          "duration_ms": 18,
+          "exit_code": 0,
+          "sqlstate": null,
+          "expected_failure_sqlstate": null,
+          "passed": true
+        },
+        {
+          "filename": "3-fixture.sql",
+          "sha256": "cedc858cb918a5b300bfbece3f7a15dafaa8b69f3a30154fee18375bf0f543a0",
+          "duration_ms": 137,
+          "exit_code": 0,
+          "sqlstate": null,
+          "expected_failure_sqlstate": null,
+          "passed": true
+        },
+        {
+          "filename": "4-fixture.sql",
+          "sha256": "c1d7c82f7dd68b85ef17cc7199a116959522d4da0c810bc28725ede40994163b",
+          "duration_ms": 20,
+          "exit_code": 0,
+          "sqlstate": null,
+          "expected_failure_sqlstate": null,
+          "passed": true
+        },
+        {
+          "filename": "5-fixture.sql",
+          "sha256": "cedc858cb918a5b300bfbece3f7a15dafaa8b69f3a30154fee18375bf0f543a0",
+          "duration_ms": 18,
+          "exit_code": 3,
+          "sqlstate": "55000",
+          "expected_failure_sqlstate": "55000",
+          "passed": true
+        },
+        {
+          "filename": "6-fixture.sql",
+          "sha256": "c1d7c82f7dd68b85ef17cc7199a116959522d4da0c810bc28725ede40994163b",
+          "duration_ms": 21,
+          "exit_code": 0,
+          "sqlstate": null,
+          "expected_failure_sqlstate": null,
+          "passed": true
+        }
+      ],
+      "decision": "REPLAY_PASS_ONLY",
+      "cluster_stopped": true,
+      "limitation": "SQL replay only; this does not validate Supabase services, production data, capacity or rollout.",
+      "finished_at": "2026-09-05T00:37:38.499Z"
+    }
+  ],
+  "migration_file": "supabase/recovery/staging/20260905003000_collection_schema_foundation.sql",
+  "migration_sha256": "cedc858cb918a5b300bfbece3f7a15dafaa8b69f3a30154fee18375bf0f543a0",
+  "applied_from_commit": "cdd6ab3e9771fe2b339eea66d1cf90b095f33ec5",
+  "postflight": [
+    {
+      "captured_at": "2026-09-05 00:55:25.217558+00",
+      "recovery": [
+        {
+          "applied_at": "2026-09-05T00:54:42.771972+00:00",
+          "target_ref": "smnsihksrhzbkhcbdjfu",
+          "recovery_key": "collection_foundation_20260905",
+          "selection_sha256": "d740353826e364449dd765cf9d4589ca0c98623d0f453c13717d60281fee5ecc"
+        }
+      ],
+      "migrations": 6,
+      "applied": [
+        {
+          "name": "collection_schema_foundation_staging_v1",
+          "version": "20260905005442",
+          "statement_sha256": "cedc858cb918a5b300bfbece3f7a15dafaa8b69f3a30154fee18375bf0f543a0"
+        }
+      ],
+      "flags": {
+        "collection_pipeline_v3_worker": false,
+        "collection_pipeline_v3_ingress": false,
+        "collection_pipeline_v3_broadcast": false,
+        "collection_pipeline_v3_projection": false
+      },
+      "receipts": 0,
+      "outbox": 0,
+      "attempts": 0,
+      "idle_in_transaction": 0,
+      "waiting_locks": 0
+    }
+  ],
+  "after": [
+    {
+      "relation": "public.ai_action_runs",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.ai_capabilities",
+      "rows": 3,
+      "identity_hash": "7805bd30b16e76dd173c0bc03bed37ad"
+    },
+    {
+      "relation": "public.ai_requests",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.ai_system_logs",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.alert_action_history",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.alert_logs",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.automation_rules",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.backup_files",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.backup_policies",
+      "rows": 2,
+      "identity_hash": "08225022974496bf1399567bf2538e8a"
+    },
+    {
+      "relation": "public.capacity_test_agents",
+      "rows": 599,
+      "identity_hash": "a09d0b9d36b288bde1e354b9339d056a"
+    },
+    {
+      "relation": "public.capacity_test_commands",
+      "rows": 14,
+      "identity_hash": "8e27318b5ebf5bc31670e8714675f2a9"
+    },
+    {
+      "relation": "public.capacity_test_entities",
+      "rows": 43800,
+      "identity_hash": "7ced6cd465ab2ab7e86c4a4758cc7751"
+    },
+    {
+      "relation": "public.capacity_test_errors",
+      "rows": 11,
+      "identity_hash": "44a922ae438996371699c59bca528d0d"
+    },
+    {
+      "relation": "public.capacity_test_metric_samples",
+      "rows": 498,
+      "identity_hash": "8d81c8b7c6ab60336f7dcd672a8531ff"
+    },
+    {
+      "relation": "public.capacity_test_reports",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.capacity_test_runs",
+      "rows": 10,
+      "identity_hash": "ee956199a7c34915a739a4458780e83a"
+    },
+    {
+      "relation": "public.cells",
+      "rows": 5,
+      "identity_hash": "71b15693ec2900bdbdf236e7e3cbd76a"
+    },
+    {
+      "relation": "public.customer_cover_events",
+      "rows": 20,
+      "identity_hash": "077e8144cb6cb3d96581adb457094cce"
+    },
+    {
+      "relation": "public.customer_covers",
+      "rows": 20,
+      "identity_hash": "133a70afc90858a494b0e7941abb558c"
+    },
+    {
+      "relation": "public.daily_goals",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.downtime_reason_catalog",
+      "rows": 15,
+      "identity_hash": "01b6e8dc587db44de689906757fc6e20"
+    },
+    {
+      "relation": "public.email_provider_config",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.email_recipient_group_members",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.email_recipient_groups",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.flow_exceptions",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.integration_inbox",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.integration_outbox",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.internal_edge_secrets",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.label_templates",
+      "rows": 9,
+      "identity_hash": "67bdffe27b89991ee90c082be62aa0a9"
+    },
+    {
+      "relation": "public.lot_items",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.lot_step_events",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.manual_production_records",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.monthly_goals",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.notification_configs",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.occurrences",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.offline_event_queue",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.operator_access_attempts",
+      "rows": 193,
+      "identity_hash": "c01fc358521b2ee010a40346673d4886"
+    },
+    {
+      "relation": "public.operator_cell_assignments",
+      "rows": 83,
+      "identity_hash": "c18cb04661f3ce398e261e792855e837"
+    },
+    {
+      "relation": "public.operator_machine_assignments",
+      "rows": 83,
+      "identity_hash": "dfa1edcf130b6a5fd0f3b6c3a7730ae2"
+    },
+    {
+      "relation": "public.operator_sessions",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.operators",
+      "rows": 83,
+      "identity_hash": "b9dc93abfefa3c85ffdeb00c54d189e8"
+    },
+    {
+      "relation": "public.package_items",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.packages",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.packing_scans",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.packing_volume_items",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.packing_volumes",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.password_recovery_requests",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.pcp_import_logs",
+      "rows": 2,
+      "identity_hash": "7d0b6520a0a6863ef8fb7d5a85869815"
+    },
+    {
+      "relation": "public.pcp_import_rows",
+      "rows": 20000,
+      "identity_hash": "d95b69ba75a9d11559a2ea55efdfe49b"
+    },
+    {
+      "relation": "public.pcp_integration_settings",
+      "rows": 6,
+      "identity_hash": "050116630c360de98c2ba344e2582cb1"
+    },
+    {
+      "relation": "public.pcp_mapping_profiles",
+      "rows": 2,
+      "identity_hash": "9402e7de979cfc4450cf0485bab0e952"
+    },
+    {
+      "relation": "public.piece_instances",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.production_collection_events",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.production_daily_goals",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.production_entries",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.production_events",
+      "rows": 20000,
+      "identity_hash": "d578ecd7d100e1478f336757547e07a9"
+    },
+    {
+      "relation": "public.production_lot_items",
+      "rows": 20000,
+      "identity_hash": "4697060c33f732a221a464873b3ec693"
+    },
+    {
+      "relation": "public.production_lots",
+      "rows": 40,
+      "identity_hash": "b01dc75ab520ec6016e7f96574d1679e"
+    },
+    {
+      "relation": "public.production_machines",
+      "rows": 83,
+      "identity_hash": "e133af46cadda2b9f1406179487672dc"
+    },
+    {
+      "relation": "public.production_order_items",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.production_orders",
+      "rows": 40,
+      "identity_hash": "75fb2030e9976e9e9a2e9721f8f9c18d"
+    },
+    {
+      "relation": "public.production_pieces",
+      "rows": 20000,
+      "identity_hash": "5d3ab8c459cb8812c940b65ead70a7fa"
+    },
+    {
+      "relation": "public.production_realtime_counters",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.production_routes",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.production_search_index",
+      "rows": 40,
+      "identity_hash": "82ed90d6c352076f99b7c48bb87e3c7e"
+    },
+    {
+      "relation": "public.production_stage_policies",
+      "rows": 7,
+      "identity_hash": "58faf7c658de15f85d48f6870eb6c728"
+    },
+    {
+      "relation": "public.production_stage_readings",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.production_tags",
+      "rows": 20000,
+      "identity_hash": "23ba223fed9d6389cc3dea4f674a9a12"
+    },
+    {
+      "relation": "public.profiles",
+      "rows": 1,
+      "identity_hash": "132d1b0fe6e19f23f817290528f982d6"
+    },
+    {
+      "relation": "public.promob_import_batches",
+      "rows": 2,
+      "identity_hash": "817b91013c5ab582d7087e1c04bc8cb7"
+    },
+    {
+      "relation": "public.promob_import_differences",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.promob_integrations",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.quality_actions",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.quality_defect_catalog",
+      "rows": 13,
+      "identity_hash": "67b9cb979d747962b0cb38e77fbd9827"
+    },
+    {
+      "relation": "public.quality_nonconformities",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.reader_devices",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.replacement_label_prints",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.replacement_labels",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.replacement_orders",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.replacement_report_exports",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.report_deliveries",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.report_delivery_logs",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.report_email_logs",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.report_jobs",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.report_recipients",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.report_schedule_recipients",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.report_schedule_runs",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.report_schedules",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.report_templates",
+      "rows": 4,
+      "identity_hash": "20290b1c225cf4e57a832b69eca7a566"
+    },
+    {
+      "relation": "public.rework_orders",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.rework_reasons",
+      "rows": 14,
+      "identity_hash": "48e70d4799eb113bc7b8ef1fa30e6b77"
+    },
+    {
+      "relation": "public.route_template_steps",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.route_templates",
+      "rows": 7,
+      "identity_hash": "0a9db2c7e796d3013755f8b74f56fcec"
+    },
+    {
+      "relation": "public.routing_steps",
+      "rows": 18,
+      "identity_hash": "13ad077500f2ff2f37521fd880d64d5c"
+    },
+    {
+      "relation": "public.scheduled_reports",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.shipment_exceptions",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.shipment_items",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.shipment_scans",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.shipments",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.system_audit_logs",
+      "rows": 100357,
+      "identity_hash": "8eca62770edcf0cbd084dbaacede5d30"
+    },
+    {
+      "relation": "public.traceability_logs",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.workday_calendar",
+      "rows": 0,
+      "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "relation": "public.workstation_operator_authorizations",
+      "rows": 83,
+      "identity_hash": "2922945c1a123cf8146ede34ccf75a72"
+    }
+  ],
+  "identity_differences": [],
+  "production_check": {
+    "migrations": 154,
+    "latest_migration": "20260903165317",
+    "recovery_journal": null,
+    "all_v3_flags_false": true
+  },
+  "structural_postflight": [
+    {
+      "expected_tables": 24,
+      "missing_tables": 0,
+      "rls_disabled": 0,
+      "api_table_grants": 0,
+      "recovered_constraints": 125,
+      "custom_triggers": 0
+    }
+  ],
+  "branch_after": {
+    "status": "MIGRATIONS_FAILED",
+    "preview_project_status": "ACTIVE_HEALTHY",
+    "persistent": true,
+    "is_default": false,
+    "with_data": false
+  },
+  "advisors_after": {
+    "security": {
+      "counts": {
+        "INFO:rls_enabled_no_policy": 25,
+        "ERROR:security_definer_view": 1,
+        "WARN:function_search_path_mutable": 1,
+        "WARN:unsupported_reg_types": 1,
+        "WARN:anon_security_definer_function_executable": 13,
+        "WARN:authenticated_security_definer_function_executable": 78
+      },
+      "total": 119,
+      "remediations": [
+        "https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy",
+        "https://supabase.com/docs/guides/database/database-linter?lint=0010_security_definer_view",
+        "https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable",
+        "https://supabase.com/docs/guides/database/database-linter?lint=unsupported_reg_types",
+        "https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable",
+        "https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable"
+      ]
+    },
+    "performance": {
+      "counts": {
+        "INFO:unindexed_foreign_keys": 174,
+        "WARN:auth_rls_initplan": 32,
+        "INFO:unused_index": 126,
+        "WARN:multiple_permissive_policies": 51,
+        "WARN:duplicate_index": 6,
+        "INFO:auth_db_connections_absolute": 1
+      },
+      "total": 390,
+      "remediations": [
+        "https://supabase.com/docs/guides/database/database-linter?lint=0001_unindexed_foreign_keys",
+        "https://supabase.com/docs/guides/database/database-linter?lint=0003_auth_rls_initplan",
+        "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+        "https://supabase.com/docs/guides/database/database-linter?lint=0006_multiple_permissive_policies",
+        "https://supabase.com/docs/guides/database/database-linter?lint=0009_duplicate_index",
+        "https://supabase.com/docs/guides/deployment/going-into-prod"
+      ]
+    }
+  },
+  "tests": {
+    "vitest": {
+      "files_passed": 104,
+      "tests_passed": 463,
+      "duration_seconds": 19.55
+    },
+    "node_guards": {
+      "passed": 6
+    }
+  },
+  "defaults_and_effective_privileges": [
+    {
+      "effective_privileges": [
+        {
+          "role": "authenticated",
+          "private_usage": false,
+          "private_create": false,
+          "attempt_sequence_privilege": false
+        },
+        {
+          "role": "anon",
+          "private_usage": false,
+          "private_create": false,
+          "attempt_sequence_privilege": false
+        },
+        {
+          "role": "service_role",
+          "private_usage": false,
+          "private_create": false,
+          "attempt_sequence_privilege": false
+        },
+        {
+          "role": "authenticator",
+          "private_usage": false,
+          "private_create": false,
+          "attempt_sequence_privilege": false
+        }
+      ],
+      "unexpected_table_privileges": null,
+      "operators": 83,
+      "operators_with_added_default_schedule": 83,
+      "events_with_new_occurred_at": 0,
+      "sessions": 0
+    }
+  ],
+  "residual_review": {
+    "operator_shift_provenance_validated": false,
+    "reason": "83 existing staging operators received schema defaults, not verified real shift assignments. No new login or shift routine enabled.",
+    "snapshots_atomic": false,
+    "target_guard_is_cryptographic_attestation": false
+  },
+  "exact_schema_comparison": {
+    "expected": 164,
+    "actual": 164,
+    "columns": 39,
+    "constraints": 125,
+    "mismatches": []
+  }
+}

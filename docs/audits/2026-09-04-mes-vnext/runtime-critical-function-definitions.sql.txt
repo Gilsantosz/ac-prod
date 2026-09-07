@@ -1,0 +1,2055 @@
+-- AUDIT SNAPSHOT ONLY — DO NOT EXECUTE AS A MIGRATION
+-- The .sql.txt suffix is intentional to keep migration runners from treating
+-- this evidence bundle as desired-state SQL.
+-- AC-Prod2 MES vNext, runtime uozuzdfvnufsjsonswag
+-- Captured read-only with pg_get_functiondef; the initial ten hashes were
+-- revalidated together on 2026-09-04T16:14:52Z. Three replacement paths were
+-- added at 16:22Z. Associated relation metadata was captured at
+-- 2026-09-04T16:15:41.223630Z.
+-- Definitions were screened for credential-like literals before being
+-- versioned. Symbolic service_role/JWT checks exist in authorization code; no
+-- credential value was captured. Metadata and SHA-256 are in the evidence
+-- manifest and SECURITY DEFINER inventory. Re-extract and compare hashes before
+-- any use.
+--
+-- This file is evidence of runtime drift. It is syntactically executable SQL,
+-- but is not a desired-state migration and MUST NOT be executed as a bundle.
+
+-- ============================================================================
+-- finalize_collection_realtime(text,jsonb)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.finalize_collection_realtime(p_client_event_id text, p_result jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public', 'realtime', 'pg_temp'
+AS $function$
+DECLARE
+  v_event public.production_collection_events%ROWTYPE;
+  v_snapshot jsonb;
+  v_result jsonb := coalesce(p_result, '{}'::jsonb);
+  v_cell_id uuid;
+  v_lot_version bigint;
+  v_payload jsonb;
+BEGIN
+  IF nullif(btrim(p_client_event_id), '') IS NULL THEN
+    RETURN v_result;
+  END IF;
+
+  SELECT * INTO v_event
+  FROM public.production_collection_events event
+  WHERE event.client_event_id = p_client_event_id
+  FOR UPDATE;
+
+  IF v_event.id IS NULL THEN
+    RETURN v_result;
+  END IF;
+
+  IF v_event.broadcasted_at IS NOT NULL
+     AND v_event.result_payload IS NOT NULL
+     AND v_event.result_payload <> '{}'::jsonb THEN
+    RETURN v_event.result_payload;
+  END IF;
+
+  IF v_event.result_status = 'approved'
+     AND v_event.lot_id IS NOT NULL
+     AND v_event.reading_id IS NOT NULL THEN
+    v_snapshot := public.refresh_collection_lot_state(v_event.lot_id, v_event.reading_id);
+    v_lot_version := nullif(v_snapshot ->> 'state_version', '')::bigint;
+    v_result := v_result || jsonb_build_object(
+      'lot', v_snapshot,
+      'lot_snapshot', v_snapshot,
+      'lot_version', coalesce(v_lot_version, 0)
+    );
+  ELSIF v_event.lot_id IS NOT NULL THEN
+    SELECT state_version INTO v_lot_version
+    FROM public.production_lots
+    WHERE id = v_event.lot_id;
+  END IF;
+
+  v_cell_id := v_event.cell_id;
+  IF v_cell_id IS NULL AND nullif(btrim(v_event.cell_name), '') IS NOT NULL THEN
+    SELECT id INTO v_cell_id
+    FROM public.cells
+    WHERE lower(btrim(name)) = lower(btrim(v_event.cell_name))
+    ORDER BY created_at
+    LIMIT 1;
+  END IF;
+
+  v_result := v_result || jsonb_build_object(
+    'collection_event_id', v_event.id,
+    'client_event_id', v_event.client_event_id,
+    'lot_version', coalesce(v_lot_version, 0)
+  );
+
+  v_payload := jsonb_build_object(
+    'event_id', v_event.id,
+    'client_event_id', v_event.client_event_id,
+    'lot_id', v_event.lot_id,
+    'pcp_import_batch_id', v_event.pcp_import_batch_id,
+    'piece_id', v_event.piece_id,
+    'cell_id', v_cell_id,
+    'cell_name', v_event.cell_name,
+    'machine_id', v_event.machine_id,
+    'status', v_event.result_status,
+    'reason_code', coalesce(v_event.reason_code, v_result ->> 'reason_code'),
+    'lot_version', coalesce(v_lot_version, 0),
+    'occurred_at', coalesce(
+      v_event.occurred_at,
+      v_event.sync_finished_at,
+      v_event.updated_at,
+      clock_timestamp()
+    )
+  );
+
+  UPDATE public.production_collection_events
+  SET lot_state_version = v_lot_version,
+      result_payload = v_result,
+      reason_code = coalesce(
+        reason_code,
+        v_result ->> 'reason_code',
+        CASE result_status
+          WHEN 'duplicated' THEN 'DUPLICATE_PIECE_STAGE'
+          WHEN 'wrong_step' THEN 'WRONG_PRODUCTION_STEP'
+          WHEN 'wrong_cell' THEN 'WRONG_CELL'
+          WHEN 'blocked' THEN 'PRODUCTION_BLOCKED'
+          ELSE NULL
+        END
+      ),
+      broadcast_error = NULL,
+      updated_at = clock_timestamp()
+  WHERE id = v_event.id;
+
+  IF v_cell_id IS NOT NULL THEN
+    BEGIN
+      PERFORM realtime.send(
+        v_payload,
+        'collection_committed',
+        'production:cell:' || v_cell_id::text,
+        true
+      );
+
+      UPDATE public.production_collection_events
+      SET broadcasted_at = clock_timestamp(),
+          broadcast_error = NULL,
+          updated_at = clock_timestamp()
+      WHERE id = v_event.id;
+    EXCEPTION WHEN OTHERS THEN
+      UPDATE public.production_collection_events
+      SET broadcast_error = left(SQLERRM, 500),
+          updated_at = clock_timestamp()
+      WHERE id = v_event.id;
+    END;
+  END IF;
+
+  RETURN v_result;
+END;
+$function$
+
+-- ============================================================================
+-- process_production_reading_impl_v2(jsonb)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.process_production_reading_impl_v2(p_payload jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public', 'extensions', 'pg_temp'
+AS $function$
+DECLARE
+  v_auth_user_id uuid := auth.uid();
+  v_session_token text := nullif(btrim(p_payload ->> 'operatorSessionToken'), '');
+  v_client_event_id text := coalesce(
+    nullif(btrim(p_payload ->> 'client_event_id'), ''),
+    gen_random_uuid()::text
+  );
+  v_tag_value text := upper(btrim(coalesce(
+    p_payload ->> 'rawValue',
+    p_payload ->> 'raw_value',
+    p_payload ->> 'tagValue',
+    ''
+  )));
+  v_reader_type text := coalesce(
+    nullif(p_payload ->> 'readerType', ''),
+    nullif(p_payload ->> 'reader_type', ''),
+    'keyboard_barcode'
+  );
+  v_client_time timestamptz := coalesce(
+    nullif(p_payload ->> 'createdAtClient', '')::timestamptz,
+    nullif(p_payload ->> 'created_at_client', '')::timestamptz,
+    clock_timestamp()
+  );
+  v_device_id text := nullif(btrim(coalesce(p_payload ->> 'deviceId', p_payload ->> 'device_id', '')), '');
+  v_enqueue_duration_ms numeric := coalesce(nullif(p_payload ->> 'enqueue_duration_ms', '')::numeric, 0);
+  v_quantity integer := greatest(coalesce(nullif(p_payload ->> 'quantity', '')::integer, 1), 1);
+
+  v_now timestamptz := clock_timestamp();
+  v_token_hash text;
+  v_session public.operator_sessions%ROWTYPE;
+  v_operator public.operators%ROWTYPE;
+  v_window jsonb;
+  v_shift_start timestamptz;
+  v_shift_end timestamptz;
+  v_timezone text;
+  v_occurred_at timestamptz;
+  v_timestamp_adjusted boolean := false;
+  v_local_occurred timestamp;
+  v_date date;
+  v_hour text;
+  v_cell text;
+  v_station text;
+  v_shift text;
+
+  v_event public.production_collection_events%ROWTYPE;
+  v_piece public.production_pieces%ROWTYPE;
+  v_lot public.production_lots%ROWTYPE;
+  v_order public.production_orders%ROWTYPE;
+  v_reading public.production_stage_readings%ROWTYPE;
+  v_existing_reading public.production_stage_readings%ROWTYPE;
+  v_entry_id uuid;
+  v_target_step_code text;
+  v_validation jsonb;
+  v_result jsonb;
+  v_context_result jsonb;
+  v_cell_state jsonb;
+  v_new_completed_steps text[];
+  v_next_step text;
+  v_current_cycle integer := 1;
+  v_reason_code text;
+  v_step text;
+BEGIN
+  IF v_reader_type NOT IN (
+    'keyboard_barcode','camera_qrcode','camera_barcode','manual',
+    'rfid_fixed','rfid_handheld','api'
+  ) THEN
+    v_reader_type := 'keyboard_barcode';
+  END IF;
+
+  IF v_auth_user_id IS NULL OR v_session_token IS NULL THEN
+    RAISE EXCEPTION 'OPERATOR_SESSION_REQUIRED'
+      USING ERRCODE = '42501', HINT = 'Faça o login operacional antes de coletar.';
+  END IF;
+
+  v_token_hash := encode(extensions.digest(v_session_token, 'sha256'), 'hex');
+
+  SELECT session.*
+  INTO v_session
+  FROM public.operator_sessions session
+  JOIN public.operators operator ON operator.id = session.operator_id
+  WHERE session.token_hash = v_token_hash
+    AND session.auth_user_id = v_auth_user_id
+    AND session.ended_at IS NULL
+    AND session.revoked_at IS NULL
+    AND session.sync_grace_until > v_now
+    AND operator.active IS TRUE
+    AND coalesce(operator.login_enabled, true) IS TRUE;
+
+  IF v_session.id IS NULL THEN
+    RAISE EXCEPTION 'OPERATOR_SESSION_INVALID'
+      USING ERRCODE = '42501', HINT = 'Entre novamente com o operador autorizado.';
+  END IF;
+
+  SELECT * INTO v_operator
+  FROM public.operators
+  WHERE id = v_session.operator_id;
+
+  IF v_session.cell_id IS NULL OR nullif(btrim(v_session.cell_name_snapshot), '') IS NULL THEN
+    RAISE EXCEPTION 'OPERATOR_CONTEXT_REQUIRED'
+      USING ERRCODE = '42501', HINT = 'Selecione a célula de trabalho antes de coletar.';
+  END IF;
+
+  IF v_session.shift_started_at IS NULL OR v_session.shift_ends_at IS NULL THEN
+    v_window := public.resolve_operator_shift_window(v_operator.id, v_now);
+    v_shift_start := (v_window ->> 'shift_started_at')::timestamptz;
+    v_shift_end := (v_window ->> 'shift_ends_at')::timestamptz;
+    v_timezone := coalesce(v_window ->> 'timezone', 'America/Sao_Paulo');
+  ELSE
+    v_shift_start := v_session.shift_started_at;
+    v_shift_end := v_session.shift_ends_at;
+    v_timezone := coalesce(nullif(v_session.timezone_snapshot, ''), v_operator.timezone, 'America/Sao_Paulo');
+  END IF;
+
+  IF v_client_time >= v_shift_start
+     AND v_client_time < v_shift_end
+     AND v_client_time <= v_now + interval '5 minutes'
+     AND v_now <= v_session.sync_grace_until THEN
+    v_occurred_at := v_client_time;
+  ELSIF v_now >= v_shift_start AND v_now < v_shift_end THEN
+    v_occurred_at := v_now;
+    v_timestamp_adjusted := true;
+  ELSE
+    v_occurred_at := v_now;
+    v_timestamp_adjusted := true;
+  END IF;
+
+  v_local_occurred := v_occurred_at AT TIME ZONE v_timezone;
+  v_date := v_local_occurred::date;
+  v_hour := to_char(v_local_occurred, 'HH24:MI');
+  v_cell := v_session.cell_name_snapshot;
+  v_station := coalesce(nullif(btrim(v_session.station_name_snapshot), ''), 'Coletor Chão de Fábrica');
+  v_shift := coalesce(v_session.shift_snapshot, v_operator.shift, 'Turno não informado');
+
+  INSERT INTO public.production_collection_events (
+    client_event_id, raw_value, normalized_value, reader_type,
+    operator_id, operator_name, registration, cell_name, shift, date, hour,
+    status, created_at_client, occurred_at, timestamp_adjusted,
+    payload, machine_id, machine_name, station_name,
+    device_id, enqueue_duration_ms, sync_started_at, attempt_count, last_attempt_at,
+    operator_session_id, cell_id, operator_registration_snapshot,
+    operator_name_snapshot, machine_name_snapshot, station_name_snapshot,
+    shift_snapshot, server_received_at
+  ) VALUES (
+    v_client_event_id, v_tag_value, v_tag_value, v_reader_type,
+    v_operator.id, v_operator.name, v_operator.registration, v_cell, v_shift, v_date, v_hour,
+    'processing', v_client_time, v_occurred_at, v_timestamp_adjusted,
+    p_payload, v_session.machine_id, v_session.machine_name_snapshot, v_station,
+    coalesce(v_device_id, v_session.device_id), v_enqueue_duration_ms,
+    v_now, 1, v_now,
+    v_session.id, v_session.cell_id, public.mask_registration(v_operator.registration),
+    v_operator.name, v_session.machine_name_snapshot, v_station,
+    v_shift, v_now
+  )
+  ON CONFLICT (client_event_id) DO NOTHING
+  RETURNING * INTO v_event;
+
+  IF v_event.id IS NULL THEN
+    SELECT * INTO v_event
+    FROM public.production_collection_events event
+    WHERE event.client_event_id = v_client_event_id
+    FOR UPDATE;
+
+    UPDATE public.production_collection_events
+    SET attempt_count = attempt_count + 1,
+        last_attempt_at = v_now
+    WHERE id = v_event.id;
+
+    IF v_event.result_payload IS NOT NULL
+       AND v_event.result_payload <> '{}'::jsonb
+       AND v_event.status IN ('synced','ignored','error') THEN
+      RETURN v_event.result_payload;
+    END IF;
+
+    IF v_event.status = 'processing'
+       AND v_event.sync_started_at > v_now - interval '30 seconds' THEN
+      RAISE EXCEPTION 'COLLECTION_EVENT_PROCESSING'
+        USING ERRCODE = '40001', HINT = 'O mesmo evento ainda está sendo confirmado.';
+    END IF;
+
+    UPDATE public.production_collection_events
+    SET status = 'processing',
+        payload = p_payload,
+        sync_started_at = v_now,
+        sync_finished_at = NULL,
+        error_message = NULL,
+        updated_at = v_now
+    WHERE id = v_event.id
+    RETURNING * INTO v_event;
+  END IF;
+
+  IF NOT (
+    (v_now >= v_shift_start AND v_now < v_shift_end)
+    OR (v_client_time >= v_shift_start AND v_client_time < v_shift_end AND v_now <= v_session.sync_grace_until)
+  ) THEN
+    v_result := jsonb_build_object(
+      'success', false,
+      'status', 'blocked',
+      'reason_code', 'SHIFT_OUTSIDE_WINDOW',
+      'alert_level', 'yellow',
+      'message', 'ENTRADA BLOQUEADA: o horário de trabalho configurado para este operador foi encerrado.',
+      'shift_started_at', v_shift_start,
+      'shift_ends_at', v_shift_end
+    );
+
+    UPDATE public.production_collection_events
+    SET reason_code = 'SHIFT_OUTSIDE_WINDOW'
+    WHERE id = v_event.id;
+
+    RETURN public.finish_collection_event(
+      v_event.id, 'ignored', 'blocked', v_result, NULL, NULL, v_result ->> 'message'
+    );
+  END IF;
+
+  IF v_tag_value = '' THEN
+    v_result := jsonb_build_object(
+      'success', false,
+      'status', 'invalid',
+      'reason_code', 'INVALID_IDENTIFIER',
+      'alert_level', 'red',
+      'message', 'Informe uma identificação produtiva válida.'
+    );
+    UPDATE public.production_collection_events SET reason_code = 'INVALID_IDENTIFIER' WHERE id = v_event.id;
+    RETURN public.finish_collection_event(v_event.id, 'ignored', 'invalid', v_result, NULL, NULL, v_result ->> 'message');
+  END IF;
+
+  BEGIN
+    v_piece := public.resolve_piece_by_identifier(v_tag_value);
+  EXCEPTION WHEN OTHERS THEN
+    v_result := jsonb_build_object(
+      'success', false,
+      'status', 'not_found',
+      'reason_code', 'PIECE_NOT_FOUND',
+      'alert_level', 'red',
+      'message', SQLERRM
+    );
+    UPDATE public.production_collection_events SET reason_code = 'PIECE_NOT_FOUND' WHERE id = v_event.id;
+    RETURN public.finish_collection_event(v_event.id, 'ignored', 'not_found', v_result, NULL, NULL, SQLERRM);
+  END;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended('production-piece:' || v_piece.id::text, 0));
+
+  SELECT * INTO v_piece
+  FROM public.production_pieces
+  WHERE id = v_piece.id
+  FOR UPDATE;
+
+  SELECT * INTO v_lot
+  FROM public.production_lots
+  WHERE id = v_piece.lot_id;
+
+  SELECT * INTO v_order
+  FROM public.production_orders
+  WHERE id = coalesce(v_piece.production_order_id, v_lot.production_order_id, v_lot.order_id);
+
+  v_target_step_code := coalesce(
+    public.resolve_production_stage_for_cell(v_session.cell_id, v_cell),
+    '__unmapped_cell__'
+  );
+
+  UPDATE public.production_collection_events
+  SET piece_id = v_piece.id,
+      pcp_import_batch_id = coalesce(v_piece.pcp_import_batch_id, v_lot.pcp_import_batch_id),
+      lot_id = v_piece.lot_id,
+      production_order_id = coalesce(v_piece.production_order_id, v_lot.production_order_id, v_lot.order_id),
+      lot_code = v_lot.lot_code,
+      general_lot_code = coalesce(v_piece.general_lot_code, v_lot.general_lot_code),
+      load_number = v_order.load_number,
+      order_number = coalesce(v_order.order_number, v_order.order_code),
+      customer_name = v_order.customer_name,
+      environment_name = coalesce(v_piece.environment_name, v_piece.environment),
+      piece_code = v_piece.traceability_code,
+      operation_name = v_target_step_code,
+      updated_at = v_now
+  WHERE id = v_event.id;
+
+  v_validation := public.validar_fluxo_da_peca(v_piece.id, v_target_step_code);
+
+  SELECT coalesce(max(reading.production_cycle), 1)
+  INTO v_current_cycle
+  FROM public.production_stage_readings reading
+  WHERE reading.piece_id = v_piece.id;
+
+  IF NOT coalesce((v_validation ->> 'success')::boolean, false)
+     OR v_validation ->> 'status' = 'duplicated' THEN
+    v_reason_code := CASE v_validation ->> 'status'
+      WHEN 'duplicated' THEN 'DUPLICATE_PIECE_STAGE'
+      WHEN 'wrong_step' THEN 'PREVIOUS_STAGE_REQUIRED'
+      ELSE 'FLOW_BLOCKED'
+    END;
+
+    INSERT INTO public.production_stage_readings (
+      client_event_id, tag_value, tag_type, reader_type,
+      station_name, cell_name, operator, operator_name_snapshot,
+      user_id, operator_id, shift, date, hour,
+      item_id, piece_id, lot_id, production_order_id,
+      step_name, operation_name, quantity, status, event_type,
+      machine_id, machine_name, lot_code, load_number, order_number,
+      customer_name, environment_name, piece_code, production_cycle,
+      entry_type, traceability_type, is_manual, unit_of_measure,
+      general_lot_code, created_at
+    ) VALUES (
+      v_client_event_id, v_piece.piece_uid,
+      CASE WHEN v_reader_type = 'manual' THEN 'manual' ELSE 'barcode' END,
+      v_reader_type, v_station, v_cell, v_operator.name, v_operator.name,
+      v_auth_user_id, v_operator.id, v_shift, v_date, v_hour,
+      v_piece.legacy_production_lot_item_id, v_piece.id, v_piece.lot_id,
+      coalesce(v_piece.production_order_id, v_lot.production_order_id, v_lot.order_id),
+      v_target_step_code, v_target_step_code, v_quantity,
+      CASE WHEN v_validation ->> 'status' = 'duplicated' THEN 'duplicated' ELSE 'blocked' END,
+      CASE WHEN v_validation ->> 'status' = 'duplicated' THEN 'duplicated_scan' ELSE 'wrong_step' END,
+      v_session.machine_id, v_session.machine_name_snapshot,
+      v_lot.lot_code, v_order.load_number, coalesce(v_order.order_number, v_order.order_code),
+      v_order.customer_name, coalesce(v_piece.environment_name, v_piece.environment),
+      v_piece.traceability_code, v_current_cycle,
+      'coleta_fisica', 'unitaria', v_reader_type = 'manual', 'pecas',
+      coalesce(v_piece.general_lot_code, v_lot.general_lot_code), v_occurred_at
+    )
+    RETURNING * INTO v_reading;
+
+    v_result := jsonb_build_object(
+      'success', false,
+      'status', 'blocked',
+      'legacy_status', coalesce(v_validation ->> 'status', 'blocked'),
+      'reason_code', v_reason_code,
+      'alert_level', coalesce(v_validation ->> 'alert_level', 'yellow'),
+      'message', coalesce(v_validation ->> 'message', 'Entrada bloqueada.'),
+      'lot', to_jsonb(v_lot),
+      'order', to_jsonb(v_order),
+      'item', to_jsonb(v_piece),
+      'reading', to_jsonb(v_reading)
+    );
+
+    UPDATE public.production_collection_events
+    SET reason_code = v_reason_code
+    WHERE id = v_event.id;
+
+    RETURN public.finish_collection_event(
+      v_event.id,
+      'ignored',
+      CASE WHEN v_validation ->> 'status' = 'duplicated' THEN 'duplicated' ELSE 'blocked' END,
+      v_result,
+      v_reading.id,
+      NULL,
+      v_result ->> 'message'
+    );
+  END IF;
+
+  BEGIN
+    INSERT INTO public.production_stage_readings (
+      client_event_id, tag_value, tag_type, reader_type,
+      station_name, cell_name, operator, operator_name_snapshot,
+      user_id, operator_id, shift, date, hour,
+      item_id, piece_id, lot_id, production_order_id,
+      step_name, operation_name, quantity, status, event_type,
+      machine_id, machine_name, lot_code, load_number, order_number,
+      customer_name, environment_name, piece_code, production_cycle,
+      entry_type, traceability_type, is_manual, unit_of_measure,
+      general_lot_code, created_at
+    ) VALUES (
+      v_client_event_id, v_piece.piece_uid,
+      CASE WHEN v_reader_type = 'manual' THEN 'manual' ELSE 'barcode' END,
+      v_reader_type, v_station, v_cell, v_operator.name, v_operator.name,
+      v_auth_user_id, v_operator.id, v_shift, v_date, v_hour,
+      v_piece.legacy_production_lot_item_id, v_piece.id, v_piece.lot_id,
+      coalesce(v_piece.production_order_id, v_lot.production_order_id, v_lot.order_id),
+      v_target_step_code, v_target_step_code, v_quantity,
+      'approved', 'approved_scan',
+      v_session.machine_id, v_session.machine_name_snapshot,
+      v_lot.lot_code, v_order.load_number, coalesce(v_order.order_number, v_order.order_code),
+      v_order.customer_name, coalesce(v_piece.environment_name, v_piece.environment),
+      v_piece.traceability_code, v_current_cycle,
+      'coleta_fisica', 'unitaria', v_reader_type = 'manual', 'pecas',
+      coalesce(v_piece.general_lot_code, v_lot.general_lot_code), v_occurred_at
+    )
+    RETURNING * INTO v_reading;
+  EXCEPTION WHEN unique_violation THEN
+    SELECT * INTO v_existing_reading
+    FROM public.production_stage_readings reading
+    WHERE reading.piece_id = v_piece.id
+      AND lower(btrim(reading.step_name)) = lower(btrim(v_target_step_code))
+      AND reading.status = 'approved'
+    ORDER BY reading.created_at DESC
+    LIMIT 1;
+
+    INSERT INTO public.production_stage_readings (
+      client_event_id, tag_value, tag_type, reader_type,
+      station_name, cell_name, operator, operator_name_snapshot,
+      user_id, operator_id, shift, date, hour,
+      item_id, piece_id, lot_id, production_order_id,
+      step_name, operation_name, quantity, status, event_type,
+      machine_id, machine_name, lot_code, load_number, order_number,
+      customer_name, environment_name, piece_code, production_cycle,
+      entry_type, traceability_type, is_manual, unit_of_measure,
+      general_lot_code, created_at
+    ) VALUES (
+      v_client_event_id, v_piece.piece_uid,
+      CASE WHEN v_reader_type = 'manual' THEN 'manual' ELSE 'barcode' END,
+      v_reader_type, v_station, v_cell, v_operator.name, v_operator.name,
+      v_auth_user_id, v_operator.id, v_shift, v_date, v_hour,
+      v_piece.legacy_production_lot_item_id, v_piece.id, v_piece.lot_id,
+      coalesce(v_piece.production_order_id, v_lot.production_order_id, v_lot.order_id),
+      v_target_step_code, v_target_step_code, v_quantity,
+      'duplicated', 'duplicated_scan',
+      v_session.machine_id, v_session.machine_name_snapshot,
+      v_lot.lot_code, v_order.load_number, coalesce(v_order.order_number, v_order.order_code),
+      v_order.customer_name, coalesce(v_piece.environment_name, v_piece.environment),
+      v_piece.traceability_code, v_current_cycle,
+      'coleta_fisica', 'unitaria', v_reader_type = 'manual', 'pecas',
+      coalesce(v_piece.general_lot_code, v_lot.general_lot_code), v_occurred_at
+    )
+    RETURNING * INTO v_reading;
+
+    v_result := jsonb_build_object(
+      'success', false,
+      'status', 'blocked',
+      'legacy_status', 'duplicated',
+      'reason_code', 'DUPLICATE_PIECE_STAGE',
+      'alert_level', 'yellow',
+      'message', 'ENTRADA BLOQUEADA: esta numeração já foi aprovada nesta célula.',
+      'lot', to_jsonb(v_lot),
+      'order', to_jsonb(v_order),
+      'item', to_jsonb(v_piece),
+      'reading', to_jsonb(v_reading),
+      'existing_reading_id', v_existing_reading.id
+    );
+
+    UPDATE public.production_collection_events
+    SET reason_code = 'DUPLICATE_PIECE_STAGE'
+    WHERE id = v_event.id;
+
+    RETURN public.finish_collection_event(
+      v_event.id, 'ignored', 'duplicated', v_result, v_reading.id, NULL, v_result ->> 'message'
+    );
+  END;
+
+  INSERT INTO public.production_entries (
+    date, shift, cell, hour, produced, target, scrap, downtime,
+    operator, operator_id, operator_name_snapshot, notes,
+    created_by, client_event_id,
+    order_id, production_order_id, lot_id,
+    order_number, lot_code, load_number, customer_name,
+    environment_name, operation_name, step_code,
+    machine_id, machine_name, pcp_import_batch_id,
+    entry_mode, source, approval_status,
+    is_manual, unit_of_measure,
+    created_at
+  ) VALUES (
+    v_date, v_shift, v_cell, v_hour, v_quantity, 0, 0, 0,
+    v_operator.name, v_operator.id, v_operator.name,
+    'Coleta MES validada — Peça: ' || v_piece.traceability_code,
+    v_auth_user_id, v_client_event_id,
+    v_order.id, v_order.id, v_lot.id,
+    coalesce(v_order.order_number, v_order.order_code), v_lot.lot_code,
+    v_order.load_number, v_order.customer_name,
+    coalesce(v_piece.environment_name, v_piece.environment), v_target_step_code, v_target_step_code,
+    v_session.machine_id, v_session.machine_name_snapshot,
+    coalesce(v_piece.pcp_import_batch_id, v_lot.pcp_import_batch_id),
+    'scan', 'coleta_scan', 'valid',
+    v_reader_type = 'manual', 'pecas',
+    v_occurred_at
+  )
+  RETURNING id INTO v_entry_id;
+
+  UPDATE public.production_stage_readings
+  SET production_entry_id = v_entry_id
+  WHERE id = v_reading.id;
+
+  v_new_completed_steps := coalesce(v_piece.completed_steps, '{}'::text[]);
+  IF NOT (v_target_step_code = ANY(v_new_completed_steps)) THEN
+    v_new_completed_steps := array_append(v_new_completed_steps, v_target_step_code);
+  END IF;
+
+  v_next_step := NULL;
+  IF cardinality(coalesce(v_piece.route_steps, '{}'::text[])) > 0 THEN
+    FOREACH v_step IN ARRAY v_piece.route_steps LOOP
+      IF NOT (v_step = ANY(v_new_completed_steps)) THEN
+        v_next_step := v_step;
+        EXIT;
+      END IF;
+    END LOOP;
+  END IF;
+
+  UPDATE public.production_pieces piece
+  SET completed_steps = v_new_completed_steps,
+      current_stage = coalesce(v_next_step, 'Concluída'),
+      status = CASE WHEN v_next_step IS NULL THEN 'completed' ELSE 'in_progress' END,
+      production_status = CASE WHEN v_next_step IS NULL THEN 'completed' ELSE 'approved' END,
+      rework_status = CASE
+        WHEN coalesce(piece.is_rework, false) AND v_next_step IS NULL THEN 'completed'
+        ELSE piece.rework_status
+      END,
+      replacement_status = CASE
+        WHEN coalesce(piece.is_replacement, false) AND v_next_step IS NULL THEN 'replaced'
+        ELSE piece.replacement_status
+      END,
+      is_blocked = false,
+      block_reason = NULL,
+      updated_at = v_now
+  WHERE piece.id = v_piece.id
+  RETURNING * INTO v_piece;
+
+  IF coalesce(v_piece.is_replacement, false)
+     AND v_piece.original_piece_id IS NOT NULL
+     AND v_next_step IS NULL THEN
+    UPDATE public.production_pieces
+    SET status = 'replaced',
+        replacement_status = 'replaced',
+        updated_at = v_now
+    WHERE id = v_piece.original_piece_id;
+
+    UPDATE public.replacement_orders
+    SET status = 'completed',
+        completed_at = coalesce(completed_at, v_now),
+        updated_at = v_now
+    WHERE replacement_piece_id = v_piece.id
+      AND status NOT IN ('completed','cancelled','Finalizada','Cancelada');
+  END IF;
+
+  IF v_piece.legacy_production_lot_item_id IS NOT NULL THEN
+    UPDATE public.production_lot_items
+    SET current_step = coalesce(v_next_step, 'completed'),
+        current_cell = v_cell,
+        status = CASE WHEN v_next_step IS NULL THEN 'completed' ELSE 'in_progress' END,
+        updated_at = v_now
+    WHERE id = v_piece.legacy_production_lot_item_id;
+  END IF;
+
+  v_context_result := public.switch_cell_active_lot_context(
+    v_cell,
+    v_target_step_code,
+    v_session.machine_id,
+    v_lot.id,
+    coalesce(v_piece.pcp_import_batch_id, v_lot.pcp_import_batch_id),
+    v_occurred_at,
+    v_client_event_id
+  );
+
+  v_cell_state := public.recalculate_cell_lot_state(
+    v_lot.id,
+    v_cell,
+    v_target_step_code,
+    v_session.machine_id,
+    v_operator.id
+  );
+
+  v_result := jsonb_build_object(
+    'success', true,
+    'status', 'approved',
+    'alert_level', 'green',
+    'message', 'Baixa de etapa registrada com sucesso.',
+    'lot', to_jsonb(v_lot),
+    'order', to_jsonb(v_order),
+    'item', to_jsonb(v_piece),
+    'reading', to_jsonb(v_reading),
+    'route', jsonb_build_object(
+      'step_name', v_target_step_code,
+      'cell_name', v_cell,
+      'next_step', v_next_step
+    ),
+    'active_context', v_context_result -> 'active_context',
+    'context_changed', coalesce((v_context_result ->> 'changed')::boolean, false),
+    'context_stale_event_ignored', coalesce((v_context_result ->> 'ignored_stale_event')::boolean, false),
+    'cell_state', v_cell_state
+  );
+
+  RETURN public.finish_collection_event(
+    v_event.id, 'synced', 'approved', v_result, v_reading.id, v_entry_id, NULL
+  );
+END;
+$function$
+
+-- ============================================================================
+-- reset_production_data_impl()
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.reset_production_data_impl()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+BEGIN
+  -- Verificar se o usuário que chamou é admin
+  IF NOT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND role = 'admin'
+  ) THEN
+    RAISE EXCEPTION 'Permissão insuficiente. Apenas administradores podem zerar os dados de produção.';
+  END IF;
+
+  -- 1. Desativar trigger de retenção de backups caso exista
+  IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_backup_files_no_early_delete') THEN
+    ALTER TABLE public.backup_files DISABLE TRIGGER trg_backup_files_no_early_delete;
+  END IF;
+
+  -- 2. Limpar instantaneamente todas as tabelas de lotes, ordens, peças e apontamentos de PCP
+  -- utilizando TRUNCATE TABLE ... RESTART IDENTITY CASCADE para evitar locks e statement timeouts.
+  TRUNCATE TABLE
+    public.alert_action_history,
+    public.alert_logs,
+    public.backup_files,
+    public.customer_cover_events,
+    public.customer_covers,
+    public.flow_exceptions,
+    public.integration_inbox,
+    public.integration_outbox,
+    public.lot_items,
+    public.lot_step_events,
+    public.manual_production_records,
+    public.occurrences,
+    public.offline_event_queue,
+    public.package_items,
+    public.packages,
+    public.packing_scans,
+    public.packing_volume_items,
+    public.packing_volumes,
+    public.pcp_import_logs,
+    public.pcp_import_rows,
+    public.piece_instances,
+    public.production_collection_events,
+    public.production_entries,
+    public.production_events,
+    public.production_lot_items,
+    public.production_lots,
+    public.production_order_items,
+    public.production_orders,
+    public.production_pieces,
+    public.production_realtime_counters,
+    public.production_routes,
+    public.production_search_index,
+    public.production_stage_readings,
+    public.production_tags,
+    public.promob_import_batches,
+    public.promob_import_differences,
+    public.quality_nonconformities,
+    public.replacement_orders,
+    public.rework_orders,
+    public.shipment_exceptions,
+    public.shipment_items,
+    public.shipment_scans,
+    public.shipments,
+    public.traceability_logs
+  RESTART IDENTITY CASCADE;
+
+  -- 3. Reativar trigger de retenção de backups caso exista
+  IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_backup_files_no_early_delete') THEN
+    ALTER TABLE public.backup_files ENABLE TRIGGER trg_backup_files_no_early_delete;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'message', 'Dados dos Lotes importados do PCP e apontamentos operacionais zerados com sucesso! Usuários, operadores, células e máquinas foram mantidos.'
+  );
+EXCEPTION WHEN OTHERS THEN
+  IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_backup_files_no_early_delete') THEN
+    BEGIN
+      ALTER TABLE public.backup_files ENABLE TRIGGER trg_backup_files_no_early_delete;
+    EXCEPTION WHEN OTHERS THEN
+      NULL;
+    END;
+  END IF;
+  RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$function$
+
+-- ============================================================================
+-- reset_production_data()
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.reset_production_data()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+AS $function$
+begin
+  if public.get_my_role() is distinct from 'admin' then
+    raise exception 'ACTIVE_ADMIN_REQUIRED' using errcode = '42501';
+  end if;
+  return public.reset_production_data_impl();
+end;
+$function$
+
+-- ============================================================================
+-- sync_production_lot_stage_aggregate()
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.sync_production_lot_stage_aggregate()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'pg_catalog', 'public'
+AS $function$
+DECLARE
+  v_old_is_approved boolean := false;
+  v_new_is_approved boolean := false;
+  v_same_fact boolean := false;
+BEGIN
+  IF TG_OP IN ('UPDATE', 'DELETE') THEN
+    v_old_is_approved :=
+      OLD.status = 'approved'
+      AND OLD.lot_id IS NOT NULL
+      AND NULLIF(btrim(OLD.step_name), '') IS NOT NULL;
+  END IF;
+
+  IF TG_OP IN ('INSERT', 'UPDATE') THEN
+    v_new_is_approved :=
+      NEW.status = 'approved'
+      AND NEW.lot_id IS NOT NULL
+      AND NULLIF(btrim(NEW.step_name), '') IS NOT NULL;
+  END IF;
+
+  IF TG_OP = 'UPDATE' AND v_old_is_approved AND v_new_is_approved THEN
+    v_same_fact :=
+      OLD.lot_id = NEW.lot_id
+      AND lower(btrim(OLD.step_name)) = lower(btrim(NEW.step_name))
+      AND OLD.quantity = NEW.quantity;
+  END IF;
+
+  IF v_old_is_approved AND NOT v_same_fact THEN
+    UPDATE public.production_lot_stage_aggregates
+    SET approved_count = GREATEST(approved_count - GREATEST(OLD.quantity, 1), 0),
+        updated_at = now()
+    WHERE lot_id = OLD.lot_id
+      AND step_code = lower(btrim(OLD.step_name));
+  END IF;
+
+  IF v_new_is_approved AND NOT v_same_fact THEN
+    INSERT INTO public.production_lot_stage_aggregates (
+      lot_id,
+      step_code,
+      approved_count,
+      last_reading_id,
+      last_event_at,
+      updated_at
+    )
+    VALUES (
+      NEW.lot_id,
+      lower(btrim(NEW.step_name)),
+      GREATEST(NEW.quantity, 1),
+      NEW.id,
+      NEW.created_at,
+      now()
+    )
+    ON CONFLICT (lot_id, step_code) DO UPDATE
+    SET approved_count =
+          public.production_lot_stage_aggregates.approved_count
+          + EXCLUDED.approved_count,
+        last_reading_id = EXCLUDED.last_reading_id,
+        last_event_at = EXCLUDED.last_event_at,
+        updated_at = now();
+  END IF;
+
+  RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END;
+$function$
+
+-- ============================================================================
+-- sync_reading_to_event()
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.sync_reading_to_event()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'pg_catalog', 'public', 'extensions'
+AS $function$
+DECLARE
+  v_piece_id uuid;
+  v_tcode text;
+  v_notes text;
+BEGIN
+  IF NEW.piece_id IS NOT NULL THEN
+    SELECT
+      p.id,
+      COALESCE(NULLIF(NEW.piece_code, ''), NULLIF(NEW.tag_value, ''), p.traceability_code)
+    INTO v_piece_id, v_tcode
+    FROM public.production_pieces p
+    WHERE p.id = NEW.piece_id
+    LIMIT 1;
+  END IF;
+
+  IF v_piece_id IS NULL AND NEW.item_id IS NOT NULL THEN
+    SELECT
+      p.id,
+      COALESCE(NULLIF(NEW.piece_code, ''), NULLIF(NEW.tag_value, ''), p.traceability_code)
+    INTO v_piece_id, v_tcode
+    FROM public.production_pieces p
+    WHERE p.legacy_production_lot_item_id = NEW.item_id
+    ORDER BY
+      CASE WHEN p.id = NEW.piece_id THEN 0 ELSE 1 END,
+      CASE WHEN COALESCE(p.is_replacement, false) THEN 0 ELSE 1 END,
+      p.updated_at DESC,
+      p.created_at DESC
+    LIMIT 1;
+  END IF;
+
+  IF NEW.entry_type = 'baixa_reposicao' OR NEW.event_type = 'replacement_approval' THEN
+    v_notes := 'Baixa por reposição';
+  ELSE
+    v_notes := 'Sincronizado via leitura legada';
+  END IF;
+
+  IF v_piece_id IS NOT NULL THEN
+    INSERT INTO public.production_events (
+      piece_id, traceability_code, production_order_id, lot_id,
+      event_type, from_stage, to_stage, cell_name, device_id,
+      operator_id, event_status, reading_source, barcode_raw_value,
+      notes, legacy_stage_reading_id, created_at
+    ) VALUES (
+      v_piece_id, v_tcode, NEW.production_order_id, NEW.lot_id,
+      'stage_advance', NULL, NEW.step_name, NEW.cell_name, NEW.reader_id,
+      NEW.operator_id,
+      CASE WHEN NEW.status = 'approved' THEN 'accepted' ELSE 'rejected' END,
+      NEW.reader_type, NEW.tag_value, v_notes, NEW.id, NEW.created_at
+    );
+  END IF;
+
+  RETURN NEW;
+END;
+$function$
+
+-- ============================================================================
+-- recalculate_cell_lot_state(uuid,text,text,uuid,uuid)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.recalculate_cell_lot_state(p_lot_id uuid, p_cell_name text, p_step_code text, p_machine_id uuid DEFAULT NULL::uuid, p_closed_by_operator_id uuid DEFAULT NULL::uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public', 'extensions', 'pg_temp'
+AS $function$
+DECLARE
+  v_lot public.production_lots%ROWTYPE;
+  v_cell_id uuid;
+  v_metrics jsonb;
+  v_state public.production_cell_lot_states%ROWTYPE;
+  v_expected bigint;
+  v_approved bigint;
+  v_rejected bigint;
+  v_pending bigint;
+  v_rework bigint;
+  v_replacement bigint;
+  v_is_closed boolean;
+BEGIN
+  IF p_lot_id IS NULL
+     OR nullif(btrim(p_cell_name), '') IS NULL
+     OR nullif(btrim(p_step_code), '') IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'reason_code', 'INVALID_SCOPE');
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended(
+      'cell-lot-state:' || p_lot_id::text || ':' || lower(btrim(p_cell_name)) || ':' ||
+      lower(btrim(p_step_code)) || ':' || coalesce(p_machine_id::text, 'all'),
+      0
+    )
+  );
+
+  SELECT * INTO v_lot
+  FROM public.production_lots
+  WHERE id = p_lot_id;
+
+  IF v_lot.id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'reason_code', 'LOT_NOT_FOUND');
+  END IF;
+
+  SELECT id INTO v_cell_id
+  FROM public.cells
+  WHERE lower(btrim(name)) = lower(btrim(p_cell_name))
+  ORDER BY created_at
+  LIMIT 1;
+
+  v_metrics := public.get_collection_route_stage_metrics(
+    v_lot.pcp_import_batch_id,
+    v_lot.id,
+    p_step_code
+  );
+
+  v_expected := coalesce((v_metrics ->> 'expected')::bigint, 0);
+  v_approved := coalesce((v_metrics ->> 'approved')::bigint, 0);
+  v_rejected := coalesce((v_metrics ->> 'rejected')::bigint, 0);
+  v_pending := coalesce((v_metrics ->> 'pending')::bigint, 0);
+  v_rework := coalesce((v_metrics ->> 'rework')::bigint, 0);
+  v_replacement := coalesce((v_metrics ->> 'replacement')::bigint, 0);
+
+  v_is_closed := v_expected > 0
+    AND v_pending = 0
+    AND v_rejected = 0
+    AND v_rework = 0
+    AND v_replacement = 0;
+
+  SELECT * INTO v_state
+  FROM public.production_cell_lot_states state
+  WHERE state.lot_id = p_lot_id
+    AND lower(btrim(state.cell_name)) = lower(btrim(p_cell_name))
+    AND lower(btrim(state.step_code)) = lower(btrim(p_step_code))
+    AND coalesce(state.machine_id, '00000000-0000-0000-0000-000000000000'::uuid)
+        = coalesce(p_machine_id, '00000000-0000-0000-0000-000000000000'::uuid)
+  FOR UPDATE;
+
+  IF v_state.id IS NULL THEN
+    INSERT INTO public.production_cell_lot_states (
+      pcp_import_batch_id, general_lot_code, lot_id, lot_code,
+      cell_id, cell_name, step_code, machine_id, status,
+      expected_count, approved_count, rejected_count, pending_count,
+      rework_count, replacement_count, closed_at,
+      closed_by_operator_id, close_reason, state_version,
+      last_event_occurred_at
+    ) VALUES (
+      v_lot.pcp_import_batch_id,
+      coalesce(v_lot.general_lot_code, (
+        SELECT batch.general_lot_code
+        FROM public.promob_import_batches batch
+        WHERE batch.id = v_lot.pcp_import_batch_id
+      )),
+      v_lot.id, v_lot.lot_code,
+      v_cell_id, p_cell_name, p_step_code, p_machine_id,
+      CASE WHEN v_is_closed THEN 'closed' ELSE 'active' END,
+      v_expected, v_approved, v_rejected, v_pending,
+      v_rework, v_replacement,
+      CASE WHEN v_is_closed THEN clock_timestamp() END,
+      CASE WHEN v_is_closed THEN p_closed_by_operator_id END,
+      CASE WHEN v_is_closed THEN 'Etapa concluída conforme o progresso canônico da rota.' END,
+      1,
+      clock_timestamp()
+    )
+    RETURNING * INTO v_state;
+  ELSE
+    UPDATE public.production_cell_lot_states
+    SET cell_id = coalesce(v_cell_id, cell_id),
+        pcp_import_batch_id = coalesce(v_lot.pcp_import_batch_id, pcp_import_batch_id),
+        general_lot_code = coalesce(v_lot.general_lot_code, general_lot_code),
+        lot_code = coalesce(v_lot.lot_code, lot_code),
+        status = CASE WHEN v_is_closed THEN 'closed' ELSE 'active' END,
+        expected_count = v_expected,
+        approved_count = v_approved,
+        rejected_count = v_rejected,
+        pending_count = v_pending,
+        rework_count = v_rework,
+        replacement_count = v_replacement,
+        closed_at = CASE WHEN v_is_closed THEN coalesce(closed_at, clock_timestamp()) ELSE NULL END,
+        paused_at = CASE WHEN v_is_closed THEN paused_at ELSE NULL END,
+        closed_by_operator_id = CASE
+          WHEN v_is_closed THEN coalesce(closed_by_operator_id, p_closed_by_operator_id)
+          ELSE NULL
+        END,
+        close_reason = CASE
+          WHEN v_is_closed THEN 'Etapa concluída conforme o progresso canônico da rota.'
+          ELSE NULL
+        END,
+        last_event_occurred_at = clock_timestamp(),
+        state_version = state_version + 1,
+        updated_at = clock_timestamp()
+    WHERE id = v_state.id
+    RETURNING * INTO v_state;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'lot_id', v_lot.id,
+    'lot_code', v_lot.lot_code,
+    'cell_name', p_cell_name,
+    'step_code', p_step_code,
+    'machine_id', p_machine_id,
+    'status', v_state.status,
+    'is_closed', v_is_closed,
+    'expected', v_expected,
+    'approved', v_approved,
+    'rejected', v_rejected,
+    'pending', v_pending,
+    'rework', v_rework,
+    'replacement', v_replacement,
+    'closed_at', v_state.closed_at,
+    'state_version', v_state.state_version
+  );
+END;
+$function$
+
+-- ============================================================================
+-- refresh_collection_lot_state(uuid,uuid)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.refresh_collection_lot_state(p_lot_id uuid, p_reading_id uuid DEFAULT NULL::uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public', 'extensions', 'pg_temp'
+AS $function$
+DECLARE
+  v_lot public.production_lots%ROWTYPE;
+  v_metrics jsonb;
+  v_existing_version bigint;
+  v_new_version bigint;
+  v_is_complete boolean;
+  v_completed_operations bigint;
+  v_current_stage text;
+  v_current_stage_label text;
+BEGIN
+  IF p_lot_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended('production-lot:' || p_lot_id::text, 0));
+
+  IF p_reading_id IS NOT NULL THEN
+    SELECT reading.lot_state_version
+    INTO v_existing_version
+    FROM public.production_stage_readings reading
+    WHERE reading.id = p_reading_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+      RETURN NULL;
+    END IF;
+
+    IF v_existing_version IS NOT NULL THEN
+      RETURN public.get_collection_lot_snapshot(p_lot_id);
+    END IF;
+  END IF;
+
+  SELECT * INTO v_lot
+  FROM public.production_lots
+  WHERE id = p_lot_id
+  FOR UPDATE;
+
+  IF v_lot.id IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  v_metrics := public.get_collection_lot_route_metrics(p_lot_id);
+  v_is_complete := coalesce((v_metrics ->> 'is_complete')::boolean, false);
+  v_completed_operations := coalesce((v_metrics ->> 'completed_operations')::bigint, 0);
+  v_current_stage := v_metrics ->> 'current_stage';
+  v_current_stage_label := v_metrics ->> 'current_stage_label';
+
+  UPDATE public.production_lots lot
+  SET state_version = lot.state_version + 1,
+      planned_quantity = coalesce((v_metrics ->> 'total_parts')::integer, lot.planned_quantity),
+      progress_percent = coalesce((v_metrics ->> 'progress_percent')::numeric, 0),
+      produced_quantity = coalesce((v_metrics ->> 'completed_parts')::numeric, 0),
+      approved_quantity = coalesce((v_metrics ->> 'completed_parts')::numeric, 0),
+      rejected_quantity = coalesce((v_metrics ->> 'rejected')::numeric, 0),
+      pending_quantity = coalesce((v_metrics ->> 'pending_parts')::numeric, 0),
+      missing_count = coalesce((v_metrics ->> 'pending_parts')::integer, 0),
+      rework_count = coalesce((v_metrics ->> 'rework')::integer, 0),
+      status = CASE
+        WHEN v_is_complete THEN 'closed'
+        WHEN v_completed_operations > 0 THEN 'in_progress'
+        WHEN lot.status IN ('closed','shipped') THEN 'planned'
+        ELSE lot.status
+      END,
+      current_status = CASE
+        WHEN v_is_complete THEN 'completed'
+        WHEN v_completed_operations > 0 THEN 'in_progress'
+        ELSE coalesce(lot.current_status, lot.status)
+      END,
+      current_stage = coalesce(v_current_stage, lot.current_stage),
+      current_step = coalesce(v_current_stage, lot.current_step),
+      current_cell = coalesce(v_current_stage_label, lot.current_cell),
+      actual_start = CASE
+        WHEN v_completed_operations > 0 THEN coalesce(lot.actual_start, clock_timestamp())
+        ELSE lot.actual_start
+      END,
+      actual_end = CASE WHEN v_is_complete THEN coalesce(lot.actual_end, clock_timestamp()) ELSE NULL END,
+      closed_at = CASE WHEN v_is_complete THEN coalesce(lot.closed_at, clock_timestamp()) ELSE NULL END,
+      updated_at = clock_timestamp()
+  WHERE lot.id = p_lot_id
+  RETURNING lot.state_version INTO v_new_version;
+
+  IF p_reading_id IS NOT NULL THEN
+    UPDATE public.production_stage_readings
+    SET lot_state_version = v_new_version
+    WHERE id = p_reading_id;
+  END IF;
+
+  IF v_lot.pcp_import_batch_id IS NOT NULL THEN
+    PERFORM public.refresh_pcp_batch_progress(v_lot.pcp_import_batch_id);
+  END IF;
+
+  RETURN public.get_collection_lot_snapshot(p_lot_id);
+END;
+$function$
+
+-- ============================================================================
+-- resolve_production_stage_for_cell(uuid,text)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.resolve_production_stage_for_cell(p_cell_id uuid DEFAULT NULL::uuid, p_cell_name text DEFAULT NULL::text)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO ''
+AS $function$
+declare
+  v_normalized text := public.normalize_production_name(p_cell_name);
+  v_step_code text;
+begin
+  if p_cell_id is not null then
+    select step.code
+      into v_step_code
+    from public.routing_steps step
+    where step.cell_id = p_cell_id
+      and coalesce(step.active, true)
+    order by step.sequence nulls last
+    limit 1;
+
+    if v_step_code is not null then
+      return v_step_code;
+    end if;
+  end if;
+
+  select step.code
+    into v_step_code
+  from public.routing_steps step
+  where coalesce(step.active, true)
+    and (
+      public.normalize_production_name(step.code) = v_normalized
+      or public.normalize_production_name(step.name) = v_normalized
+    )
+  order by step.sequence nulls last
+  limit 1;
+
+  return coalesce(v_step_code, public.canonical_production_stage_name(p_cell_name));
+end;
+$function$
+
+-- ============================================================================
+-- switch_cell_active_lot_context(text,text,uuid,uuid,uuid,timestamp with time zone,text)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.switch_cell_active_lot_context(p_cell_name text, p_step_code text, p_machine_id uuid, p_new_lot_id uuid, p_new_pcp_import_batch_id uuid, p_event_occurred_at timestamp with time zone DEFAULT clock_timestamp(), p_client_event_id text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public', 'extensions', 'pg_temp'
+AS $function$
+DECLARE
+  v_cell_id uuid;
+  v_new_lot public.production_lots%ROWTYPE;
+  v_batch public.promob_import_batches%ROWTYPE;
+  v_context public.production_cell_active_contexts%ROWTYPE;
+  v_previous_state jsonb;
+  v_effective_event_time timestamptz := coalesce(p_event_occurred_at, clock_timestamp());
+  v_changed boolean := false;
+BEGIN
+  IF p_new_lot_id IS NULL
+     OR nullif(btrim(p_cell_name), '') IS NULL
+     OR nullif(btrim(p_step_code), '') IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'reason_code', 'INVALID_CONTEXT');
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended(
+      'cell-active-context:' || lower(btrim(p_cell_name)) || ':' || lower(btrim(p_step_code)) || ':' || coalesce(p_machine_id::text, 'all'),
+      0
+    )
+  );
+
+  SELECT * INTO v_new_lot
+  FROM public.production_lots
+  WHERE id = p_new_lot_id;
+
+  IF v_new_lot.id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'reason_code', 'LOT_NOT_FOUND');
+  END IF;
+
+  SELECT * INTO v_batch
+  FROM public.promob_import_batches
+  WHERE id = coalesce(p_new_pcp_import_batch_id, v_new_lot.pcp_import_batch_id);
+
+  SELECT id INTO v_cell_id
+  FROM public.cells
+  WHERE lower(btrim(name)) = lower(btrim(p_cell_name))
+  ORDER BY created_at
+  LIMIT 1;
+
+  SELECT * INTO v_context
+  FROM public.production_cell_active_contexts context
+  WHERE lower(btrim(context.cell_name)) = lower(btrim(p_cell_name))
+    AND lower(btrim(context.step_code)) = lower(btrim(p_step_code))
+    AND coalesce(context.machine_id, '00000000-0000-0000-0000-000000000000'::uuid)
+        = coalesce(p_machine_id, '00000000-0000-0000-0000-000000000000'::uuid)
+  FOR UPDATE;
+
+  IF v_context.id IS NOT NULL
+     AND (v_context.active_pcp_import_batch_id IS DISTINCT FROM coalesce(v_batch.id, v_new_lot.pcp_import_batch_id)
+          OR v_context.active_lot_id IS DISTINCT FROM v_new_lot.id)
+     AND v_effective_event_time < v_context.last_event_occurred_at THEN
+    RETURN jsonb_build_object(
+      'success', true,
+      'ignored_stale_event', true,
+      'reason_code', 'STALE_CONTEXT_EVENT',
+      'state_version', v_context.state_version,
+      'active_context', to_jsonb(v_context)
+    );
+  END IF;
+
+  IF v_context.id IS NOT NULL
+     AND v_context.active_lot_id IS NOT NULL
+     AND v_context.active_lot_id IS DISTINCT FROM v_new_lot.id THEN
+    v_previous_state := public.recalculate_cell_lot_state(
+      v_context.active_lot_id,
+      p_cell_name,
+      p_step_code,
+      p_machine_id,
+      NULL
+    );
+
+    IF coalesce((v_previous_state ->> 'is_closed')::boolean, false) IS FALSE THEN
+      UPDATE public.production_cell_lot_states state
+      SET status = 'paused',
+          paused_at = clock_timestamp(),
+          state_version = state.state_version + 1,
+          updated_at = clock_timestamp()
+      WHERE state.lot_id = v_context.active_lot_id
+        AND lower(btrim(state.cell_name)) = lower(btrim(p_cell_name))
+        AND lower(btrim(state.step_code)) = lower(btrim(p_step_code))
+        AND coalesce(state.machine_id, '00000000-0000-0000-0000-000000000000'::uuid)
+            = coalesce(p_machine_id, '00000000-0000-0000-0000-000000000000'::uuid)
+        AND state.status <> 'closed';
+    END IF;
+  END IF;
+
+  IF v_context.id IS NULL THEN
+    INSERT INTO public.production_cell_active_contexts (
+      cell_id, cell_name, step_code, machine_id,
+      active_lot_id, active_lot_code,
+      active_pcp_import_batch_id, active_general_lot_code,
+      source_client_event_id, activated_at, last_event_occurred_at,
+      state_version
+    ) VALUES (
+      v_cell_id, p_cell_name, p_step_code, p_machine_id,
+      v_new_lot.id, v_new_lot.lot_code,
+      coalesce(v_batch.id, v_new_lot.pcp_import_batch_id),
+      coalesce(v_batch.general_lot_code, v_new_lot.general_lot_code),
+      p_client_event_id, clock_timestamp(), v_effective_event_time,
+      1
+    )
+    RETURNING * INTO v_context;
+    v_changed := true;
+  ELSE
+    v_changed := v_context.active_lot_id IS DISTINCT FROM v_new_lot.id
+      OR v_context.active_pcp_import_batch_id IS DISTINCT FROM coalesce(v_batch.id, v_new_lot.pcp_import_batch_id);
+
+    UPDATE public.production_cell_active_contexts
+    SET cell_id = coalesce(v_cell_id, cell_id),
+        active_lot_id = v_new_lot.id,
+        active_lot_code = v_new_lot.lot_code,
+        active_pcp_import_batch_id = coalesce(v_batch.id, v_new_lot.pcp_import_batch_id),
+        active_general_lot_code = coalesce(v_batch.general_lot_code, v_new_lot.general_lot_code),
+        source_client_event_id = coalesce(p_client_event_id, source_client_event_id),
+        activated_at = CASE WHEN v_changed THEN clock_timestamp() ELSE activated_at END,
+        last_event_occurred_at = greatest(last_event_occurred_at, v_effective_event_time),
+        state_version = CASE WHEN v_changed THEN state_version + 1 ELSE state_version END,
+        updated_at = clock_timestamp()
+    WHERE id = v_context.id
+    RETURNING * INTO v_context;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'changed', v_changed,
+    'ignored_stale_event', false,
+    'state_version', v_context.state_version,
+    'active_context', to_jsonb(v_context),
+    'previous_state', v_previous_state
+  );
+END;
+$function$
+
+-- ============================================================================
+-- Runtime trigger definitions associated with the captured functions
+-- These statements are evidence only and MUST NOT be replayed from this file.
+-- ============================================================================
+-- SHA-256: 05a4fee62a4a0e562ca81795e8b5ea9be7c9b75e6d7758ec1fe343b3f2f01c7d
+CREATE TRIGGER trg_sync_production_lot_stage_aggregate AFTER INSERT ON production_stage_readings FOR EACH ROW WHEN (COALESCE(new.pipeline_version::integer, 2) <> 3) EXECUTE FUNCTION sync_production_lot_stage_aggregate();
+
+-- SHA-256: badc572bcaf60de1d483390c9c75931b252b446f940d96e2668f76b9ec1cd758
+CREATE TRIGGER trg_sync_production_lot_stage_aggregate__v3_delete_guard AFTER DELETE ON production_stage_readings FOR EACH ROW WHEN (COALESCE(old.pipeline_version::integer, 2) <> 3) EXECUTE FUNCTION sync_production_lot_stage_aggregate();
+
+-- SHA-256: 2f572a616c0fca43c5d394bdb3e46959b0205a2c025e669d7793e67709ebe27b
+CREATE TRIGGER trg_sync_production_lot_stage_aggregate__v3_update_guard AFTER UPDATE OF status, lot_id, step_name, quantity ON production_stage_readings FOR EACH ROW WHEN (COALESCE(new.pipeline_version::integer, old.pipeline_version::integer, 2) <> 3) EXECUTE FUNCTION sync_production_lot_stage_aggregate();
+
+-- SHA-256: e3aef8b8743c052d66b98d37aeeac4fcbccb5d51819a1e1a0c9302c1fa89c7f8
+CREATE TRIGGER trg_sync_reading_to_event AFTER INSERT ON production_stage_readings FOR EACH ROW WHEN (COALESCE(new.pipeline_version::integer, 2) <> 3) EXECUTE FUNCTION sync_reading_to_event();
+
+-- ============================================================================
+-- Replacement decision/completion paths captured at 2026-09-04T16:22Z
+-- Added after independent flow-inventory review. Mentions of JWT/service_role
+-- below are authorization logic, not credential values; screening found no
+-- password, Vault, secret, or long token-like literal.
+-- ============================================================================
+
+-- approve_piece_replacement(uuid,jsonb)
+-- SHA-256: 7eab3af5573ac3c6f0fb913307fd386cb963067ddb66c4660fd58f225d531516
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.approve_piece_replacement(p_order_id uuid, p_payload jsonb DEFAULT '{}'::jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public', 'extensions', 'realtime', 'pg_temp'
+AS $function$
+DECLARE
+  v_user_id uuid := auth.uid();
+  v_user_role text := public.get_my_role();
+  v_user_name text := coalesce(
+    nullif(current_setting('request.jwt.claims', true)::jsonb ->> 'email', ''),
+    v_user_id::text,
+    'service_role'
+  );
+  v_order public.replacement_orders%ROWTYPE;
+  v_original public.production_pieces%ROWTYPE;
+  v_lot public.production_lots%ROWTYPE;
+  v_production_order public.production_orders%ROWTYPE;
+  v_production_order_id uuid;
+  v_replacement_piece_id uuid;
+  v_replacement_uid text;
+  v_internal_traceability text;
+  v_barcode text;
+  v_priority text := coalesce(nullif(p_payload ->> 'priority', ''), 'normal');
+  v_route text[];
+  v_route_codes text[] := '{}'::text[];
+  v_route_value text;
+  v_step_code text;
+  v_first_step text;
+  v_first_cell public.cells%ROWTYPE;
+BEGIN
+  IF auth.role() <> 'service_role' AND v_user_id IS NULL THEN
+    RAISE EXCEPTION 'AUTH_REQUIRED' USING ERRCODE = '42501';
+  END IF;
+
+  IF NOT public.can_manage_replacement_actions() THEN
+    RAISE EXCEPTION 'REPLACEMENT_APPROVAL_PERMISSION_REQUIRED'
+      USING ERRCODE = '42501';
+  END IF;
+
+  SELECT *
+  INTO v_order
+  FROM public.replacement_orders
+  WHERE id = p_order_id
+  FOR UPDATE;
+
+  IF v_order.id IS NULL THEN
+    RAISE EXCEPTION 'Ordem de reposição não encontrada.';
+  END IF;
+
+  IF v_order.replacement_piece_id IS NOT NULL
+     AND v_order.status IN ('approved','released','in_production','completed') THEN
+    RETURN jsonb_build_object(
+      'success', true,
+      'idempotent', true,
+      'order_id', v_order.id,
+      'status', v_order.status,
+      'replacement_piece_id', v_order.replacement_piece_id,
+      'replacement_barcode', v_order.replacement_barcode,
+      'automatic_entries', 0,
+      'approved_cells', '[]'::jsonb,
+      'next_step', (
+        SELECT piece.current_stage
+        FROM public.production_pieces piece
+        WHERE piece.id = v_order.replacement_piece_id
+      )
+    );
+  END IF;
+
+  IF v_order.status NOT IN ('requested','under_review') THEN
+    RAISE EXCEPTION 'Status atual inválido para aprovação: %', v_order.status;
+  END IF;
+
+  SELECT *
+  INTO v_original
+  FROM public.production_pieces
+  WHERE id = v_order.original_piece_id
+  FOR UPDATE;
+
+  IF v_original.id IS NULL THEN
+    RAISE EXCEPTION 'Peça original não encontrada.';
+  END IF;
+  IF v_original.lot_id IS NULL THEN
+    RAISE EXCEPTION 'A peça original não possui lote vinculado.';
+  END IF;
+
+  SELECT * INTO v_lot
+  FROM public.production_lots
+  WHERE id = v_original.lot_id;
+
+  v_production_order_id := coalesce(
+    v_original.production_order_id,
+    v_lot.production_order_id,
+    v_lot.order_id
+  );
+
+  SELECT * INTO v_production_order
+  FROM public.production_orders
+  WHERE id = v_production_order_id;
+
+  v_barcode := coalesce(
+    nullif(v_order.replacement_barcode, ''),
+    nullif(v_original.traceability_code, ''),
+    nullif(v_original.piece_uid, ''),
+    nullif(v_original.piece_code, '')
+  );
+
+  IF v_barcode IS NULL THEN
+    RAISE EXCEPTION 'A peça original não possui código de barras rastreável.';
+  END IF;
+
+  v_route := coalesce(v_original.route_steps, '{}'::text[]);
+  IF cardinality(v_route) = 0 THEN
+    v_route := ARRAY[]::text[];
+    IF coalesce(v_original.requires_cut, false) THEN v_route := array_append(v_route, 'cut'); END IF;
+    IF coalesce(v_original.requires_edge, false) THEN v_route := array_append(v_route, 'edge'); END IF;
+    IF coalesce(v_original.requires_cnc, false) THEN v_route := array_append(v_route, 'cnc'); END IF;
+    IF coalesce(v_original.requires_joinery, false) THEN v_route := array_append(v_route, 'joinery'); END IF;
+    IF coalesce(v_original.requires_separation, false) THEN v_route := array_append(v_route, 'separation'); END IF;
+    IF coalesce(v_original.requires_packaging, false) THEN v_route := array_append(v_route, 'packaging'); END IF;
+  END IF;
+
+  FOREACH v_route_value IN ARRAY v_route LOOP
+    v_step_code := public.normalize_replacement_step_code(v_route_value);
+    IF v_step_code IS NOT NULL AND NOT (v_step_code = ANY(v_route_codes)) THEN
+      v_route_codes := array_append(v_route_codes, v_step_code);
+    END IF;
+  END LOOP;
+
+  IF cardinality(v_route_codes) = 0 THEN
+    v_route_codes := ARRAY['cut'];
+    v_route := ARRAY['cut'];
+  END IF;
+
+  v_first_step := v_route_codes[1];
+  v_replacement_uid := v_barcode || '.REP.' || upper(substr(replace(v_order.id::text, '-', ''), 1, 8));
+  v_internal_traceability := v_replacement_uid;
+
+  INSERT INTO public.production_pieces (
+    piece_uid, piece_code, traceability_code, piece_name, description,
+    production_order_id, lot_id, lot_item_id, item_id,
+    legacy_lot_item_id, legacy_production_lot_item_id,
+    sequence_number, total_in_lot, is_active,
+    module_name, environment, environment_name,
+    material, thickness, color, width, height, length, grain_direction,
+    edge_front, edge_back, edge_left, edge_right,
+    requires_cut, requires_edge, requires_cnc, requires_joinery,
+    requires_separation, requires_packaging,
+    current_stage, status, source_origin, is_rework, original_piece_id,
+    is_replacement, production_status, replacement_status,
+    route_template_id, route_steps, completed_steps,
+    lot_code, order_number, customer_name, pcp_import_batch_id, created_by
+  ) VALUES (
+    v_replacement_uid, v_barcode, v_internal_traceability,
+    v_original.piece_name, v_original.description,
+    v_production_order_id, v_original.lot_id,
+    v_original.lot_item_id, v_original.item_id,
+    v_original.legacy_lot_item_id, v_original.legacy_production_lot_item_id,
+    v_original.sequence_number, v_original.total_in_lot, true,
+    v_original.module_name, v_original.environment, v_original.environment_name,
+    v_original.material, v_original.thickness, v_original.color,
+    v_original.width, v_original.height, v_original.length, v_original.grain_direction,
+    v_original.edge_front, v_original.edge_back, v_original.edge_left, v_original.edge_right,
+    v_original.requires_cut, v_original.requires_edge, v_original.requires_cnc,
+    v_original.requires_joinery, v_original.requires_separation, v_original.requires_packaging,
+    v_first_step, 'in_progress', 'replacement', false, v_original.id,
+    true, 'approved', 'in_production',
+    v_original.route_template_id, v_route, '{}'::text[],
+    coalesce(v_original.lot_code, v_order.lot_code, v_lot.lot_code),
+    coalesce(v_original.order_number, v_order.order_number, v_production_order.order_number, v_production_order.order_code),
+    coalesce(v_original.customer_name, v_order.customer_name, v_production_order.customer_name),
+    v_original.pcp_import_batch_id, v_user_id
+  )
+  RETURNING id INTO v_replacement_piece_id;
+
+  UPDATE public.production_tags
+  SET active = false,
+      updated_at = clock_timestamp()
+  WHERE upper(tag_value) = upper(v_barcode)
+    AND active IS TRUE;
+
+  INSERT INTO public.production_tags (
+    lot_id, item_id, piece_id, tag_value, tag_type, tag_format,
+    barcode_value, active, created_at, updated_at
+  ) VALUES (
+    v_original.lot_id,
+    coalesce(v_original.legacy_production_lot_item_id, v_original.lot_item_id),
+    v_replacement_piece_id,
+    v_barcode,
+    'barcode',
+    'custom',
+    v_barcode,
+    true,
+    clock_timestamp(),
+    clock_timestamp()
+  );
+
+  UPDATE public.production_pieces
+  SET replacement_status = 'in_production',
+      updated_at = clock_timestamp()
+  WHERE id = v_original.id;
+
+  UPDATE public.replacement_orders
+  SET status = 'released',
+      replacement_piece_id = v_replacement_piece_id,
+      replacement_barcode = v_barcode,
+      approver_id = v_user_id,
+      approved_at = clock_timestamp(),
+      released_at = clock_timestamp(),
+      completed_at = NULL,
+      priority = v_priority,
+      approved_cells = '[]'::jsonb,
+      approval_entry_count = 0,
+      updated_at = clock_timestamp()
+  WHERE id = p_order_id;
+
+  INSERT INTO public.replacement_action_audit_logs (
+    replacement_order_id, replacement_code, action,
+    performed_by, performed_by_name, performed_by_role,
+    status_before, status_after,
+    original_piece_id, replacement_piece_id,
+    current_stage_before, current_stage_after,
+    metadata
+  ) VALUES (
+    v_order.id, v_order.replacement_code, 'approved_for_production',
+    v_user_id, v_user_name, v_user_role,
+    v_order.status, 'released',
+    v_original.id, v_replacement_piece_id,
+    v_original.current_stage, v_first_step,
+    jsonb_build_object(
+      'priority', v_priority,
+      'automatic_entries', 0,
+      'approved_cells', '[]'::jsonb,
+      'barcode', v_barcode,
+      'route_steps', to_jsonb(v_route_codes),
+      'source', 'replacement_approval_without_automatic_entries'
+    )
+  );
+
+  SELECT *
+  INTO v_first_cell
+  FROM public.cells cell
+  WHERE cell.active IS TRUE
+    AND public.replacement_cell_matches_step(cell.name, v_first_step)
+  ORDER BY cell.name
+  LIMIT 1;
+
+  BEGIN
+    PERFORM realtime.send(
+      jsonb_build_object(
+        'replacement_order_id', v_order.id,
+        'replacement_piece_id', v_replacement_piece_id,
+        'replacement_code', v_order.replacement_code,
+        'barcode', v_barcode,
+        'status', 'released',
+        'current_step', v_first_step,
+        'automatic_entries', 0,
+        'occurred_at', clock_timestamp()
+      ),
+      'replacement_available',
+      'replacement:global',
+      true
+    );
+
+    IF v_first_cell.id IS NOT NULL THEN
+      PERFORM realtime.send(
+        jsonb_build_object(
+          'replacement_order_id', v_order.id,
+          'replacement_piece_id', v_replacement_piece_id,
+          'replacement_code', v_order.replacement_code,
+          'barcode', v_barcode,
+          'status', 'released',
+          'cell_id', v_first_cell.id,
+          'cell_name', v_first_cell.name,
+          'current_step', v_first_step,
+          'occurred_at', clock_timestamp()
+        ),
+        'replacement_available',
+        'replacement:cell:' || v_first_cell.id::text,
+        true
+      );
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    NULL;
+  END;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'order_id', p_order_id,
+    'status', 'released',
+    'replacement_piece_id', v_replacement_piece_id,
+    'replacement_uid', v_replacement_uid,
+    'replacement_barcode', v_barcode,
+    'automatic_entries', 0,
+    'approved_cells', '[]'::jsonb,
+    'completed_steps', '[]'::jsonb,
+    'next_step', v_first_step,
+    'destination_cell_id', v_first_cell.id,
+    'destination_cell_name', v_first_cell.name,
+    'message', 'Reposição aprovada e enviada ao posto da primeira etapa.'
+  );
+END;
+$function$
+
+-- force_complete_piece_replacement_impl(uuid,text,jsonb)
+-- SHA-256: 457dd6fd384ebfd140581346d0ec25845c8e2faea6bc89ebb5f240c1f7cc289a
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.force_complete_piece_replacement_impl(p_order_id uuid, p_reason text, p_payload jsonb DEFAULT '{}'::jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public', 'extensions', 'realtime', 'pg_temp'
+AS $function$
+DECLARE
+  v_order public.replacement_orders%ROWTYPE;
+  v_original public.production_pieces%ROWTYPE;
+  v_replacement public.production_pieces%ROWTYPE;
+  v_user_id uuid := auth.uid();
+  v_user_role text := public.get_my_role();
+  v_user_name text := coalesce(
+    nullif(current_setting('request.jwt.claims', true)::jsonb ->> 'email', ''),
+    v_user_id::text,
+    'service_role'
+  );
+  v_reason text := btrim(coalesce(p_reason, ''));
+  v_route_codes text[] := '{}'::text[];
+  v_route_value text;
+  v_step_code text;
+  v_cell public.cells%ROWTYPE;
+  v_client_event_id text;
+  v_approval_result jsonb;
+  v_reading_count integer := 0;
+BEGIN
+  IF auth.role() <> 'service_role' AND v_user_id IS NULL THEN
+    RAISE EXCEPTION 'AUTH_REQUIRED' USING ERRCODE = '42501';
+  END IF;
+
+  IF NOT public.can_manage_replacement_actions() THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Qualidade, Supervisor/Líder, Gestor ou Administrador são obrigatórios para a conclusão forçada.'
+    );
+  END IF;
+
+  IF v_reason = '' THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'É obrigatório informar a justificativa para a conclusão forçada.'
+    );
+  END IF;
+
+  SELECT * INTO v_order
+  FROM public.replacement_orders
+  WHERE id = p_order_id
+  FOR UPDATE;
+
+  IF v_order.id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Ordem de reposição não localizada.');
+  END IF;
+
+  IF v_order.status = 'completed' THEN
+    RETURN jsonb_build_object(
+      'success', true,
+      'already_completed', true,
+      'order_id', v_order.id,
+      'status', 'completed'
+    );
+  END IF;
+
+  IF v_order.status = 'cancelled' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Uma reposição cancelada não pode ser concluída.');
+  END IF;
+
+  IF v_order.replacement_piece_id IS NULL THEN
+    v_approval_result := public.approve_piece_replacement(
+      p_order_id,
+      jsonb_build_object('priority', coalesce(v_order.priority, 'normal'))
+    );
+
+    IF NOT coalesce((v_approval_result ->> 'success')::boolean, false) THEN
+      RETURN v_approval_result;
+    END IF;
+
+    SELECT * INTO v_order
+    FROM public.replacement_orders
+    WHERE id = p_order_id
+    FOR UPDATE;
+  END IF;
+
+  SELECT * INTO v_original
+  FROM public.production_pieces
+  WHERE id = v_order.original_piece_id
+  FOR UPDATE;
+
+  SELECT * INTO v_replacement
+  FROM public.production_pieces
+  WHERE id = v_order.replacement_piece_id
+  FOR UPDATE;
+
+  IF v_replacement.id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Peça substituta não localizada após a aprovação.');
+  END IF;
+
+  FOREACH v_route_value IN ARRAY coalesce(v_replacement.route_steps, '{}'::text[]) LOOP
+    v_step_code := public.normalize_replacement_step_code(v_route_value);
+    IF v_step_code IS NOT NULL AND NOT (v_step_code = ANY(v_route_codes)) THEN
+      v_route_codes := array_append(v_route_codes, v_step_code);
+    END IF;
+  END LOOP;
+
+  IF cardinality(v_route_codes) = 0 THEN
+    IF coalesce(v_replacement.requires_cut, false) THEN v_route_codes := array_append(v_route_codes, 'cut'); END IF;
+    IF coalesce(v_replacement.requires_edge, false) THEN v_route_codes := array_append(v_route_codes, 'edge'); END IF;
+    IF coalesce(v_replacement.requires_cnc, false) THEN v_route_codes := array_append(v_route_codes, 'cnc'); END IF;
+    IF coalesce(v_replacement.requires_joinery, false) THEN v_route_codes := array_append(v_route_codes, 'joinery'); END IF;
+    IF coalesce(v_replacement.requires_separation, false) THEN v_route_codes := array_append(v_route_codes, 'separation'); END IF;
+    IF coalesce(v_replacement.requires_packaging, false) THEN v_route_codes := array_append(v_route_codes, 'packaging'); END IF;
+  END IF;
+
+  IF cardinality(v_route_codes) = 0 THEN
+    v_route_codes := ARRAY['cut'];
+  END IF;
+
+  FOREACH v_step_code IN ARRAY v_route_codes LOOP
+    IF NOT EXISTS (
+      SELECT 1
+      FROM public.production_stage_readings reading
+      WHERE reading.piece_id = v_replacement.id
+        AND reading.status = 'approved'
+        AND public.normalize_replacement_step_code(reading.step_name) = v_step_code
+    ) THEN
+      SELECT * INTO v_cell
+      FROM public.cells cell
+      WHERE cell.active IS TRUE
+        AND public.replacement_cell_matches_step(cell.name, v_step_code)
+      ORDER BY cell.name
+      LIMIT 1;
+
+      v_client_event_id := 'replacement-force:' || v_order.id::text || ':' || v_step_code;
+
+      INSERT INTO public.production_stage_readings (
+        client_event_id, tag_value, tag_type, reader_type,
+        station_name, cell_name, operator, operator_name_snapshot,
+        user_id, operator_id, shift, date, hour,
+        item_id, piece_id, lot_id, production_order_id,
+        step_name, operation_name, quantity, status, event_type,
+        notes, lot_code, order_number, customer_name, environment_name,
+        piece_code, production_cycle, entry_type, traceability_type,
+        is_manual, unit_of_measure, general_lot_code, created_at
+      ) VALUES (
+        v_client_event_id,
+        coalesce(v_order.replacement_barcode, v_replacement.piece_code, v_replacement.traceability_code),
+        'barcode', 'api',
+        'Conclusão Forçada de Reposição',
+        coalesce(v_cell.name, v_step_code),
+        v_user_name, v_user_name,
+        v_user_id, v_order.operator_id,
+        'Conclusão forçada', current_date, to_char(clock_timestamp(), 'HH24:MI'),
+        coalesce(v_replacement.legacy_production_lot_item_id, v_replacement.lot_item_id),
+        v_replacement.id, v_replacement.lot_id, v_replacement.production_order_id,
+        v_step_code, v_step_code, 1, 'approved', 'manual_adjustment',
+        'Conclusão forçada auditada — ' || v_reason,
+        coalesce(v_order.lot_code, v_replacement.lot_code),
+        coalesce(v_order.order_number, v_replacement.order_number),
+        coalesce(v_order.customer_name, v_replacement.customer_name),
+        coalesce(v_order.environment_name, v_replacement.environment_name, v_replacement.environment),
+        coalesce(v_order.replacement_barcode, v_replacement.piece_code),
+        1, 'conclusao_forcada_reposicao', 'unitaria', true, 'pecas',
+        v_order.general_lot_code, clock_timestamp()
+      )
+      ON CONFLICT DO NOTHING;
+
+      GET DIAGNOSTICS v_reading_count = ROW_COUNT;
+    END IF;
+  END LOOP;
+
+  UPDATE public.production_pieces
+  SET completed_steps = v_route_codes,
+      status = 'completed',
+      production_status = 'completed',
+      replacement_status = 'replaced',
+      current_stage = 'Concluída',
+      updated_at = clock_timestamp()
+  WHERE id = v_replacement.id;
+
+  IF v_original.id IS NOT NULL THEN
+    UPDATE public.production_pieces
+    SET status = 'replaced',
+        replacement_status = 'replaced',
+        updated_at = clock_timestamp()
+    WHERE id = v_original.id;
+  END IF;
+
+  UPDATE public.replacement_orders
+  SET status = 'completed',
+      completed_at = clock_timestamp(),
+      notes = concat_ws(
+        ' ',
+        nullif(notes, ''),
+        '[Conclusão forçada: ' || v_reason || ']'
+      ),
+      updated_at = clock_timestamp()
+  WHERE id = v_order.id;
+
+  UPDATE public.quality_nonconformities
+  SET status = 'closed',
+      closed_at = clock_timestamp(),
+      closed_by = v_user_id
+  WHERE related_replacement_id = p_order_id
+    AND status <> 'closed';
+
+  INSERT INTO public.replacement_action_audit_logs (
+    replacement_order_id, replacement_code, action,
+    performed_by, performed_by_name, performed_by_role,
+    reason, status_before, status_after,
+    original_piece_id, replacement_piece_id,
+    current_stage_before, current_stage_after,
+    metadata
+  ) VALUES (
+    v_order.id, v_order.replacement_code, 'force_completed',
+    v_user_id, v_user_name, v_user_role,
+    v_reason, v_order.status, 'completed',
+    v_order.original_piece_id, v_order.replacement_piece_id,
+    v_replacement.current_stage, 'Concluída',
+    jsonb_build_object(
+      'forced_stage_facts_created', v_reading_count,
+      'route_steps', to_jsonb(v_route_codes),
+      'payload', coalesce(p_payload, '{}'::jsonb),
+      'source', 'replacement_force_completion'
+    )
+  );
+
+  BEGIN
+    FOREACH v_step_code IN ARRAY v_route_codes LOOP
+      SELECT * INTO v_cell
+      FROM public.cells cell
+      WHERE cell.active IS TRUE
+        AND public.replacement_cell_matches_step(cell.name, v_step_code)
+      ORDER BY cell.name
+      LIMIT 1;
+
+      IF v_cell.id IS NOT NULL THEN
+        PERFORM public.recalculate_cell_lot_state(
+          v_replacement.lot_id,
+          v_cell.name,
+          v_step_code,
+          NULL::uuid,
+          NULL::uuid
+        );
+      END IF;
+    END LOOP;
+
+    PERFORM public.refresh_collection_lot_state(
+      v_replacement.lot_id,
+      v_replacement.pcp_import_batch_id
+    );
+  EXCEPTION WHEN OTHERS THEN
+    NULL;
+  END;
+
+  BEGIN
+    PERFORM realtime.send(
+      jsonb_build_object(
+        'replacement_order_id', v_order.id,
+        'replacement_piece_id', v_replacement.id,
+        'replacement_code', v_order.replacement_code,
+        'status', 'completed',
+        'forced', true,
+        'occurred_at', clock_timestamp()
+      ),
+      'replacement_force_completed',
+      'replacement:global',
+      true
+    );
+  EXCEPTION WHEN OTHERS THEN
+    NULL;
+  END;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'order_id', v_order.id,
+    'status', 'completed',
+    'forced', true,
+    'reason', v_reason,
+    'message', 'Conclusão forçada registrada com sucesso e auditada.'
+  );
+END;
+$function$
+
+-- force_complete_piece_replacement(uuid,text,jsonb)
+-- SHA-256: f2bc1f2948be690e5fa0de903acc253a7aac285c6cc81ecafe4b0aea12af0a1a
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.force_complete_piece_replacement(p_order_id uuid, p_reason text, p_payload jsonb DEFAULT '{}'::jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public', 'extensions', 'pg_temp'
+AS $function$
+BEGIN
+  IF NOT public.can_manage_replacement_actions() THEN
+    RAISE EXCEPTION 'REPLACEMENT_MANAGE_PERMISSION_REQUIRED'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN public.force_complete_piece_replacement_impl(
+    p_order_id,
+    p_reason,
+    coalesce(p_payload, '{}'::jsonb)
+  );
+END;
+$function$

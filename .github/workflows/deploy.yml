@@ -67,6 +67,10 @@ jobs:
           node --check edge-worker/src/index.mjs
       - name: Testes unitários
         run: npm run test:unit
+      - name: Proteger lineage histórica e recuperação MES
+        run: |
+          npm run audit:migrations
+          npm run test:mes:guards
       - name: Auditoria de dependências e segredos
         run: npm run security:check
       - name: Build de validação

@@ -1,0 +1,25 @@
+-- EVIDENCE ONLY — DO NOT APPLY AS A DESIRED-STATE MIGRATION.
+-- Source: Supabase development branch smnsihksrhzbkhcbdjfu.
+-- Captured read-only on 2026-09-04 before any recovery/reset.
+-- Ledger version: 20260830233615
+-- Ledger name: capacity_test_reusable_cleaned_prefix
+-- SHA-256 of the single statement, as stored in the branch ledger:
+-- 5c8d1dbe72c6e94d3d53c29fa51bbde4c4b455ee5aa3df924c9f3c3d0e81a551
+
+-- Execuções limpas permanecem como auditoria, mas deixam de reservar o
+-- arquivo/prefixo sintético. A constraint original era global e contradizia o
+-- trigger prefix-free, que já ignora status cleaned por projeto e ambiente.
+
+begin;
+
+alter table public.capacity_test_runs
+  drop constraint if exists capacity_test_runs_synthetic_prefix_key;
+
+create unique index if not exists uq_capacity_test_runs_live_prefix
+  on public.capacity_test_runs(project_ref, environment, synthetic_prefix)
+  where status <> 'cleaned';
+
+comment on index public.uq_capacity_test_runs_live_prefix is
+  'Reserva prefixos apenas para execuções não limpas; permite repetir com segurança o mesmo arquivo depois da limpeza transacional.';
+
+commit;
