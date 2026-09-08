@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Layers3, PackageCheck, UsersRound } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
+import '@/components/charts/charts.css';
 
 export async function fetchPcpBatchProgress(lotIds = []) {
   if (!lotIds.length) return [];
@@ -33,7 +34,7 @@ export default function GeneralLotProgressPanel({ lotIds = [] }) {
   const clientLots = visible.reduce((sum, batch) => sum + Number(batch.client_lots_count || 0), 0);
 
   return (
-    <div className="bg-card border border-border/60 rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm">
+    <div className="ac-lot-progress bg-card border border-border/60 rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h3 className="font-semibold text-sm text-foreground">Andamento dos lotes gerais PCP</h3>
@@ -72,8 +73,8 @@ export default function GeneralLotProgressPanel({ lotIds = [] }) {
                   </div>
                   <strong className="text-blue-600 dark:text-blue-400 shrink-0">{percent}%</strong>
                 </div>
-                <div className="h-2 rounded-full bg-secondary overflow-hidden">
-                  <div className="h-full rounded-full bg-blue-500 transition-all duration-500" style={{ width: `${percent}%` }} />
+                <div className="h-2 rounded-full bg-secondary overflow-hidden" role="progressbar" aria-label={`Progresso do lote ${batch.general_lot_code || batch.file_name || ''}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+                  <div className="ac-lot-progress-fill h-full rounded-full" style={{ width: `${percent}%` }} />
                 </div>
                 <div className="flex justify-between gap-3 text-[10px] text-muted-foreground">
                   <span>{Number(batch.completed_operations || 0)}/{Number(batch.total_operations || 0)} operações concluídas</span>

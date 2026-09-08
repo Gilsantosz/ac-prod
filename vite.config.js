@@ -3,6 +3,7 @@ import { defineConfig } from 'vite'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { VitePWA } from 'vite-plugin-pwa'
+import chartPresentationPlugin from './scripts/chartPresentationPlugin.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -19,6 +20,7 @@ export default defineConfig(() => {
     logLevel: 'info',
 
     plugins: [
+      chartPresentationPlugin(),
       react(),
       {
         name: 'spa-fallback',

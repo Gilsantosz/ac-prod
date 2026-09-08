@@ -1,0 +1,80 @@
+:root {
+  --ac-chart-glass: rgb(255 255 255 / .76);
+  --ac-chart-tooltip: rgb(255 255 255 / .98);
+  --ac-chart-border: rgb(148 163 184 / .25);
+  --ac-chart-grid: rgb(100 116 139 / .22);
+  --ac-chart-shadow: 0 8px 32px rgb(15 23 42 / .055), inset 0 1px 0 rgb(255 255 255 / .65);
+}
+.dark {
+  --ac-chart-glass: rgb(22 29 40 / .86);
+  --ac-chart-tooltip: rgb(22 29 40 / .98);
+  --ac-chart-border: rgb(148 163 184 / .25);
+  --ac-chart-grid: rgb(148 163 184 / .22);
+  --ac-chart-shadow: 0 8px 32px rgb(0 0 0 / .16), inset 0 1px 0 rgb(255 255 255 / .06);
+}
+/* Only cards containing charts: do not restyle collection inputs or application-wide cards. */
+:where(.bg-card, article, [data-slot="card"]):has(.ac-chart-host), .ac-lot-progress {
+  background: var(--ac-chart-glass);
+  border-color: var(--ac-chart-border);
+  box-shadow: var(--ac-chart-shadow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.ac-chart-host { position: relative; display: flex; flex-direction: column; min-width: 0; color: hsl(var(--foreground)); animation: ac-chart-enter .3s ease-out backwards; }
+.ac-chart-toolbar { display: flex; flex: 0 0 auto; justify-content: flex-end; align-items: center; gap: 4px; padding: 0 0 8px; position: relative; z-index: 2; }
+.ac-chart-toolbar-hint { margin-right: auto; font-size: 10px; color: hsl(var(--muted-foreground)); }
+.ac-chart-button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; padding: 0; border: 1px solid var(--ac-chart-border); border-radius: 10px; background: var(--ac-chart-glass); color: hsl(var(--foreground)); cursor: pointer; transition: background .16s, box-shadow .16s; list-style: none; }
+.ac-chart-button::-webkit-details-marker { display: none; }
+.ac-chart-button:hover:not(:disabled) { background: hsl(var(--secondary)); box-shadow: 0 2px 8px rgb(15 23 42 / .08); }
+.ac-chart-button:focus-visible, .ac-chart-menu button:focus-visible, .ac-chart-empty button:focus-visible, .ac-chart-table-scroll:focus-visible, .ac-chart-host .recharts-surface:focus-visible { outline: 2px solid #0284c7; outline-offset: 3px; }
+.ac-chart-button:disabled, .ac-chart-menu button:disabled { opacity: .35; cursor: not-allowed; }
+.ac-chart-body { flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; }
+.ac-chart-options { position: relative; }
+.ac-chart-menu { position: absolute; right: 0; top: 38px; width: min(250px, 80vw); padding: 6px; border: 1px solid var(--ac-chart-border); border-radius: 14px; background: var(--ac-chart-tooltip); box-shadow: var(--ac-chart-shadow); z-index: 10; }
+.ac-chart-menu button { display: flex; gap: 8px; align-items: center; width: 100%; padding: 10px; text-align: left; border-radius: 8px; font-size: 12px; }
+.ac-chart-menu button:hover { background: hsl(var(--secondary)); }
+.ac-chart-menu p { margin: 6px 10px; font-size: 11px; line-height: 1.5; color: hsl(var(--muted-foreground)); }
+.ac-chart-empty { display: flex; height: 100%; min-height: 60px; align-items: center; justify-content: center; border: 1px dashed var(--ac-chart-border); border-radius: 14px; color: hsl(var(--muted-foreground)); font-size: 13px; }
+.ac-chart-empty button { padding: 12px 20px; border-radius: 10px; text-decoration: underline; }
+.ac-chart-point { position: absolute; bottom: 10px; right: 10px; max-width: calc(100% - 20px); min-width: 170px; padding: 10px 14px; border: 1px solid var(--ac-chart-border); border-radius: 14px; background: var(--ac-chart-tooltip); box-shadow: var(--ac-chart-shadow); z-index: 2; font-size: 12px; }
+.ac-chart-point-heading, .ac-chart-point-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.ac-chart-point-heading { margin-bottom: 6px; }
+.ac-chart-point-row { padding: 3px 0; font-variant-numeric: tabular-nums; }
+.ac-chart-overlay { position: fixed; inset: 0; z-index: 150; background: rgb(15 23 42 / .45); backdrop-filter: blur(5px); }
+.ac-chart-dialog { position: fixed; inset: 4vh 4vw; z-index: 151; display: flex; flex-direction: column; min-height: 0; padding: 24px; border: 1px solid var(--ac-chart-border); border-radius: 24px; background: var(--ac-chart-tooltip); color: hsl(var(--foreground)); box-shadow: 0 24px 80px rgb(0 0 0 / .25); animation: ac-chart-enter .22s ease-out backwards; }
+.ac-chart-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 20px; font-weight: 600; }
+.ac-chart-description { font-size: 12px; color: hsl(var(--muted-foreground)); margin: 8px 0 18px; }
+.ac-chart-table-scroll { height: 100%; overflow: auto; border: 1px solid var(--ac-chart-border); border-radius: 12px; }
+.ac-chart-table { border-collapse: collapse; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
+.ac-chart-table caption { caption-side: bottom; padding: 12px; text-align: left; color: hsl(var(--muted-foreground)); }
+.ac-chart-table th, .ac-chart-table td { padding: 10px 12px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--ac-chart-border); }
+.ac-chart-table th:first-child { text-align: left; }
+.ac-chart-table thead th { position: sticky; top: 0; background: var(--ac-chart-tooltip); }
+.ac-lot-progress-fill { background: linear-gradient(90deg, #38bdf8, #2563eb); transform-origin: left center; animation: ac-chart-grow-x .7s cubic-bezier(.22,.7,.25,1) backwards; transition: width .25s ease-out; }
+/* Release transform/clip compositing after entry; keep native SVG paint and hit-testing. */
+@media (prefers-reduced-motion: no-preference) {
+  .ac-chart-body[data-motion="on"] .recharts-bar-rectangle { transform-box: fill-box; transform-origin: center bottom; animation: ac-chart-grow-y .65s cubic-bezier(.22,.7,.25,1) backwards; }
+  .ac-chart-horizontal[data-motion="on"] .recharts-bar-rectangle { transform-origin: left center; animation-name: ac-chart-grow-x; }
+  .ac-chart-body[data-motion="on"] :is(.recharts-line-curve, .recharts-area-curve, .recharts-area-area) { animation: ac-chart-draw .8s cubic-bezier(.22,.7,.25,1) backwards; }
+}
+@keyframes ac-chart-grow-y { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes ac-chart-grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes ac-chart-draw { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes ac-chart-enter { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 640px) {
+  .ac-chart-button { width: 36px; height: 36px; }
+  .ac-chart-toolbar-hint { display: none; }
+  .ac-chart-dialog { inset: 12px; padding: 16px; border-radius: 18px; }
+  :where(.bg-card, article, [data-slot="card"]):has(.ac-chart-host), .ac-lot-progress { backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+}
+@supports not (backdrop-filter: blur(1px)) {
+  :where(.bg-card, article, [data-slot="card"]):has(.ac-chart-host), .ac-lot-progress { background: hsl(var(--card)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ac-chart-host, .ac-chart-host *, .ac-chart-dialog, .ac-chart-dialog *, .ac-lot-progress-fill { animation: none !important; transition: none !important; }
+}
+@media print {
+  .ac-chart-toolbar, .ac-chart-point, .ac-chart-overlay { display: none !important; }
+  .ac-chart-host, .ac-chart-host *, .ac-lot-progress-fill { animation: none !important; transition: none !important; }
+  :where(.bg-card, article, [data-slot="card"]):has(.ac-chart-host), .ac-lot-progress { background: white; backdrop-filter: none; box-shadow: none; }
+}
