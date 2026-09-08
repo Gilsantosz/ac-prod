@@ -1,0 +1,135 @@
+name: K6 capacity - isolated staging only
+
+on:
+  push:
+    branches: [test/k6-capacity-2026-09-07]
+    paths:
+      - '.github/workflows/k6-capacity.yml'
+      - 'scripts/capacity/**'
+      - 'tests/load/**'
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'Staging profile using real test identities; never production'
+        type: choice
+        default: smoke
+        options: [smoke, idempotency, microbatch, contention_piece, contention_cell_lot, priority, nominal, burst]
+      sequence_base:
+        description: 'Positive device sequence reserved for this run; never reuse'
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: acprod-isolated-k6-capacity
+  cancel-in-progress: false
+jobs:
+  k6:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      K6_NO_USAGE_REPORT: 'true'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install verified k6 2.2.0
+        run: bash scripts/capacity/install-k6.sh
+      - name: Prove runtime installation (not system capacity)
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/k6-capacity
+          k6 version | tee artifacts/k6-capacity/k6-version.txt
+          sha256sum "$HOME/.local/bin/k6" > artifacts/k6-capacity/k6-binary.sha256
+          cat > "$RUNNER_TEMP/k6-runtime-selftest.js" <<'JS'
+          import { check } from 'k6';
+          export const options = { vus: 1, iterations: 1, thresholds: { checks: ['rate==1'] } };
+          export default function () { check(2 + 2, { 'k6 runtime executable': n => n === 4 }); }
+          JS
+          k6 run --summary-export=artifacts/k6-capacity/runtime-only.json "$RUNNER_TEMP/k6-runtime-selftest.js"
+          printf 'Runtime self-test only. No AC.Prod throughput was measured.\n' >> "$GITHUB_STEP_SUMMARY"
+      - name: Validate per-cell reporting and k6 compilation offline
+        run: |
+          set -euo pipefail
+          node --test scripts/capacity/reporting.test.mjs | tee artifacts/k6-capacity/reporting-tests.tap
+          export SUPABASE_URL=https://smnsihksrhzbkhcbdjfu.supabase.co
+          export SUPABASE_ANON_KEY=NON_AUTHENTICATING_OFFLINE_PLACEHOLDER
+          export K6_TARGET=staging K6_CONFIRM_WRITES=staging-v3-load
+          export K6_PROFILE=smoke K6_SLO_PROFILE=production K6_RUN_ID=offline-inspect K6_SEQUENCE_BASE=900000000
+          export K6_FIXTURES="$RUNNER_TEMP/k6-inspect-fixture.json"
+          trap 'rm -f "$K6_FIXTURES"' EXIT
+          python3 - <<'PY'
+          import json, os, pathlib
+          fixture = {'devices': [{'device_id': '10000000-0000-4000-a000-000000000001', 'operator_session_id': '20000000-0000-4000-a000-000000000001', 'cell_id': '30000000-0000-4000-a000-000000000001', 'machine_id': '40000000-0000-4000-a000-000000000001', 'access_token': 'NON_AUTHENTICATING_OFFLINE_PLACEHOLDER'}], 'codes': ['00000001']}
+          pathlib.Path(os.environ['K6_FIXTURES']).write_text(json.dumps(fixture))
+          PY
+          # inspect evaluates imports/options only, never setup or HTTP requests.
+          k6 inspect --include-system-env-vars tests/load/collection-capacity-per-cell.js > artifacts/k6-capacity/compiled-options.json
+          printf 'Offline reporter tests and k6 module compilation passed. Not a system load test.\n' >> "$GITHUB_STEP_SUMMARY"
+      - name: Check protected staging prerequisites
+        id: prerequisites
+        env:
+          FIXTURE_JSON: ${{ secrets.CAPACITY_TEST_FIXTURE_JSON }}
+          TEST_ANON_KEY: ${{ secrets.CAPACITY_TEST_ANON_KEY }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+          required = {'CAPACITY_TEST_FIXTURE_JSON': os.environ.get('FIXTURE_JSON'), 'CAPACITY_TEST_ANON_KEY': os.environ.get('TEST_ANON_KEY')}
+          missing = [name for name, value in required.items() if not value]
+          status = {'target': 'smnsihksrhzbkhcbdjfu', 'system_capacity_measured': False, 'missing_secret_names': missing, 'status': 'BLOCKED_MISSING_TEST_IDENTITIES' if missing else 'PREREQUISITES_PRESENT_NOT_YET_VERIFIED'}
+          pathlib.Path('artifacts/k6-capacity/preflight.json').write_text(json.dumps(status, indent=2))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f: f.write('ready=' + str(not missing).lower() + '\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write('\n## AC.Prod live capacity\n' + status['status'] + '\n')
+              if missing: f.write('Missing protected inputs: ' + ', '.join(missing) + '. No load was sent.\n')
+          PY
+      - name: Execute requested staging profile
+        if: github.event_name == 'workflow_dispatch' && steps.prerequisites.outputs.ready == 'true'
+        env:
+          FIXTURE_JSON: ${{ secrets.CAPACITY_TEST_FIXTURE_JSON }}
+          SUPABASE_ANON_KEY: ${{ secrets.CAPACITY_TEST_ANON_KEY }}
+          SUPABASE_URL: https://smnsihksrhzbkhcbdjfu.supabase.co
+          K6_TARGET: staging
+          K6_CONFIRM_WRITES: staging-v3-load
+          K6_SLO_PROFILE: production
+          K6_PROFILE: ${{ inputs.profile }}
+          K6_SEQUENCE_BASE: ${{ inputs.sequence_base }}
+          K6_RUN_ID: gh-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          umask 077
+          export K6_FIXTURES="$RUNNER_TEMP/k6-private-fixture.json"
+          trap 'rm -f "$K6_FIXTURES"' EXIT
+          python3 - <<'PY'
+          import json, os, pathlib
+          raw = os.environ['FIXTURE_JSON']
+          json.loads(raw)
+          pathlib.Path(os.environ['K6_FIXTURES']).write_text(raw)
+          PY
+          unset FIXTURE_JSON
+          k6 run tests/load/collection-capacity-per-cell.js
+      - name: Mark blocked manual tests as failed, not certified
+        if: github.event_name == 'workflow_dispatch' && steps.prerequisites.outputs.ready != 'true'
+        run: |
+          echo 'BLOCKED: valid protected staging identities are required; capacity remains unknown.' >&2
+          exit 1
+      - name: Preserve sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: k6-capacity-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/k6-capacity/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Preserve test sources (never fixtures or secrets)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: k6-capacity-sources-${{ github.run_id }}
+          path: |
+            scripts/capacity/install-k6.sh
+            scripts/capacity/reporting.test.mjs
+            tests/load/collection-fabric-v3.js
+            tests/load/collection-load-preflight.js
+            tests/load/collection-capacity-per-cell.js
+          if-no-files-found: error
+          retention-days: 14
