@@ -8,6 +8,14 @@ import {
   isCollectionTerminalState,
 } from '@/lib/collectionStateMachine';
 
+function formatStage(stage) {
+  const labels = {
+    cut: 'Corte', edge: 'Bordo', drill: 'Furação', cnc: 'Usinagem CNC',
+    joinery: 'Marcenaria', separation: 'Separação', packaging: 'Embalagem',
+  };
+  return labels[String(stage || '').toLowerCase()] || stage || 'Não definida';
+}
+
 export default function CollectionReadItem({
   read,
   isSelected,
@@ -17,20 +25,24 @@ export default function CollectionReadItem({
   onOpenTraceability,
   canReject = false
 }) {
-  const collectionState = collectionStateFromResult({
-    collection_state: read.collection_state,
-    status: read.event_status || read.status,
-  });
+  // O snapshot da decisão é prioritário no histórico. Em itens locais, o
+  // estado canônico da fila prevalece sobre aliases legados de transporte.
+  const canonicalState = collectionStateFromResult({ collection_state: read.collection_state });
+  const readingStatus = read.reading_status || read.result_status
+    || canonicalState || read.event_status || read.status;
+  const collectionState = collectionStateFromResult({ status: readingStatus });
   const isRejected = collectionState === COLLECTION_STATES.REJECTED;
   const isBlocked = collectionState === COLLECTION_STATES.BLOCKED;
   const isDuplicated = collectionState === COLLECTION_STATES.DUPLICATED;
-  const isRework = read.event_status === 'rework';
+  const isRework = readingStatus === 'rework';
   const isApproved = collectionState === COLLECTION_STATES.APPROVED;
-  // Peça original reprovada que foi resolvida via reposição — tag distinto
-  const isApprovedViaReplacement = read.event_status === 'approved_via_replacement';
-  const isNotFound = ['not_found', 'invalid'].includes(read.event_status);
+  const isApprovedViaReplacement = readingStatus === 'approved_via_replacement';
+  const pieceReplaced = read.piece_status === 'replaced' || read.replacement_status === 'replaced';
+  const isNotFound = ['not_found', 'invalid'].includes(readingStatus);
   const entryType = read.entry_type || read.result_payload?.entry_type || read.result_payload?.source;
   const isReplacementEntry = ['baixa_reposicao', 'replacement_approval'].includes(entryType) || isApprovedViaReplacement;
+  const readingStage = formatStage(read.reading_stage_name || read.operation_name || read.result_payload?.route?.step_name || read.current_stage_name);
+  const currentPieceStage = read.piece_current_stage ? formatStage(read.piece_current_stage) : null;
   const traceabilityCode = isReplacementEntry
     ? (read.raw_value || read.result_payload?.barcode || read.traceability_code || 'Sem identificação')
     : (read.traceability_code || read.raw_value || 'Sem identificação');
@@ -71,7 +83,7 @@ export default function CollectionReadItem({
     if (collectionState === COLLECTION_STATES.RETRYING) return <Badge className="border-blue-400/50 bg-blue-500/10 text-blue-700 dark:text-blue-300 text-[10px]">REENVIO</Badge>;
     if (collectionState === COLLECTION_STATES.PENDING_REVIEW) return <Badge className="bg-amber-500 text-white border-0 text-[10px]">EM REVISÃO</Badge>;
     if (collectionState === COLLECTION_STATES.DEAD_LETTERED) return <Badge className="bg-red-700 text-white border-0 text-[10px]">ANÁLISE MANUAL</Badge>;
-    return <Badge variant="outline" className="text-[10px]">{read.event_status}</Badge>;
+    return <Badge variant="outline" className="text-[10px]">{readingStatus}</Badge>;
   };
 
   return (
@@ -98,12 +110,7 @@ export default function CollectionReadItem({
           </span>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
-          {isApprovedViaReplacement ? (
-            // Peça original que foi reprovada e resolvida via reposição
-            <Badge className="bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/30 text-[9px] font-bold gap-1">
-              ↻ Resolvida por reposição
-            </Badge>
-          ) : isReplacementEntry ? (
+          {isReplacementEntry ? (
             <Badge className="bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[9px] font-bold gap-1">
               ↻ Baixa por reposição
             </Badge>
@@ -140,16 +147,27 @@ export default function CollectionReadItem({
         </p>
       </div>
 
-      {/* Etapa atual e Operador */}
+      {/* Etapa registrada nesta leitura e operador que a realizou. */}
       <div className="flex justify-between items-center text-[10px] text-muted-foreground pt-1.5 border-t border-border/40 gap-2">
         <span className="truncate">
-          Etapa: <strong className="text-foreground">{read.current_stage_name || read.operation_name || 'Não definida'}</strong>
+          Etapa da leitura: <strong className="text-foreground">{readingStage}</strong>
         </span>
         <span className="flex items-center gap-1 shrink-0 font-medium">
           <User className="w-3 h-3 text-muted-foreground/80" /> {read.operator_name || 'Não identificado'}
           {read.registration ? ` · ${read.registration}` : ''}
         </span>
       </div>
+
+      {(pieceReplaced || (currentPieceStage && currentPieceStage !== readingStage)) && (
+        <div className="text-[10px] text-muted-foreground flex flex-wrap gap-2">
+          {currentPieceStage && currentPieceStage !== readingStage && (
+            <span>Etapa atual da peça: <strong>{currentPieceStage}</strong></span>
+          )}
+          {pieceReplaced && (
+            <span className="text-indigo-700 dark:text-indigo-300">Peça atual: resolvida por reposição</span>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px] text-muted-foreground">
         <span className="flex items-center gap-1 min-w-0">
@@ -176,7 +194,7 @@ export default function CollectionReadItem({
             <AlertTriangle className="w-3 h-3 mr-1" /> Ocorrência
           </Button>
         )}
-        {canReject && isApproved && read.piece_id && (
+        {canReject && isApproved && !pieceReplaced && read.piece_id && (
           <Button
             type="button"
             size="sm"

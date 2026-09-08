@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeCollectionFeedback, normalizeCollectionFeedback, resolveCollectionLotContext } from '@/lib/collectionFeedback';
+import { mergeCollectionFeedback, normalizeCollectionFeedback, resolveCollectionLotContext, restoreCollectionFeedback } from '@/lib/collectionFeedback';
 
 const identified = {
   client_event_id: 'event-1', collection_state: 'APPROVED', message: 'Leitura aprovada.',
@@ -8,6 +8,14 @@ const identified = {
 };
 
 describe('apresentação de recibos e lotes da coleta', () => {
+  it('restaura aprovação apenas na mesma sessão e ignora cache legado, outra sessão e logout', () => {
+    const saved = JSON.stringify({ ...identified, operator_session_id: 'session-corte' });
+    expect(restoreCollectionFeedback(saved, 'session-corte')).toMatchObject(identified);
+    expect(restoreCollectionFeedback(saved, 'session-bordo')).toBeNull();
+    expect(restoreCollectionFeedback(saved, null)).toBeNull();
+    expect(restoreCollectionFeedback(JSON.stringify(identified), 'session-corte')).toBeNull();
+    expect(restoreCollectionFeedback('invalid', 'session-corte')).toBeNull();
+  });
   it('preserva o lote do envelope quando a decisão interna é compacta', () => {
     const result = normalizeCollectionFeedback({
       client_event_id: 'event-1', general_lot_code: 'GER-001', pcp_import_batch_id: 'batch-1',

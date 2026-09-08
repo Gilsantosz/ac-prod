@@ -19,8 +19,34 @@ function normalizeCurrentPieceStatus(piece) {
 }
 
 async function enrichCollectionRowsWithCurrentPieceStatus(rows, requestedStatus = null) {
-  const pieceIds = [...new Set((rows || []).map((row) => row.piece_id).filter(Boolean))];
-  if (!pieceIds.length) return rows || [];
+  // A decisão e a etapa pertencem à leitura. A peça pode ter avançado ou ter
+  // sido substituída depois; esse estado atual fica em campos independentes.
+  const readings = (rows || []).map((row) => {
+    const payload = row.result_payload || {};
+    const decision = row.result_status || payload.status || payload.result?.status
+      || row.reading_status || row.event_status;
+    const entryType = row.entry_type || payload.entry_type || payload.source || payload.result?.entry_type;
+    const replacementApproval = decision === 'approved'
+      && ['baixa_reposicao', 'replacement_approval'].includes(entryType);
+    const eventStatus = replacementApproval ? 'approved_via_replacement'
+      : ['wrong_step', 'wrong_cell', 'warning'].includes(decision) ? 'blocked' : decision;
+    const readingStage = row.operation_name || payload.route?.step_name
+      || payload.result?.route?.step_name || row.current_stage_name;
+    return {
+      ...row,
+      event_status: eventStatus,
+      reading_status: eventStatus,
+      reading_stage_name: readingStage,
+      current_stage_name: readingStage,
+    };
+  });
+  const filterReadings = (items) => requestedStatus ? items.filter((row) => (
+    requestedStatus === 'approved'
+      ? ['approved', 'approved_via_replacement'].includes(row.event_status)
+      : row.event_status === requestedStatus
+  )) : items;
+  const pieceIds = [...new Set(readings.map((row) => row.piece_id).filter(Boolean))];
+  if (!pieceIds.length) return filterReadings(readings);
 
   const { data: pieces, error } = await supabase
     .from('production_pieces')
@@ -29,33 +55,30 @@ async function enrichCollectionRowsWithCurrentPieceStatus(rows, requestedStatus 
 
   if (error) {
     console.warn('Não foi possível sincronizar o estado atual das peças no histórico:', error);
-    return rows || [];
+    return filterReadings(readings);
   }
 
   const pieceMap = new Map((pieces || []).map((piece) => [piece.id, piece]));
-  const enriched = (rows || []).map((row) => {
+  const enriched = readings.map((row) => {
     const piece = pieceMap.get(row.piece_id);
     if (!piece) return row;
-    const currentStatus = normalizeCurrentPieceStatus(piece) || row.event_status;
     return {
       ...row,
-      reading_status: row.event_status,
-      event_status: currentStatus,
       piece_status: piece.status,
+      piece_current_stage: piece.current_stage || null,
       replacement_status: piece.replacement_status,
-      traceability_code: piece.traceability_code || piece.piece_uid || row.traceability_code,
-      piece_name: piece.piece_name || row.piece_name,
-      current_stage_name: piece.current_stage || row.current_stage_name,
+      traceability_code: row.traceability_code || piece.traceability_code || piece.piece_uid,
+      piece_name: row.piece_name || piece.piece_name,
       route_steps: piece.route_steps || row.route_steps || [],
       completed_steps: piece.completed_steps || row.completed_steps || [],
-      lot_id: piece.lot_id || row.lot_id,
-      lot_code: piece.lot_code || row.lot_code,
-      order_number: piece.order_number || row.order_number,
-      client_name: piece.customer_name || row.client_name,
+      lot_id: row.lot_id || piece.lot_id,
+      lot_code: row.lot_code || piece.lot_code,
+      order_number: row.order_number || piece.order_number,
+      client_name: row.client_name || piece.customer_name,
     };
   });
 
-  return requestedStatus ? enriched.filter((row) => row.event_status === requestedStatus) : enriched;
+  return filterReadings(enriched);
 }
 
 /**

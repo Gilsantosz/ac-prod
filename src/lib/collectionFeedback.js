@@ -8,6 +8,18 @@ import {
 const detailKeys = ['lot', 'order', 'item', 'reading', 'route', 'general_lot'];
 const defined = (value = {}) => Object.fromEntries(Object.entries(value || {}).filter(([, item]) => item != null));
 
+/** O cache antigo sem sessão nunca deve aprovar uma leitura no próximo posto. */
+export function restoreCollectionFeedback(saved, operatorSessionId) {
+  if (!saved || !operatorSessionId) return null;
+  try {
+    const parsed = JSON.parse(saved);
+    return parsed?.operator_session_id === operatorSessionId
+      ? mergeCollectionFeedback(null, parsed) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Recibos compactos e resultados completos compartilham a mesma apresentação. */
 export function normalizeCollectionFeedback(input = {}) {
   const envelopeState = collectionStateFromResult(input);

@@ -31,7 +31,7 @@ import ActiveDowntimeBanner from '@/components/collection/ActiveDowntimeBanner';
 import DowntimeDialog from '@/components/collection/DowntimeDialog';
 import CollectionFullscreenKiosk from '@/components/collection/CollectionFullscreenKiosk';
 import CollectionLotBanner from '@/components/collection/CollectionLotBanner';
-import { collectionFeedbackMessage, hasCollectionLotIdentity, mergeCollectionFeedback, normalizeCollectionFeedback, resolveCollectionLotContext } from '@/lib/collectionFeedback';
+import { collectionFeedbackMessage, hasCollectionLotIdentity, mergeCollectionFeedback, normalizeCollectionFeedback, resolveCollectionLotContext, restoreCollectionFeedback } from '@/lib/collectionFeedback';
 import CollectionVolumeEntryPanel from '@/components/collection/CollectionVolumeEntryPanel';
 import CollectionErrorBoundary from '@/components/ui/CollectionErrorBoundary';
 import { getActiveDowntime } from '@/lib/downtimeService';
@@ -157,35 +157,55 @@ export default function TraceabilityCollection({ embedded = false }) {
   const [downtimeDialogOpen, setDowntimeDialogOpen] = useState(false);
   const [kioskOpen, setKioskOpen] = useState(false);
 
-  const [feedback, setFeedback] = useState(() => {
+  const feedbackSessionId = opSession?.session_id || null;
+  const activeFeedbackSessionRef = useRef(feedbackSessionId);
+  activeFeedbackSessionRef.current = feedbackSessionId;
+  const [feedbackState, setFeedback] = useState(() => {
     try {
-      const saved = localStorage.getItem('traceability-last-feedback');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return mergeCollectionFeedback(null, parsed);
-      }
+      return restoreCollectionFeedback(localStorage.getItem('traceability-last-feedback'), feedbackSessionId);
     } catch {}
     return null;
   });
+  // A troca de sessão oculta o feedback antigo já no primeiro render.
+  const feedback = feedbackState?.operator_session_id === feedbackSessionId ? feedbackState : null;
   const latestClientEventIdRef = useRef(feedback?.client_event_id || null);
   const feedbackRef = useRef(feedback);
-  const [lastIdentifiedFeedback, setLastIdentifiedFeedback] = useState(() => (
+  const [lastIdentifiedFeedbackState, setLastIdentifiedFeedback] = useState(() => (
     hasCollectionLotIdentity(feedback) ? feedback : null
   ));
+  const lastIdentifiedFeedback = lastIdentifiedFeedbackState?.operator_session_id === feedbackSessionId
+    ? lastIdentifiedFeedbackState : null;
+
+  useEffect(() => {
+    let restored = null;
+    try {
+      restored = restoreCollectionFeedback(localStorage.getItem('traceability-last-feedback'), feedbackSessionId);
+    } catch {}
+    feedbackRef.current = restored;
+    latestClientEventIdRef.current = restored?.client_event_id || null;
+    setFeedback(restored);
+    setLastIdentifiedFeedback(hasCollectionLotIdentity(restored) ? restored : null);
+    setSelectedPiece(null);
+    setSelectedPieceEvents([]);
+  }, [feedbackSessionId]);
 
   const updateFeedback = useCallback((incomingFeedback) => {
+    if (!feedbackSessionId || activeFeedbackSessionRef.current !== feedbackSessionId) return null;
     if (incomingFeedback?.client_event_id && latestClientEventIdRef.current
       && incomingFeedback.client_event_id !== latestClientEventIdRef.current) return null;
-    const newFeedback = mergeCollectionFeedback(feedbackRef.current, incomingFeedback);
+    const previous = feedbackRef.current?.operator_session_id === feedbackSessionId ? feedbackRef.current : null;
+    const newFeedback = mergeCollectionFeedback(previous, incomingFeedback
+      ? { ...incomingFeedback, operator_session_id: feedbackSessionId } : null);
     feedbackRef.current = newFeedback;
     setFeedback(newFeedback);
     if (hasCollectionLotIdentity(newFeedback)) {
-      const lotContext = { lot: newFeedback.lot, general_lot: newFeedback.general_lot, order: newFeedback.order };
+      const lotContext = { operator_session_id: feedbackSessionId, lot: newFeedback.lot, general_lot: newFeedback.general_lot, order: newFeedback.order };
       setLastIdentifiedFeedback(lotContext);
     }
     if (newFeedback) {
       try {
         const toSave = {
+          operator_session_id: feedbackSessionId,
           client_event_id: newFeedback.client_event_id,
           collection_state: newFeedback.collection_state,
           success: newFeedback.success,
@@ -213,6 +233,7 @@ export default function TraceabilityCollection({ embedded = false }) {
             item_code: newFeedback.item.item_code,
             traceability_code: newFeedback.item.traceability_code,
             piece_uid: newFeedback.item.piece_uid,
+            piece_name: newFeedback.item.piece_name || newFeedback.item.name,
             current_step: newFeedback.item.current_step,
             status: newFeedback.item.status,
           } : null,
@@ -241,7 +262,7 @@ export default function TraceabilityCollection({ embedded = false }) {
       try { localStorage.removeItem('traceability-last-feedback'); } catch {}
     }
     return newFeedback;
-  }, []);
+  }, [feedbackSessionId]);
 
   const [rejecting, setRejecting] = useState(false);
 
@@ -510,7 +531,10 @@ export default function TraceabilityCollection({ embedded = false }) {
     result,
     error,
     state: providedState,
+    enrichmentOnly = false,
   }) => {
+    const eventSessionId = event?.operator_session_id || event?.operatorSessionId;
+    if (eventSessionId && eventSessionId !== feedbackSessionId) return;
     const domainResult = normalizeCollectionFeedback(result || {});
     const state = providedState
       || collectionStateFromResult(result)
@@ -544,6 +568,27 @@ export default function TraceabilityCollection({ embedded = false }) {
     }
 
     if (!isCollectionTerminalState(state)) return;
+    if (isLatest && domainResult?.item) {
+      setSelectedPiece({
+        id: domainResult.item.id || domainResult.reading?.piece_id,
+        piece_uid: domainResult.item.traceability_code || domainResult.item.piece_uid
+          || event?.raw_value || event?.rawValue || domainResult.reading?.tag_value,
+        piece_name: domainResult.item.name || domainResult.item.piece_name || 'Peça Lida',
+        lot_id: domainResult.lot?.id,
+        lot_code: domainResult.lot?.lot_code || 'LOTE-N/A',
+        order_number: domainResult.order?.order_number || domainResult.order?.order_code || 'N/A',
+        client_name: domainResult.order?.customer_name || 'Cliente não informado',
+        current_stage: domainResult.route?.step_name || domainResult.item.current_stage || domainResult.item.current_step,
+        current_stage_name: domainResult.route?.step_name || domainResult.item.current_stage || domainResult.item.current_step,
+        operator_name: operator,
+        status: state.toLowerCase(),
+        route: [],
+        completedSteps: [],
+      });
+    }
+    // Dados completos podem chegar depois da decisão: atualiza a tela e o
+    // armazenamento do feedback, sem repetir som, aviso ou recarga de consultas.
+    if (enrichmentOnly) return;
     refreshData();
 
     const message = collectionFeedbackMessage({ message: domainResult?.message || error?.message }, state);
@@ -565,25 +610,7 @@ export default function TraceabilityCollection({ embedded = false }) {
         id: 'collection-final-error',
       });
     }
-
-    if (isLatest && domainResult?.item) {
-      setSelectedPiece({
-        id: domainResult.item.id || domainResult.reading?.piece_id,
-        piece_uid: event?.raw_value || domainResult.reading?.tag_value,
-        piece_name: domainResult.item.name || domainResult.item.piece_name || 'Peça Lida',
-        lot_id: domainResult.lot?.id,
-        lot_code: domainResult.lot?.lot_code || 'LOTE-N/A',
-        order_number: domainResult.order?.order_number || domainResult.order?.order_code || 'N/A',
-        client_name: domainResult.order?.customer_name || 'Cliente não informado',
-        current_stage: domainResult.route?.step_name || domainResult.item.current_stage || domainResult.item.current_step,
-        current_stage_name: domainResult.route?.step_name || domainResult.item.current_stage || domainResult.item.current_step,
-        operator_name: operator,
-        status: state.toLowerCase(),
-        route: [],
-        completedSteps: [],
-      });
-    }
-  }, [operator, refreshData, updateFeedback]);
+  }, [operator, feedbackSessionId, refreshData, updateFeedback]);
 
   // ─── Fila de coleta com filtros ─────────────────────────────────────────────
   const {

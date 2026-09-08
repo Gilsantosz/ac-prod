@@ -87,6 +87,7 @@ vi.mock('sonner', () => ({
 }));
 
 import { useCollectionQueue, withCollectionQueueLock } from '@/hooks/useCollectionQueue';
+import { toast } from 'sonner';
 
 const MAINTENANCE_INTERVAL_MS = mocks.maintenanceIntervalMs;
 
@@ -294,7 +295,6 @@ describe('useCollectionQueue maintenance scheduling', () => {
     await act(async () => {
       finishEnqueue('new-event');
       await enqueuePromise;
-      await vi.advanceTimersByTimeAsync(0);
     });
 
     expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledOnce();
@@ -317,14 +317,12 @@ describe('useCollectionQueue maintenance scheduling', () => {
 
     await act(async () => {
       await result.current.enqueue({ raw_value: '09890702' });
-      await vi.advanceTimersByTimeAsync(0);
     });
     expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledOnce();
 
     await act(async () => {
       finishFirstFlush({ processed: 1 });
       await flushPromise;
-      await vi.advanceTimersByTimeAsync(0);
     });
     expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledTimes(2);
     unmount();
@@ -345,14 +343,12 @@ describe('useCollectionQueue maintenance scheduling', () => {
 
     await act(async () => {
       await result.current.enqueue({ raw_value: '09890703' });
-      await vi.advanceTimersByTimeAsync(0);
     });
     expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledOnce();
 
     await act(async () => {
       finishStats(defaultStats);
       await flushPromise;
-      await vi.advanceTimersByTimeAsync(0);
     });
     expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledTimes(2);
     unmount();
@@ -371,7 +367,6 @@ describe('useCollectionQueue maintenance scheduling', () => {
     await act(async () => { await Promise.resolve(); });
     await act(async () => {
       await result.current.enqueue({ raw_value: '09890704' });
-      await vi.advanceTimersByTimeAsync(0);
     });
     expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledOnce();
     unmount();
@@ -379,9 +374,65 @@ describe('useCollectionQueue maintenance scheduling', () => {
     await act(async () => {
       finishFirstFlush({ processed: 1 });
       await flushPromise;
-      await vi.advanceTimersByTimeAsync(1);
     });
     expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledOnce();
+  });
+
+  it('envia a próxima leitura só após liberação efetiva do Web Lock, sem timer', async () => {
+    let releaseFirstLock;
+    let held = false;
+    let locks = 0;
+    const request = vi.fn(async (_name, _options, callback) => {
+      if (held) return callback(null);
+      held = true;
+      const first = ++locks === 1;
+      try {
+        const value = await callback({ name: 'test-lock' });
+        if (first) await new Promise((resolve) => { releaseFirstLock = resolve; });
+        return value;
+      } finally {
+        held = false;
+      }
+    });
+    setNavigatorLocks({ request });
+    const { result, unmount } = renderHook(() => useCollectionQueue(vi.fn(), {
+      eventKind: 'production_stage', enableV3Realtime: false, flushIntervalMs: 60_000,
+    }));
+    await act(async () => { await Promise.resolve(); });
+    setOnline(true);
+    let flushPromise;
+    act(() => { flushPromise = result.current.flush(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(releaseFirstLock).toBeTypeOf('function');
+    await act(async () => { await result.current.enqueue({ raw_value: '09890705' }); });
+    expect(request).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      releaseFirstLock();
+      await flushPromise;
+    });
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it('preserva o envio solicitado quando a consulta de estatísticas falha', async () => {
+    const { result, unmount } = renderHook(() => useCollectionQueue(vi.fn(), {
+      eventKind: 'production_stage', enableV3Realtime: false, flushIntervalMs: 60_000,
+    }));
+    await act(async () => { await Promise.resolve(); });
+    let rejectStats;
+    mocks.getQueueStatsByCellMachine.mockReturnValueOnce(new Promise((_resolve, reject) => { rejectStats = reject; }));
+    setOnline(true);
+    let flushPromise;
+    act(() => { flushPromise = result.current.flush().catch((error) => error); });
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { await result.current.enqueue({ raw_value: '09890706' }); });
+    await act(async () => {
+      rejectStats(new Error('stats indisponível'));
+      await flushPromise;
+    });
+    expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledTimes(2);
+    unmount();
   });
 
   it('continua o flush de pending quando a recuperação defensiva falha', async () => {
@@ -574,6 +625,59 @@ describe('useCollectionQueue maintenance scheduling', () => {
       ['independent-next-event', 'DATABASE_ACKNOWLEDGED'],
     ]);
     unmount();
+  });
+
+  it('entrega os detalhes do HTTP após Broadcast como enriquecimento sem repetir a decisão', async () => {
+    setOnline(true);
+    mocks.isCollectionPipelineFlagEnabled.mockReturnValue(true);
+    mocks.isCollectionPipelineV3Enabled.mockReturnValue(true);
+    const onResult = vi.fn();
+    const { unmount } = renderHook(() => useCollectionQueue(vi.fn(), {
+      eventKind: 'production_stage', cellId: 'cell-1', cellName: 'Corte', onResult,
+    }));
+    await act(async () => { await Promise.resolve(); });
+    const batchResult = mocks.flushCollectionMicroBatchQueue.mock.calls[0][1].onResult;
+    const { onMessage } = mocks.subscribeToCollectionBroadcastV3.mock.calls[0][0];
+    const event = { client_event_id: 'broadcast-metadata-first', rawValue: '09890703' };
+    const compact = { decision: 'approved', reading_id: 'reading-3', lot: { id: 'lot-1' } };
+    const payload = { broadcast_event: 'collection.finalized', client_event_id: event.client_event_id, result: compact };
+    mocks.persistCollectionBroadcastMessage.mockResolvedValue({ payload, event, state: 'APPROVED' });
+    await act(async () => { await onMessage(payload); });
+    const complete = { event, state: 'APPROVED', result: { ...compact,
+      item: { id: 'piece-3', traceability_code: '09890703', piece_name: 'PECA TESTE 03' },
+      lot: { id: 'lot-1', lot_code: '947001', general_lot_code: 'TESTECOLETA20260907' },
+    } };
+    act(() => {
+      batchResult(complete);
+      batchResult(complete);
+      batchResult({ event, state: 'APPROVED', result: compact });
+      batchResult({ event, state: 'DATABASE_ACKNOWLEDGED', result: { message: 'Aguardando processamento' } });
+    });
+    expect(onResult).toHaveBeenCalledTimes(2);
+    expect(onResult.mock.calls[0][0].enrichmentOnly).not.toBe(true);
+    expect(onResult.mock.calls[1][0]).toMatchObject({ enrichmentOnly: true, state: 'APPROVED',
+      result: { decision: 'approved', item: { traceability_code: '09890703' },
+        lot: { lot_code: '947001', general_lot_code: 'TESTECOLETA20260907' } } });
+    unmount();
+  });
+
+  it('não repete toast ou vibração do hook ao completar metadados', async () => {
+    setOnline(true);
+    const vibrate = vi.fn();
+    const originalVibrate = navigator.vibrate;
+    Object.defineProperty(navigator, 'vibrate', { configurable: true, value: vibrate });
+    const { unmount } = renderHook(() => useCollectionQueue(vi.fn(), { eventKind: 'production_stage' }));
+    await act(async () => { await Promise.resolve(); });
+    const batchResult = mocks.flushCollectionMicroBatchQueue.mock.calls[0][1].onResult;
+    const event = { client_event_id: 'notify-once' };
+    act(() => {
+      batchResult({ event, state: 'APPROVED', result: { decision: 'approved' } });
+      batchResult({ event, state: 'APPROVED', result: { decision: 'approved', item: { piece_uid: '09890703' } } });
+    });
+    expect(toast.success).toHaveBeenCalledTimes(1);
+    expect(vibrate).toHaveBeenCalledTimes(1);
+    unmount();
+    Object.defineProperty(navigator, 'vibrate', { configurable: true, value: originalVibrate });
   });
 
   it('não acumula tarefas aguardando um Web Lock e separa os projetos', async () => {

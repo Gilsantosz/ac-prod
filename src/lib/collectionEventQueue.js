@@ -18,6 +18,7 @@ import {
   nextCollectionDeviceSequence,
 } from '@/lib/collectionDeviceIdentity';
 import { projectScopedStorageKey } from '@/lib/runtimeEnvironment';
+import { enrichCollectionResult } from '@/lib/collectionResultMetadata';
 
 const DB_NAME = projectScopedStorageKey('acprod_collection_queue');
 const DB_VERSION = 4;
@@ -1077,7 +1078,16 @@ async function transitionCollectionEvent(clientEventId, nextState, patch = {}, o
     // Uma decisão terminal só pode ser substituída por uma correção autoritativa
     // explicitamente marcada pelo servidor/projetor. Entregas normais continuam
     // monotônicas e idempotentes.
-    if (isCollectionTerminalState(currentState) && options.force !== true) return event;
+    const normalizedCandidate = normalizeCollectionState(nextState);
+    if (isCollectionTerminalState(currentState) && options.force !== true) {
+      if (normalizedCandidate !== currentState || !patch.result) return event;
+      // Broadcast pode chegar primeiro com só a decisão. A resposta HTTP
+      // completa os detalhes na mesma transação, sem finalizar outra vez.
+      const result = enrichCollectionResult(event.result, sanitizeCollectionEventPayload(patch.result));
+      return result === event.result ? event : {
+        ...event, result, updated_at: new Date().toISOString(),
+      };
+    }
     const stateRank = {
       [COLLECTION_STATES.CAPTURED_LOCAL]: 0,
       [COLLECTION_STATES.PENDING_DATABASE]: 1,
@@ -1085,7 +1095,6 @@ async function transitionCollectionEvent(clientEventId, nextState, patch = {}, o
       [COLLECTION_STATES.DATABASE_ACKNOWLEDGED]: 2,
       [COLLECTION_STATES.PROCESSING]: 3,
     };
-    const normalizedCandidate = normalizeCollectionState(nextState);
     if (options.force !== true
     && stateRank[normalizedCandidate] < stateRank[currentState]) {
       return event;

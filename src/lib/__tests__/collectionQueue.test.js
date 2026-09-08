@@ -550,6 +550,28 @@ describe('Collection Local Queue SLA & Concurrency', () => {
     expect(store.get(id)).toMatchObject({ collection_state: 'APPROVED', decision_authority: 'server' });
   });
 
+  it('enriquece no IndexedDB a aprovação do Broadcast quando o HTTP traz peça e lotes', async () => {
+    const id = await enqueueCollectionEvent({ client_event_id: 'metadata-race', rawValue: '09890703',
+      operator_id: 'operator-original', operator_session_id: 'session-original', machine_id: 'machine-original' });
+    const compact = { decision: 'approved', reading_id: 'reading-3', lot: { id: 'lot-1' } };
+    await markEventFinalized(id, { result: compact });
+    const before = store.get(id);
+    await markEventFinalized(id, { result: { ...compact, status: 'approved', success: true,
+      item: { id: 'piece-3', traceability_code: '09890703', piece_name: 'PECA TESTE 03' },
+      lot: { id: 'lot-1', lot_code: '947001', general_lot_code: 'TESTECOLETA20260907', pcp_import_batch_id: 'batch-1' },
+    } });
+    expect(store.get(id)).toMatchObject({ status: 'synced', collection_state: 'APPROVED',
+      operator_id: 'operator-original', operator_session_id: 'session-original', machine_id: 'machine-original',
+      processed_at: before.processed_at, sync_finished_at: before.sync_finished_at, retries: 0,
+      result: { decision: 'approved', reading_id: 'reading-3',
+        item: { traceability_code: '09890703', piece_name: 'PECA TESTE 03' },
+        lot: { lot_code: '947001', general_lot_code: 'TESTECOLETA20260907' } } });
+    const enriched = store.get(id);
+    await markEventFinalized(id, { result: compact });
+    await markEventFinalized(id, { result: { status: 'blocked', item: { piece_uid: 'WRONG' } } });
+    expect(store.get(id)).toEqual(enriched);
+  });
+
   it('não sobrescreve evento existente ao capturar o mesmo client_event_id', async () => {
     const id = await enqueueCollectionEvent({ client_event_id: 'capture-replay', rawValue: '09906655', operator_id: 'old' });
     await markEventFinalized(id, { result: { status: 'approved' } });

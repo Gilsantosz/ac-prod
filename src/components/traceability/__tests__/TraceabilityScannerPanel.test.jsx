@@ -3,6 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import TraceabilityScannerPanel from '@/components/traceability/TraceabilityScannerPanel';
 import { renderWithProviders } from '@/test/utils/renderWithProviders';
+import CollectionLotBanner from '@/components/collection/CollectionLotBanner';
+import { mergeCollectionFeedback, resolveCollectionLotContext } from '@/lib/collectionFeedback';
+import { enrichCollectionResult } from '@/lib/collectionResultMetadata';
 
 const baseProps = {
   mode: 'scanner',
@@ -83,6 +86,27 @@ describe('TraceabilityScannerPanel', () => {
   it('mostra feedback verde para leitura aprovada', () => {
     renderPanel({ feedback: { success: true, status: 'approved', message: 'Baixa concluída' } });
     expect(screen.getByRole('status')).toHaveClass('border-emerald-300');
+  });
+
+  it('exibe peça e ambos os lotes assim que o HTTP completa a aprovação do Broadcast', () => {
+    const compact = { client_event_id: 'event-3', decision: 'approved' };
+    const initial = mergeCollectionFeedback(null, compact);
+    const view = (feedback) => <TraceabilityScannerPanel {...baseProps} onRead={vi.fn()}
+      feedback={feedback} readerContext={<CollectionLotBanner {...resolveCollectionLotContext({ feedback })} />} />;
+    const { rerender } = renderWithProviders(view(initial));
+    expect(screen.getByText('PEÇA LIBERADA — OK')).toBeInTheDocument();
+    expect(screen.queryByText('09890703')).not.toBeInTheDocument();
+    const result = enrichCollectionResult(compact, { decision: 'approved',
+      item: { id: 'piece-3', traceability_code: '09890703', piece_name: 'PECA TESTE 03' },
+      lot: { id: 'lot-1', lot_code: '947001', general_lot_code: 'TESTECOLETA20260907' },
+      customer_name: 'CLIENTE TESTE',
+    });
+    rerender(view(mergeCollectionFeedback(initial, result)));
+    expect(screen.getByText('09890703')).toBeInTheDocument();
+    expect(screen.getByText('TESTECOLETA20260907')).toBeInTheDocument();
+    expect(screen.getAllByText('947001')).toHaveLength(2);
+    expect(screen.getByText('PEÇA LIBERADA — OK')).toBeInTheDocument();
+    expect(screen.queryByText(/aguardando processamento/i)).not.toBeInTheDocument();
   });
 
   it('mantém ACK do banco neutro mesmo se um payload legado trouxer success', () => {

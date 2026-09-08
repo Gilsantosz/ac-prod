@@ -20,6 +20,7 @@ import { getOperatorSession } from '@/lib/operatorSessionService';
 import { requestSessionActivity } from '@/lib/sessionActivity';
 import { getCollectionDeviceId } from '@/lib/collectionDeviceIdentity';
 import { runtimeEnvironment } from '@/lib/runtimeEnvironment';
+import { enrichCollectionResult } from '@/lib/collectionResultMetadata';
 import { scheduleCollectionQueryInvalidation } from '@/hooks/collectionQueryInvalidation';
 import {
   COLLECTION_PIPELINE_FLAGS_CACHE_MS,
@@ -255,7 +256,7 @@ export function useCollectionQueue(processFn, options = {}) {
   const realtimeStatusRef = useRef('DISCONNECTED');
   const reconciliationWakeRef = useRef(null);
   const appliedProjectionIdsRef = useRef(new Set());
-  const publishedFinalIdsRef = useRef(new Set());
+  const publishedFinalResultsRef = useRef(new Map());
   const terminalEventIdsRef = useRef(new Set());
   const pipelineFlagModesRef = useRef({ ingress: null, broadcast: null });
   const processFnRef = useRef(processFn);
@@ -282,7 +283,7 @@ export function useCollectionQueue(processFn, options = {}) {
     const nextStats = (cellName || machineId || eventKind)
       ? await getQueueStatsByCellMachine(cellName, machineId, eventKind)
       : await getQueueStats();
-    setStats(nextStats);
+    if (mountedRef.current) setStats(nextStats);
   }, [cellName, machineId, eventKind]);
 
   const runStatsRefresh = useCallback(async () => {
@@ -345,16 +346,21 @@ export function useCollectionQueue(processFn, options = {}) {
         ? payload.result.outbox_id || payload.result.projected_at || 'correction'
         : 'decision';
       const key = `${clientEventId}:${state}:${correction}`;
-      if (publishedFinalIdsRef.current.has(key)) return;
-      publishedFinalIdsRef.current.add(key);
-      if (publishedFinalIdsRef.current.size > 2_000) {
-        publishedFinalIdsRef.current.delete(publishedFinalIdsRef.current.values().next().value);
+      const previous = publishedFinalResultsRef.current.get(key);
+      if (previous) {
+        const result = enrichCollectionResult(previous.result, payload.result);
+        if (result === previous.result) return;
+        payload = { ...previous, result, enrichmentOnly: true };
+      }
+      publishedFinalResultsRef.current.set(key, payload);
+      if (publishedFinalResultsRef.current.size > 2_000) {
+        publishedFinalResultsRef.current.delete(publishedFinalResultsRef.current.keys().next().value);
       }
     }
     emitBatchResult(payload);
     if (typeof onResultRef.current === 'function') {
       onResultRef.current(payload);
-    } else {
+    } else if (!payload.enrichmentOnly) {
       notifyBatchResult(payload);
     }
   }, []);
@@ -635,49 +641,51 @@ export function useCollectionQueue(processFn, options = {}) {
       return;
     }
 
-    await withCollectionQueueLock(async () => {
-      if (flushingRef.current || !navigator.onLine) return;
-      flushingRef.current = true;
-      setFlushing(true);
-      try {
+    // Inclui a espera pela aquisição/liberação efetiva do Web Lock. Outra
+    // captura nesta janela pede a próxima passagem, sem disputar o mesmo lock.
+    flushingRef.current = true;
+    let acquired = false;
+    try {
+      await withCollectionQueueLock(async () => {
+        if (!mountedRef.current || !navigator.onLine) return;
+        acquired = true;
+        setFlushing(true);
         try {
-          await runStaleProcessingRecovery();
-        } catch (error) {
-          // Recuperar itens órfãos é manutenção defensiva; uma falha aqui não
-          // pode impedir o envio dos eventos pending já prontos para o servidor.
-          console.warn('[CollectionQueue] Falha ao recuperar eventos travados:', error);
-        }
-
-        if (microBatch && typeof processBatchFnRef.current === 'function') {
-          await flushCollectionMicroBatchQueue(processBatchFnRef.current, {
-            batchSize,
-            eventKind,
-            onResult: handleBatchResult,
-          });
-        } else {
-          await flushCollectionQueue(processFnRef.current);
-        }
-      } finally {
-        try {
-          await refreshStats();
-        } finally {
-          flushingRef.current = false;
-          if (mountedRef.current) setFlushing(false);
-          if (flushRequestedRef.current) {
-            flushRequestedRef.current = false;
-            // O timer roda após a liberação do Web Lock desta requisição.
-            if (mountedRef.current && scheduledFlushRef.current === null && navigator.onLine) {
-              scheduledFlushRef.current = setTimeout(() => {
-                scheduledFlushRef.current = null;
-                flush().catch((error) => {
-                  console.warn('[CollectionQueue] Falha ao enviar a próxima leitura:', error);
-                });
-              }, 0);
-            }
+          try {
+            await runStaleProcessingRecovery();
+          } catch (error) {
+            // Recuperar itens órfãos é manutenção defensiva; uma falha aqui não
+            // pode impedir o envio dos eventos pending já prontos para o servidor.
+            console.warn('[CollectionQueue] Falha ao recuperar eventos travados:', error);
           }
+
+          if (!mountedRef.current || !navigator.onLine) return;
+          if (microBatch && typeof processBatchFnRef.current === 'function') {
+            await flushCollectionMicroBatchQueue(processBatchFnRef.current, {
+              batchSize,
+              eventKind,
+              onResult: handleBatchResult,
+            });
+          } else {
+            await flushCollectionQueue(processFnRef.current);
+          }
+        } finally {
+          await refreshStats();
         }
+      });
+    } finally {
+      flushingRef.current = false;
+      if (mountedRef.current) setFlushing(false);
+      const repeat = acquired && flushRequestedRef.current;
+      flushRequestedRef.current = false;
+      // A Promise do Web Lock já encerrou: envio direto, inclusive com a aba
+      // em segundo plano, onde até setTimeout(0) pode esperar um segundo.
+      if (repeat && mountedRef.current && navigator.onLine) {
+        flush().catch((error) => {
+          console.warn('[CollectionQueue] Falha ao enviar a próxima leitura:', error);
+        });
       }
-    });
+    }
   }, [
     batchSize,
     handleBatchResult,
@@ -688,13 +696,14 @@ export function useCollectionQueue(processFn, options = {}) {
 
   const scheduleFlush = useCallback(() => {
     if (!mountedRef.current || !navigator.onLine || scheduledFlushRef.current !== null) return;
-
-    scheduledFlushRef.current = setTimeout(() => {
+    const send = () => {
       scheduledFlushRef.current = null;
       flush().catch((error) => {
         console.warn('[CollectionQueue] Falha no flush agendado:', error);
       });
-    }, flushDebounceMs);
+    };
+    if (flushDebounceMs === 0) send();
+    else scheduledFlushRef.current = setTimeout(send, flushDebounceMs);
   }, [flush, flushDebounceMs]);
 
   useEffect(() => {
