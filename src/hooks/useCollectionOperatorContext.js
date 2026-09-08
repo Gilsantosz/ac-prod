@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { getConfirmedOperatorContext } from '@/lib/operatorSessionService';
 
 const STATION_NAME = 'Coletor Chão de Fábrica';
 
@@ -8,11 +9,14 @@ export function useCollectionOperatorContext({ session, cellId, machineId, setCo
   const [confirmation, setConfirmation] = useState(null);
   const token = session?.token;
   const sessionId = session?.session_id;
+  const confirmedContext = getConfirmedOperatorContext(session);
+  const contextMismatch = Boolean(confirmedContext
+    && (confirmedContext.cellId !== cellId || confirmedContext.machineId !== machineId));
   const key = JSON.stringify([token, sessionId, cellId, machineId, attempt]);
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
 
   useEffect(() => {
-    if (!token || !sessionId || !cellId || !machineId) return undefined;
+    if (!token || !sessionId || !cellId || !machineId || contextMismatch) return undefined;
     let cancelled = false;
     setConfirmation({ key, confirmed: false, error: null });
     Promise.resolve().then(() => cancelled ? null : setContext(cellId, machineId, STATION_NAME)).then(
@@ -36,7 +40,7 @@ export function useCollectionOperatorContext({ session, cellId, machineId, setCo
       },
     );
     return () => { cancelled = true; };
-  }, [key, token, sessionId, cellId, machineId, setContext]);
+  }, [key, token, sessionId, cellId, machineId, contextMismatch, setContext]);
 
   useEffect(() => {
     // Uma conexão restaurada deve permitir sair de uma falha de confirmação.
@@ -53,7 +57,9 @@ export function useCollectionOperatorContext({ session, cellId, machineId, setCo
     && session.selected_machine_id === machineId
     && session.selected_station_name === STATION_NAME,
   );
-  const contextMessage = error
+  const contextMessage = contextMismatch
+    ? 'Posto fixo nesta sessão. Para mudar, use Trocar Operador.'
+    : error
     ? `Coleta bloqueada: ${error}`
     : !cellId
       ? 'Selecione uma célula autorizada para o operador.'

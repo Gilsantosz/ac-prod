@@ -4,8 +4,14 @@ import { useCollectionOperatorContext } from '@/hooks/useCollectionOperatorConte
 import { useOperatorSession } from '@/hooks/useOperatorSession';
 import { clearOperatorSession, loginOperator } from '@/lib/operatorSessionService';
 
-const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
-vi.mock('@/lib/supabaseClient', () => ({ supabase: { rpc } }));
+const { rpc, abortSignals } = vi.hoisted(() => ({ rpc: vi.fn(), abortSignals: [] }));
+vi.mock('@/lib/supabaseClient', () => ({ supabase: {
+  rpc: (...args) => {
+    const request = Promise.resolve(rpc(...args));
+    request.abortSignal = (signal) => { abortSignals.push(signal); return request; };
+    return request;
+  },
+} }));
 
 function deferred() {
   let resolve;
@@ -85,18 +91,49 @@ describe('confirmação do posto da coleta', () => {
     expect(rpc).toHaveBeenCalledTimes(2);
   });
 
-  it('trocar de máquina bloqueia até confirmar a seleção mais recente', async () => {
+  it('recusa outra máquina depois de confirmar o posto, sem alterar a sessão de reenvio', async () => {
     await login();
     rpc.mockResolvedValueOnce(confirmed);
     const { result, rerender } = renderContext();
     await waitFor(() => expect(result.current.contextReady).toBe(true));
-    const pending = deferred();
-    rpc.mockReturnValueOnce(pending.promise);
+    const countBeforeSwitch = rpc.mock.calls.length;
     rerender({ selectedMachineId: 'machine-2' });
     expect(result.current.contextReady).toBe(false);
+    expect(result.current.contextMessage).toContain('Trocar Operador');
+    expect(rpc).toHaveBeenCalledTimes(countBeforeSwitch);
+  });
+
+  it('permite corrigir a primeira seleção enquanto nenhuma máquina foi confirmada', async () => {
+    await login();
+    const first = deferred();
+    const second = deferred();
+    rpc.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const { result, rerender } = renderContext();
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
+    rerender({ selectedMachineId: 'machine-2' });
+    expect(result.current.contextReady).toBe(false);
+    await act(async () => first.resolve(confirmed));
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('set_operator_session_context', expect.objectContaining({ p_machine_id: 'machine-2' })));
-    await act(async () => pending.resolve(confirmed));
+    expect(result.current.contextReady).toBe(false);
+    await act(async () => second.resolve(confirmed));
     await waitFor(() => expect(result.current.contextReady).toBe(true));
+  });
+
+  it('na reabertura preserva o posto salvo e não envia preferências antigas ao servidor', async () => {
+    await login();
+    rpc.mockResolvedValueOnce(confirmed);
+    const firstMount = renderContext();
+    await waitFor(() => expect(firstMount.result.current.contextReady).toBe(true));
+    firstMount.unmount();
+    const countBeforeReopen = rpc.mock.calls.length;
+    const reopened = renderContext('machine-old-preference');
+    expect(reopened.result.current.contextReady).toBe(false);
+    expect(reopened.result.current.contextMessage).toContain('Posto fixo');
+    expect(rpc).toHaveBeenCalledTimes(countBeforeReopen);
+    rpc.mockResolvedValueOnce(confirmed);
+    reopened.rerender({ selectedMachineId: 'machine-1' });
+    await waitFor(() => expect(reopened.result.current.contextReady).toBe(true));
+    expect(rpc).toHaveBeenLastCalledWith('set_operator_session_context', expect.objectContaining({ p_machine_id: 'machine-1' }));
   });
 
   it('permite recuperar uma falha de conexão sem novo login', async () => {

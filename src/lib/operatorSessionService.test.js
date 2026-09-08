@@ -1,12 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
+const { rpc, abortSignals } = vi.hoisted(() => ({ rpc: vi.fn(), abortSignals: [] }));
 
-vi.mock('@/lib/supabaseClient', () => ({ supabase: { rpc } }));
+vi.mock('@/lib/supabaseClient', () => ({ supabase: {
+  rpc: (...args) => {
+    const request = Promise.resolve(rpc(...args));
+    request.abortSignal = (signal) => { abortSignals.push(signal); return request; };
+    return request;
+  },
+} }));
 
 import {
   clearOperatorSession, getOperatorSession, heartbeatOperatorSession,
-  isOperatorSessionSupersededError, loginOperator, setOperatorSessionContext,
+  isOperatorSessionSupersededError, loginOperator, setOperatorSessionContext, OPERATOR_CONTEXT_TIMEOUT_MS,
 } from '@/lib/operatorSessionService';
 
 function loginResult(id = 'session-1') {
@@ -23,8 +29,10 @@ function deferred() {
 }
 
 describe('operatorSessionService', () => {
+  afterEach(() => vi.useRealTimers());
   beforeEach(async () => {
     vi.clearAllMocks();
+    abortSignals.length = 0;
     localStorage.clear();
     sessionStorage.clear();
     await clearOperatorSession({ notifyServer: false });
@@ -139,6 +147,42 @@ describe('operatorSessionService', () => {
     });
   });
 
+  it('mantém o posto da sessão anterior para reenvios quando o operador entra em outro posto', async () => {
+    rpc.mockResolvedValueOnce(loginResult());
+    await loginOperator('operador', '123');
+    const serverContexts = new Map();
+    const setServerContext = (_name, params) => {
+      serverContexts.set(params.p_session_token, [params.p_cell_id, params.p_machine_id]);
+      return Promise.resolve({ data: { success: true } });
+    };
+    rpc.mockImplementation(setServerContext);
+    await setOperatorSessionContext('cell-1', 'machine-1');
+    const callsBeforeSwitch = rpc.mock.calls.length;
+    await expect(setOperatorSessionContext('cell-1', 'machine-2')).rejects.toMatchObject({ code: 'OPERATOR_SESSION_CONTEXT_LOCKED' });
+    await expect(setOperatorSessionContext('cell-2', 'machine-1')).rejects.toMatchObject({ code: 'OPERATOR_SESSION_CONTEXT_LOCKED' });
+    expect(rpc).toHaveBeenCalledTimes(callsBeforeSwitch);
+    expect(getOperatorSession()).toMatchObject({
+      selected_cell_id: 'cell-1', selected_machine_id: 'machine-1', context_pending: false,
+    });
+    // Confirmar novamente o mesmo posto é permitido, inclusive após reconectar.
+    await setOperatorSessionContext('cell-1', 'machine-1');
+    await clearOperatorSession({ notifyServer: false });
+    rpc.mockResolvedValueOnce(loginResult('session-2'));
+    await loginOperator('operador', '123');
+    await setOperatorSessionContext('cell-2', 'machine-2');
+    expect(serverContexts.get('token-session-1')).toEqual(['cell-1', 'machine-1']);
+    expect(serverContexts.get('token-session-2')).toEqual(['cell-2', 'machine-2']);
+  });
+
+  it('preserva a seleção de postos do fluxo separado de reposição', async () => {
+    rpc.mockResolvedValueOnce(loginResult());
+    await loginOperator('operador', '123', { purpose: 'replacement' });
+    rpc.mockResolvedValue({ data: { success: true } });
+    await setOperatorSessionContext('cell-1', 'machine-1');
+    await setOperatorSessionContext('cell-1', 'machine-2');
+    expect(getOperatorSession().selected_machine_id).toBe('machine-2');
+  });
+
   it('uma falha de contexto não prende as confirmações seguintes', async () => {
     rpc.mockResolvedValueOnce(loginResult());
     await loginOperator('operador', '123');
@@ -148,6 +192,31 @@ describe('operatorSessionService', () => {
     rpc.mockResolvedValueOnce({ data: { success: true } });
     await setOperatorSessionContext('cell-1', 'machine-1');
     expect(getOperatorSession()).toMatchObject({ context_pending: false, selected_machine_id: 'machine-1' });
+  });
+
+  it('aborta contexto sem resposta e permite tentar novamente sem restaurar uma resposta tardia', async () => {
+    rpc.mockResolvedValueOnce(loginResult());
+    await loginOperator('operador', '123');
+    vi.useFakeTimers();
+    const pending = deferred();
+    rpc.mockReturnValueOnce(pending.promise);
+    const stalledResult = setOperatorSessionContext('cell-1', 'machine-1').catch((error) => error);
+    await vi.advanceTimersByTimeAsync(OPERATOR_CONTEXT_TIMEOUT_MS - 1);
+    expect(abortSignals[0].aborted).toBe(false);
+    expect(getOperatorSession().context_pending).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(abortSignals[0].aborted).toBe(true);
+    expect(await stalledResult).toMatchObject({ code: 'OPERATOR_SESSION_CONTEXT_TIMEOUT' });
+
+    rpc.mockResolvedValueOnce({ data: { success: true } });
+    await setOperatorSessionContext('cell-1', 'machine-2');
+    pending.resolve({ data: { success: true } });
+    await Promise.resolve();
+    expect(getOperatorSession()).toMatchObject({
+      selected_machine_id: 'machine-2', context_pending: false,
+    });
+    await vi.advanceTimersByTimeAsync(OPERATOR_CONTEXT_TIMEOUT_MS);
+    expect(abortSignals[1].aborted).toBe(false);
   });
 
   it('o contexto lento do operador anterior não bloqueia uma sessão nova', async () => {

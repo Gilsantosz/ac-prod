@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { projectScopedStorageKey } from '@/lib/runtimeEnvironment';
 
 const SESSION_KEY = projectScopedStorageKey('acprod_operator_session');
+export const OPERATOR_CONTEXT_TIMEOUT_MS = 15_000;
 
 // Fallback em memória quando sessionStorage está bloqueado
 let _memorySession = null;
@@ -34,6 +35,18 @@ function sessionWasCancelled() {
 
 export function isOperatorSessionSupersededError(error) {
   return error?.code === 'OPERATOR_SESSION_SUPERSEDED';
+}
+
+/** O posto confirmado pertence à sessão que receberá também os reenvios offline. */
+export function getConfirmedOperatorContext(session) {
+  if (session?.purpose === 'replacement' || !session?.session_id || session.context_session_id !== session.session_id
+    || !session.selected_cell_id || !session.selected_machine_id) return null;
+  return {
+    cellId: session.selected_cell_id,
+    machineId: session.selected_machine_id,
+    cellName: session.selected_cell_name || session.selected_cell_id,
+    machineName: session.selected_machine_name || session.selected_machine_id,
+  };
 }
 
 function generateDeviceUuid() {
@@ -152,6 +165,12 @@ export async function loginOperator(loginName, registration, { purpose = 'produc
 export async function setOperatorSessionContext(cellId, machineId = null, stationName = 'Coletor Chão de Fábrica') {
   const session = getOperatorSession();
   if (!session?.token) throw new Error('Nenhuma sessão ativa encontrada.');
+  const confirmedContext = getConfirmedOperatorContext(session);
+  if (confirmedContext && (confirmedContext.cellId !== cellId || confirmedContext.machineId !== machineId)) {
+    const error = new Error('Posto fixo nesta sessão. Para mudar, use Trocar Operador.');
+    error.code = 'OPERATOR_SESSION_CONTEXT_LOCKED';
+    throw error;
+  }
   const generation = _sessionGeneration;
   const revision = ++_contextRevision;
 
@@ -166,14 +185,33 @@ export async function setOperatorSessionContext(cellId, machineId = null, statio
     // Uma seleção substituída antes de iniciar não precisa chegar ao banco.
     if (!isCurrent()) throw sessionWasCancelled();
 
-    const { data, error } = await supabase.rpc('set_operator_session_context', {
-      p_session_token: session.token,
-      p_cell_id: cellId,
-      p_machine_id: machineId,
-      p_station_name: stationName,
-    });
+    const controller = new AbortController();
+    let timeout;
+    let response;
+    try {
+      // O prazo inclui a espera interna do cliente por autenticação. Abortar
+      // a rede e rejeitar a espera libera a fila mesmo se o transporte parar.
+      const deadline = new Promise((_, reject) => {
+        timeout = setTimeout(() => {
+          const error = new Error('A confirmação do posto demorou demais. Verifique a conexão e tente novamente.');
+          error.code = 'OPERATOR_SESSION_CONTEXT_TIMEOUT';
+          reject(error);
+          controller.abort();
+        }, OPERATOR_CONTEXT_TIMEOUT_MS);
+      });
+      const request = supabase.rpc('set_operator_session_context', {
+        p_session_token: session.token,
+        p_cell_id: cellId,
+        p_machine_id: machineId,
+        p_station_name: stationName,
+      }).abortSignal(controller.signal);
+      response = await Promise.race([request, deadline]);
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!isCurrent()) throw sessionWasCancelled();
+    const { data, error } = response;
     if (error) throw error;
     if (!data?.success) throw new Error(data?.error || 'Falha ao definir posto operacional.');
 

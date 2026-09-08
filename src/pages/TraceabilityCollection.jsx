@@ -35,6 +35,7 @@ import CollectionErrorBoundary from '@/components/ui/CollectionErrorBoundary';
 import { getActiveDowntime } from '@/lib/downtimeService';
 import { requestSessionActivity } from '@/lib/sessionActivity';
 import { useCollectionOperatorContext } from '@/hooks/useCollectionOperatorContext';
+import { getConfirmedOperatorContext } from '@/lib/operatorSessionService';
 import {
   COLLECTION_STATES,
   collectionStateFromResult,
@@ -246,6 +247,7 @@ export default function TraceabilityCollection({ embedded = false }) {
   // Operador e célula: preferir sessão operacional, fallback para auth
   const operator = opSession?.name || user?.name || user?.email || '';
   const operatorId = opSession?.id || null;
+  const confirmedContext = getConfirmedOperatorContext(opSession);
 
   // Listas de células estritamente autorizadas para este operador
   const displayCells = useMemo(() => {
@@ -253,6 +255,7 @@ export default function TraceabilityCollection({ embedded = false }) {
   }, [user, opSession, activeCells]);
 
   const [cellName, setCellName] = useState(() => {
+    if (confirmedContext) return confirmedContext.cellName;
     if (opSession?.primary_cell) {
       const pCell = opSession.cells?.find(c => c.id === opSession.primary_cell);
       if (pCell) return pCell.name;
@@ -266,13 +269,21 @@ export default function TraceabilityCollection({ embedded = false }) {
   ), [displayCells, cellName]);
 
   const [shift, setShift] = useState(() => opSession?.shift || currentShift());
-  const [machine, setMachine] = useState(null);
+  const [machine, setMachine] = useState(() => confirmedContext
+    ? { id: confirmedContext.machineId, name: confirmedContext.machineName }
+    : null);
   const shiftRange = useMemo(() => {
     return getShiftRange(shift, new Date(), opSession?.shift_start_time, opSession?.shift_end_time);
   }, [shift, opSession?.shift_start_time, opSession?.shift_end_time]);
 
   // Garantir que a célula selecionada esteja na lista de células permitidas do operador
   useEffect(() => {
+    if (confirmedContext) {
+      // Preferências antigas não podem mudar o contexto de leituras pendentes.
+      const confirmedCell = displayCells.find((cell) => cell.id === confirmedContext.cellId);
+      setCellName(confirmedCell?.name || confirmedContext.cellName);
+      return;
+    }
     if (displayCells.length > 0) {
       const isAllowed = displayCells.some(c => c.name === cellName || c.id === cellName);
       if (!isAllowed) {
@@ -281,16 +292,16 @@ export default function TraceabilityCollection({ embedded = false }) {
     } else if (opSession || user?.role === 'operator') {
       setCellName('');
     }
-  }, [displayCells, cellName, opSession, user]);
+  }, [displayCells, cellName, opSession, user, confirmedContext?.cellId, confirmedContext?.cellName]);
 
   // Sincronizar célula e turno quando a sessão operacional mudar
   useEffect(() => {
-    if (opSession?.primary_cell) {
+    if (!confirmedContext && opSession?.primary_cell) {
       const pCell = opSession.cells?.find(c => c.id === opSession.primary_cell);
       if (pCell) setCellName(pCell.name);
     }
     if (opSession?.shift) setShift(opSession.shift);
-  }, [opSession?.primary_cell, opSession?.shift]);
+  }, [opSession?.token, opSession?.primary_cell, opSession?.shift, confirmedContext?.cellId]);
 
   useEffect(() => {
     if (!cellName) return;
@@ -329,6 +340,13 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   // Auto-selecionar ou recuperar máquina
   useEffect(() => {
+    if (confirmedContext) {
+      const confirmedMachine = displayMachines.find((item) => item.id === confirmedContext.machineId);
+      setMachine((previous) => confirmedMachine || (previous?.id === confirmedContext.machineId
+        ? previous
+        : { id: confirmedContext.machineId, name: confirmedContext.machineName }));
+      return;
+    }
     if (displayMachines.length === 1) {
       setMachine(displayMachines[0]);
     } else if (displayMachines.length > 1) {
@@ -342,7 +360,7 @@ export default function TraceabilityCollection({ embedded = false }) {
     } else {
       setMachine(null);
     }
-  }, [displayMachines, cellName]);
+  }, [displayMachines, cellName, confirmedContext?.machineId, confirmedContext?.machineName]);
 
   const {
     contextReady: collectionContextReady,
@@ -357,6 +375,7 @@ export default function TraceabilityCollection({ embedded = false }) {
   });
 
   const handleMachineChange = (selected) => {
+    if (confirmedContext) return;
     setMachine(selected);
     if (selected) {
       sessionStorage.setItem(`selected-machine-id-${cellName}`, selected.id);
@@ -968,7 +987,7 @@ export default function TraceabilityCollection({ embedded = false }) {
     updateFeedback,
   ]);
 
-  const isCellLocked = !!(opSession && opSession.cells?.length <= 1);
+  const isCellLocked = Boolean(confirmedContext || (opSession && opSession.cells?.length <= 1));
 
   return (
     <div className={pageClass}>
@@ -987,12 +1006,15 @@ export default function TraceabilityCollection({ embedded = false }) {
           <select
             id="traceability-cell"
             value={cellName}
-            onChange={(e) => setCellName(e.target.value)}
+            onChange={(e) => { if (!confirmedContext) setCellName(e.target.value); }}
             disabled={cellsLoading || isCellLocked}
             className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm disabled:opacity-60 font-medium"
             required
           >
             <option value="">{cellsLoading ? 'Carregando células...' : displayCells.length ? 'Selecione a célula' : 'Nenhuma célula ativa'}</option>
+            {confirmedContext && !displayCells.some((cell) => cell.id === confirmedContext.cellId) && (
+              <option value={confirmedContext.cellName}>{confirmedContext.cellName}</option>
+            )}
             {displayCells.map((cell) => <option key={cell.id} value={cell.name}>{cell.name}</option>)}
           </select>
           {isCellLocked && <p className="text-[11px] text-muted-foreground">Célula definida pelo login operacional.</p>}
@@ -1007,10 +1029,13 @@ export default function TraceabilityCollection({ embedded = false }) {
               const selected = displayMachines.find(m => m.id === e.target.value);
               handleMachineChange(selected || null);
             }}
-            disabled={machinesLoading || !cellName}
+            disabled={machinesLoading || !cellName || Boolean(confirmedContext)}
             className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm disabled:opacity-60 font-medium"
           >
             <option value="">{machinesLoading ? 'Carregando máquinas...' : displayMachines.length ? 'Selecione a máquina / posto' : 'Nenhuma máquina cadastrada'}</option>
+            {confirmedContext && !displayMachines.some((item) => item.id === confirmedContext.machineId) && (
+              <option value={confirmedContext.machineId}>{confirmedContext.machineName}</option>
+            )}
             {displayMachines.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </div>
@@ -1034,6 +1059,10 @@ export default function TraceabilityCollection({ embedded = false }) {
           </div>
         </div>
       </div>
+
+      {confirmedContext && (
+        <p className="text-xs text-muted-foreground">Posto fixo nesta sessão. Para mudar, use Trocar Operador.</p>
+      )}
 
       {contextSyncError && (
         <div role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
