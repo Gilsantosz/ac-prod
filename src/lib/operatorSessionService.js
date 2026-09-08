@@ -15,6 +15,9 @@ let _memorySession = null;
 let _memoryDeviceId = null;
 let _sessionGeneration = 0;
 let _contextRevision = 0;
+// As RPCs alteram a mesma linha no servidor. Ignorar uma resposta antiga no
+// navegador não impede que sua gravação chegue por último ao PostgreSQL.
+const _contextQueues = new Map();
 
 function persistOperatorSession(session) {
   try {
@@ -152,37 +155,53 @@ export async function setOperatorSessionContext(cellId, machineId = null, statio
   const generation = _sessionGeneration;
   const revision = ++_contextRevision;
 
-  const { data, error } = await supabase.rpc('set_operator_session_context', {
-    p_session_token: session.token,
-    p_cell_id: cellId,
-    p_machine_id: machineId,
-    p_station_name: stationName
+  persistOperatorSession({ ...session, context_pending: true });
+  notifySessionChange();
+
+  const previous = _contextQueues.get(session.token) || Promise.resolve();
+  const operation = previous.catch(() => {}).then(async () => {
+    const isCurrent = () => generation === _sessionGeneration
+      && revision === _contextRevision
+      && getOperatorSession()?.token === session.token;
+    // Uma seleção substituída antes de iniciar não precisa chegar ao banco.
+    if (!isCurrent()) throw sessionWasCancelled();
+
+    const { data, error } = await supabase.rpc('set_operator_session_context', {
+      p_session_token: session.token,
+      p_cell_id: cellId,
+      p_machine_id: machineId,
+      p_station_name: stationName,
+    });
+
+    if (!isCurrent()) throw sessionWasCancelled();
+    if (error) throw error;
+    if (!data?.success) throw new Error(data?.error || 'Falha ao definir posto operacional.');
+
+    const current = getOperatorSession();
+    const cellObj = (current.cells || []).find(c => c.id === cellId);
+    const machObj = (current.machines || []).find(m => m.id === machineId);
+    const updatedSession = {
+      ...current,
+      selected_cell_id: cellId,
+      selected_cell_name: data.cell_name || cellObj?.name || 'Célula',
+      selected_machine_id: machineId,
+      selected_machine_name: data.machine_name || machObj?.name || null,
+      selected_station_name: stationName,
+      context_session_id: current.session_id,
+      context_pending: false,
+    };
+
+    persistOperatorSession(updatedSession);
+    notifySessionChange();
+    return updatedSession;
   });
 
-  if (error) throw error;
-  if (!data?.success) throw new Error(data?.error || 'Falha ao definir posto operacional.');
-  const current = getOperatorSession();
-  if (generation !== _sessionGeneration || revision !== _contextRevision || current?.token !== session.token) {
-    throw sessionWasCancelled();
+  _contextQueues.set(session.token, operation);
+  try {
+    return await operation;
+  } finally {
+    if (_contextQueues.get(session.token) === operation) _contextQueues.delete(session.token);
   }
-
-  // Obter detalhes dos nomes para atualizar localmente
-  const cellObj = (session.cells || []).find(c => c.id === cellId);
-  const machObj = (session.machines || []).find(m => m.id === machineId);
-
-  const updatedSession = {
-    ...current,
-    selected_cell_id: cellId,
-    selected_cell_name: data.cell_name || cellObj?.name || 'Célula',
-    selected_machine_id: machineId,
-    selected_machine_name: data.machine_name || machObj?.name || null,
-    selected_station_name: stationName
-  };
-
-  persistOperatorSession(updatedSession);
-
-  notifySessionChange();
-  return updatedSession;
 }
 
 /**

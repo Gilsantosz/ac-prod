@@ -77,7 +77,7 @@ export function useOperatorSession({ purpose = 'production' } = {}) {
     setError(null);
     try {
       const sess = await setOperatorSessionContext(cellId, machineId, stationName);
-      setSession(sess);
+      setSession(getOperatorSession());
       return sess;
     } catch (err) {
       setError(err.message || 'Falha ao selecionar contexto de posto.');

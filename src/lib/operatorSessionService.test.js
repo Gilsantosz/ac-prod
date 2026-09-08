@@ -107,21 +107,64 @@ describe('operatorSessionService', () => {
     expect(getOperatorSession()).toBeNull();
   });
 
-  it('identifica uma resposta de contexto substituída sem confundi-la com falha remota', async () => {
+  it('serializa contextos para a última máquina permanecer também no servidor', async () => {
     rpc.mockResolvedValueOnce(loginResult());
     await loginOperator('operador', '123');
     const firstPending = deferred();
-    rpc
-      .mockReturnValueOnce(firstPending.promise)
-      .mockResolvedValueOnce({ data: { success: true, cell_name: 'Usinagem' }, error: null });
+    let serverMachine = 'previous-machine';
+    rpc.mockImplementation((name, params) => {
+      if (params.p_machine_id === null) return firstPending.promise.then(() => {
+        serverMachine = null;
+        return { data: { success: true, cell_name: 'Corte' } };
+      });
+      serverMachine = params.p_machine_id;
+      return Promise.resolve({ data: { success: true, cell_name: 'Corte' } });
+    });
 
     const firstContext = setOperatorSessionContext('cell-1');
-    await setOperatorSessionContext('cell-2');
-    firstPending.resolve({ data: { success: true, cell_name: 'Corte' }, error: null });
+    const firstResult = firstContext.catch((error) => error);
+    await Promise.resolve();
+    await Promise.resolve();
+    const latestContext = setOperatorSessionContext('cell-1', 'machine-1');
+    expect(getOperatorSession().context_pending).toBe(true);
+    expect(rpc).not.toHaveBeenCalledWith('set_operator_session_context', expect.objectContaining({ p_machine_id: 'machine-1' }));
 
-    const superseded = await firstContext.catch((error) => error);
-    expect(isOperatorSessionSupersededError(superseded)).toBe(true);
-    expect(getOperatorSession()).toMatchObject({ selected_cell_id: 'cell-2' });
+    firstPending.resolve();
+    await latestContext;
+    expect(isOperatorSessionSupersededError(await firstResult)).toBe(true);
+    expect(serverMachine).toBe('machine-1');
+    expect(getOperatorSession()).toMatchObject({
+      selected_cell_id: 'cell-1', selected_machine_id: 'machine-1',
+      context_session_id: 'session-1', context_pending: false,
+    });
+  });
+
+  it('uma falha de contexto não prende as confirmações seguintes', async () => {
+    rpc.mockResolvedValueOnce(loginResult());
+    await loginOperator('operador', '123');
+    rpc.mockRejectedValueOnce(new Error('Sem conexão'));
+    await expect(setOperatorSessionContext('cell-1', 'machine-1')).rejects.toThrow('Sem conexão');
+    expect(getOperatorSession().context_pending).toBe(true);
+    rpc.mockResolvedValueOnce({ data: { success: true } });
+    await setOperatorSessionContext('cell-1', 'machine-1');
+    expect(getOperatorSession()).toMatchObject({ context_pending: false, selected_machine_id: 'machine-1' });
+  });
+
+  it('o contexto lento do operador anterior não bloqueia uma sessão nova', async () => {
+    rpc.mockResolvedValueOnce(loginResult());
+    await loginOperator('operador', '123');
+    const pending = deferred();
+    rpc.mockReturnValueOnce(pending.promise);
+    const oldContext = setOperatorSessionContext('cell-1', 'machine-1').catch((error) => error);
+    await Promise.resolve();
+    await Promise.resolve();
+    rpc.mockResolvedValueOnce(loginResult('session-2'));
+    await loginOperator('outro', '321');
+    rpc.mockResolvedValueOnce({ data: { success: true } });
+    await setOperatorSessionContext('cell-2', 'machine-2');
+    pending.resolve({ data: { success: true } });
+    expect(isOperatorSessionSupersededError(await oldContext)).toBe(true);
+    expect(getOperatorSession()).toMatchObject({ session_id: 'session-2', selected_machine_id: 'machine-2' });
   });
 
   it('heartbeat preserva a seleção de célula feita enquanto ele aguardava', async () => {

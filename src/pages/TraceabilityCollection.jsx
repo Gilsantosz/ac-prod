@@ -34,7 +34,7 @@ import CollectionVolumeEntryPanel from '@/components/collection/CollectionVolume
 import CollectionErrorBoundary from '@/components/ui/CollectionErrorBoundary';
 import { getActiveDowntime } from '@/lib/downtimeService';
 import { requestSessionActivity } from '@/lib/sessionActivity';
-import { isOperatorSessionSupersededError } from '@/lib/operatorSessionService';
+import { useCollectionOperatorContext } from '@/hooks/useCollectionOperatorContext';
 import {
   COLLECTION_STATES,
   collectionStateFromResult,
@@ -267,7 +267,6 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   const [shift, setShift] = useState(() => opSession?.shift || currentShift());
   const [machine, setMachine] = useState(null);
-  const [contextSyncError, setContextSyncError] = useState(null);
   const shiftRange = useMemo(() => {
     return getShiftRange(shift, new Date(), opSession?.shift_start_time, opSession?.shift_end_time);
   }, [shift, opSession?.shift_start_time, opSession?.shift_end_time]);
@@ -345,69 +344,17 @@ export default function TraceabilityCollection({ embedded = false }) {
     }
   }, [displayMachines, cellName]);
 
-  // Sincronizar o contexto da sessão operacional no servidor
-  useEffect(() => {
-    if (!opSession?.token || !cellName) {
-      setContextSyncError(null);
-      return undefined;
-    }
-    const selectedCellObj = displayCells.find(c => c.name === cellName || c.id === cellName);
-    if (!selectedCellObj?.id) {
-      setContextSyncError('A célula selecionada não está autorizada para este operador.');
-      return undefined;
-    }
-
-    const desiredMachineId = selectedMachineId;
-    if (
-      opSession.selected_cell_id === selectedCellObj.id
-      && (opSession.selected_machine_id || null) === desiredMachineId
-      && opSession.selected_station_name === 'Coletor Chão de Fábrica'
-    ) {
-      setContextSyncError(null);
-      return undefined;
-    }
-
-    let cancelled = false;
-    setContextSyncError(null);
-    const syncContext = async () => {
-      try {
-        await setOpSessionContext(selectedCellObj.id, desiredMachineId, 'Coletor Chão de Fábrica');
-      } catch (err) {
-        // Trocas rápidas de célula/máquina substituem legitimamente a RPC
-        // anterior. Essa resposta antiga não é falha de login nem deve
-        // bloquear o contexto mais recente.
-        if (!cancelled && !isOperatorSessionSupersededError(err)) {
-          console.error('Erro ao sincronizar contexto com o servidor:', err);
-          setContextSyncError(err?.message || 'Não foi possível confirmar o posto operacional.');
-        }
-      }
-    };
-    syncContext();
-    return () => { cancelled = true; };
-  }, [
-    opSession?.token,
-    opSession?.selected_cell_id,
-    opSession?.selected_machine_id,
-    opSession?.selected_station_name,
-    cellName,
-    selectedMachineId,
-    displayCells,
-    setOpSessionContext,
-  ]);
-
-  const collectionContextReady = Boolean(
-    opSession?.token
-    && selectedCellId
-    && opSession.selected_cell_id === selectedCellId
-    && (opSession.selected_machine_id || null) === selectedMachineId
-    && opSession.selected_station_name === 'Coletor Chão de Fábrica'
-    && !contextSyncError
-  );
-  const collectionContextMessage = contextSyncError
-    ? `Coleta bloqueada: ${contextSyncError}`
-    : !selectedCellId
-      ? 'A célula salva não pertence ao operador. Aguarde a correção automática.'
-      : 'Validando a célula e o posto do operador no servidor...';
+  const {
+    contextReady: collectionContextReady,
+    contextMessage: collectionContextMessage,
+    error: contextSyncError,
+    retry: retryContextSync,
+  } = useCollectionOperatorContext({
+    session: opSession,
+    cellId: selectedCellId,
+    machineId: selectedMachineId,
+    setContext: setOpSessionContext,
+  });
 
   const handleMachineChange = (selected) => {
     setMachine(selected);
@@ -1063,7 +1010,7 @@ export default function TraceabilityCollection({ embedded = false }) {
             disabled={machinesLoading || !cellName}
             className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm disabled:opacity-60 font-medium"
           >
-            <option value="">{machinesLoading ? 'Carregando máquinas...' : displayMachines.length ? 'Todas as máquinas' : 'Nenhuma máquina cadastrada'}</option>
+            <option value="">{machinesLoading ? 'Carregando máquinas...' : displayMachines.length ? 'Selecione a máquina / posto' : 'Nenhuma máquina cadastrada'}</option>
             {displayMachines.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </div>
@@ -1087,6 +1034,15 @@ export default function TraceabilityCollection({ embedded = false }) {
           </div>
         </div>
       </div>
+
+      {contextSyncError && (
+        <div role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+          <p>{collectionContextMessage}</p>
+          <button type="button" onClick={retryContextSync} className="mt-2 font-semibold underline">
+            Tentar confirmar o posto novamente
+          </button>
+        </div>
+      )}
 
       {/* Painel de status da fila */}
       <CollectionQueuePanel
