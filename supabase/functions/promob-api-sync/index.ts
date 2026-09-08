@@ -4,6 +4,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { assertTrustedPromobUrl } from "../_shared/promobSecurity.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -36,11 +37,11 @@ serve(async (req) => {
     // Verifica permissão (apenas admin e manager)
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role, active")
       .eq("id", user.id)
       .single();
 
-    if (!["admin", "manager"].includes(profile?.role)) {
+    if (profile?.active !== true || !["admin", "manager"].includes(profile?.role)) {
       throw new Error("Permissão insuficiente para configurar integração Promob");
     }
 
@@ -83,6 +84,18 @@ serve(async (req) => {
       if (getIntegError || !integration) throw new Error("Integração não encontrada");
       if (!integration.api_url) throw new Error("URL da API não configurada");
 
+      // Resolve e autoriza o destino antes de recuperar o segredo. A tabela de
+      // origens confiáveis não é gravável por usuários admin/manager.
+      const { data: trustedRows, error: trustedOriginsError } = await supabase
+        .from("promob_trusted_origins")
+        .select("origin")
+        .eq("active", true);
+      if (trustedOriginsError) throw new Error("Falha ao validar a origem Promob");
+      const targetUrl = assertTrustedPromobUrl(
+        integration.api_url,
+        (trustedRows || []).map((row) => row.origin),
+      );
+
       // Buscar token descriptografado do Vault
       const { data: decryptedToken, error: getTokenError } = await supabase.rpc("get_promob_token", {
         integration_id: integrationId,
@@ -91,11 +104,12 @@ serve(async (req) => {
       if (getTokenError) throw new Error("Falha ao recuperar token do Vault");
       if (!decryptedToken) throw new Error("Nenhum token configurado no Vault");
 
-      console.log(`Conectando à API: ${integration.api_url}`);
+      console.log(`Conectando à origem Promob aprovada: ${targetUrl.origin}`);
 
       // Executa chamada HTTP para a API Promob
-      const apiResp = await fetch(integration.api_url, {
+      const apiResp = await fetch(targetUrl.toString(), {
         method: "GET",
+        redirect: "error",
         headers: {
           "Authorization": `Bearer ${decryptedToken}`,
           "Accept": "application/xml, application/json",
