@@ -3,6 +3,7 @@ import { Info, Lock } from 'lucide-react';
 import ProductionTagInput from './ProductionTagInput';
 import ScannerModeSelector from './ScannerModeSelector';
 import MobileCameraScanner from './MobileCameraScanner';
+import { collectionFeedbackMessage } from '@/lib/collectionFeedback';
 import {
   getProductionScanCodeError,
   parseProductionScanCode,
@@ -323,7 +324,7 @@ export default function TraceabilityScannerPanel({
             {feedbackPresentation.label}
           </div>
           <p className="text-sm font-medium leading-relaxed">
-            {feedback.message || feedbackPresentation.defaultMessage}
+            {collectionFeedbackMessage(feedback, feedbackPresentation.state)}
           </p>
           {(feedback.item || feedback.lot || feedback.order) && (
             <div className="mt-1 grid grid-cols-2 gap-2 border-t border-current/15 pt-2 text-xs lg:grid-cols-5">
@@ -331,7 +332,7 @@ export default function TraceabilityScannerPanel({
               <div><span className="block opacity-70">Lote cliente</span><strong>{feedback.lot?.lot_code || '—'}</strong></div>
               <div><span className="block opacity-70">Pedido / OP</span><strong>{feedback.order?.order_number || feedback.order?.order_code || '—'}</strong></div>
               <div><span className="block opacity-70">Cliente</span><strong>{feedback.order?.customer_name || '—'}</strong></div>
-              <div><span className="block opacity-70">Andamento do lote</span><strong>{Number(feedback.lot_progress_percent ?? feedback.lot?.progress_percent ?? 0).toFixed(1)}%</strong></div>
+              <div><span className="block opacity-70">Andamento do lote</span><strong>{(feedback.lot_progress_percent ?? feedback.lot?.progress_percent) != null ? `${Number(feedback.lot_progress_percent ?? feedback.lot?.progress_percent).toFixed(1)}%` : '—'}</strong></div>
             </div>
           )}
         </div>

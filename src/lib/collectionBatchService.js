@@ -486,8 +486,37 @@ async function ingestProductionCollectionBatchV3(events, options = {}) {
     throw error;
   }
 
+  const scope = options.pipelineFlags?.[V3_INGRESS_FLAG]?.rollout_scope || {};
+  const immediate = scope.immediate_rpc === 'ingest_collection_batch_immediate_v3';
+  const maxEvents = immediate
+    ? Math.max(1, Math.min(5, Math.floor(Number(scope.immediate_max_events) || 5)))
+    : COLLECTION_BATCH_MAX_SIZE;
+  if (events.length > maxEvents) {
+    const settled = [];
+    for (let offset = 0; offset < events.length; offset += maxEvents) {
+      try {
+        settled.push(...await ingestProductionCollectionBatchV3(
+          events.slice(offset, offset + maxEvents),
+          { ...options, batchId: undefined },
+        ));
+      } catch (error) {
+        // Uma falha posterior não apaga decisões que o banco já confirmou.
+        error.finalizedEnvelopes = [
+          ...settled.filter((item) => isCollectionTerminalState(item.collection_state)),
+          ...(error.finalizedEnvelopes || []),
+        ];
+        error.acknowledgedEnvelopes = [
+          ...settled.filter((item) => !isCollectionTerminalState(item.collection_state)),
+          ...(error.acknowledgedEnvelopes || []),
+        ];
+        throw error;
+      }
+    }
+    return settled;
+  }
+
   const { data, error } = await awaitCollectionTransport(
-    supabase.rpc('ingest_collection_batch_v3', {
+    supabase.rpc(immediate ? 'ingest_collection_batch_immediate_v3' : 'ingest_collection_batch_v3', {
       p_batch_id: batchId,
       p_device_id: deviceId,
       p_events: envelope,
@@ -778,13 +807,18 @@ export async function processProductionCollectionBatch(events = [], options = {}
 
   if (targetVersion === 3) {
     try {
-      return await ingestProductionCollectionBatchV3(events, options);
+      // A versão durável do evento continua V3. A capacidade publicada pelo
+      // banco escolhe a confirmação na própria requisição, inclusive no replay.
+      flags ||= await getCollectionPipelineFlagsV3();
+      return await ingestProductionCollectionBatchV3(events, { ...options, pipelineFlags: flags });
     } catch (error) {
       const ingressDefinitelyDisabled = error?.code === '55000'
         && String(error?.message || '').includes(
           'COLLECTION_PIPELINE_V3_INGRESS_DISABLED',
         );
-      if (!firstUnforcedAssignment || !ingressDefinitelyDisabled) throw error;
+      const hasConfirmedChunk = error?.finalizedEnvelopes?.length > 0
+        || error?.acknowledgedEnvelopes?.length > 0;
+      if (!firstUnforcedAssignment || !ingressDefinitelyDisabled || hasConfirmedChunk) throw error;
 
       // O flag é verificado antes de qualquer INSERT no RPC. Como esta era a
       // primeira tentativa de rede, o erro 55000 comprova ausência de recibo V3

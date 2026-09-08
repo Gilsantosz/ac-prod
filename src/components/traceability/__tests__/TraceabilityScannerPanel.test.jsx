@@ -73,6 +73,13 @@ describe('TraceabilityScannerPanel', () => {
     expect(feedback).toHaveClass('border-amber-300');
   });
 
+  it('uma aprovação confirmada nunca mantém a mensagem antiga de processamento', () => {
+    renderPanel({ feedback: { collection_state: 'APPROVED', status: 'approved', message: 'Leitura preservada e aguardando processamento.' } });
+    expect(screen.getByText('PEÇA LIBERADA — OK')).toBeInTheDocument();
+    expect(screen.getByText('Leitura aprovada.')).toBeInTheDocument();
+    expect(screen.queryByText(/aguardando processamento/i)).not.toBeInTheDocument();
+  });
+
   it('mostra feedback verde para leitura aprovada', () => {
     renderPanel({ feedback: { success: true, status: 'approved', message: 'Baixa concluída' } });
     expect(screen.getByRole('status')).toHaveClass('border-emerald-300');

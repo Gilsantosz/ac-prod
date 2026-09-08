@@ -278,6 +278,112 @@ describe('useCollectionQueue maintenance scheduling', () => {
     unmount();
   });
 
+  it('envia a leitura após gravação durável sem esperar debounce ou lote de 25', async () => {
+    const { result, unmount } = renderHook(() => useCollectionQueue(vi.fn(), {
+      eventKind: 'production_stage', enableV3Realtime: false, flushIntervalMs: 60_000,
+    }));
+    await act(async () => { await Promise.resolve(); });
+    let finishEnqueue;
+    mocks.enqueueCollectionEvent.mockReturnValueOnce(new Promise((resolve) => { finishEnqueue = resolve; }));
+    setOnline(true);
+    let enqueuePromise;
+    act(() => { enqueuePromise = result.current.enqueue({ raw_value: '09890701' }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(mocks.flushCollectionMicroBatchQueue).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finishEnqueue('new-event');
+      await enqueuePromise;
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledOnce();
+    expect(mocks.flushCollectionMicroBatchQueue.mock.calls[0][1]).toMatchObject({ batchSize: 5 });
+    unmount();
+  });
+
+  it('envia a leitura que chega durante o flush logo após a requisição em andamento', async () => {
+    const { result, unmount } = renderHook(() => useCollectionQueue(vi.fn(), {
+      eventKind: 'production_stage', enableV3Realtime: false, flushIntervalMs: 60_000,
+    }));
+    await act(async () => { await Promise.resolve(); });
+    let finishFirstFlush;
+    mocks.flushCollectionMicroBatchQueue.mockReturnValueOnce(new Promise((resolve) => { finishFirstFlush = resolve; }));
+    setOnline(true);
+    let flushPromise;
+    act(() => { flushPromise = result.current.flush(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      await result.current.enqueue({ raw_value: '09890702' });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      finishFirstFlush({ processed: 1 });
+      await flushPromise;
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it('não perde uma leitura chegada durante as estatísticas finais do flush', async () => {
+    const { result, unmount } = renderHook(() => useCollectionQueue(vi.fn(), {
+      eventKind: 'production_stage', enableV3Realtime: false, flushIntervalMs: 60_000,
+    }));
+    await act(async () => { await Promise.resolve(); });
+    let finishStats;
+    mocks.getQueueStatsByCellMachine.mockReturnValueOnce(new Promise((resolve) => { finishStats = resolve; }));
+    setOnline(true);
+    let flushPromise;
+    act(() => { flushPromise = result.current.flush(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      await result.current.enqueue({ raw_value: '09890703' });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      finishStats(defaultStats);
+      await flushPromise;
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it('não agenda novo envio após desmontagem enquanto uma requisição termina', async () => {
+    const { result, unmount } = renderHook(() => useCollectionQueue(vi.fn(), {
+      eventKind: 'production_stage', enableV3Realtime: false, flushIntervalMs: 60_000,
+    }));
+    await act(async () => { await Promise.resolve(); });
+    let finishFirstFlush;
+    mocks.flushCollectionMicroBatchQueue.mockReturnValueOnce(new Promise((resolve) => { finishFirstFlush = resolve; }));
+    setOnline(true);
+    let flushPromise;
+    act(() => { flushPromise = result.current.flush(); });
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await result.current.enqueue({ raw_value: '09890704' });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledOnce();
+    unmount();
+
+    await act(async () => {
+      finishFirstFlush({ processed: 1 });
+      await flushPromise;
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledOnce();
+  });
+
   it('continua o flush de pending quando a recuperação defensiva falha', async () => {
     vi.useRealTimers();
     setOnline(true);

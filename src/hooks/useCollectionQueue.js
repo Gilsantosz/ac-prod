@@ -216,7 +216,7 @@ export function useCollectionQueue(processFn, options = {}) {
     cellId,
     machineId,
     eventKind,
-    batchSize = 25,
+    batchSize = 5,
     operatorId = null,
     queryClient = null,
     onResult = null,
@@ -227,10 +227,8 @@ export function useCollectionQueue(processFn, options = {}) {
     || (microBatch ? dispatchCollectionEventBatch : null);
   const flushIntervalMs = options.flushIntervalMs
     ?? (microBatch ? 1_000 : 15_000);
-  const flushDebounceMs = Math.max(
-    100,
-    Number(options.flushDebounceMs) || 250,
-  );
+  // Envia assim que o registro local durável termina. Não espera formar lote.
+  const flushDebounceMs = Math.max(0, Number(options.flushDebounceMs) || 0);
 
   const [stats, setStats] = useState({
     total: 0,
@@ -248,6 +246,8 @@ export function useCollectionQueue(processFn, options = {}) {
   const [online, setOnline] = useState(() => globalThis.navigator?.onLine !== false);
   const [deviceId] = useState(() => getCollectionDeviceId());
   const flushingRef = useRef(false);
+  const flushRequestedRef = useRef(false);
+  const mountedRef = useRef(true);
   const scheduledFlushRef = useRef(null);
   const scheduledStatsRefreshRef = useRef(null);
   const statsRefreshInFlightRef = useRef(false);
@@ -264,6 +264,14 @@ export function useCollectionQueue(processFn, options = {}) {
   processFnRef.current = processFn;
   processBatchFnRef.current = processBatchFn;
   onResultRef.current = onResult;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      flushRequestedRef.current = false;
+    };
+  }, []);
 
   const setRealtimeStatusSafely = useCallback((status) => {
     realtimeStatusRef.current = status;
@@ -621,7 +629,11 @@ export function useCollectionQueue(processFn, options = {}) {
   ]);
 
   const flush = useCallback(async () => {
-    if (flushingRef.current || !navigator.onLine) return;
+    if (!mountedRef.current || !navigator.onLine) return;
+    if (flushingRef.current) {
+      flushRequestedRef.current = true;
+      return;
+    }
 
     await withCollectionQueueLock(async () => {
       if (flushingRef.current || !navigator.onLine) return;
@@ -646,9 +658,24 @@ export function useCollectionQueue(processFn, options = {}) {
           await flushCollectionQueue(processFnRef.current);
         }
       } finally {
-        flushingRef.current = false;
-        setFlushing(false);
-        await refreshStats();
+        try {
+          await refreshStats();
+        } finally {
+          flushingRef.current = false;
+          if (mountedRef.current) setFlushing(false);
+          if (flushRequestedRef.current) {
+            flushRequestedRef.current = false;
+            // O timer roda após a liberação do Web Lock desta requisição.
+            if (mountedRef.current && scheduledFlushRef.current === null && navigator.onLine) {
+              scheduledFlushRef.current = setTimeout(() => {
+                scheduledFlushRef.current = null;
+                flush().catch((error) => {
+                  console.warn('[CollectionQueue] Falha ao enviar a próxima leitura:', error);
+                });
+              }, 0);
+            }
+          }
+        }
       }
     });
   }, [
@@ -660,7 +687,7 @@ export function useCollectionQueue(processFn, options = {}) {
   ]);
 
   const scheduleFlush = useCallback(() => {
-    if (!navigator.onLine || scheduledFlushRef.current) return;
+    if (!mountedRef.current || !navigator.onLine || scheduledFlushRef.current !== null) return;
 
     scheduledFlushRef.current = setTimeout(() => {
       scheduledFlushRef.current = null;

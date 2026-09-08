@@ -30,6 +30,8 @@ import TraceabilityKpiCards from '@/components/traceability/TraceabilityKpiCards
 import ActiveDowntimeBanner from '@/components/collection/ActiveDowntimeBanner';
 import DowntimeDialog from '@/components/collection/DowntimeDialog';
 import CollectionFullscreenKiosk from '@/components/collection/CollectionFullscreenKiosk';
+import CollectionLotBanner from '@/components/collection/CollectionLotBanner';
+import { collectionFeedbackMessage, hasCollectionLotIdentity, mergeCollectionFeedback, normalizeCollectionFeedback, resolveCollectionLotContext } from '@/lib/collectionFeedback';
 import CollectionVolumeEntryPanel from '@/components/collection/CollectionVolumeEntryPanel';
 import CollectionErrorBoundary from '@/components/ui/CollectionErrorBoundary';
 import { getActiveDowntime } from '@/lib/downtimeService';
@@ -122,12 +124,6 @@ function mergeCanonicalPiece(previous, traceability) {
   };
 }
 
-function isClosedLotContext(feedback) {
-  const closedStatuses = new Set(['completed', 'shipped', 'cancelled', 'closed', 'waiting_packaging']);
-  return closedStatuses.has(feedback?.lot?.current_status) ||
-         closedStatuses.has(feedback?.lot?.status) ||
-         (Number(feedback?.lot_progress_percent) >= 100);
-}
 
 export default function TraceabilityCollection({ embedded = false }) {
   const { user } = useAuth();
@@ -166,23 +162,27 @@ export default function TraceabilityCollection({ embedded = false }) {
       const saved = localStorage.getItem('traceability-last-feedback');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (isClosedLotContext(parsed)) {
-          return null;
-        }
-        return parsed;
+        return mergeCollectionFeedback(null, parsed);
       }
     } catch {}
     return null;
   });
   const latestClientEventIdRef = useRef(feedback?.client_event_id || null);
+  const feedbackRef = useRef(feedback);
+  const [lastIdentifiedFeedback, setLastIdentifiedFeedback] = useState(() => (
+    hasCollectionLotIdentity(feedback) ? feedback : null
+  ));
 
-  const updateFeedback = useCallback((newFeedback) => {
-    if (isClosedLotContext(newFeedback)) {
-      setFeedback(null);
-      try { localStorage.removeItem('traceability-last-feedback'); } catch {}
-      return;
-    }
+  const updateFeedback = useCallback((incomingFeedback) => {
+    if (incomingFeedback?.client_event_id && latestClientEventIdRef.current
+      && incomingFeedback.client_event_id !== latestClientEventIdRef.current) return null;
+    const newFeedback = mergeCollectionFeedback(feedbackRef.current, incomingFeedback);
+    feedbackRef.current = newFeedback;
     setFeedback(newFeedback);
+    if (hasCollectionLotIdentity(newFeedback)) {
+      const lotContext = { lot: newFeedback.lot, general_lot: newFeedback.general_lot, order: newFeedback.order };
+      setLastIdentifiedFeedback(lotContext);
+    }
     if (newFeedback) {
       try {
         const toSave = {
@@ -191,9 +191,12 @@ export default function TraceabilityCollection({ embedded = false }) {
           success: newFeedback.success,
           status: newFeedback.status,
           message: newFeedback.message,
+          general_lot: newFeedback.general_lot,
+          general_lot_code: newFeedback.general_lot_code,
           lot: newFeedback.lot ? {
             id: newFeedback.lot.id,
             lot_code: newFeedback.lot.lot_code,
+            general_lot_code: newFeedback.lot.general_lot_code,
             current_status: newFeedback.lot.current_status,
             status: newFeedback.lot.status,
             progress_percent: newFeedback.lot.progress_percent,
@@ -208,6 +211,8 @@ export default function TraceabilityCollection({ embedded = false }) {
           item: newFeedback.item ? {
             id: newFeedback.item.id,
             item_code: newFeedback.item.item_code,
+            traceability_code: newFeedback.item.traceability_code,
+            piece_uid: newFeedback.item.piece_uid,
             current_step: newFeedback.item.current_step,
             status: newFeedback.item.status,
           } : null,
@@ -235,6 +240,7 @@ export default function TraceabilityCollection({ embedded = false }) {
     } else {
       try { localStorage.removeItem('traceability-last-feedback'); } catch {}
     }
+    return newFeedback;
   }, []);
 
   const [rejecting, setRejecting] = useState(false);
@@ -427,10 +433,13 @@ export default function TraceabilityCollection({ embedded = false }) {
     replacement: Number(kpis.replacement) || 0,
   };
   const activeGeneralLots = Array.isArray(kpis.active_general_lots) ? kpis.active_general_lots : [];
-  const currentGeneralLot = activeGeneralLots.find(
-    (lot) => lot.id === feedback?.lot?.pcp_import_batch_id
-  ) || activeGeneralLots[0] || null;
-  const currentClientLotCode = feedback?.lot?.lot_code || selectedPiece?.lot_code || null;
+  const { generalLot: currentGeneralLot, clientLotCode: currentClientLotCode, customerName: currentCustomerName } = resolveCollectionLotContext({
+    feedback,
+    lastIdentifiedFeedback,
+    activeGeneralLots,
+    activeContext: kpis.active_context,
+    selectedPiece,
+  });
 
   const refreshKpis = useCallback(() => {
     invalidateAffectedCollectionQueries(queryClient, {
@@ -502,7 +511,7 @@ export default function TraceabilityCollection({ embedded = false }) {
     error,
     state: providedState,
   }) => {
-    const domainResult = result?.result ?? result?.resultado ?? result ?? {};
+    const domainResult = normalizeCollectionFeedback(result || {});
     const state = providedState
       || collectionStateFromResult(result)
       || collectionStateFromResult(domainResult)
@@ -530,18 +539,14 @@ export default function TraceabilityCollection({ embedded = false }) {
                 ? 'yellow'
                 : 'red')
             : 'blue',
-        message: domainResult?.message
-          || error?.message
-          || (state === COLLECTION_STATES.DATABASE_ACKNOWLEDGED
-            ? 'Registrada no banco. Aguardando validação.'
-            : 'Leitura preservada e aguardando processamento.'),
+        message: collectionFeedbackMessage({ message: domainResult?.message || error?.message }, state),
       });
     }
 
     if (!isCollectionTerminalState(state)) return;
     refreshData();
 
-    const message = domainResult?.message || error?.message;
+    const message = collectionFeedbackMessage({ message: domainResult?.message || error?.message }, state);
     if (state === COLLECTION_STATES.APPROVED) {
       toast.success(message || 'Leitura aprovada.', {
         id: 'collection-final-approved',
@@ -677,8 +682,8 @@ export default function TraceabilityCollection({ embedded = false }) {
 
     if (collectionOnline) {
       try {
-        const result = await processNow(clientEventId);
-        updateFeedback({ ...result, client_event_id: clientEventId });
+        const response = await processNow(clientEventId);
+        const result = updateFeedback({ ...response, client_event_id: clientEventId }) || response;
 
         if (result?.pending || result?.status === 'queued') {
           toast.info(
@@ -939,36 +944,13 @@ export default function TraceabilityCollection({ embedded = false }) {
           }}
         />
       )}
-      readerContext={currentGeneralLot?.general_lot_code ? (
-        <div
-          data-testid="collection-lot-banner"
-          className="rounded-2xl border-2 border-emerald-600 bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-800 px-5 py-4 text-white shadow-lg shadow-emerald-950/15"
-        >
-          <div className="grid gap-4 sm:grid-cols-[1.2fr_1fr_auto] sm:items-center">
-            <div>
-              <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-emerald-200">Lote geral em coleta</p>
-              <p className="mt-1 font-mono text-4xl font-black leading-none tracking-wider sm:text-5xl">
-                {currentGeneralLot.general_lot_code}
-              </p>
-            </div>
-            <div className="border-emerald-500/40 sm:border-l sm:pl-5">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-200">Lote do cliente</p>
-              <p className="mt-1 font-mono text-2xl font-extrabold">
-                {currentClientLotCode || 'Aguardando leitura'}
-              </p>
-              {feedback?.order?.customer_name && (
-                <p className="mt-1 truncate text-xs font-medium text-emerald-100">{feedback.order.customer_name}</p>
-              )}
-            </div>
-            <div className="rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-left sm:text-right">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-100">Andamento geral</p>
-              <p className="mt-1 text-2xl font-black tabular-nums">
-                {Number(currentGeneralLot.progress_percent || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%
-              </p>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      readerContext={(
+        <CollectionLotBanner
+          generalLot={currentGeneralLot}
+          clientLotCode={currentClientLotCode}
+          customerName={currentCustomerName}
+        />
+      )}
     />
   ), [
     mode,
@@ -982,6 +964,7 @@ export default function TraceabilityCollection({ embedded = false }) {
     collectionContextMessage,
     currentGeneralLot,
     currentClientLotCode,
+    currentCustomerName,
     activeDowntime,
     refreshData,
     updateFeedback,
@@ -1266,6 +1249,7 @@ export default function TraceabilityCollection({ embedded = false }) {
           cellStats={cellStats}
           currentGeneralLot={currentGeneralLot}
           currentClientLotCode={currentClientLotCode}
+          currentCustomerName={currentCustomerName}
           activeDowntime={activeDowntime}
           refetchActiveDowntime={refetchActiveDowntime}
           refreshData={refreshData}

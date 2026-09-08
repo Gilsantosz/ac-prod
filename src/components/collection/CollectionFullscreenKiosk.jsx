@@ -5,16 +5,15 @@ import {
   CheckCircle2, 
   XCircle, 
   Clock, 
-  Layers, 
   User, 
   Activity, 
-  Box, 
   RadioTower
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TraceabilityScannerPanel from '@/components/traceability/TraceabilityScannerPanel';
 import CollectionRecentReadsPanel from '@/components/collection/CollectionRecentReadsPanel';
 import ActiveDowntimeBanner from '@/components/collection/ActiveDowntimeBanner';
+import CollectionLotBanner from '@/components/collection/CollectionLotBanner';
 
 export default function CollectionFullscreenKiosk({
   open,
@@ -32,6 +31,7 @@ export default function CollectionFullscreenKiosk({
   cellStats,
   currentGeneralLot,
   currentClientLotCode,
+  currentCustomerName,
   activeDowntime,
   refetchActiveDowntime,
   refreshData,
@@ -75,7 +75,6 @@ export default function CollectionFullscreenKiosk({
   const approved = cellStats?.approved ?? 0;
   const rejected = cellStats?.rejected ?? 0;
   const pending = cellStats?.pending ?? 0;
-  const progressPercent = Number(currentGeneralLot?.progress_percent || 0);
 
   return (
     <div 
@@ -163,63 +162,12 @@ export default function CollectionFullscreenKiosk({
       <main className="flex-1 p-4 sm:p-6 space-y-6 max-w-[1800px] w-full mx-auto">
 
         {/* 1. Lotes em Andamento & Progresso Geral Banner */}
-        <section className="rounded-3xl border-2 border-emerald-500/40 bg-gradient-to-r from-emerald-950 via-slate-900 to-slate-950 p-5 sm:p-6 shadow-2xl shadow-emerald-950/20 relative overflow-hidden">
-          {/* Efeito luminoso de fundo */}
-          <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-
-          <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr_1fr] items-center relative z-10">
-            {/* Lote Geral */}
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <Box className="w-4 h-4 text-emerald-400" />
-                <span className="text-xs font-extrabold uppercase tracking-widest text-emerald-300">
-                  Lote Geral em Andamento
-                </span>
-              </div>
-              <p className="font-mono text-3xl sm:text-5xl font-black tracking-tight text-white drop-shadow-md">
-                {currentGeneralLot?.general_lot_code || 'AGUARDANDO LOTE'}
-              </p>
-            </div>
-
-            {/* Lote do Cliente */}
-            <div className="space-y-1 lg:border-l lg:border-slate-800 lg:pl-6">
-              <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-emerald-400" />
-                <span className="text-xs font-extrabold uppercase tracking-widest text-emerald-300">
-                  Lote do Cliente
-                </span>
-              </div>
-              <p className="font-mono text-2xl sm:text-3xl font-extrabold text-slate-100 truncate">
-                {currentClientLotCode || 'Sem bipagem'}
-              </p>
-              {feedback?.order?.customer_name && (
-                <p className="text-xs font-semibold text-emerald-200/80 truncate">
-                  {feedback.order.customer_name}
-                </p>
-              )}
-            </div>
-
-            {/* Andamento Geral */}
-            <div className="space-y-2 lg:border-l lg:border-slate-800 lg:pl-6">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-extrabold uppercase tracking-widest text-emerald-300">
-                  Andamento Geral
-                </span>
-                <span className="font-mono text-2xl font-black text-emerald-400">
-                  {progressPercent.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%
-                </span>
-              </div>
-
-              {/* Barra de Progresso Reluzente */}
-              <div className="h-4 w-full bg-slate-800/90 rounded-full p-0.5 overflow-hidden border border-slate-700">
-                <div 
-                  className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-500 shadow-lg shadow-emerald-500/50"
-                  style={{ width: `${Math.min(Math.max(progressPercent, 0), 100)}%` }}
-                />
-              </div>
-            </div>
-          </div>
-        </section>
+        <CollectionLotBanner
+          generalLot={currentGeneralLot}
+          clientLotCode={currentClientLotCode}
+          customerName={currentCustomerName || feedback?.order?.customer_name}
+          focus
+        />
 
         {/* 2. Os 4 KPIs Fundamentais (Previsto, Aprovado, Reprovado, Pendente) */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
