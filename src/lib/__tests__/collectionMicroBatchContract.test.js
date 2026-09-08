@@ -25,12 +25,14 @@ describe('AC.Prod2 collection micro-batching v8.6 contract', () => {
     expect(migration).toContain("- 'operator_session_token'");
   });
 
-  it('usa RPC V3 em até 25 itens e mantém INSERT apenas como fallback V2', () => {
+  it('mantém o contrato V3 e seleciona confirmação imediata por capacidade do banco', () => {
     const service = repoFile('src/lib/collectionBatchService.js');
 
     expect(service).toContain(".from('coletas_producao')");
     expect(service).toContain('.insert(rows)');
-    expect(service).toContain("supabase.rpc('ingest_collection_batch_v3'");
+    expect(service).toContain("'ingest_collection_batch_v3'");
+    expect(service).toContain("'ingest_collection_batch_immediate_v3'");
+    expect(service).toContain('scope.immediate_rpc');
     expect(service).toContain('p_batch_id: batchId');
     expect(service).toContain('p_device_id: deviceId');
     expect(service).toContain('p_events: envelope');

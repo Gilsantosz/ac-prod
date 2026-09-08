@@ -170,7 +170,9 @@ describe('AC.Prod2 asynchronous collection v9.2.3 contract', () => {
     expect(queueHook).toMatch(/\(microBatch \? 1_?000 : 15_?000\)/);
     expect(queueHook).toContain("status: 'pending_database'");
     expect(queueHook).toContain('COLLECTION_STATES.PENDING_DATABASE');
-    expect(batchService).toContain("supabase.rpc('ingest_collection_batch_v3'");
+    expect(batchService).toContain("'ingest_collection_batch_v3'");
+    expect(batchService).toContain("'ingest_collection_batch_immediate_v3'");
+    expect(batchService).toContain('scope.immediate_rpc');
   });
 
   it('impede código numérico de ser comparado com coluna UUID', () => {
