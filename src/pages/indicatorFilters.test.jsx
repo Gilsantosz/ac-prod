@@ -28,8 +28,8 @@ vi.mock('@/components/trend/ExportTrendButton', () => ({ default: () => null }))
 vi.mock('recharts', () => {
   const Chart = ({ data }) => <output data-testid="chart-data">{JSON.stringify(data)}</output>;
   const Empty = () => null;
-  return { ResponsiveContainer: ({ children }) => <div>{children}</div>, ComposedChart: Chart, BarChart: Chart, LineChart: Chart,
-    Bar: Empty, Line: Empty, XAxis: Empty, YAxis: Empty, Tooltip: Empty, Legend: Empty, CartesianGrid: Empty, ReferenceLine: Empty, Rectangle: Empty };
+  return { ResponsiveContainer: ({ children }) => <div>{children}</div>, ComposedChart: Chart, BarChart: Chart, LineChart: Chart, AreaChart: Chart,
+    Bar: Empty, Line: Empty, Area: Empty, XAxis: Empty, YAxis: Empty, Tooltip: Empty, Legend: Empty, CartesianGrid: Empty, ReferenceLine: Empty, Rectangle: Empty };
 });
 
 import Dashboard from './Dashboard';

@@ -52,7 +52,7 @@ import {
   fetchDashboardDailyGoals,
 } from '@/lib/dashboardData';
 
-const PANEL_IDS = ['insights', 'realtimeProgress', 'generalLotProgress', 'hourly', 'cellChart', 'shiftChart', 'monthlyTracker', 'goalProgress', 'weeklyTrend'];
+const PANEL_IDS = ['generalLotProgress', 'hourly', 'cellChart', 'shiftChart', 'weeklyTrend', 'insights', 'realtimeProgress', 'monthlyTracker', 'goalProgress'];
 
 export default function Dashboard({ kioskModeOverride = false }) {
   const navigate = useNavigate();
@@ -252,7 +252,25 @@ export default function Dashboard({ kioskModeOverride = false }) {
   const { order, hidden, sizes, reorder, toggleHidden, toggleSize, ready: layoutReady, saving: layoutSaving } = useDashboardLayout(PANEL_IDS);
 
   const panels = useMemo(() => {
-    const result = [{ id: 'insights', title: 'Leitura do período', node: <OperationalInsights analysis={analysis} compact /> }];
+    const result = [
+      { id: 'generalLotProgress', title: 'Lotes Gerais PCP', node: <GeneralLotProgressPanel lotIds={selectedLotIds} /> },
+    ];
+
+    if (!annualMode) {
+      result.push(
+        { id: 'hourly', title: 'Produção por hora', node: <HourlyChart grouped={byHour} unitLabel={chartUnit?.unitLabel} /> },
+        { id: 'cellChart', title: 'Comparativo por célula', node: <ShiftCellPanel title="Produção por célula" subtitle={`Mesmo recorte · ${chartUnit?.unitLabel || ''}`} grouped={byCell} unitLabel={chartUnit?.unitLabel} /> },
+        { id: 'shiftChart', title: 'Comparativo por turno', node: <ShiftCellPanel title="Produção por turno" subtitle={`Mesmo recorte · ${chartUnit?.unitLabel || ''}`} grouped={byShift} unitLabel={chartUnit?.unitLabel} /> },
+        { id: 'weeklyTrend', title: 'Tendência Semanal', node: <WeeklyEfficiencyChart data={weeklyTrend} cellLabel={weeklyTrendLabel} /> },
+      );
+    } else {
+      result.push(
+        { id: 'cellChart', title: 'Comparativo por célula', node: <ShiftCellPanel title="Produção por célula" subtitle={`Mesmo recorte · ${chartUnit?.unitLabel || ''}`} grouped={byCell} unitLabel={chartUnit?.unitLabel} /> },
+        { id: 'shiftChart', title: 'Comparativo por turno', node: <ShiftCellPanel title="Produção por turno" subtitle={`Mesmo recorte · ${chartUnit?.unitLabel || ''}`} grouped={byShift} unitLabel={chartUnit?.unitLabel} /> },
+      );
+    }
+
+    result.push({ id: 'insights', title: 'Leitura do período', node: <OperationalInsights analysis={analysis} compact /> });
 
     if (!annualMode) {
       result.push({
@@ -262,7 +280,6 @@ export default function Dashboard({ kioskModeOverride = false }) {
       });
     }
 
-    result.push({ id: 'generalLotProgress', title: 'Lotes Gerais PCP', node: <GeneralLotProgressPanel lotIds={selectedLotIds} /> });
     result.push({
       id: 'monthlyTracker',
       title: annualMode ? `Resumo Anual ${filters.year}` : 'Acompanhamento Mensal',
@@ -270,16 +287,10 @@ export default function Dashboard({ kioskModeOverride = false }) {
         ? <AnnualProductionSummary unitLabel={chartUnit?.unitLabel} entries={chartEntries} year={filters.year} chartRef={chartsRef} loading={productionLoading} />
         : <MonthlyGoalTracker tracking={monthlyTracking} cellTrackings={cellMonthlyTrackings} />,
     });
-    if (!annualMode) {
-      result.push(
-        { id: 'goalProgress', title: 'Progresso do Turno', node: <GoalProgressPanel items={goalProgress} /> },
-        { id: 'weeklyTrend', title: 'Tendência Semanal', node: <WeeklyEfficiencyChart data={weeklyTrend} cellLabel={weeklyTrendLabel} /> },
-      );
-    }
 
-    if (!annualMode) result.push({ id: 'hourly', title: 'Produção por hora', node: <HourlyChart grouped={byHour} unitLabel={chartUnit?.unitLabel} /> });
-    result.push({ id: 'shiftChart', title: 'Comparativo por turno', node: <ShiftCellPanel title="Produção por turno" subtitle={`Mesmo recorte · ${chartUnit?.unitLabel || ''}`} grouped={byShift} unitLabel={chartUnit?.unitLabel} /> });
-    result.push({ id: 'cellChart', title: 'Comparativo por célula', node: <ShiftCellPanel title="Produção por célula" subtitle={`Mesmo recorte · ${chartUnit?.unitLabel || ''}`} grouped={byCell} unitLabel={chartUnit?.unitLabel} /> });
+    if (!annualMode) {
+      result.push({ id: 'goalProgress', title: 'Progresso do Turno', node: <GoalProgressPanel items={goalProgress} /> });
+    }
 
     return result;
   }, [annualMode, filters.date, filters.cell, filters.year, monthlyTracking, cellMonthlyTrackings, goalProgress, weeklyTrend, weeklyTrendLabel, performers, byHour, byShift, byCell, kiosk, kioskCell, filtered, productionLoading, analysis, chartEntries, chartUnit, filters.shift, selectedLotIds]);

@@ -3,6 +3,8 @@ import { base44 } from '@/lib/localDb';
 import { toast } from 'sonner';
 
 const OLD_CHARTS = ['hourly', 'cellChart', 'shiftChart'];
+const DEFAULT_HALF_PANELS = ['hourly', 'cellChart', 'shiftChart', 'weeklyTrend'];
+
 export function mergeDashboardLayout(saved, defaultIds) {
   const source = Array.isArray(saved) ? { order: saved } : saved && typeof saved === 'object' ? saved : {};
   const expand = (ids) => (Array.isArray(ids) ? ids : []).flatMap((id) => id === 'charts' ? OLD_CHARTS : [id]);
@@ -10,7 +12,8 @@ export function mergeDashboardLayout(saved, defaultIds) {
   const hidden = [...new Set(expand(source.hidden))].filter((id) => defaultIds.includes(id));
   const sizes = Object.fromEntries(defaultIds.map((id) => [id,
     ['full', 'half'].includes(source.sizes?.[id]) ? source.sizes[id]
-      : OLD_CHARTS.includes(id) ? (['full', 'half'].includes(source.sizes?.charts) ? source.sizes.charts : 'half') : 'full']));
+      : (OLD_CHARTS.includes(id) && ['full', 'half'].includes(source.sizes?.charts)) ? source.sizes.charts
+      : DEFAULT_HALF_PANELS.includes(id) ? 'half' : 'full']));
   return { order, hidden, sizes };
 }
 

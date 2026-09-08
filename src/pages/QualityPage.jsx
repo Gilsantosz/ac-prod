@@ -40,7 +40,7 @@ const SIX_M_COLORS = {
 
 function QualityKpiCard({ icon: Icon, label, value, helper, tone }) {
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-border/60 bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+    <div className="group relative overflow-hidden rounded-2xl border border-white/60 dark:border-white/10 bg-white/80 dark:bg-card/75 backdrop-blur-md p-4 shadow-[0_8px_30px_rgb(0,0,0,0.06)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.25)] transition-all hover:-translate-y-0.5 hover:shadow-lg">
       <div className={`absolute inset-x-0 top-0 h-1 ${tone}`} />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -280,7 +280,7 @@ export default function QualityPage() {
       {activeTab === 'pareto' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Card 1: Gráfico de Pareto de Defeitos (80/20) */}
-          <div className="lg:col-span-2 bg-card border border-border/60 rounded-2xl p-5 space-y-4 shadow-sm flex flex-col justify-between">
+          <div className="lg:col-span-2 rounded-2xl border border-white/60 dark:border-white/10 bg-white/80 dark:bg-card/75 backdrop-blur-md p-5 sm:p-6 space-y-4 shadow-[0_8px_30px_rgb(0,0,0,0.06)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.25)] flex flex-col justify-between transition-all">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-base font-bold text-foreground flex items-center gap-2">
@@ -324,7 +324,7 @@ export default function QualityPage() {
                     <XAxis dataKey="defect" tick={{ fontSize: 11 }} interval={0} angle={-10} textAnchor="end" />
                     <YAxis yAxisId="left" tick={{ fontSize: 11 }} allowDecimals={false} label={{ value: 'Quantidade de Ocorrências', angle: -90, position: 'insideLeft', fontSize: 10 }} />
                     <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 11 }} label={{ value: '% Acumulado', angle: 90, position: 'insideRight', fontSize: 10 }} />
-                    <Tooltip contentStyle={{ borderRadius: '12px', fontSize: '12px' }} />
+                    <Tooltip contentStyle={{ background: 'hsl(var(--card) / 0.92)', backdropFilter: 'blur(8px)', border: '1px solid hsl(var(--border) / 0.7)', borderRadius: '12px', fontSize: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }} />
                     <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
                     <Bar shape={<GradientBarShape />} yAxisId="left" dataKey="count" name="Quantidade de Ocorrências" fill="url(#paretoBarGrad)" radius={[6, 6, 0, 0]}>
                       <LabelList dataKey="count" position="top" style={{ fontSize: '11px', fontWeight: 'bold', fill: '#d97706' }} />
@@ -339,7 +339,7 @@ export default function QualityPage() {
           </div>
 
           {/* Card 2: Categorias Ishikawa (6M) */}
-          <div className="bg-card border border-border/60 rounded-2xl p-5 space-y-4 shadow-sm flex flex-col justify-between">
+          <div className="rounded-2xl border border-white/60 dark:border-white/10 bg-white/80 dark:bg-card/75 backdrop-blur-md p-5 sm:p-6 space-y-4 shadow-[0_8px_30px_rgb(0,0,0,0.06)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.25)] flex flex-col justify-between transition-all">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-base font-bold text-foreground flex items-center gap-2">
@@ -414,7 +414,7 @@ export default function QualityPage() {
 
           <div className="lg:col-span-3 grid grid-cols-1 xl:grid-cols-2 gap-4">
             {/* Card 3: Tendência diária da Qualidade */}
-            <div className="bg-card border border-border/60 rounded-2xl p-5 space-y-4 shadow-sm flex flex-col justify-between">
+            <div className="rounded-2xl border border-white/60 dark:border-white/10 bg-white/80 dark:bg-card/75 backdrop-blur-md p-5 sm:p-6 space-y-4 shadow-[0_8px_30px_rgb(0,0,0,0.06)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.25)] flex flex-col justify-between transition-all">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-base font-bold text-foreground flex items-center gap-2">
@@ -448,7 +448,7 @@ export default function QualityPage() {
                       <XAxis dataKey="date" tick={{ fontSize: 10 }} />
                       <YAxis yAxisId="quantity" tick={{ fontSize: 10 }} allowDecimals={false} label={{ value: 'Reprovações', angle: -90, position: 'insideLeft', fontSize: 10, fill: '#ef4444' }} />
                       <YAxis yAxisId="rate" orientation="right" domain={[0, 100]} tick={{ fontSize: 10 }} label={{ value: 'Taxa de reprovação (%)', angle: 90, position: 'insideRight', fontSize: 10, fill: '#0ea5e9' }} />
-                      <Tooltip contentStyle={{ borderRadius: '12px', fontSize: '12px' }} />
+                      <Tooltip contentStyle={{ background: 'hsl(var(--card) / 0.92)', backdropFilter: 'blur(8px)', border: '1px solid hsl(var(--border) / 0.7)', borderRadius: '12px', fontSize: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }} />
                       <Legend wrapperStyle={{ fontSize: '11px' }} />
                       <Bar shape={<GradientBarShape />} yAxisId="quantity" dataKey="rejected" name="Reprovadas" fill="#ef4444" radius={[5, 5, 0, 0]} />
                       <Line yAxisId="rate" type="monotone" dataKey="rejectionRate" name="Taxa de reprovação (%)" stroke="#0ea5e9" strokeWidth={3} dot={{ r: 4 }} />
@@ -461,7 +461,7 @@ export default function QualityPage() {
             </div>
 
             {/* Card 4: Defeitos por célula produtiva */}
-            <div className="bg-card border border-border/60 rounded-2xl p-5 space-y-4 shadow-sm flex flex-col justify-between">
+            <div className="rounded-2xl border border-white/60 dark:border-white/10 bg-white/80 dark:bg-card/75 backdrop-blur-md p-5 sm:p-6 space-y-4 shadow-[0_8px_30px_rgb(0,0,0,0.06)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.25)] flex flex-col justify-between transition-all">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-base font-bold text-foreground flex items-center gap-2">
@@ -479,7 +479,7 @@ export default function QualityPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => openChartDetails('byCell')}
+                  onClick={() => openChartDetails('cells')}
                   className="h-8 px-3 rounded-lg border-border/70 text-xs font-bold flex items-center gap-1 shrink-0"
                 >
                   Ver detalhes
@@ -488,15 +488,15 @@ export default function QualityPage() {
               </div>
 
               <div className="h-64">
-                {metrics.byCellData?.length ? (
+                {metrics.defectsByCell?.length ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart layout="vertical" data={metrics.byCellData} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
+                    <ComposedChart data={metrics.defectsByCell} layout="vertical" margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
                       <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                      <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} label={{ value: 'Quantidade de defeitos', position: 'insideBottom', offset: -5, fontSize: 10 }} />
-                      <YAxis type="category" dataKey="cell" width={90} tick={{ fontSize: 10 }} />
-                      <Tooltip contentStyle={{ borderRadius: '12px', fontSize: '12px' }} />
-                      <Bar shape={<GradientBarShape horizontal />} dataKey="defects" name="Defeitos" fill="#8b5cf6" radius={[0, 6, 6, 0]}>
-                        <LabelList dataKey="defects" position="right" style={{ fontSize: '11px', fontWeight: 'bold', fill: '#7c3aed' }} />
+                      <XAxis type="number" tick={{ fontSize: 10 }} allowDecimals={false} />
+                      <YAxis dataKey="cell" type="category" tick={{ fontSize: 10 }} width={80} />
+                      <Tooltip contentStyle={{ background: 'hsl(var(--card) / 0.92)', backdropFilter: 'blur(8px)', border: '1px solid hsl(var(--border) / 0.7)', borderRadius: '12px', fontSize: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }} />
+                      <Bar shape={<GradientBarShape />} dataKey="count" name="Defeitos" fill="#8b5cf6" radius={[0, 6, 6, 0]}>
+                        <LabelList dataKey="count" position="right" style={{ fontSize: '10px', fontWeight: 'bold', fill: '#8b5cf6' }} />
                       </Bar>
                     </ComposedChart>
                   </ResponsiveContainer>
@@ -516,7 +516,7 @@ export default function QualityPage() {
 
       {/* Conteúdo da Aba 3: CONTROLE ESTATÍSTICO DE PROCESSO (SPC) */}
       {activeTab === 'spc' && (
-        <div className="bg-card border border-border/60 rounded-2xl p-5 space-y-4 shadow-sm">
+        <div className="rounded-2xl border border-white/60 dark:border-white/10 bg-white/80 dark:bg-card/75 backdrop-blur-md p-5 sm:p-6 space-y-4 shadow-[0_8px_30px_rgb(0,0,0,0.06)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.25)] transition-all">
           <div>
             <h3 className="text-base font-bold text-foreground flex items-center gap-2">
               <Activity className="w-5 h-5 text-emerald-500" />
