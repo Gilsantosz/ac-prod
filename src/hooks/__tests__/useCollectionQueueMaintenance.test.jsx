@@ -462,6 +462,88 @@ describe('useCollectionQueue maintenance scheduling', () => {
     unmount();
   });
 
+  it('envia imediatamente após outra aba liberar o Web Lock, sem esperar o intervalo', async () => {
+    let grantQueuedLock;
+    const request = vi.fn((name, optionsOrCallback, callback) => {
+      if (optionsOrCallback?.ifAvailable) {
+        return Promise.resolve(callback(null));
+      }
+
+      return new Promise((resolve, reject) => {
+        grantQueuedLock = async () => {
+          try {
+            const queuedCallback = typeof optionsOrCallback === 'function'
+              ? optionsOrCallback
+              : callback;
+            resolve(await queuedCallback({ name }));
+          } catch (error) {
+            reject(error);
+          }
+        };
+      });
+    });
+    setNavigatorLocks({ request });
+    const { result, unmount } = renderHook(() => useCollectionQueue(vi.fn(), {
+      eventKind: 'production_stage', enableV3Realtime: false, flushIntervalMs: 60_000,
+    }));
+    await act(async () => { await Promise.resolve(); });
+    setOnline(true);
+
+    await act(async () => {
+      await result.current.enqueue({ raw_value: '09890708' }, { autoFlush: false });
+      await result.current.processNow('09890708');
+      await Promise.resolve();
+    });
+
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request.mock.calls[0][1]).toEqual({ ifAvailable: true });
+    expect(request.mock.calls[1][1]).toMatchObject({ signal: expect.any(AbortSignal) });
+    expect(grantQueuedLock).toBeTypeOf('function');
+    expect(mocks.flushCollectionMicroBatchQueue).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await grantQueuedLock();
+      await Promise.resolve();
+    });
+
+    expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    unmount();
+  });
+
+  it('cancela a espera do Web Lock ao desmontar sem deixar waiter órfão', async () => {
+    let queuedSignal;
+    const request = vi.fn((_name, options, callback) => {
+      if (options?.ifAvailable) return Promise.resolve(callback(null));
+      queuedSignal = options?.signal;
+      return new Promise((_resolve, reject) => {
+        queuedSignal.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'));
+        }, { once: true });
+      });
+    });
+    setNavigatorLocks({ request });
+    const { result, unmount } = renderHook(() => useCollectionQueue(vi.fn(), {
+      eventKind: 'production_stage', enableV3Realtime: false, flushIntervalMs: 60_000,
+    }));
+    await act(async () => { await Promise.resolve(); });
+    setOnline(true);
+
+    await act(async () => {
+      await result.current.enqueue({ raw_value: '09890709' }, { autoFlush: false });
+      await result.current.processNow('09890709');
+      await Promise.resolve();
+    });
+
+    expect(queuedSignal).toBeInstanceOf(AbortSignal);
+    expect(queuedSignal.aborted).toBe(false);
+    unmount();
+    await act(async () => { await Promise.resolve(); });
+
+    expect(queuedSignal.aborted).toBe(true);
+    expect(mocks.flushCollectionMicroBatchQueue).not.toHaveBeenCalled();
+  });
+
   it('preserva o envio solicitado quando a consulta de estatísticas falha', async () => {
     const { result, unmount } = renderHook(() => useCollectionQueue(vi.fn(), {
       eventKind: 'production_stage', enableV3Realtime: false, flushIntervalMs: 60_000,

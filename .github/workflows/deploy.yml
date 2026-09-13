@@ -22,6 +22,8 @@ env:
   REQUIRED_RUNTIME_COLLECTION_RELEASE_VERSION: "20260901_acprod_collection_runtime_health_security_v9_2_3"
   REQUIRED_IMMEDIATE_COLLECTION_MIGRATION_VERSION: "20260908154004"
   REQUIRED_IMMEDIATE_COLLECTION_RELEASE_VERSION: "20260908_acprod_collection_immediate_decision_v3"
+  REQUIRED_IMMEDIATE_GATE_MIGRATION_VERSION: "20260913043419"
+  REQUIRED_IMMEDIATE_GATE_RELEASE_VERSION: "20260913_acprod_collection_immediate_owner_gate_v1_1"
 
 concurrency:
   group: acprod2-${{ github.workflow }}-${{ github.ref }}
@@ -340,10 +342,13 @@ jobs:
               raise SystemExit('ERRO: marcador da decisão imediata retornou formato inválido.')
           expected_migration = os.environ['REQUIRED_IMMEDIATE_COLLECTION_MIGRATION_VERSION']
           expected_release = os.environ['REQUIRED_IMMEDIATE_COLLECTION_RELEASE_VERSION']
+          expected_gate_migration = os.environ['REQUIRED_IMMEDIATE_GATE_MIGRATION_VERSION']
+          expected_gate_release = os.environ['REQUIRED_IMMEDIATE_GATE_RELEASE_VERSION']
           flags = payload.get('schema_flags') or {}
           required_flags = (
               'collection_immediate_rpc_exists',
               'collection_immediate_definition_approved',
+              'collection_immediate_rpc_owner',
               'collection_immediate_rpc_security',
               'collection_immediate_context_private',
               'collection_immediate_batch_limit_5',
@@ -358,6 +363,10 @@ jobs:
               failures.append(f"migration={payload.get('migration_version')!r}; esperado={expected_migration!r}")
           if str(payload.get('release_version', '')) != expected_release:
               failures.append(f"release={payload.get('release_version')!r}; esperado={expected_release!r}")
+          if str(payload.get('gate_migration_version', '')) != expected_gate_migration:
+              failures.append(f"gate_migration={payload.get('gate_migration_version')!r}; esperado={expected_gate_migration!r}")
+          if str(payload.get('gate_release_version', '')) != expected_gate_release:
+              failures.append(f"gate_release={payload.get('gate_release_version')!r}; esperado={expected_gate_release!r}")
           if payload.get('transport') != 'immediate_v3':
               failures.append(f"transport={payload.get('transport')!r}; esperado='immediate_v3'")
           if payload.get('ingress_rpc') != 'ingest_collection_batch_immediate_v3':
@@ -371,7 +380,11 @@ jobs:
                   failures.append(f'{flag}=false')
           if failures:
               raise SystemExit('ERRO: decisão imediata Supabase incompatível. ' + '; '.join(failures))
-          print(f'IMMEDIATE_COLLECTION_RELEASE_OK migration={expected_migration} release={expected_release}')
+          print(
+              'IMMEDIATE_COLLECTION_RELEASE_OK '
+              f'migration={expected_migration} release={expected_release} '
+              f'gate_migration={expected_gate_migration} gate_release={expected_gate_release}'
+          )
           PY
 
   build:
@@ -414,6 +427,8 @@ jobs:
             "collection_projection": "async_v3_outbox",
             "collection_immediate_migration_version": "${REQUIRED_IMMEDIATE_COLLECTION_MIGRATION_VERSION}",
             "collection_immediate_release_version": "${REQUIRED_IMMEDIATE_COLLECTION_RELEASE_VERSION}",
+            "collection_immediate_gate_migration_version": "${REQUIRED_IMMEDIATE_GATE_MIGRATION_VERSION}",
+            "collection_immediate_gate_release_version": "${REQUIRED_IMMEDIATE_GATE_RELEASE_VERSION}",
             "collection_async_migration_version": "${REQUIRED_ASYNC_COLLECTION_MIGRATION_VERSION}",
             "collection_async_release_version": "${REQUIRED_ASYNC_COLLECTION_RELEASE_VERSION}",
             "collection_runtime_migration_version": "${REQUIRED_RUNTIME_COLLECTION_MIGRATION_VERSION}",

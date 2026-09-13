@@ -31,12 +31,13 @@ import ActiveDowntimeBanner from '@/components/collection/ActiveDowntimeBanner';
 import DowntimeDialog from '@/components/collection/DowntimeDialog';
 import CollectionFullscreenKiosk from '@/components/collection/CollectionFullscreenKiosk';
 import CollectionLotBanner from '@/components/collection/CollectionLotBanner';
-import { collectionFeedbackMessage, hasCollectionLotIdentity, mergeCollectionFeedback, normalizeCollectionFeedback, resolveCollectionLotContext, restoreCollectionFeedback } from '@/lib/collectionFeedback';
+import { collectionFeedbackMessage, hasCollectionLotIdentity, mergeCollectionFeedback, normalizeCollectionFeedback, resolveCollectionKpiBatchId, resolveCollectionLotContext, restoreCollectionFeedback } from '@/lib/collectionFeedback';
 import CollectionVolumeEntryPanel from '@/components/collection/CollectionVolumeEntryPanel';
 import CollectionErrorBoundary from '@/components/ui/CollectionErrorBoundary';
 import { getActiveDowntime } from '@/lib/downtimeService';
 import { requestSessionActivity } from '@/lib/sessionActivity';
 import { useCollectionOperatorContext } from '@/hooks/useCollectionOperatorContext';
+import { useCollectionActiveContextSync } from '@/hooks/useCollectionActiveContextSync';
 import { getConfirmedOperatorContext } from '@/lib/operatorSessionService';
 import {
   COLLECTION_STATES,
@@ -170,6 +171,8 @@ export default function TraceabilityCollection({ embedded = false }) {
   const feedback = feedbackState?.operator_session_id === feedbackSessionId ? feedbackState : null;
   const latestClientEventIdRef = useRef(feedback?.client_event_id || null);
   const feedbackRef = useRef(feedback);
+  const activeCollectionScopeRef = useRef(null);
+  const feedbackCollectionScopeRef = useRef(null);
   const [lastIdentifiedFeedbackState, setLastIdentifiedFeedback] = useState(() => (
     hasCollectionLotIdentity(feedback) ? feedback : null
   ));
@@ -182,6 +185,10 @@ export default function TraceabilityCollection({ embedded = false }) {
       restored = restoreCollectionFeedback(localStorage.getItem('traceability-last-feedback'), feedbackSessionId);
     } catch {}
     feedbackRef.current = restored;
+    // Um feedback restaurado pertence à sessão, mas pode ter sido produzido
+    // antes de outra estação trocar o lote ativo. A fotografia atual do banco
+    // decide a prioridade assim que o escopo da estação estiver disponível.
+    feedbackCollectionScopeRef.current = null;
     latestClientEventIdRef.current = restored?.client_event_id || null;
     setFeedback(restored);
     setLastIdentifiedFeedback(hasCollectionLotIdentity(restored) ? restored : null);
@@ -197,6 +204,7 @@ export default function TraceabilityCollection({ embedded = false }) {
     const newFeedback = mergeCollectionFeedback(previous, incomingFeedback
       ? { ...incomingFeedback, operator_session_id: feedbackSessionId } : null);
     feedbackRef.current = newFeedback;
+    feedbackCollectionScopeRef.current = activeCollectionScopeRef.current;
     setFeedback(newFeedback);
     if (hasCollectionLotIdentity(newFeedback)) {
       const lotContext = { operator_session_id: feedbackSessionId, lot: newFeedback.lot, general_lot: newFeedback.general_lot, order: newFeedback.order };
@@ -364,6 +372,12 @@ export default function TraceabilityCollection({ embedded = false }) {
       ? machine.id
       : null
   ), [displayMachines, machine?.id]);
+  const activeCollectionScope = [
+    feedbackSessionId || '',
+    selectedCellId || String(cellName || '').trim().toLowerCase(),
+    machine?.id || '',
+  ].join(':');
+  activeCollectionScopeRef.current = activeCollectionScope;
 
   // Auto-selecionar ou recuperar máquina
   useEffect(() => {
@@ -411,6 +425,26 @@ export default function TraceabilityCollection({ embedded = false }) {
     }
   };
 
+  const {
+    activeContext: realtimeActiveContext,
+    hasRealtimeUpdate: hasRealtimeActiveContextUpdate,
+    preferSnapshot: preferActiveContextSnapshot,
+    resetRealtimeUpdate: resetRealtimeActiveContextUpdate,
+  } = useCollectionActiveContextSync({
+    cellId: selectedCellId,
+    cellName,
+    machineId: machine?.id || null,
+    queryClient,
+  });
+  const feedbackMatchesCurrentScope = feedbackCollectionScopeRef.current === activeCollectionScope;
+  const kpiBatchId = resolveCollectionKpiBatchId({
+    hasRealtimeUpdate: hasRealtimeActiveContextUpdate,
+    realtimeActiveContext,
+    preferSnapshot: preferActiveContextSnapshot,
+    feedbackMatchesCurrentScope,
+    feedback,
+  });
+
   // KPIs consistentes com a fonte do histórico de coletas
   const { data: kpis = {}, isError: kpisUnavailable, dataUpdatedAt: kpisUpdatedAt } = useQuery({
     queryKey: [
@@ -420,7 +454,7 @@ export default function TraceabilityCollection({ embedded = false }) {
       shift,
       shiftRange.dateFrom,
       shiftRange.dateTo,
-      feedback?.lot?.pcp_import_batch_id || null,
+      kpiBatchId,
     ],
     queryFn: () => getCollectionKpis({
       cellName,
@@ -428,7 +462,7 @@ export default function TraceabilityCollection({ embedded = false }) {
       shift: shift || null,
       dateFrom: shiftRange.dateFrom,
       dateTo: shiftRange.dateTo,
-      pcpImportBatchId: feedback?.lot?.pcp_import_batch_id || null,
+      pcpImportBatchId: kpiBatchId,
     }),
     enabled: !!cellName,
     staleTime: 0,
@@ -454,12 +488,17 @@ export default function TraceabilityCollection({ embedded = false }) {
     replacement: Number(kpis.replacement) || 0,
   };
   const activeGeneralLots = Array.isArray(kpis.active_general_lots) ? kpis.active_general_lots : [];
+  const activeContextPreferred = hasRealtimeActiveContextUpdate || (
+    Boolean(kpis.active_context)
+    && (!feedbackMatchesCurrentScope || preferActiveContextSnapshot)
+  );
   const { generalLot: currentGeneralLot, clientLotCode: currentClientLotCode, customerName: currentCustomerName } = resolveCollectionLotContext({
     feedback,
     lastIdentifiedFeedback,
     activeGeneralLots,
-    activeContext: kpis.active_context,
+    activeContext: hasRealtimeActiveContextUpdate ? realtimeActiveContext : kpis.active_context,
     selectedPiece,
+    preferActiveContext: activeContextPreferred,
   });
 
   const refreshKpis = useCallback(() => {
@@ -680,6 +719,10 @@ export default function TraceabilityCollection({ embedded = false }) {
       return result;
     }
 
+    // A leitura local passa a ser a informação mais nova até a projeção do
+    // banco publicar o contexto ativo correspondente para toda a célula.
+    resetRealtimeActiveContextUpdate();
+
     const eventPayload = {
       ...payload,
       event_kind: COLLECTION_EVENT_KINDS.PRODUCTION_STAGE,
@@ -775,7 +818,7 @@ export default function TraceabilityCollection({ embedded = false }) {
       updateFeedback(result);
       return result;
     }
-  }, [cellName, shift, operator, operatorId, machine, collectionOnline, enqueue, processNow, updateFeedback, activeDowntime, collectionContextReady, collectionContextMessage]);
+  }, [cellName, shift, operator, operatorId, machine, collectionOnline, enqueue, processNow, updateFeedback, activeDowntime, collectionContextReady, collectionContextMessage, resetRealtimeActiveContextUpdate]);
 
   // Aberturas de modais operacionais
   const handleOpenRejectModal = (piece) => {

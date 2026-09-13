@@ -15,9 +15,21 @@ describe('collection metrics availability under failures', () => {
   afterEach(() => vi.useRealTimers());
 
   it('uses the scoped snapshot and preserves explicit lot filters', async () => {
-    rpc.mockResolvedValue({ data: { lot_kpis: { expected: 2113, approved: 725, pending: 1388 }, state_version: 9 } });
+    rpc.mockResolvedValue({ data: {
+      lot_kpis: { expected: 2113, approved: 725, pending: 1388 },
+      state_version: 9,
+      active_context: { active_general_lot_code: '15587', active_lot_code: '143332' },
+      active_general_lots: [{ id: 'batch', general_lot_code: '15587', lot_code: '143332' }],
+    } });
     await expect(service.getCollectionKpis({ cellName: ' Corte ', pcpImportBatchId: 'batch', lotId: 'lot' }))
-      .resolves.toMatchObject({ expected: 2113, approved: 725, pending: 1388, state_version: 9 });
+      .resolves.toMatchObject({
+        expected: 2113,
+        approved: 725,
+        pending: 1388,
+        state_version: 9,
+        active_context: { active_general_lot_code: '15587', active_lot_code: '143332' },
+        active_general_lots: [{ id: 'batch', general_lot_code: '15587', lot_code: '143332' }],
+      });
     expect(rpc).toHaveBeenCalledWith('get_collection_dashboard_snapshot_v2', expect.objectContaining({
       p_cell_name: 'Corte', p_pcp_import_batch_id: 'batch', p_lot_id: 'lot',
     }));
