@@ -1,6 +1,7 @@
 -- Integration test: only generated fixtures, every change is rolled back.
 BEGIN;
 SET LOCAL statement_timeout = '30s';
+SET LOCAL TIME ZONE 'UTC';
 DO $test$
 DECLARE
   v_user uuid := gen_random_uuid();
@@ -17,12 +18,29 @@ DECLARE
   v_code text := 'QA-REP-' || gen_random_uuid()::text;
   v_result jsonb;
   v_replay jsonb;
+  v_operator_timezone text;
+  v_reading_created_at timestamptz;
+  v_reading_date date;
+  v_reading_hour text;
+  v_event_processed_at timestamptz;
+  v_event_date date;
+  v_event_hour text;
 BEGIN
+  -- Select a real IANA timezone whose local date is deterministically different
+  -- from UTC.  This makes the historical current_date bug reproducible at any
+  -- hour while exercising the same per-operator timezone policy used in Brazil.
+  v_operator_timezone := CASE
+    WHEN extract(hour FROM clock_timestamp() AT TIME ZONE 'UTC') < 11
+      THEN 'Etc/GMT+12'
+    ELSE 'Pacific/Kiritimati'
+  END;
+
   INSERT INTO auth.users(id, email, raw_user_meta_data) VALUES(v_user, v_user::text || '@example.invalid', '{"name":"QA rollback replacement"}');
   PERFORM set_config('request.jwt.claim.sub', v_user::text, true);
   PERFORM set_config('request.jwt.claims', jsonb_build_object('sub',v_user,'role','authenticated')::text, true);
   SELECT id INTO STRICT v_cell FROM public.cells WHERE active AND public.normalize_replacement_step_code(name)='cut' ORDER BY name LIMIT 1;
-  INSERT INTO public.operators(id,name,active,login_enabled,replacement_enabled) VALUES(v_operator,'QA rollback replacement',true,true,true);
+  INSERT INTO public.operators(id,name,active,login_enabled,replacement_enabled,timezone)
+  VALUES(v_operator,'QA rollback replacement',true,true,true,v_operator_timezone);
   INSERT INTO public.operator_cell_assignments(operator_id,cell_id) VALUES(v_operator,v_cell);
   INSERT INTO public.workstation_operator_authorizations(operator_id,cell_id) VALUES(v_operator,v_cell);
   INSERT INTO public.operator_sessions(operator_id,auth_user_id,token_hash,device_id,cell_id,expires_at,shift_snapshot)
@@ -48,6 +66,29 @@ BEGIN
   END IF;
   IF NOT EXISTS(SELECT 1 FROM public.production_pieces WHERE id=v_piece AND completed_steps=ARRAY['cut'] AND current_stage='edge') THEN RAISE EXCEPTION 'Route did not advance exactly one stage'; END IF;
   IF NOT EXISTS(SELECT 1 FROM public.production_pieces WHERE id=v_original AND status='rejected') THEN RAISE EXCEPTION 'Original piece released too early'; END IF;
+
+  SELECT created_at, date, hour
+  INTO STRICT v_reading_created_at, v_reading_date, v_reading_hour
+  FROM public.production_stage_readings
+  WHERE client_event_id=v_event::text;
+  IF v_reading_date IS DISTINCT FROM (v_reading_created_at AT TIME ZONE v_operator_timezone)::date
+     OR v_reading_hour IS DISTINCT FROM to_char(v_reading_created_at AT TIME ZONE v_operator_timezone,'HH24:MI')
+     OR v_reading_date IS NOT DISTINCT FROM (v_reading_created_at AT TIME ZONE 'UTC')::date THEN
+    RAISE EXCEPTION 'Reading did not preserve operator-local date/hour: %, %, %, %',
+      v_operator_timezone, v_reading_created_at, v_reading_date, v_reading_hour;
+  END IF;
+
+  SELECT processed_at, date, hour
+  INTO STRICT v_event_processed_at, v_event_date, v_event_hour
+  FROM public.production_collection_events
+  WHERE client_event_id=v_event::text;
+  IF v_event_date IS DISTINCT FROM (v_event_processed_at AT TIME ZONE v_operator_timezone)::date
+     OR v_event_hour IS DISTINCT FROM to_char(v_event_processed_at AT TIME ZONE v_operator_timezone,'HH24:MI')
+     OR v_event_date IS NOT DISTINCT FROM (v_event_processed_at AT TIME ZONE 'UTC')::date THEN
+    RAISE EXCEPTION 'Event did not preserve operator-local date/hour: %, %, %, %',
+      v_operator_timezone, v_event_processed_at, v_event_date, v_event_hour;
+  END IF;
+
   v_replay := public.collect_replacement_stage_v3(v_token,v_code,v_event,v_device,now(),'{}');
   IF NOT coalesce((v_replay->>'idempotent')::boolean,false) THEN RAISE EXCEPTION 'Replay not idempotent: %',v_replay; END IF;
   IF (SELECT count(*) FROM public.production_stage_readings WHERE client_event_id=v_event::text) <> 1 THEN RAISE EXCEPTION 'Duplicate reading'; END IF;

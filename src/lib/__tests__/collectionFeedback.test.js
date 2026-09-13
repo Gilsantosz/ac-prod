@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeCollectionFeedback, normalizeCollectionFeedback, resolveCollectionLotContext, restoreCollectionFeedback } from '@/lib/collectionFeedback';
+import { mergeCollectionFeedback, normalizeCollectionFeedback, resolveCollectionKpiBatchId, resolveCollectionLotContext, restoreCollectionFeedback } from '@/lib/collectionFeedback';
 
 const identified = {
   client_event_id: 'event-1', collection_state: 'APPROVED', message: 'Leitura aprovada.',
@@ -72,6 +72,58 @@ describe('apresentação de recibos e lotes da coleta', () => {
     expect(resolveCollectionLotContext({ activeContext: {
       active_pcp_import_batch_id: 'batch-2', active_general_lot_code: 'GER-002', active_lot_code: 'CLI-002',
     } })).toMatchObject({ generalLot: { general_lot_code: 'GER-002', progress_percent: null }, clientLotCode: 'CLI-002' });
+  });
+
+  it('prefere o contexto ativo à última leitura antiga enquanto a próxima decisão está pendente', () => {
+    expect(resolveCollectionLotContext({
+      feedback: { client_event_id: 'event-2', collection_state: 'PENDING_DATABASE' },
+      lastIdentifiedFeedback: identified,
+      activeContext: {
+        source_client_event_id: 'event-other-station',
+        active_pcp_import_batch_id: 'batch-2',
+        active_general_lot_code: 'GER-002',
+        active_lot_id: 'client-lot-2',
+        active_lot_code: 'CLI-002',
+      },
+    })).toMatchObject({
+      generalLot: { id: 'batch-2', general_lot_code: 'GER-002' },
+      clientLotCode: 'CLI-002',
+    });
+  });
+
+  it('aplica uma troca realtime sobre o feedback anterior, mas preserva a leitura local até essa troca chegar', () => {
+    const activeContext = {
+      source_client_event_id: 'event-other-station',
+      active_pcp_import_batch_id: 'batch-2',
+      active_general_lot_code: 'GER-002',
+      active_lot_id: 'client-lot-2',
+      active_lot_code: 'CLI-002',
+    };
+
+    expect(resolveCollectionLotContext({ feedback: identified, activeContext }))
+      .toMatchObject({ generalLot: { general_lot_code: 'GER-001' }, clientLotCode: 'CLI-001' });
+    expect(resolveCollectionLotContext({ feedback: identified, activeContext, preferActiveContext: true }))
+      .toMatchObject({ generalLot: { general_lot_code: 'GER-002' }, clientLotCode: 'CLI-002' });
+  });
+
+  it('remove o filtro do lote antigo ao reconciliar o snapshot autoritativo', () => {
+    expect(resolveCollectionKpiBatchId({
+      preferSnapshot: true,
+      feedbackMatchesCurrentScope: true,
+      feedback: identified,
+    })).toBeNull();
+    expect(resolveCollectionKpiBatchId({
+      hasRealtimeUpdate: true,
+      realtimeActiveContext: { active_pcp_import_batch_id: 'batch-2' },
+      preferSnapshot: true,
+      feedbackMatchesCurrentScope: true,
+      feedback: identified,
+    })).toBe('batch-2');
+    expect(resolveCollectionKpiBatchId({
+      preferSnapshot: false,
+      feedbackMatchesCurrentScope: true,
+      feedback: identified,
+    })).toBe('batch-1');
   });
 
   it('não associa o novo lote à primeira projeção ou peça selecionada de outro lote', () => {

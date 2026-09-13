@@ -11,6 +11,20 @@ import {
 import CollectionReadItem from './CollectionReadItem';
 import { scheduleCollectionQueryInvalidation } from '@/hooks/collectionQueryInvalidation';
 
+export const COLLECTION_HISTORY_FALLBACK_MIN_MS = 15_000;
+export const COLLECTION_HISTORY_FALLBACK_MAX_MS = 19_000;
+
+export function getCollectionHistoryFallbackDelay(randomValue = Math.random()) {
+  const numericValue = Number(randomValue);
+  const boundedValue = Number.isFinite(numericValue)
+    ? Math.min(1, Math.max(0, numericValue))
+    : 0;
+  return COLLECTION_HISTORY_FALLBACK_MIN_MS + Math.round(
+    (COLLECTION_HISTORY_FALLBACK_MAX_MS - COLLECTION_HISTORY_FALLBACK_MIN_MS)
+      * boundedValue,
+  );
+}
+
 function getDateRange(selectedPeriod) {
   const now = new Date();
   let dateFrom = null;
@@ -107,7 +121,22 @@ export default function CollectionRecentReadsPanel({
   const error = isError ? 'Falha ao carregar o histórico de coletas do banco.' : null;
   const fetchReadings = useCallback(() => {
     scheduleCollectionQueryInvalidation(queryClient, { queryKey });
-  }, [queryClient, queryKey]);
+    // Este canal já é filtrado pela célula e também possui fallback periódico.
+    // Ele mantém os KPIs e o contexto de lotes convergentes caso o Broadcast
+    // privado do dispositivo/célula esteja temporariamente indisponível.
+    scheduleCollectionQueryInvalidation(
+      queryClient,
+      { queryKey: ['collection-kpis', cellName] },
+      JSON.stringify(['collection-kpis-fallback', cellName]),
+    );
+    if (operatorId) {
+      scheduleCollectionQueryInvalidation(
+        queryClient,
+        { queryKey: ['operator-shift-kpis', operatorId] },
+        JSON.stringify(['operator-shift-kpis-fallback', operatorId]),
+      );
+    }
+  }, [queryClient, queryKey, cellName, operatorId]);
 
   // Recarrega quando filtros, limit ou sinal mudar
   useEffect(() => {
@@ -149,15 +178,28 @@ export default function CollectionRecentReadsPanel({
   }, [cellId, cellName, fetchReadings]);
 
   // Rede instável ou uma janela sem assinatura Realtime não pode deixar o
-  // histórico parado indefinidamente. Este é apenas o fallback; em condição
-  // normal, as mudanças continuam chegando pelo canal acima.
+  // histórico parado indefinidamente. Em condição normal o canal acima é o
+  // único gatilho; fora dela, o jitter evita alinhar milhares de estações.
   useEffect(() => {
-    if (!cellName) return undefined;
-    const intervalId = window.setInterval(() => {
-      if (navigator.onLine !== false) fetchReadings();
-    }, 15000);
-    return () => window.clearInterval(intervalId);
-  }, [cellName, fetchReadings]);
+    if (!cellName || realtimeStatus === 'online') return undefined;
+    let cancelled = false;
+    let timeoutId = null;
+
+    const scheduleFallback = () => {
+      timeoutId = window.setTimeout(() => {
+        timeoutId = null;
+        if (cancelled) return;
+        if (navigator.onLine !== false) fetchReadings();
+        scheduleFallback();
+      }, getCollectionHistoryFallbackDelay());
+    };
+
+    scheduleFallback();
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [cellName, fetchReadings, realtimeStatus]);
 
   const handleSelect = (read) => {
     if (!read.piece_id) return;

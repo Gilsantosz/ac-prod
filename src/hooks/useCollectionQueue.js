@@ -49,12 +49,29 @@ const COLLECTION_RECONCILIATION_CATCHUP_MS = 250;
 const COLLECTION_RECONCILIATION_BATCH_SIZE = 100;
 const fallbackQueueLocks = new Set();
 
-export async function withCollectionQueueLock(task, operation = 'sync', projectRef = runtimeEnvironment.projectRef) {
+export async function withCollectionQueueLock(
+  task,
+  operation = 'sync',
+  projectRef = runtimeEnvironment.projectRef,
+  { waitIfUnavailable = false, signal } = {},
+) {
   const lockName = `acprod-collection-${operation}:${projectRef}`;
   if (globalThis.navigator?.locks?.request) {
-    return navigator.locks.request(lockName, { ifAvailable: true }, (lock) => (
-      lock ? task() : null
-    ));
+    let acquired = false;
+    const immediateResult = await navigator.locks.request(lockName, { ifAvailable: true }, (lock) => {
+      if (!lock) return null;
+      acquired = true;
+      return task();
+    });
+    if (acquired || !waitIfUnavailable) return immediateResult;
+
+    // O flush mantém uma única chamada em voo. Se outra aba detém o lock,
+    // esta espera bloqueante é acordada pelo navegador na liberação, sem
+    // polling e sem criar uma cadeia de tentativas concorrentes.
+    const runWhenAvailable = (lock) => (lock ? task() : null);
+    return signal
+      ? navigator.locks.request(lockName, { signal }, runWhenAvailable)
+      : navigator.locks.request(lockName, runWhenAvailable);
   }
   // Sem Web Locks, não criamos uma cadeia de Promises nem em outra montagem
   // do hook. Idempotência no servidor continua protegendo outros dispositivos.
@@ -249,6 +266,7 @@ export function useCollectionQueue(processFn, options = {}) {
   const flushingRef = useRef(false);
   const flushRequestedRef = useRef(false);
   const mountedRef = useRef(true);
+  const flushLockAbortRef = useRef(null);
   const scheduledFlushRef = useRef(null);
   const scheduledStatsRefreshRef = useRef(null);
   const statsRefreshInFlightRef = useRef(false);
@@ -271,6 +289,8 @@ export function useCollectionQueue(processFn, options = {}) {
     return () => {
       mountedRef.current = false;
       flushRequestedRef.current = false;
+      flushLockAbortRef.current?.abort();
+      flushLockAbortRef.current = null;
     };
   }, []);
 
@@ -287,6 +307,16 @@ export function useCollectionQueue(processFn, options = {}) {
   }, [cellName, machineId, eventKind]);
 
   const runStatsRefresh = useCallback(async () => {
+    if (!mountedRef.current) {
+      statsRefreshQueuedRef.current = false;
+      return;
+    }
+    // O resumo usa getAll() da fila. Durante um envio ele é apenas informativo,
+    // então espere a liberação do hot path antes de materializar o snapshot.
+    if (flushingRef.current) {
+      statsRefreshQueuedRef.current = true;
+      return;
+    }
     if (statsRefreshInFlightRef.current) {
       statsRefreshQueuedRef.current = true;
       return;
@@ -301,8 +331,9 @@ export function useCollectionQueue(processFn, options = {}) {
         } catch (error) {
           console.warn('[CollectionQueue] Falha ao atualizar estatísticas locais:', error);
         }
-      } while (statsRefreshQueuedRef.current);
+      } while (mountedRef.current && statsRefreshQueuedRef.current);
     } finally {
+      if (!mountedRef.current) statsRefreshQueuedRef.current = false;
       statsRefreshInFlightRef.current = false;
     }
   }, [refreshStats]);
@@ -645,37 +676,48 @@ export function useCollectionQueue(processFn, options = {}) {
     // captura nesta janela pede a próxima passagem, sem disputar o mesmo lock.
     flushingRef.current = true;
     let acquired = false;
+    const lockAbortController = typeof globalThis.AbortController === 'function'
+      ? new AbortController()
+      : null;
+    flushLockAbortRef.current = lockAbortController;
     try {
       await withCollectionQueueLock(async () => {
         if (!mountedRef.current || !navigator.onLine) return;
         acquired = true;
         setFlushing(true);
         try {
-          try {
-            await runStaleProcessingRecovery();
-          } catch (error) {
-            // Recuperar itens órfãos é manutenção defensiva; uma falha aqui não
-            // pode impedir o envio dos eventos pending já prontos para o servidor.
-            console.warn('[CollectionQueue] Falha ao recuperar eventos travados:', error);
-          }
-
-          if (!mountedRef.current || !navigator.onLine) return;
-          if (microBatch && typeof processBatchFnRef.current === 'function') {
-            await flushCollectionMicroBatchQueue(processBatchFnRef.current, {
-              batchSize,
-              eventKind,
-              onResult: handleBatchResult,
-            });
-          } else {
-            await flushCollectionQueue(processFnRef.current);
-          }
-        } finally {
-          await refreshStats();
+          await runStaleProcessingRecovery();
+        } catch (error) {
+          // Recuperar itens órfãos é manutenção defensiva; uma falha aqui não
+          // pode impedir o envio dos eventos pending já prontos para o servidor.
+          console.warn('[CollectionQueue] Falha ao recuperar eventos travados:', error);
         }
+
+        if (!mountedRef.current || !navigator.onLine) return;
+        if (microBatch && typeof processBatchFnRef.current === 'function') {
+          await flushCollectionMicroBatchQueue(processBatchFnRef.current, {
+            batchSize,
+            eventKind,
+            onResult: handleBatchResult,
+          });
+        } else {
+          await flushCollectionQueue(processFnRef.current);
+        }
+      }, 'sync', runtimeEnvironment.projectRef, {
+        waitIfUnavailable: true,
+        signal: lockAbortController?.signal,
       });
+    } catch (error) {
+      if (error?.name !== 'AbortError') throw error;
     } finally {
+      if (flushLockAbortRef.current === lockAbortController) {
+        flushLockAbortRef.current = null;
+      }
       flushingRef.current = false;
       if (mountedRef.current) setFlushing(false);
+      // Estatísticas não fazem parte da confirmação da leitura nem do Web Lock.
+      // A atualização consolidada ocorre depois da liberação do caminho de envio.
+      if (mountedRef.current) refreshStatsSafely();
       const repeat = acquired && flushRequestedRef.current;
       flushRequestedRef.current = false;
       // A Promise do Web Lock já encerrou: envio direto, inclusive com a aba
@@ -691,7 +733,7 @@ export function useCollectionQueue(processFn, options = {}) {
     handleBatchResult,
     eventKind,
     microBatch,
-    refreshStats,
+    refreshStatsSafely,
   ]);
 
   const scheduleFlush = useCallback(() => {
@@ -836,13 +878,10 @@ export function useCollectionQueue(processFn, options = {}) {
     const id = await enqueueCollectionEvent(payload);
     refreshStatsSafely();
 
-    if (navigator.onLine && microBatch) {
-      scheduleFlush();
-    } else if (
-      navigator.onLine
-      && (enqueueOpts.autoFlush === true || enqueueOpts.autoFlush !== false)
-    ) {
-      flush();
+    const shouldAutoFlush = enqueueOpts.autoFlush !== false;
+    if (navigator.onLine && shouldAutoFlush) {
+      if (microBatch) scheduleFlush();
+      else flush();
     }
     return id;
   }, [

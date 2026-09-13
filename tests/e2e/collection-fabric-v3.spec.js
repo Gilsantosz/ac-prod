@@ -3,6 +3,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const userId = '00000000-0000-4000-8000-000000000001';
+const cellId = '00000000-0000-4000-8000-000000000010';
+const machineId = '00000000-0000-4000-8000-000000000020';
 const receivedAtDb = '2026-06-19T11:00:00.000Z';
 
 const MIME_TYPES = {
@@ -118,6 +120,8 @@ async function mockCollectionV3(page) {
     finalize: false,
     ingestedEnvelope: null,
     ingestedDeviceId: null,
+    ingestedRpc: null,
+    confirmedContext: null,
     clientEventIds: [],
   };
   const user = {
@@ -178,11 +182,20 @@ async function mockCollectionV3(page) {
     }
     if (requestPath.endsWith('/rest/v1/cells')) {
       return fulfill([{
-        id: 'cell-cut',
+        id: cellId,
         name: 'Corte',
         active: true,
         shift_hours: { shift1: 8, shift2: 8, shift3: 8 },
         notes: '',
+      }]);
+    }
+    if (requestPath.endsWith('/rest/v1/production_machines')) {
+      return fulfill([{
+        id: machineId,
+        name: 'Nanshing E2E',
+        station_name: 'Corte',
+        cell_name: 'Corte',
+        active: true,
       }]);
     }
     if (requestPath.endsWith('/rest/v1/rpc/operator_login_v2')) {
@@ -197,11 +210,26 @@ async function mockCollectionV3(page) {
           login_name: 'operador.teste',
           registration_masked: '***123',
           shift: '1º Turno',
-          primary_cell_id: 'cell-cut',
-          primary_machine_id: null,
-          cells: [{ id: 'cell-cut', name: 'Corte', is_primary: true }],
-          machines: [],
+          primary_cell_id: cellId,
+          primary_machine_id: machineId,
+          cells: [{ id: cellId, name: 'Corte', is_primary: true }],
+          machines: [{
+            id: machineId,
+            name: 'Nanshing E2E',
+            cell_id: cellId,
+            cell_name: 'Corte',
+            is_primary: true,
+          }],
         },
+      });
+    }
+    if (requestPath.endsWith('/rest/v1/rpc/set_operator_session_context')) {
+      const payload = request.postDataJSON();
+      state.confirmedContext = payload;
+      return fulfill({
+        success: true,
+        cell_name: 'Corte',
+        machine_name: 'Nanshing E2E',
       });
     }
     if (requestPath.endsWith('/rest/v1/rpc/logout_operator_session')
@@ -215,7 +243,11 @@ async function mockCollectionV3(page) {
       return fulfill({
         collection_pipeline_v3_ingress: {
           enabled: true,
-          rollout_scope: { all: true },
+          rollout_scope: {
+            all: true,
+            immediate_rpc: 'ingest_collection_batch_immediate_v3',
+            immediate_max_events: 5,
+          },
         },
         collection_pipeline_v3_broadcast: {
           enabled: false,
@@ -223,8 +255,9 @@ async function mockCollectionV3(page) {
         },
       });
     }
-    if (requestPath.endsWith('/rest/v1/rpc/ingest_collection_batch_v3')) {
+    if (requestPath.endsWith('/rest/v1/rpc/ingest_collection_batch_immediate_v3')) {
       const payload = request.postDataJSON();
+      state.ingestedRpc = 'ingest_collection_batch_immediate_v3';
       state.ingestedEnvelope = payload.p_events;
       state.ingestedDeviceId = payload.p_device_id;
       state.clientEventIds = payload.p_events.events.map((event) => event.client_event_id);
@@ -254,6 +287,7 @@ async function mockCollectionV3(page) {
         erro: null,
         retryable: false,
         batch_id: 'batch-v3-e2e',
+        pipeline_version: 3,
         received_at_db: receivedAtDb,
         server_received_at: receivedAtDb,
         processado_em: new Date().toISOString(),
@@ -288,7 +322,18 @@ test('offline e ACK permanecem neutros até APPROVED após a reconexão', async 
   await page.getByLabel('Matrícula').fill('00123');
   await page.getByRole('button', { name: 'Entrar na Produção' }).click();
   const scanner = page.getByLabel('Identificação produtiva');
+  // O posto precisa ser confirmado no servidor antes de o leitor aceitar
+  // qualquer etiqueta. O foco abaixo representa o scanner físico assumindo o
+  // campo somente depois desse handshake fail-closed.
+  await expect(scanner).toBeEnabled();
+  await scanner.focus();
   await expect(scanner).toBeFocused();
+  expect(state.confirmedContext).toMatchObject({
+    p_session_token: 'operator-token-v2-only',
+    p_cell_id: cellId,
+    p_machine_id: machineId,
+    p_station_name: 'Coletor Chão de Fábrica',
+  });
 
   await context.setOffline(true);
   await scanner.fill('09950001');
@@ -323,6 +368,7 @@ test('offline e ACK permanecem neutros até APPROVED após a reconexão', async 
     }],
   });
   expect(state.ingestedEnvelope.events).toHaveLength(1);
+  expect(state.ingestedRpc).toBe('ingest_collection_batch_immediate_v3');
   expect(state.ingestedDeviceId).toMatch(
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
   );

@@ -42,6 +42,7 @@ describe('CollectionFullscreenKiosk Component', () => {
       progress_percent: 70.83,
     },
     currentClientLotCode: 'LOTE-CLI-001',
+    currentCustomerName: 'Cliente Exemplo LTDA',
     activeDowntime: null,
     refetchActiveDowntime: vi.fn(),
     refreshData: vi.fn(),
@@ -94,5 +95,17 @@ describe('CollectionFullscreenKiosk Component', () => {
     const closeBtn = screen.getByRole('button', { name: /Sair Tela Cheia/i });
     fireEvent.click(closeBtn);
     expect(defaultProps.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('não mistura o cliente da leitura anterior quando o contexto autoritativo não tem cliente', () => {
+    render(<CollectionFullscreenKiosk
+      {...defaultProps}
+      currentClientLotCode="LOTE-CLI-NOVO"
+      currentCustomerName={null}
+      feedback={{ order: { customer_name: 'Cliente do lote anterior' } }}
+    />);
+
+    expect(screen.getByText('LOTE-CLI-NOVO')).toBeInTheDocument();
+    expect(screen.queryByText('Cliente do lote anterior')).not.toBeInTheDocument();
   });
 });

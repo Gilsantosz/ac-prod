@@ -113,6 +113,23 @@ describe('AC.Prod2 collection micro-batching v8.6 contract', () => {
     expect(workflow).toContain('collection_async_worker_concurrency_bounded');
   });
 
+  it('publica a decisão imediata separada da projeção assíncrona', () => {
+    const workflow = repoFile('.github/workflows/deploy.yml');
+    const service = repoFile('src/lib/collectionBatchService.js');
+
+    expect(workflow).toContain('"collection_transport": "immediate_v3"');
+    expect(workflow).toContain(
+      '"collection_ingress_rpc": "ingest_collection_batch_immediate_v3"',
+    );
+    expect(workflow).toContain('"collection_max_events_per_request": 5');
+    expect(workflow).toContain('"collection_projection": "async_v3_outbox"');
+    expect(workflow).not.toContain('"collection_transport": "async"');
+    expect(service).toContain(
+      "scope.immediate_rpc === 'ingest_collection_batch_immediate_v3'",
+    );
+    expect(service).toContain('Math.min(5,');
+  });
+
   it('impede deploy quando a saúde dinâmica da coleta não estiver na v9.2.3', () => {
     const workflow = repoFile('.github/workflows/deploy.yml');
 

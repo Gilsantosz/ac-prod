@@ -50,6 +50,7 @@ import QualityPage from '@/pages/QualityPage';
 import Traceability from '@/pages/Traceability';
 import { useProductionRealtimeSync } from '@/hooks/useProductionRealtimeSync';
 import { isSupabaseConfigured } from '@/lib/supabaseClient';
+import { shouldEnableGlobalProductionRealtime } from '@/lib/realtimeRoutePolicy';
 
 const AcProdRedirect = () => {
   const location = useLocation();
@@ -85,7 +86,12 @@ const MissingSupabaseConfiguration = () => (
 
 const AuthenticatedApp = () => {
   const { user, isLoadingAuth, authError, navigateToLogin } = useAuth();
-  useProductionRealtimeSync({ enabled: !!user && !isLoadingAuth && !authError });
+  const location = useLocation();
+  const globalRealtimeEnabled = !!user
+    && !isLoadingAuth
+    && !authError
+    && shouldEnableGlobalProductionRealtime(location.pathname);
+  useProductionRealtimeSync({ enabled: globalRealtimeEnabled });
 
   // Show loading spinner while checking auth
   if (isLoadingAuth) {

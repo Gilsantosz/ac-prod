@@ -205,6 +205,58 @@ export function unsubscribeFromCollectionHistory(channel) {
 }
 
 /**
+ * Escuta somente a troca do lote ativo da célula. A página de coleta usa este
+ * canal estreito no lugar do canal global de todas as tabelas produtivas.
+ */
+export function subscribeToCollectionActiveContext({
+  cellId,
+  cellName,
+  callback,
+  onReady,
+  onStatus,
+  channelSuffix = '',
+}) {
+  const trimmedName = cellName?.trim();
+  const uniqueId = Math.random().toString(36).substring(2, 7);
+  const suffix = channelSuffix ? `-${channelSuffix}-${uniqueId}` : `-${uniqueId}`;
+  const channelName = `collection-active-context-${trimmedName || cellId || 'all'}${suffix}`;
+  const contextEventConfig = {
+    schema: 'public',
+    table: 'production_cell_active_contexts',
+  };
+
+  if (cellId) contextEventConfig.filter = `cell_id=eq.${cellId}`;
+  else if (trimmedName) contextEventConfig.filter = `cell_name=eq.${trimmedName}`;
+
+  try {
+    return supabase
+      .channel(channelName)
+      // O contrato desta projeção é append/upsert: as rotinas produtivas fazem
+      // apenas INSERT/UPDATE. DELETE não aceita filtro no Postgres Changes e,
+      // por isso, não deve abrir uma assinatura global em todas as estações.
+      .on('postgres_changes', { ...contextEventConfig, event: 'INSERT' }, callback)
+      .on('postgres_changes', { ...contextEventConfig, event: 'UPDATE' }, callback)
+      // O evento system confirma que o listener de CDC do servidor está
+      // pronto. Uma nova fotografia após essa confirmação fecha a janela entre
+      // o primeiro GET e a assinatura efetiva do websocket.
+      .on('system', {}, (payload = {}) => {
+        if (payload.extension === 'postgres_changes' && payload.status === 'ok') {
+          onReady?.(payload);
+        }
+      })
+      .subscribe((status) => onStatus?.(status));
+  } catch (error) {
+    console.error('Erro ao subscrever ao contexto ativo da coleta:', error);
+    onStatus?.('CHANNEL_ERROR');
+    return null;
+  }
+}
+
+export function unsubscribeFromCollectionActiveContext(channel) {
+  return unsubscribeFromCollectionHistory(channel);
+}
+
+/**
  * Retorna os KPIs calculados de acordo com os filtros aplicados
  */
 const SNAPSHOT_SCHEMA_BACKOFF_MS = 60_000;
@@ -265,6 +317,9 @@ export async function getCollectionKpis({
         replacement: Number(kpis.replacement) || 0,
         state_version: snapshotV2.state_version,
         active_context: snapshotV2.active_context,
+        active_general_lots: Array.isArray(snapshotV2.active_general_lots)
+          ? snapshotV2.active_general_lots
+          : [],
       };
     }
   }

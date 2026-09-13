@@ -403,6 +403,78 @@ def main() -> int:
             fail(f"operação destrutiva proibida encontrada: {marker}")
 
     workflow = read(repo / ".github" / "workflows" / "deploy.yml")
+    immediate_release_gate = read(
+        migrations / "20260913041141_collection_immediate_public_release_gate.sql"
+    )
+    require_all(
+        immediate_release_gate,
+        (
+            "get_public_collection_immediate_release",
+            "ingest_collection_batch_immediate_v3(uuid,uuid,jsonb)",
+            "collection_immediate_rpc_security",
+            "collection_immediate_definition_approved",
+            "collection_immediate_context_private",
+            "collection_immediate_batch_limit_5",
+            "collection_immediate_decision_committed",
+            "collection_immediate_projection_async",
+            "collection_immediate_rollout_all",
+            "REVOKE ALL ON FUNCTION public.get_public_collection_immediate_release()",
+        ),
+        "gate público da decisão imediata V3",
+    )
+    require_none(
+        immediate_release_gate,
+        ("DROP TABLE", "TRUNCATE", "DELETE FROM public."),
+        "gate público da decisão imediata V3",
+    )
+    immediate_owner_gate = read(
+        migrations / "20260913043419_harden_collection_immediate_release_owner.sql"
+    )
+    require_all(
+        immediate_owner_gate,
+        (
+            "get_public_collection_immediate_release",
+            "2744ece1f4841eae43fc88ea8bf7bf0f",
+            "42a7a011b423cd0b624c3133326452da",
+            "90ffa0ee5c0f4b6b82c3a92a7d056bcf",
+            "collection_immediate_rpc_owner",
+            "pg_get_userbyid(function_row.proowner) = 'postgres'",
+            "COLLECTION_IMMEDIATE_RELEASE_GATE_METADATA_CHANGED",
+            "COLLECTION_IMMEDIATE_RELEASE_GATE_BASELINE_CHANGED",
+            "COLLECTION_IMMEDIATE_RELEASE_GATE_POSTCONDITION_FAILED",
+            "gate_migration_version",
+            "20260913042100",
+            "gate_release_version",
+            "20260913_acprod_collection_immediate_owner_gate_v1",
+        ),
+        "hardening de proprietário do gate imediato V3",
+    )
+    require_none(
+        immediate_owner_gate,
+        ("DROP TABLE", "TRUNCATE", "DELETE FROM public."),
+        "hardening de proprietário do gate imediato V3",
+    )
+    immediate_owner_gate_ledger = read(
+        migrations / "20260913043729_normalize_collection_immediate_gate_ledger.sql"
+    )
+    require_all(
+        immediate_owner_gate_ledger,
+        (
+            "42a7a011b423cd0b624c3133326452da",
+            "6ff7ea833013958a8e54636969ec7d12",
+            "20260913043419",
+            "20260913_acprod_collection_immediate_owner_gate_v1_1",
+            "COLLECTION_IMMEDIATE_RELEASE_GATE_METADATA_CHANGED",
+            "COLLECTION_IMMEDIATE_RELEASE_GATE_LEDGER_PATCH_POINT_CHANGED",
+            "COLLECTION_IMMEDIATE_RELEASE_GATE_LEDGER_POSTCONDITION_FAILED",
+        ),
+        "alinhamento do gate imediato V3 ao ledger Supabase",
+    )
+    require_none(
+        immediate_owner_gate_ledger,
+        ("DROP TABLE", "TRUNCATE", "DELETE FROM public."),
+        "alinhamento do gate imediato V3 ao ledger Supabase",
+    )
     require_all(
         workflow,
         (
@@ -413,6 +485,12 @@ def main() -> int:
             'REQUIRED_ASYNC_COLLECTION_RELEASE_VERSION: "20260831_acprod_collection_async_sync_v8_8"',
             'REQUIRED_RUNTIME_COLLECTION_MIGRATION_VERSION: "v9.2.3"',
             'REQUIRED_RUNTIME_COLLECTION_RELEASE_VERSION: "20260901_acprod_collection_runtime_health_security_v9_2_3"',
+            'REQUIRED_IMMEDIATE_COLLECTION_MIGRATION_VERSION: "20260908154004"',
+            'REQUIRED_IMMEDIATE_COLLECTION_RELEASE_VERSION: "20260908_acprod_collection_immediate_decision_v3"',
+            'REQUIRED_IMMEDIATE_GATE_MIGRATION_VERSION: "20260913043419"',
+            'REQUIRED_IMMEDIATE_GATE_RELEASE_VERSION: "20260913_acprod_collection_immediate_owner_gate_v1_1"',
+            '"collection_immediate_gate_migration_version": "${REQUIRED_IMMEDIATE_GATE_MIGRATION_VERSION}"',
+            '"collection_immediate_gate_release_version": "${REQUIRED_IMMEDIATE_GATE_RELEASE_VERSION}"',
             "collection_exact_8_digit_scan",
             "collection_active_tags_8_digits",
             "replacement_quality_role",
@@ -448,6 +526,18 @@ def main() -> int:
             "collection_runtime_ingress_trigger",
             "collection_runtime_worker_secret_verifier",
             "collection_runtime_worker_timeout_30s",
+            "get_public_collection_immediate_release",
+            "IMMEDIATE_COLLECTION_RELEASE_OK",
+            "collection_immediate_rpc_owner",
+            "collection_immediate_rpc_security",
+            "gate_migration_version",
+            "gate_release_version",
+            "collection_immediate_definition_approved",
+            "collection_immediate_context_private",
+            "collection_immediate_batch_limit_5",
+            "collection_immediate_decision_committed",
+            "collection_immediate_projection_async",
+            "collection_immediate_rollout_all",
             "collection_sync_operator_kpis_event_ledger",
             "collection_sync_operator_covering_index",
             "collection_sync_manual_stage_index",
@@ -456,7 +546,12 @@ def main() -> int:
             "collection_sync_idle_wakeup_guard",
             "collection_sync_fallback_fifteen_seconds",
             "collection_sync_shift_window_constant_time",
-            '"collection_transport": "async"',
+            '"collection_transport": "immediate_v3"',
+            '"collection_ingress_rpc": "ingest_collection_batch_immediate_v3"',
+            '"collection_max_events_per_request": 5',
+            '"collection_projection": "async_v3_outbox"',
+            '"collection_immediate_migration_version"',
+            '"collection_immediate_release_version"',
             '"collection_async_migration_version"',
             '"collection_async_release_version"',
             '"collection_runtime_migration_version"',
@@ -485,6 +580,7 @@ def main() -> int:
             "get_public_collection_micro_batch_release",
             "MICRO_BATCH_RELEASE_OK",
             "collection_micro_batch_explicit_grants",
+            '"collection_transport": "async"',
         ),
         "workflow",
     )
@@ -614,9 +710,32 @@ def main() -> int:
         app,
         (
             "const { user, isLoadingAuth, authError, navigateToLogin } = useAuth();",
-            "useProductionRealtimeSync({ enabled: !!user && !isLoadingAuth && !authError });",
+            "shouldEnableGlobalProductionRealtime(location.pathname)",
+            "useProductionRealtimeSync({ enabled: globalRealtimeEnabled });",
         ),
-        "Realtime condicionado à sessão autenticada",
+        "Realtime condicionado à sessão autenticada e à rota",
+    )
+    realtime_route_policy = read(repo / "src" / "lib" / "realtimeRoutePolicy.js")
+    require_all(
+        realtime_route_policy,
+        ("normalizePathname(pathname) !== '/coleta'",),
+        "isolamento do Realtime global na coleta",
+    )
+    collection_recent_reads = read(
+        repo / "src" / "components" / "collection" / "CollectionRecentReadsPanel.jsx"
+    )
+    require_all(
+        collection_recent_reads,
+        (
+            "subscribeToCollectionHistory({",
+            "{ queryKey: ['collection-kpis', cellName] }",
+            "{ queryKey: ['operator-shift-kpis', operatorId] }",
+            "COLLECTION_HISTORY_FALLBACK_MIN_MS = 15_000",
+            "COLLECTION_HISTORY_FALLBACK_MAX_MS = 19_000",
+            "if (!cellName || realtimeStatus === 'online') return undefined;",
+            "getCollectionHistoryFallbackDelay()",
+        ),
+        "fallback filtrado de histórico, KPIs e lotes na coleta",
     )
 
     approval_modal = read(repo / "src" / "components" / "replacement" / "ReplacementApproveModal.jsx")
@@ -692,7 +811,7 @@ def main() -> int:
 
     print("AUDIT_ACPROD_ROLLOUT_OK")
     print(f"ledger_versions={len(REQUIRED_LEDGER)}")
-    print("database_gate=collection_fast8_v8_5+async_v8_8+runtime_v9_2_3_security_fail_closed")
+    print("database_gate=collection_fast8_v8_5+async_v8_8+runtime_v9_2_3+immediate_v3_fail_closed")
     print("scanner_trigger=immediate_on_eighth_digit")
     print("scanner_input=exactly_8_numeric_digits")
     print("scanner_throughput=non_blocking_capture_fifo_sync")

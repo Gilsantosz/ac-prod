@@ -165,7 +165,7 @@ export default function CollectionFullscreenKiosk({
         <CollectionLotBanner
           generalLot={currentGeneralLot}
           clientLotCode={currentClientLotCode}
-          customerName={currentCustomerName || feedback?.order?.customer_name}
+          customerName={currentCustomerName}
           focus
         />
 

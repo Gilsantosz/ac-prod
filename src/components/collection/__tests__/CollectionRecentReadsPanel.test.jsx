@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 
 const mocks = vi.hoisted(() => ({
   getCollectionHistory: vi.fn(),
@@ -14,10 +14,13 @@ vi.mock('../CollectionReadItem', () => ({
   default: () => <div data-testid="collection-read-item" />,
 }));
 
-import CollectionRecentReadsPanel from '../CollectionRecentReadsPanel';
+import CollectionRecentReadsPanel, {
+  getCollectionHistoryFallbackDelay,
+} from '../CollectionRecentReadsPanel';
 
 describe('CollectionRecentReadsPanel realtime refresh', () => {
   let realtimeCallback;
+  let realtimeStatusCallback;
   let queryClient;
   const renderPanel = (children) => render(children, {
     wrapper: ({ children: content }) => <QueryClientProvider client={queryClient}>{content}</QueryClientProvider>,
@@ -27,11 +30,13 @@ describe('CollectionRecentReadsPanel realtime refresh', () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     realtimeCallback = null;
+    realtimeStatusCallback = null;
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
     mocks.getCollectionHistory.mockResolvedValue([]);
     mocks.getCollectionHistoryCount.mockResolvedValue(0);
-    mocks.subscribeToCollectionHistory.mockImplementation(({ callback }) => {
+    mocks.subscribeToCollectionHistory.mockImplementation(({ callback, onStatus }) => {
       realtimeCallback = callback;
+      realtimeStatusCallback = onStatus;
       return { topic: 'collection-history-test' };
     });
   });
@@ -156,5 +161,71 @@ describe('CollectionRecentReadsPanel realtime refresh', () => {
     });
     expect(mocks.getCollectionHistory).toHaveBeenCalledTimes(2);
     view.unmount();
+  });
+
+  it('atualiza os KPIs da célula pelo canal filtrado e pelo fallback periódico', async () => {
+    const fetchKpis = vi.fn().mockResolvedValue({ approved: 1 });
+    const fetchShiftKpis = vi.fn().mockResolvedValue({ approved: 1 });
+    const KpiObserver = () => {
+      useQuery({
+        queryKey: ['collection-kpis', 'Corte', 'machine-1'],
+        queryFn: fetchKpis,
+      });
+      useQuery({
+        queryKey: ['operator-shift-kpis', 'operator-1', '1º Turno'],
+        queryFn: fetchShiftKpis,
+      });
+      return null;
+    };
+    const view = renderPanel(<>
+      <KpiObserver />
+      <CollectionRecentReadsPanel
+        cellId="cell-1"
+        cellName="Corte"
+        workstationId="machine-1"
+        operatorId="operator-1"
+        shift="1º Turno"
+        onSelectPiece={vi.fn()}
+      />
+    </>);
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fetchKpis).toHaveBeenCalledTimes(1);
+    expect(fetchShiftKpis).toHaveBeenCalledTimes(1);
+
+    act(() => realtimeCallback());
+    await act(async () => vi.advanceTimersByTimeAsync(750));
+    expect(fetchKpis).toHaveBeenCalledTimes(2);
+    expect(fetchShiftKpis).toHaveBeenCalledTimes(2);
+
+    act(() => realtimeStatusCallback('SUBSCRIBED'));
+    await act(async () => vi.advanceTimersByTimeAsync(750));
+    expect(fetchKpis).toHaveBeenCalledTimes(3);
+    expect(fetchShiftKpis).toHaveBeenCalledTimes(3);
+
+    await act(async () => vi.advanceTimersByTimeAsync(20_000));
+    expect(fetchKpis).toHaveBeenCalledTimes(3);
+    expect(fetchShiftKpis).toHaveBeenCalledTimes(3);
+
+    act(() => realtimeStatusCallback('TIMED_OUT'));
+    await act(async () => vi.advanceTimersByTimeAsync(14_999));
+    expect(fetchKpis).toHaveBeenCalledTimes(3);
+    expect(fetchShiftKpis).toHaveBeenCalledTimes(3);
+
+    await act(async () => vi.advanceTimersByTimeAsync(4_751));
+    expect(fetchKpis).toHaveBeenCalledTimes(4);
+    expect(fetchShiftKpis).toHaveBeenCalledTimes(4);
+    view.unmount();
+  });
+
+  it('mantém o jitter do fallback entre 15 e 19 segundos', () => {
+    expect(getCollectionHistoryFallbackDelay(-1)).toBe(15_000);
+    expect(getCollectionHistoryFallbackDelay(0)).toBe(15_000);
+    expect(getCollectionHistoryFallbackDelay(0.5)).toBe(17_000);
+    expect(getCollectionHistoryFallbackDelay(1)).toBe(19_000);
+    expect(getCollectionHistoryFallbackDelay(2)).toBe(19_000);
   });
 });

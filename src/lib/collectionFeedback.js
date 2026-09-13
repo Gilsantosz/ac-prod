@@ -97,13 +97,63 @@ export function hasCollectionLotIdentity(value) {
     || value?.lot?.general_lot_code || value?.general_lot?.general_lot_code || value?.general_lot_code);
 }
 
+export function resolveCollectionKpiBatchId({
+  hasRealtimeUpdate,
+  realtimeActiveContext,
+  preferSnapshot,
+  feedbackMatchesCurrentScope,
+  feedback,
+}) {
+  if (hasRealtimeUpdate) {
+    return realtimeActiveContext?.active_pcp_import_batch_id || null;
+  }
+  // Reconexão, foco e reconciliação de segurança precisam consultar o snapshot
+  // sem o lote antigo; o banco então escolhe o contexto ativo autoritativo.
+  if (preferSnapshot) return null;
+  if (feedbackMatchesCurrentScope) {
+    return feedback?.lot?.pcp_import_batch_id || null;
+  }
+  return null;
+}
+
 /** Usa identificação recebida do servidor; ausência de progresso permanece N/D. */
-export function resolveCollectionLotContext({ feedback, lastIdentifiedFeedback, activeGeneralLots = [], activeContext, selectedPiece }) {
-  const source = normalizeCollectionFeedback(hasCollectionLotIdentity(feedback) ? feedback : lastIdentifiedFeedback || {});
+export function resolveCollectionLotContext({
+  feedback,
+  lastIdentifiedFeedback,
+  activeGeneralLots = [],
+  activeContext,
+  selectedPiece,
+  preferActiveContext = false,
+}) {
+  const activeContextFeedback = activeContext ? {
+    client_event_id: activeContext.source_client_event_id,
+    lot: {
+      id: activeContext.active_lot_id,
+      lot_code: activeContext.active_lot_code,
+      pcp_import_batch_id: activeContext.active_pcp_import_batch_id,
+      general_lot_code: activeContext.active_general_lot_code,
+    },
+    general_lot: {
+      id: activeContext.active_pcp_import_batch_id,
+      general_lot_code: activeContext.active_general_lot_code,
+      progress_percent: activeContext.progress_percent,
+    },
+    order: { customer_name: activeContext.customer_name },
+  } : {};
+  const activeContextIdentified = hasCollectionLotIdentity(activeContextFeedback);
+  const currentFeedbackIdentified = hasCollectionLotIdentity(feedback);
+  const sourceInput = preferActiveContext
+    ? activeContextFeedback
+    : currentFeedbackIdentified
+      ? feedback
+      : activeContextIdentified
+        ? activeContextFeedback
+        : lastIdentifiedFeedback || {};
+  const source = normalizeCollectionFeedback(sourceInput);
   const batchId = source.lot?.pcp_import_batch_id || source.general_lot?.id;
   const generalCode = source.lot?.general_lot_code || source.general_lot?.general_lot_code || source.general_lot_code;
-  const candidates = [...activeGeneralLots];
-  if (activeContext) candidates.push({
+  const candidates = preferActiveContext ? [] : [...activeGeneralLots];
+  if (activeContext && !preferActiveContext) candidates.push({
     id: activeContext.active_pcp_import_batch_id,
     general_lot_code: activeContext.active_general_lot_code,
     lot_id: activeContext.active_lot_id,
@@ -119,7 +169,7 @@ export function resolveCollectionLotContext({ feedback, lastIdentifiedFeedback, 
         ? candidates.find((lot) => (source.lot?.id && lot.lot_id === source.lot.id) || (source.lot?.lot_code && lot.lot_code === source.lot.lot_code))
         : candidates[0];
   const progress = match?.progress_percent ?? source.general_lot?.progress_percent;
-  const selectedFallback = !hasCollectionLotIdentity(source) && !match ? selectedPiece : null;
+  const selectedFallback = !preferActiveContext && !hasCollectionLotIdentity(source) && !match ? selectedPiece : null;
   return {
     generalLot: {
       id: batchId || match?.id || null,
