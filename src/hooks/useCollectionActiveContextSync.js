@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { scheduleCollectionQueryInvalidation } from '@/hooks/collectionQueryInvalidation';
+import { collectionContextMatchesMachine } from '@/lib/collectionContextScope';
 import {
   subscribeToCollectionActiveContext,
   unsubscribeFromCollectionActiveContext,
@@ -7,11 +8,6 @@ import {
 
 export const COLLECTION_CONTEXT_SAFETY_MIN_MS = 4 * 60 * 1000;
 export const COLLECTION_CONTEXT_SAFETY_JITTER_MS = 2 * 60 * 1000;
-
-function sameMachine(activeMachineId, eventMachineId) {
-  if (!activeMachineId || !eventMachineId) return true;
-  return String(activeMachineId) === String(eventMachineId);
-}
 
 /**
  * Mantém apenas o contexto de lote da estação sincronizado. O retorno mais
@@ -60,7 +56,7 @@ export function useCollectionActiveContextSync({
         if (cancelled) return;
         const row = payload.new || null;
         const eventMachineId = row?.machine_id || null;
-        if (!sameMachine(machineId, eventMachineId)) return;
+        if (!row || !collectionContextMatchesMachine(machineId, eventMachineId)) return;
 
         setLatestUpdate({ scopeKey, context: row });
         setSnapshotPriorityScope(scopeKey);
