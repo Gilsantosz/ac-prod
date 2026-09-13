@@ -710,7 +710,7 @@ def main() -> int:
         app,
         (
             "const { user, isLoadingAuth, authError, navigateToLogin } = useAuth();",
-            "shouldEnableGlobalProductionRealtime(location.pathname)",
+            "shouldEnableGlobalProductionRealtime(location.pathname, location.search)",
             "useProductionRealtimeSync({ enabled: globalRealtimeEnabled });",
         ),
         "Realtime condicionado à sessão autenticada e à rota",
@@ -718,8 +718,16 @@ def main() -> int:
     realtime_route_policy = read(repo / "src" / "lib" / "realtimeRoutePolicy.js")
     require_all(
         realtime_route_policy,
-        ("normalizePathname(pathname) !== '/coleta'",),
-        "isolamento do Realtime global na coleta",
+        (
+            "const normalizedPath = normalizePathname(pathname);",
+            "normalizedPath === '/coleta'",
+            "normalizedPath === '/coleta-rastreabilidade'",
+            "normalizedPath === '/coleta-codigo-rfid'",
+            "if (normalizedPath !== '/entrada') return true;",
+            "new URLSearchParams(search || inlineSearch).get('modo')",
+            "return Boolean(mode) && mode !== 'coleta' && mode !== 'collection';",
+        ),
+        "isolamento do Realtime global na coleta e no modo efetivo da entrada",
     )
     collection_recent_reads = read(
         repo / "src" / "components" / "collection" / "CollectionRecentReadsPanel.jsx"
