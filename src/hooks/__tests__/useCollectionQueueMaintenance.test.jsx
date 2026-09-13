@@ -302,6 +302,34 @@ describe('useCollectionQueue maintenance scheduling', () => {
     unmount();
   });
 
+  it('respeita autoFlush false no micro-lote e processNow dispara uma única tentativa', async () => {
+    const { result, unmount } = renderHook(() => useCollectionQueue(vi.fn(), {
+      eventKind: 'production_stage', enableV3Realtime: false, flushIntervalMs: 60_000,
+    }));
+    await act(async () => { await Promise.resolve(); });
+    setOnline(true);
+
+    let clientEventId;
+    await act(async () => {
+      clientEventId = await result.current.enqueue(
+        { raw_value: '09890707' },
+        { autoFlush: false },
+      );
+      await Promise.resolve();
+    });
+    expect(mocks.flushCollectionMicroBatchQueue).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await result.current.processNow(clientEventId);
+      await Promise.resolve();
+    });
+    expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledOnce();
+
+    await act(async () => { await Promise.resolve(); });
+    expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledOnce();
+    unmount();
+  });
+
   it('envia a leitura que chega durante o flush logo após a requisição em andamento', async () => {
     const { result, unmount } = renderHook(() => useCollectionQueue(vi.fn(), {
       eventKind: 'production_stage', enableV3Realtime: false, flushIntervalMs: 60_000,
@@ -328,27 +356,43 @@ describe('useCollectionQueue maintenance scheduling', () => {
     unmount();
   });
 
-  it('não perde uma leitura chegada durante as estatísticas finais do flush', async () => {
+  it('não perde nem atrasa uma leitura durante a atualização de estatísticas', async () => {
+    let held = false;
+    const request = vi.fn(async (_name, _options, callback) => {
+      if (held) return callback(null);
+      held = true;
+      try {
+        return await callback({ name: 'test-lock' });
+      } finally {
+        held = false;
+      }
+    });
+    setNavigatorLocks({ request });
     const { result, unmount } = renderHook(() => useCollectionQueue(vi.fn(), {
       eventKind: 'production_stage', enableV3Realtime: false, flushIntervalMs: 60_000,
     }));
     await act(async () => { await Promise.resolve(); });
+    mocks.getQueueStatsByCellMachine.mockClear();
     let finishStats;
     mocks.getQueueStatsByCellMachine.mockReturnValueOnce(new Promise((resolve) => { finishStats = resolve; }));
     setOnline(true);
-    let flushPromise;
-    act(() => { flushPromise = result.current.flush(); });
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await result.current.flush();
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(finishStats).toBeTypeOf('function');
     expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledOnce();
 
     await act(async () => {
       await result.current.enqueue({ raw_value: '09890703' });
+      await Promise.resolve();
     });
-    expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledOnce();
+    expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenCalledTimes(2);
 
     await act(async () => {
       finishStats(defaultStats);
-      await flushPromise;
+      await Promise.resolve();
     });
     expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledTimes(2);
     unmount();
@@ -359,6 +403,7 @@ describe('useCollectionQueue maintenance scheduling', () => {
       eventKind: 'production_stage', enableV3Realtime: false, flushIntervalMs: 60_000,
     }));
     await act(async () => { await Promise.resolve(); });
+    mocks.getQueueStatsByCellMachine.mockClear();
     let finishFirstFlush;
     mocks.flushCollectionMicroBatchQueue.mockReturnValueOnce(new Promise((resolve) => { finishFirstFlush = resolve; }));
     setOnline(true);
@@ -374,8 +419,10 @@ describe('useCollectionQueue maintenance scheduling', () => {
     await act(async () => {
       finishFirstFlush({ processed: 1 });
       await flushPromise;
+      await vi.advanceTimersByTimeAsync(100);
     });
     expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledOnce();
+    expect(mocks.getQueueStatsByCellMachine).not.toHaveBeenCalled();
   });
 
   it('envia a próxima leitura só após liberação efetiva do Web Lock, sem timer', async () => {
@@ -420,19 +467,29 @@ describe('useCollectionQueue maintenance scheduling', () => {
       eventKind: 'production_stage', enableV3Realtime: false, flushIntervalMs: 60_000,
     }));
     await act(async () => { await Promise.resolve(); });
+    mocks.getQueueStatsByCellMachine.mockClear();
     let rejectStats;
     mocks.getQueueStatsByCellMachine.mockReturnValueOnce(new Promise((_resolve, reject) => { rejectStats = reject; }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     setOnline(true);
-    let flushPromise;
-    act(() => { flushPromise = result.current.flush().catch((error) => error); });
-    await act(async () => { await Promise.resolve(); });
-    await act(async () => { await result.current.enqueue({ raw_value: '09890706' }); });
+    await act(async () => {
+      await result.current.flush();
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(rejectStats).toBeTypeOf('function');
+    await act(async () => {
+      await result.current.enqueue({ raw_value: '09890706' });
+      await Promise.resolve();
+    });
+    expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledTimes(2);
     await act(async () => {
       rejectStats(new Error('stats indisponível'));
-      await flushPromise;
+      await Promise.resolve();
+      await Promise.resolve();
     });
     expect(mocks.flushCollectionMicroBatchQueue).toHaveBeenCalledTimes(2);
     unmount();
+    warn.mockRestore();
   });
 
   it('continua o flush de pending quando a recuperação defensiva falha', async () => {
@@ -484,6 +541,38 @@ describe('useCollectionQueue maintenance scheduling', () => {
     expect(mocks.getQueueStatsByCellMachine).toHaveBeenCalledTimes(1);
 
     unmount();
+  });
+
+  it('não inicia outro refresh enfileirado após desmontar durante uma consulta de estatísticas', async () => {
+    let finishStats;
+    mocks.getQueueStatsByCellMachine.mockReturnValueOnce(new Promise((resolve) => {
+      finishStats = resolve;
+    }));
+    const { unmount } = renderHook(() => useCollectionQueue(vi.fn(), {
+      eventKind: 'production_stage',
+      flushIntervalMs: MAINTENANCE_INTERVAL_MS + 60_000,
+    }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mocks.getQueueStatsByCellMachine).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('collection-queue-changed'));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(mocks.getQueueStatsByCellMachine).toHaveBeenCalledTimes(1);
+
+    unmount();
+    await act(async () => {
+      finishStats(defaultStats);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mocks.getQueueStatsByCellMachine).toHaveBeenCalledTimes(1);
   });
 
   it('reconcilia ACKs V2 mesmo com V3 desabilitada, sem sobreposição e com catch-up paginado', async () => {

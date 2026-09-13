@@ -1,5 +1,87 @@
-import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rename } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+
+async function withFileHandle(path, flags, operation) {
+  const handle = await open(path, flags);
+  try {
+    return await operation(handle);
+  } finally {
+    await handle.close();
+  }
+}
+
+async function writeFileDurably(path, content) {
+  await withFileHandle(path, 'w', async (handle) => {
+    await handle.writeFile(content, 'utf8');
+    // O ACK só pode sair depois que o kernel confirmar o journal no disco.
+    await handle.sync();
+  });
+}
+
+async function appendFileDurably(path, content) {
+  await withFileHandle(path, 'a', async (handle) => {
+    await handle.writeFile(content, 'utf8');
+    await handle.sync();
+  });
+}
+
+async function syncDirectory(directory) {
+  try {
+    await withFileHandle(directory, 'r', (handle) => handle.sync());
+  } catch (error) {
+    // Windows não permite FlushFileBuffers em diretórios. O arquivo temporário
+    // e o arquivo final já foram sincronizados individualmente nesse ambiente.
+    const unsupportedOnWindows = process.platform === 'win32'
+      && ['EACCES', 'EINVAL', 'EISDIR', 'ENOTSUP', 'EPERM'].includes(error.code);
+    if (!unsupportedOnWindows) throw error;
+  }
+}
+
+async function syncExistingFile(path) {
+  await withFileHandle(path, 'r+', (handle) => handle.sync());
+}
+
+function serialize(items) {
+  const snapshot = items.map((item) => JSON.stringify(item)).join('\n');
+  return snapshot ? `${snapshot}\n` : '';
+}
+
+function parseJournal(content, spoolFile) {
+  const lines = content.split(/\r?\n/);
+  const hasTerminatingNewline = content.length === 0 || content.endsWith('\n');
+  const recovered = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line) continue;
+
+    try {
+      recovered.push(JSON.parse(line));
+    } catch (cause) {
+      const isIncompleteTail = !hasTerminatingNewline && index === lines.length - 1;
+      if (isIncompleteTail) break;
+
+      const error = new Error(
+        `Journal JSONL inválido em ${spoolFile}, linha ${index + 1}: ${cause.message}`,
+        { cause },
+      );
+      error.code = 'INVALID_JOURNAL_RECORD';
+      throw error;
+    }
+  }
+
+  const unique = new Map();
+  for (const item of recovered) {
+    if (item?.client_event_id) {
+      unique.set(item.client_event_id, item);
+    }
+  }
+
+  return {
+    items: Array.from(unique.values()),
+    needsRepair: content.length > 0 && !hasTerminatingNewline,
+  };
+}
 
 /**
  * Array em memória com journal JSONL local.
@@ -11,6 +93,7 @@ import { dirname, resolve } from 'node:path';
 export class DurableMemoryQueue {
   #items = [];
   #writeChain = Promise.resolve();
+  #journalNeedsRepair = false;
 
   constructor(spoolFile) {
     this.spoolFile = resolve(spoolFile);
@@ -24,38 +107,70 @@ export class DurableMemoryQueue {
     return this.#items.map((item) => ({ ...item }));
   }
 
+  #scheduleWrite(operation) {
+    const scheduled = this.#writeChain
+      .catch(() => undefined)
+      .then(async () => {
+        try {
+          // appendFile pode falhar depois de escrever apenas parte da linha.
+          // Antes de qualquer nova gravação, restaura o journal pelo estado
+          // conhecido em memória para que a próxima linha não seja concatenada.
+          if (this.#journalNeedsRepair) {
+            await this.#replaceJournal(this.#items);
+            this.#journalNeedsRepair = false;
+          }
+          return await operation();
+        } catch (error) {
+          this.#journalNeedsRepair = true;
+          throw error;
+        }
+      });
+    this.#writeChain = scheduled;
+    return scheduled;
+  }
+
+  async #replaceJournal(items) {
+    const temporary = `${this.spoolFile}.tmp`;
+    await writeFileDurably(temporary, serialize(items));
+    await rename(temporary, this.spoolFile);
+    // Confirma o inode já no nome definitivo e persiste a troca de diretório.
+    await syncExistingFile(this.spoolFile);
+    await syncDirectory(dirname(this.spoolFile));
+  }
+
   async init() {
     await mkdir(dirname(this.spoolFile), { recursive: true });
 
     try {
       const content = await readFile(this.spoolFile, 'utf8');
-      const recovered = content
-        .split(/\r?\n/)
-        .filter(Boolean)
-        .map((line) => JSON.parse(line));
-      const unique = new Map();
-      for (const item of recovered) {
-        if (item?.client_event_id) {
-          unique.set(item.client_event_id, item);
-        }
+      const parsed = parseJournal(content, this.spoolFile);
+      this.#items = parsed.items;
+
+      // Uma queda pode interromper o último append antes do "\n". Reescrever
+      // somente os registros completos impede a cauda de contaminar o próximo.
+      if (parsed.needsRepair) {
+        await this.#replaceJournal(this.#items);
       }
-      this.#items = Array.from(unique.values());
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
-      await writeFile(this.spoolFile, '', 'utf8');
+      await writeFileDurably(this.spoolFile, '');
+      await syncDirectory(dirname(this.spoolFile));
     }
 
     return this.size;
   }
 
   async enqueue(item) {
-    this.#items.push(item);
     const line = `${JSON.stringify(item)}\n`;
-    this.#writeChain = this.#writeChain.then(() => (
-      appendFile(this.spoolFile, line, 'utf8')
-    ));
-    await this.#writeChain;
-    return this.size;
+    let queueSize;
+
+    await this.#scheduleWrite(async () => {
+      await appendFileDurably(this.spoolFile, line);
+      // O endpoint só pode observar/confirmar uma leitura depois do journal.
+      queueSize = this.#items.push(item);
+    });
+
+    return queueSize;
   }
 
   take(maxItems) {
@@ -68,14 +183,6 @@ export class DurableMemoryQueue {
   }
 
   async commit() {
-    const snapshot = this.#items.map((item) => JSON.stringify(item)).join('\n');
-    const body = snapshot ? `${snapshot}\n` : '';
-    const temporary = `${this.spoolFile}.tmp`;
-
-    this.#writeChain = this.#writeChain.then(async () => {
-      await writeFile(temporary, body, 'utf8');
-      await rename(temporary, this.spoolFile);
-    });
-    await this.#writeChain;
+    await this.#scheduleWrite(() => this.#replaceJournal(this.#items));
   }
 }

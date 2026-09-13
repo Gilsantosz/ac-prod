@@ -287,6 +287,16 @@ export function useCollectionQueue(processFn, options = {}) {
   }, [cellName, machineId, eventKind]);
 
   const runStatsRefresh = useCallback(async () => {
+    if (!mountedRef.current) {
+      statsRefreshQueuedRef.current = false;
+      return;
+    }
+    // O resumo usa getAll() da fila. Durante um envio ele é apenas informativo,
+    // então espere a liberação do hot path antes de materializar o snapshot.
+    if (flushingRef.current) {
+      statsRefreshQueuedRef.current = true;
+      return;
+    }
     if (statsRefreshInFlightRef.current) {
       statsRefreshQueuedRef.current = true;
       return;
@@ -301,8 +311,9 @@ export function useCollectionQueue(processFn, options = {}) {
         } catch (error) {
           console.warn('[CollectionQueue] Falha ao atualizar estatísticas locais:', error);
         }
-      } while (statsRefreshQueuedRef.current);
+      } while (mountedRef.current && statsRefreshQueuedRef.current);
     } finally {
+      if (!mountedRef.current) statsRefreshQueuedRef.current = false;
       statsRefreshInFlightRef.current = false;
     }
   }, [refreshStats]);
@@ -651,31 +662,30 @@ export function useCollectionQueue(processFn, options = {}) {
         acquired = true;
         setFlushing(true);
         try {
-          try {
-            await runStaleProcessingRecovery();
-          } catch (error) {
-            // Recuperar itens órfãos é manutenção defensiva; uma falha aqui não
-            // pode impedir o envio dos eventos pending já prontos para o servidor.
-            console.warn('[CollectionQueue] Falha ao recuperar eventos travados:', error);
-          }
+          await runStaleProcessingRecovery();
+        } catch (error) {
+          // Recuperar itens órfãos é manutenção defensiva; uma falha aqui não
+          // pode impedir o envio dos eventos pending já prontos para o servidor.
+          console.warn('[CollectionQueue] Falha ao recuperar eventos travados:', error);
+        }
 
-          if (!mountedRef.current || !navigator.onLine) return;
-          if (microBatch && typeof processBatchFnRef.current === 'function') {
-            await flushCollectionMicroBatchQueue(processBatchFnRef.current, {
-              batchSize,
-              eventKind,
-              onResult: handleBatchResult,
-            });
-          } else {
-            await flushCollectionQueue(processFnRef.current);
-          }
-        } finally {
-          await refreshStats();
+        if (!mountedRef.current || !navigator.onLine) return;
+        if (microBatch && typeof processBatchFnRef.current === 'function') {
+          await flushCollectionMicroBatchQueue(processBatchFnRef.current, {
+            batchSize,
+            eventKind,
+            onResult: handleBatchResult,
+          });
+        } else {
+          await flushCollectionQueue(processFnRef.current);
         }
       });
     } finally {
       flushingRef.current = false;
       if (mountedRef.current) setFlushing(false);
+      // Estatísticas não fazem parte da confirmação da leitura nem do Web Lock.
+      // A atualização consolidada ocorre depois da liberação do caminho de envio.
+      if (mountedRef.current) refreshStatsSafely();
       const repeat = acquired && flushRequestedRef.current;
       flushRequestedRef.current = false;
       // A Promise do Web Lock já encerrou: envio direto, inclusive com a aba
@@ -691,7 +701,7 @@ export function useCollectionQueue(processFn, options = {}) {
     handleBatchResult,
     eventKind,
     microBatch,
-    refreshStats,
+    refreshStatsSafely,
   ]);
 
   const scheduleFlush = useCallback(() => {
@@ -836,13 +846,10 @@ export function useCollectionQueue(processFn, options = {}) {
     const id = await enqueueCollectionEvent(payload);
     refreshStatsSafely();
 
-    if (navigator.onLine && microBatch) {
-      scheduleFlush();
-    } else if (
-      navigator.onLine
-      && (enqueueOpts.autoFlush === true || enqueueOpts.autoFlush !== false)
-    ) {
-      flush();
+    const shouldAutoFlush = enqueueOpts.autoFlush !== false;
+    if (navigator.onLine && shouldAutoFlush) {
+      if (microBatch) scheduleFlush();
+      else flush();
     }
     return id;
   }, [
