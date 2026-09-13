@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
+import { genericRecoveryBody, waitForComparableRecoveryTiming } from '../_shared/recoveryResponse.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -98,6 +99,13 @@ Deno.serve(async (request: Request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return json({ success: false, error: 'Método não permitido.' }, 405);
 
+  const responseStartedAt = Date.now();
+  let hasValidEmailInput = false;
+  const genericSuccess = async () => {
+    await waitForComparableRecoveryTiming(responseStartedAt);
+    return json(genericRecoveryBody(), 200);
+  };
+
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!supabaseUrl || !serviceRoleKey) {
@@ -110,6 +118,7 @@ Deno.serve(async (request: Request) => {
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return json({ success: false, error: 'Informe um e-mail válido.' }, 422);
     }
+    hasValidEmailInput = true;
 
     const admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -186,12 +195,11 @@ Deno.serve(async (request: Request) => {
       .maybeSingle();
 
     if (!profile) {
-      // Para evitar enumeração de e-mails, responde sucesso amigável
-      return json({ success: true, message: 'Se o e-mail estiver cadastrado, as instruções foram processadas.' }, 200);
+      return await genericSuccess();
     }
 
     if (profile.active === false) {
-      return json({ success: true, message: 'Se o e-mail estiver cadastrado, as instruções foram processadas.' }, 200);
+      return await genericSuccess();
     }
 
     // A URL é definida somente no servidor para nunca gerar links localhost.
@@ -201,10 +209,16 @@ Deno.serve(async (request: Request) => {
       email: profile.email,
       options: { redirectTo },
     });
-    if (linkError) throw linkError;
+    if (linkError) {
+      console.error('[recover-password] Falha ao gerar link:', linkError);
+      return await genericSuccess();
+    }
 
     const tokenHash = linkData?.properties?.hashed_token;
-    if (!tokenHash) throw new Error('O Supabase não gerou o token de recuperação.');
+    if (!tokenHash) {
+      console.error('[recover-password] O provedor não retornou token de recuperação.');
+      return await genericSuccess();
+    }
     // O e-mail aponta primeiro para o app. Assim, scanners corporativos que
     // fazem GET automático não consomem o token no endpoint /verify.
     const resetLink = `${redirectTo}?token_hash=${encodeURIComponent(tokenHash)}&type=recovery`;
@@ -231,22 +245,17 @@ Deno.serve(async (request: Request) => {
       );
       if (resetError) {
         console.error('[recover-password] SMTP nativo recusou a mensagem:', resetError);
-        throw new Error(
-          'Não foi possível enviar o e-mail. Verifique a configuração SMTP do sistema.',
-        );
       }
     }
 
-    return json({
-      success: true,
-      message: 'Instruções de recuperação enviadas com sucesso.',
-    }, 200);
+    return await genericSuccess();
 
   } catch (error) {
     console.error('[recover-password] Erro:', error);
+    if (hasValidEmailInput) return await genericSuccess();
     return json({
       success: false,
-      error: error instanceof Error ? error.message : 'Falha ao processar recuperação de senha.',
-    }, 500);
+      error: 'Não foi possível processar a solicitação.',
+    }, 400);
   }
 });
