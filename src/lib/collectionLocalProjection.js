@@ -72,6 +72,33 @@ export function collectionSnapshotMatchesPendingLot(previous, incoming, now = Da
   ));
 }
 
+/** Um snapshot compacto do mesmo lote não apaga nomes já confirmados. */
+export function preserveCollectionSnapshotIdentity(previous, incoming) {
+  const oldContext = previous?.active_context;
+  const context = incoming?.active_context;
+  if (!oldContext || !context) return incoming;
+  const sameClient = oldContext.active_lot_id && context.active_lot_id
+    && sameValue(oldContext.active_lot_id, context.active_lot_id);
+  const sameBatch = oldContext.active_pcp_import_batch_id && context.active_pcp_import_batch_id
+    && sameValue(oldContext.active_pcp_import_batch_id, context.active_pcp_import_batch_id);
+  const changedBatch = contextIdentityChanged(oldContext, {
+    pcp_import_batch_id: context.active_pcp_import_batch_id,
+    pcp_batch_name: context.active_general_lot_code,
+  });
+  if ((!sameClient && !sameBatch) || changedBatch) return incoming;
+  return {
+    ...incoming,
+    active_context: {
+      ...context,
+      active_general_lot_code: context.active_general_lot_code || oldContext.active_general_lot_code,
+      ...(sameClient ? {
+        active_lot_code: context.active_lot_code || oldContext.active_lot_code,
+        customer_name: context.customer_name || oldContext.customer_name,
+      } : {}),
+    },
+  };
+}
+
 function statusMatchesFilter(status, filter) {
   if (!filter || filter === 'all') return true;
   if (filter === 'approved') return ['approved', 'approved_via_replacement'].includes(status);
@@ -167,6 +194,11 @@ export function collectionHistoryRowFromTerminalResult({
   const generalLot = result.general_lot || {};
   const order = result.order || {};
   const route = result.route || {};
+  // A peça já pode estar na próxima etapa. O histórico descreve a operação
+  // decidida pelo servidor, que o recibo V3 identifica em step_code.
+  const operationName = reading.step_name || result.step_code || route.step_name
+    || event.operation_name || reading.cell_name || route.cell_name
+    || event.cellName || event.cell_name || defaults.cellName || null;
   const createdAt = reading.created_at
     || result.decided_at
     || event.created_at_client
@@ -179,7 +211,7 @@ export function collectionHistoryRowFromTerminalResult({
     || String(result.status || normalizedState || '').trim().toLowerCase();
 
   return {
-    id: reading.id || result.event_id || clientEventId,
+    id: reading.id || result.reading_id || result.event_id || clientEventId,
     event_id: result.event_id || null,
     client_event_id: clientEventId,
     created_at: createdAt,
@@ -189,6 +221,8 @@ export function collectionHistoryRowFromTerminalResult({
     raw_value: event.raw_value || event.rawValue || reading.tag_value || null,
     piece_id: item.id || reading.piece_id || null,
     piece_status: item.status || null,
+    piece_current_stage: item.current_stage || item.current_step || null,
+    piece_name: item.piece_name || null,
     lot_id: lot.id || event.lot_id || null,
     lot_code: lot.lot_code || item.lot_code || null,
     pcp_import_batch_id: lot.pcp_import_batch_id || generalLot.id
@@ -211,18 +245,17 @@ export function collectionHistoryRowFromTerminalResult({
     operator_name: reading.operator || event.operator || defaults.operatorName || null,
     registration: event.operator_registration || defaults.operatorRegistration || null,
     shift: reading.shift || event.shift || defaults.shift || null,
-    operation_name: route.step_name || item.current_stage || item.current_step
-      || event.operation_name || null,
-    current_stage_name: route.step_name || item.current_stage || item.current_step
-      || event.operation_name || null,
+    operation_name: operationName,
+    reading_stage_name: operationName,
+    current_stage_name: operationName,
     reading_status: status,
     event_status: status,
     result_status: status,
     collection_state: normalizedState,
     message: result.message || null,
     result_payload: result,
-    route_steps: result.route_steps || [],
-    completed_steps: result.completed_steps || [],
+    route_steps: result.route_steps || item.route_steps || [],
+    completed_steps: result.completed_steps || item.completed_steps || [],
   };
 }
 

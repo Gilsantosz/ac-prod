@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { COLLECTION_STATES } from '@/lib/collectionStateMachine';
-import { applyCollectionTerminalResultToCache, collectionSnapshotMatchesPendingLot } from '@/lib/collectionLocalProjection';
+import { applyCollectionTerminalResultToCache, collectionHistoryRowFromTerminalResult, collectionSnapshotMatchesPendingLot, preserveCollectionSnapshotIdentity } from '@/lib/collectionLocalProjection';
 
 function createQueryClient(entries) {
   const cache = entries.map(([queryKey, data]) => ({ queryKey, data }));
@@ -51,6 +51,39 @@ function approvedPayload() {
 }
 
 describe('projeção local de decisão terminal', () => {
+  it('exibe a etapa coletada do recibo V3 separada da próxima etapa da peça', () => {
+    const row = collectionHistoryRowFromTerminalResult({
+      event: { client_event_id: 'v3-event', cellName: 'Bordo' },
+      result: { status: 'approved', step_code: 'edge', reading_id: 'reading-v3',
+        item: { current_stage: 'separation', route_steps: ['cut', 'edge', 'separation'], completed_steps: ['cut', 'edge'] } },
+    });
+    expect(row).toMatchObject({ id: 'reading-v3', operation_name: 'edge', reading_stage_name: 'edge',
+      current_stage_name: 'edge', piece_current_stage: 'separation',
+      route_steps: ['cut', 'edge', 'separation'], completed_steps: ['cut', 'edge'] });
+    expect(collectionHistoryRowFromTerminalResult({
+      event: { client_event_id: 'legacy-event', cellName: 'Corte' },
+      result: { status: 'approved', item: { current_stage: 'edge' } },
+    }).operation_name).toBe('Corte');
+  });
+
+  it('preserva somente os nomes do mesmo lote quando o snapshot vem incompleto', () => {
+    const previous = { approved: 2, active_context: { active_lot_id: 'client-1',
+      active_lot_code: 'CLI-001', active_general_lot_code: 'GER-001', customer_name: 'Cliente A', progress_percent: 50 } };
+    const incoming = { approved: 3, active_context: { active_lot_id: 'client-1',
+      active_lot_code: 'CLI-001', active_general_lot_code: null, customer_name: null, progress_percent: null } };
+    expect(preserveCollectionSnapshotIdentity(previous, incoming)).toMatchObject({ approved: 3,
+      active_context: { active_general_lot_code: 'GER-001', customer_name: 'Cliente A', progress_percent: null } });
+    for (const context of [null, {}, { active_lot_id: 'client-2' },
+      { active_lot_id: 'client-1', active_general_lot_code: 'GER-002' }]) {
+      const changed = { active_context: context };
+      expect(preserveCollectionSnapshotIdentity(previous, changed)).toBe(changed);
+    }
+    const changedBatch = { active_context: { active_lot_id: 'client-1', active_pcp_import_batch_id: 'batch-2' } };
+    expect(preserveCollectionSnapshotIdentity({ active_context: {
+      ...previous.active_context, active_pcp_import_batch_id: 'batch-1',
+    } }, changedBatch)).toBe(changedBatch);
+  });
+
   it('atualiza histórico e KPIs uma vez sem invalidar ou consultar o servidor', () => {
     const queryClient = createQueryClient([
       [['stageReadings', 'Corte', null, 'cell-corte', null, '1º Turno', '24h', 'all', 50], {

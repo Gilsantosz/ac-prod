@@ -30,8 +30,8 @@ async function enrichCollectionRowsWithCurrentPieceStatus(rows, requestedStatus 
       && ['baixa_reposicao', 'replacement_approval'].includes(entryType);
     const eventStatus = replacementApproval ? 'approved_via_replacement'
       : ['wrong_step', 'wrong_cell', 'warning'].includes(decision) ? 'blocked' : decision;
-    const readingStage = row.operation_name || payload.route?.step_name
-      || payload.result?.route?.step_name || row.current_stage_name;
+    const readingStage = row.operation_name || payload.step_code || payload.route?.step_name
+      || payload.result?.step_code || payload.result?.route?.step_name || row.current_stage_name;
     return {
       ...row,
       event_status: eventStatus,
