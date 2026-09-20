@@ -44,6 +44,9 @@ export default function CollectionFullscreenKiosk({
   refreshReadsSignal,
   contextReady,
   contextMessage,
+  realtimeEnabled = true,
+  periodicReconciliationEnabled = true,
+  localResultGenerationRef,
 }) {
   // Ativar fullscreen nativo quando o modo kiosk for aberto
   useEffect(() => {
@@ -270,6 +273,10 @@ export default function CollectionFullscreenKiosk({
                 onOpenTraceability={handleOpenTraceabilityDrawer}
                 refreshSignal={refreshReadsSignal}
                 canReject={true}
+                realtimeEnabled={realtimeEnabled}
+                periodicReconciliationEnabled={periodicReconciliationEnabled}
+                refetchOnMount={false}
+                localResultGenerationRef={localResultGenerationRef}
               />
             </div>
           </div>

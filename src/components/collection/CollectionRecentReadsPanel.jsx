@@ -10,9 +10,23 @@ import {
 } from '@/lib/collectionService';
 import CollectionReadItem from './CollectionReadItem';
 import { scheduleCollectionQueryInvalidation } from '@/hooks/collectionQueryInvalidation';
+import { resolveCollectionSnapshotAfterLocalUpdates, scheduleCollectionCounterReconciliation } from '@/hooks/collectionCounterReconciliation';
 
-export const COLLECTION_HISTORY_FALLBACK_MIN_MS = 15_000;
-export const COLLECTION_HISTORY_FALLBACK_MAX_MS = 19_000;
+export const COLLECTION_HISTORY_FALLBACK_MIN_MS = 60_000;
+export const COLLECTION_HISTORY_FALLBACK_MAX_MS = 90_000;
+
+const TERMINAL_HISTORY_STATUSES = new Set([
+  'approved',
+  'approved_via_replacement',
+  'rejected',
+  'blocked',
+  'duplicated',
+  'pending_review',
+  'dead_lettered',
+  'error',
+  'invalid',
+  'not_found',
+]);
 
 export function getCollectionHistoryFallbackDelay(randomValue = Math.random()) {
   const numericValue = Number(randomValue);
@@ -23,6 +37,167 @@ export function getCollectionHistoryFallbackDelay(randomValue = Math.random()) {
     (COLLECTION_HISTORY_FALLBACK_MAX_MS - COLLECTION_HISTORY_FALLBACK_MIN_MS)
       * boundedValue,
   );
+}
+
+// O painel normal continua montado por baixo do modo foco. Um agendador por
+// QueryClient + filtro garante que as duas visualizações compartilhem a mesma
+// reconciliação, em vez de abrirem dois ciclos HTTP independentes.
+const historyFallbackSchedulers = new WeakMap();
+
+function subscribeToSharedHistoryFallback(queryClient, queryKey, callback) {
+  let clientSchedulers = historyFallbackSchedulers.get(queryClient);
+  if (!clientSchedulers) {
+    clientSchedulers = new Map();
+    historyFallbackSchedulers.set(queryClient, clientSchedulers);
+  }
+
+  const scopeKey = JSON.stringify(queryKey);
+  let scheduler = clientSchedulers.get(scopeKey);
+  if (!scheduler) {
+    scheduler = {
+      callbacks: new Set(),
+      timer: null,
+      stopped: false,
+    };
+    clientSchedulers.set(scopeKey, scheduler);
+
+    const scheduleNext = () => {
+      if (scheduler.stopped || scheduler.timer !== null || !scheduler.callbacks.size) return;
+      scheduler.timer = window.setTimeout(() => {
+        scheduler.timer = null;
+        if (scheduler.stopped || !scheduler.callbacks.size) return;
+        if (navigator.onLine !== false && document.visibilityState !== 'hidden') {
+          // Todas as inscrições deste scheduler observam a mesma queryKey.
+          // Uma callback invalida a query compartilhada para todos os painéis.
+          scheduler.callbacks.values().next().value?.();
+        }
+        scheduleNext();
+      }, getCollectionHistoryFallbackDelay());
+    };
+    scheduler.scheduleNext = scheduleNext;
+  }
+
+  scheduler.callbacks.add(callback);
+  scheduler.scheduleNext();
+
+  return () => {
+    scheduler.callbacks.delete(callback);
+    if (scheduler.callbacks.size) return;
+    scheduler.stopped = true;
+    if (scheduler.timer !== null) window.clearTimeout(scheduler.timer);
+    scheduler.timer = null;
+    clientSchedulers.delete(scopeKey);
+  };
+}
+
+function normalizeRealtimeHistoryStatus(row) {
+  const payload = row?.result_payload || {};
+  const status = String(
+    row?.result_status
+      || payload.status
+      || payload.result?.status
+      || row?.status
+      || '',
+  ).trim().toLowerCase();
+  const entryType = row?.entry_type || payload.entry_type
+    || payload.source || payload.result?.entry_type;
+
+  if (status === 'approved'
+    && ['baixa_reposicao', 'replacement_approval'].includes(entryType)) {
+    return 'approved_via_replacement';
+  }
+  if (['wrong_step', 'wrong_cell', 'warning'].includes(status)) return 'blocked';
+  if (status === 'duplicate') return 'duplicated';
+  return status;
+}
+
+/**
+ * Converte o snapshot completo de Postgres Changes no mesmo formato básico da
+ * RPC de histórico. Somente estados terminais entram no cache: INSERT e UPDATE
+ * do mesmo evento tornam-se um único item, sem abrir outro GET ou COUNT.
+ */
+export function collectionHistoryRowFromRealtimePayload(payload = {}) {
+  const row = payload.new || null;
+  if (!row) return null;
+  const eventStatus = normalizeRealtimeHistoryStatus(row);
+  if (!TERMINAL_HISTORY_STATUSES.has(eventStatus)) return null;
+
+  const resultPayload = row.result_payload || {};
+  const createdAt = row.created_at_client || row.occurred_at || row.created_at;
+  const eventId = row.id || row.event_id || null;
+  if (!eventId && !row.client_event_id) return null;
+
+  return {
+    ...row,
+    id: eventId || row.client_event_id,
+    event_id: eventId,
+    created_at: createdAt,
+    server_created_at: row.created_at || createdAt,
+    traceability_code: row.piece_code || row.normalized_value || row.raw_value,
+    pcp_batch_name: row.general_lot_code || resultPayload.general_lot_code || null,
+    client_name: row.customer_name || resultPayload.customer_name || null,
+    current_stage_name: row.operation_name
+      || resultPayload.route?.step_name
+      || resultPayload.result?.route?.step_name
+      || row.cell_name,
+    operator_name: row.operator_name || row.operator_name_snapshot || null,
+    registration: row.registration || row.operator_registration_snapshot || null,
+    machine_name: row.machine_name || row.machine_name_snapshot || null,
+    station_name: row.station_name || row.station_name_snapshot || null,
+    shift: row.shift || row.shift_snapshot || null,
+    event_status: eventStatus,
+    reading_status: eventStatus,
+    sync_status: row.status,
+    message: resultPayload.message || resultPayload.result?.message || row.error_message || null,
+    result_payload: resultPayload,
+    route_steps: resultPayload.route_steps || [],
+    completed_steps: resultPayload.completed_steps || [],
+  };
+}
+
+function isRealtimeRowInPanelScope(row, {
+  cellId,
+  cellName,
+  workstationId,
+  operatorId,
+  shift,
+  machineScope,
+  operatorScope,
+  shiftScope,
+  period,
+  statusFilter,
+}) {
+  if (cellId && row.cell_id && String(row.cell_id) !== String(cellId)) return false;
+  if (cellName && row.cell_name
+    && String(row.cell_name).trim().toLowerCase() !== String(cellName).trim().toLowerCase()) return false;
+  if (machineScope === 'current' && workstationId
+    && String(row.machine_id || '') !== String(workstationId)) return false;
+  if (operatorScope === 'mine' && operatorId
+    && String(row.operator_id || '') !== String(operatorId)) return false;
+  if (shiftScope === 'current' && shift && String(row.shift || '') !== String(shift)) return false;
+
+  if (statusFilter !== 'all') {
+    const matchesStatus = statusFilter === 'approved'
+      ? ['approved', 'approved_via_replacement'].includes(row.event_status)
+      : row.event_status === statusFilter;
+    if (!matchesStatus) return false;
+  }
+
+  const occurredAt = Date.parse(row.created_at);
+  if (Number.isFinite(occurredAt) && period !== 'all') {
+    const periodMs = period === '24h' ? 24 * 60 * 60 * 1000
+      : period === '7days' ? 7 * 24 * 60 * 60 * 1000
+        : 30 * 24 * 60 * 60 * 1000;
+    if (occurredAt < Date.now() - periodMs) return false;
+  }
+  return true;
+}
+
+function mergeDefinedValues(previous, next) {
+  const defined = Object.fromEntries(
+    Object.entries(next).filter(([, value]) => value !== null && value !== undefined && value !== ''),
+  );
+  return { ...previous, ...defined };
 }
 
 function getDateRange(selectedPeriod) {
@@ -58,10 +233,16 @@ export default function CollectionRecentReadsPanel({
   onCreateOccurrence,
   onOpenTraceability,
   refreshSignal = 0,
-  canReject = false
+  canReject = false,
+  realtimeEnabled = true,
+  periodicReconciliationEnabled = true,
+  refetchOnMount = true,
+  localResultGenerationRef,
 }) {
   const [limit, setLimit] = useState(50);
   const queryClient = useQueryClient();
+  const ownGenerationRef = useRef(0);
+  const generationRef = localResultGenerationRef || ownGenerationRef;
 
   // Filtros Locais adicionais
   const [period, setPeriod] = useState('24h'); // 24h, 7days, month, all
@@ -69,7 +250,9 @@ export default function CollectionRecentReadsPanel({
   const [operatorScope, setOperatorScope] = useState('cell'); // cell, mine
   const [shiftScope, setShiftScope] = useState('current'); // all, current
   const [machineScope, setMachineScope] = useState('cell'); // cell, current
-  const [realtimeStatus, setRealtimeStatus] = useState(navigator.onLine ? 'connecting' : 'offline');
+  const [realtimeStatus, setRealtimeStatus] = useState(
+    navigator.onLine ? (realtimeEnabled ? 'connecting' : 'polling') : 'offline',
+  );
   const previousRefreshSignalRef = useRef(refreshSignal);
   const queryKey = useMemo(() => [
     'stageReadings',
@@ -89,8 +272,13 @@ export default function CollectionRecentReadsPanel({
   const { data, isFetching: loading, isError } = useQuery({
     queryKey,
     enabled: Boolean(cellName),
+    // O painel duplicado do modo foco observa exatamente o mesmo cache da
+    // tela normal. Nesse caso, montar a segunda visualização não deve abrir
+    // outro GET+COUNT; uma ausência real de cache ainda executa o queryFn.
+    refetchOnMount,
     retry: false,
     queryFn: async () => {
+      const startedGeneration = generationRef.current;
       const { dateFrom, dateTo } = getDateRange(period);
       const activeStatus = statusFilter === 'all' ? null : statusFilter;
       const filters = {
@@ -113,17 +301,28 @@ export default function CollectionRecentReadsPanel({
         getCollectionHistory(filters),
         getCollectionHistoryCount(filters),
       ]);
-      return { readings, totalCount };
+      return resolveCollectionSnapshotAfterLocalUpdates({
+        queryClient, queryKey, startedGeneration,
+        currentGeneration: generationRef.current, snapshot: { readings, totalCount },
+      });
     },
   });
+  useEffect(() => {
+    if (data?.counter_reconciliation_required) {
+      scheduleCollectionCounterReconciliation(queryClient, queryKey);
+    }
+  }, [data?.counter_reconciliation_required, queryClient, queryKey]);
   const readings = data?.readings || [];
   const totalCount = data?.totalCount || 0;
   const error = isError ? 'Falha ao carregar o histórico de coletas do banco.' : null;
-  const fetchReadings = useCallback(() => {
+  const refreshHistory = useCallback(() => {
     scheduleCollectionQueryInvalidation(queryClient, { queryKey });
-    // Este canal já é filtrado pela célula e também possui fallback periódico.
-    // Ele mantém os KPIs e o contexto de lotes convergentes caso o Broadcast
-    // privado do dispositivo/célula esteja temporariamente indisponível.
+  }, [queryClient, queryKey]);
+
+  const fetchReadings = useCallback(() => {
+    refreshHistory();
+    // A reconciliação periódica confirma histórico, KPIs e contexto de lote em
+    // uma única janela compartilhada, sem consulta acionada por evento.
     scheduleCollectionQueryInvalidation(
       queryClient,
       { queryKey: ['collection-kpis', cellName] },
@@ -136,70 +335,151 @@ export default function CollectionRecentReadsPanel({
         JSON.stringify(['operator-shift-kpis-fallback', operatorId]),
       );
     }
-  }, [queryClient, queryKey, cellName, operatorId]);
+  }, [cellName, operatorId, queryClient, refreshHistory]);
+
+  const applyRealtimeHistoryEvent = useCallback((payload) => {
+    const incoming = collectionHistoryRowFromRealtimePayload(payload);
+    if (!incoming) return;
+    generationRef.current += 1;
+
+    const inScope = isRealtimeRowInPanelScope(incoming, {
+      cellId,
+      cellName,
+      workstationId,
+      operatorId,
+      shift,
+      machineScope,
+      operatorScope,
+      shiftScope,
+      period,
+      statusFilter,
+    });
+
+    queryClient.setQueryData(queryKey, (current) => {
+      // O GET inicial continua autoritativo. Se ainda não existe fotografia no
+      // cache, a reconciliação periódica absorverá o evento sem cancelar esse GET.
+      if (!current) return current;
+      const currentRows = Array.isArray(current.readings) ? current.readings : [];
+      const incomingKey = incoming.event_id || incoming.id || incoming.client_event_id;
+      const index = currentRows.findIndex((row) => (
+        (row.event_id || row.id || row.client_event_id) === incomingKey
+        || (row.client_event_id && row.client_event_id === incoming.client_event_id)
+      ));
+
+      if (!inScope) {
+        if (index < 0) return current;
+        return {
+          readings: currentRows.filter((_, rowIndex) => rowIndex !== index),
+          totalCount: Math.max(0, Number(current.totalCount || 0) - 1),
+        };
+      }
+
+      const nextRows = [...currentRows];
+      if (index >= 0) nextRows[index] = mergeDefinedValues(nextRows[index], incoming);
+      else nextRows.unshift(incoming);
+      nextRows.sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+
+      return {
+        readings: nextRows.slice(0, limit),
+        totalCount: Number(current.totalCount || 0) + (index < 0 ? 1 : 0),
+      };
+    });
+  }, [
+    cellId,
+    cellName,
+    generationRef,
+    limit,
+    machineScope,
+    operatorId,
+    operatorScope,
+    period,
+    queryClient,
+    queryKey,
+    shift,
+    shiftScope,
+    statusFilter,
+    workstationId,
+  ]);
 
   // Recarrega quando filtros, limit ou sinal mudar
   useEffect(() => {
     if (previousRefreshSignalRef.current === refreshSignal) return;
     previousRefreshSignalRef.current = refreshSignal;
-    fetchReadings();
-  }, [fetchReadings, refreshSignal]);
+    // A página central já invalidou KPIs e turno; este sinal cobre somente o
+    // histórico e evita abrir uma segunda rodada para as mesmas famílias.
+    refreshHistory();
+  }, [refreshHistory, refreshSignal]);
 
-  // Inscrição Realtime
+  // Postgres Changes é opcional. No plano gratuito a coleta opera com HTTP,
+  // pois mil estações ultrapassariam o limite de conexões WebSocket. Quando o
+  // canal está ativo, o evento terminal é aplicado no cache sem novo GET.
   useEffect(() => {
     if (!cellName) return;
+
+    if (!realtimeEnabled) {
+      setRealtimeStatus(navigator.onLine ? 'polling' : 'offline');
+      return undefined;
+    }
 
     setRealtimeStatus(navigator.onLine ? 'connecting' : 'offline');
     const channel = subscribeToCollectionHistory({
       cellId,
       cellName,
       channelSuffix: 'panel',
-      callback: fetchReadings,
+      callback: applyRealtimeHistoryEvent,
       onStatus: (status) => {
         if (status === 'SUBSCRIBED') {
           setRealtimeStatus('online');
-          fetchReadings();
         }
         else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') setRealtimeStatus('offline');
         else setRealtimeStatus('connecting');
       },
     });
 
-    const onOffline = () => setRealtimeStatus('offline');
-    const onOnline = () => setRealtimeStatus('connecting');
-    window.addEventListener('offline', onOffline);
-    window.addEventListener('online', onOnline);
-
     return () => {
-      window.removeEventListener('offline', onOffline);
-      window.removeEventListener('online', onOnline);
       unsubscribeFromCollectionHistory(channel);
     };
-  }, [cellId, cellName, fetchReadings]);
+  }, [applyRealtimeHistoryEvent, cellId, cellName, realtimeEnabled]);
 
-  // Rede instável ou uma janela sem assinatura Realtime não pode deixar o
-  // histórico parado indefinidamente. Em condição normal o canal acima é o
-  // único gatilho; fora dela, o jitter evita alinhar milhares de estações.
+  // Reconciliação HTTP de segurança para usos isolados do painel. Na tela
+  // principal ela é desativada, pois a página possui um único ciclo central
+  // para histórico, KPIs, turno e contexto.
   useEffect(() => {
-    if (!cellName || realtimeStatus === 'online') return undefined;
-    let cancelled = false;
-    let timeoutId = null;
+    if (!cellName || !periodicReconciliationEnabled) return undefined;
 
-    const scheduleFallback = () => {
-      timeoutId = window.setTimeout(() => {
-        timeoutId = null;
-        if (cancelled) return;
-        if (navigator.onLine !== false) fetchReadings();
-        scheduleFallback();
-      }, getCollectionHistoryFallbackDelay());
+    const reconcileVisibleOnline = () => {
+      if (navigator.onLine === false || document.visibilityState === 'hidden') return;
+      fetchReadings();
+    };
+    const onOffline = () => setRealtimeStatus('offline');
+    const onOnline = () => {
+      setRealtimeStatus(realtimeEnabled ? 'connecting' : 'polling');
+      reconcileVisibleOnline();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') reconcileVisibleOnline();
     };
 
-    scheduleFallback();
+    window.addEventListener('focus', reconcileVisibleOnline);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    document.addEventListener('visibilitychange', onVisibility);
+    const unsubscribeFallback = subscribeToSharedHistoryFallback(queryClient, queryKey, fetchReadings);
     return () => {
-      cancelled = true;
-      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      unsubscribeFallback();
+      window.removeEventListener('focus', reconcileVisibleOnline);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [cellName, fetchReadings, realtimeStatus]);
+  }, [
+    cellName,
+    fetchReadings,
+    periodicReconciliationEnabled,
+    queryClient,
+    queryKey,
+    realtimeEnabled,
+  ]);
 
   const handleSelect = (read) => {
     if (!read.piece_id) return;
@@ -252,10 +532,14 @@ export default function CollectionRecentReadsPanel({
               Últimas leituras da célula
             </h3>
             <div className="flex items-center gap-2 text-[10px]">
-              <span className="text-muted-foreground">Tempo real:</span>
-              <span className={`flex items-center gap-1 font-bold ${realtimeStatus === 'online' ? 'text-emerald-600' : realtimeStatus === 'connecting' ? 'text-amber-600' : 'text-rose-600'}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${realtimeStatus === 'online' ? 'bg-emerald-500 animate-pulse' : realtimeStatus === 'connecting' ? 'bg-amber-500' : 'bg-rose-500'}`} />
-                {realtimeStatus === 'online' ? 'Ativo (Online)' : realtimeStatus === 'connecting' ? 'Conectando' : 'Indisponível'}
+              <span className="text-muted-foreground">Sincronização:</span>
+              <span className={`flex items-center gap-1 font-bold ${['online', 'polling'].includes(realtimeStatus) ? 'text-emerald-600' : realtimeStatus === 'connecting' ? 'text-amber-600' : 'text-rose-600'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${['online', 'polling'].includes(realtimeStatus) ? 'bg-emerald-500 animate-pulse' : realtimeStatus === 'connecting' ? 'bg-amber-500' : 'bg-rose-500'}`} />
+                {realtimeStatus === 'online'
+                  ? 'Ativa (Realtime)'
+                  : realtimeStatus === 'polling'
+                    ? 'Automática (60–90 s)'
+                    : realtimeStatus === 'connecting' ? 'Conectando' : 'Indisponível'}
               </span>
             </div>
           </div>

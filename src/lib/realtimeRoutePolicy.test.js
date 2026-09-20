@@ -9,6 +9,7 @@ describe('política de Realtime por rota', () => {
     '/ac-prod/coleta',
     '/ac-prod/coleta/',
     '/AC-PROD/COLETA',
+    '/coleta-codigo-rfid',
   ])('desliga o canal global na estação de coleta: %s', (pathname) => {
     expect(shouldEnableGlobalProductionRealtime(pathname)).toBe(false);
   });
@@ -18,7 +19,6 @@ describe('política de Realtime por rota', () => {
     '/painel',
     '/reposicao',
     '/reposicao/posto',
-    '/coleta-codigo-rfid',
   ])('mantém o canal global nas demais rotas: %s', (pathname) => {
     expect(shouldEnableGlobalProductionRealtime(pathname)).toBe(true);
   });

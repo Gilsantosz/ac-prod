@@ -9,7 +9,16 @@ vi.mock('@/components/traceability/TraceabilityScannerPanel', () => ({
 }));
 
 vi.mock('@/components/collection/CollectionRecentReadsPanel', () => ({
-  default: () => <div data-testid="mock-recent-reads-panel">Histórico Recente</div>
+  default: ({ realtimeEnabled, periodicReconciliationEnabled, refetchOnMount }) => (
+    <div
+      data-testid="mock-recent-reads-panel"
+      data-realtime-enabled={String(realtimeEnabled)}
+      data-periodic-reconciliation-enabled={String(periodicReconciliationEnabled)}
+      data-refetch-on-mount={String(refetchOnMount)}
+    >
+      Histórico Recente
+    </div>
+  ),
 }));
 
 vi.mock('@/components/collection/ActiveDowntimeBanner', () => ({
@@ -95,6 +104,21 @@ describe('CollectionFullscreenKiosk Component', () => {
     const closeBtn = screen.getByRole('button', { name: /Sair Tela Cheia/i });
     fireEvent.click(closeBtn);
     expect(defaultProps.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('mantém o histórico do modo foco sem assinatura realtime quando solicitado', () => {
+    render(<CollectionFullscreenKiosk
+      {...defaultProps}
+      realtimeEnabled={false}
+      periodicReconciliationEnabled={false}
+    />);
+
+    expect(screen.getByTestId('mock-recent-reads-panel'))
+      .toHaveAttribute('data-realtime-enabled', 'false');
+    expect(screen.getByTestId('mock-recent-reads-panel'))
+      .toHaveAttribute('data-periodic-reconciliation-enabled', 'false');
+    expect(screen.getByTestId('mock-recent-reads-panel'))
+      .toHaveAttribute('data-refetch-on-mount', 'false');
   });
 
   it('não mistura o cliente da leitura anterior quando o contexto autoritativo não tem cliente', () => {

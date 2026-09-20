@@ -10,8 +10,11 @@ import OccurrenceQuickDialog from '@/components/entry/OccurrenceQuickDialog';
 import CollectionQueuePanel from '@/components/entry/CollectionQueuePanel';
 import { useAuth } from '@/lib/AuthContext';
 import { useOperatorSession } from '@/hooks/useOperatorSession';
-import { invalidateAffectedCollectionQueries, useCollectionQueue } from '@/hooks/useCollectionQueue';
-import { COLLECTION_QUERY_REFRESH_INTERVAL_MS } from '@/hooks/collectionQueryInvalidation';
+import { useCollectionQueue } from '@/hooks/useCollectionQueue';
+import {
+  COLLECTION_QUERY_REFRESH_INTERVAL_MS,
+  scheduleCollectionQueryInvalidation,
+} from '@/hooks/collectionQueryInvalidation';
 import { useCells } from '@/hooks/useCells';
 import { getOperatorAllowedCells } from '@/lib/operatorCellRules';
 import { fetchProductionMachines } from '@/lib/traceabilityService';
@@ -31,7 +34,7 @@ import ActiveDowntimeBanner from '@/components/collection/ActiveDowntimeBanner';
 import DowntimeDialog from '@/components/collection/DowntimeDialog';
 import CollectionFullscreenKiosk from '@/components/collection/CollectionFullscreenKiosk';
 import CollectionLotBanner from '@/components/collection/CollectionLotBanner';
-import { collectionFeedbackMessage, hasCollectionLotIdentity, mergeCollectionFeedback, normalizeCollectionFeedback, resolveCollectionKpiBatchId, resolveCollectionLotContext, restoreCollectionFeedback } from '@/lib/collectionFeedback';
+import { collectionFeedbackMessage, hasCollectionLotIdentity, mergeCollectionFeedback, normalizeCollectionFeedback, resolveCollectionLotContext, restoreCollectionFeedback } from '@/lib/collectionFeedback';
 import CollectionVolumeEntryPanel from '@/components/collection/CollectionVolumeEntryPanel';
 import CollectionErrorBoundary from '@/components/ui/CollectionErrorBoundary';
 import { getActiveDowntime } from '@/lib/downtimeService';
@@ -51,6 +54,12 @@ import {
   getOperatorShiftKpisV2,
   requestPieceReplacement,
 } from '@/lib/collectionService';
+import { applyCollectionTerminalResultToCache, collectionSnapshotMatchesPendingLot } from '@/lib/collectionLocalProjection';
+import { resolveCollectionSnapshotAfterLocalUpdates, scheduleCollectionCounterReconciliation } from '@/hooks/collectionCounterReconciliation';
+
+const COLLECTION_STATUS_TOAST_ID = 'collection-live-status';
+const COLLECTION_SAFETY_RECONCILIATION_MIN_MS = 60_000;
+const COLLECTION_SAFETY_RECONCILIATION_JITTER_MS = 30_000;
 
 function currentShift() {
   const hour = new Date().getHours();
@@ -153,6 +162,8 @@ export default function TraceabilityCollection({ embedded = false }) {
   const [pieceToReject, setPieceToReject] = useState(null);
   const [refreshReadsSignal, setRefreshReadsSignal] = useState(0);
   const refreshReadsTimerRef = useRef(null);
+  const locallyProjectedEventIdsRef = useRef(new Set());
+  const collectionSnapshotGenerationRef = useRef(0);
 
   // Estado para registro de paradas operacionais e modo kiosk em tela cheia
   const [downtimeDialogOpen, setDowntimeDialogOpen] = useState(false);
@@ -161,6 +172,9 @@ export default function TraceabilityCollection({ embedded = false }) {
   const feedbackSessionId = opSession?.session_id || null;
   const activeFeedbackSessionRef = useRef(feedbackSessionId);
   activeFeedbackSessionRef.current = feedbackSessionId;
+  useEffect(() => {
+    locallyProjectedEventIdsRef.current.clear();
+  }, [feedbackSessionId]);
   const [feedbackState, setFeedback] = useState(() => {
     try {
       return restoreCollectionFeedback(localStorage.getItem('traceability-last-feedback'), feedbackSessionId);
@@ -428,22 +442,19 @@ export default function TraceabilityCollection({ embedded = false }) {
   const {
     activeContext: realtimeActiveContext,
     hasRealtimeUpdate: hasRealtimeActiveContextUpdate,
-    preferSnapshot: preferActiveContextSnapshot,
     resetRealtimeUpdate: resetRealtimeActiveContextUpdate,
   } = useCollectionActiveContextSync({
     cellId: selectedCellId,
     cellName,
     machineId: machine?.id || null,
     queryClient,
+    realtimeEnabled: false,
+    periodicReconciliationEnabled: false,
   });
-  const feedbackMatchesCurrentScope = feedbackCollectionScopeRef.current === activeCollectionScope;
-  const kpiBatchId = resolveCollectionKpiBatchId({
-    hasRealtimeUpdate: hasRealtimeActiveContextUpdate,
-    realtimeActiveContext,
-    preferSnapshot: preferActiveContextSnapshot,
-    feedbackMatchesCurrentScope,
-    feedback,
-  });
+  // A fotografia da estação resolve o lote ativo no servidor. Manter a chave
+  // sem o lote da última peça evita criar uma query nova a cada ACK terminal;
+  // trocas de lote chegam pela reconciliação central da mesma query estável.
+  const kpiBatchId = null;
 
   // KPIs consistentes com a fonte do histórico de coletas
   const { data: kpis = {}, isError: kpisUnavailable, dataUpdatedAt: kpisUpdatedAt } = useQuery({
@@ -456,14 +467,27 @@ export default function TraceabilityCollection({ embedded = false }) {
       shiftRange.dateTo,
       kpiBatchId,
     ],
-    queryFn: () => getCollectionKpis({
-      cellName,
-      workstationId: machine?.id || null,
-      shift: shift || null,
-      dateFrom: shiftRange.dateFrom,
-      dateTo: shiftRange.dateTo,
-      pcpImportBatchId: kpiBatchId,
-    }),
+    queryFn: async ({ queryKey }) => {
+      const startedGeneration = collectionSnapshotGenerationRef.current;
+      const snapshot = await getCollectionKpis({
+        cellName,
+        workstationId: machine?.id || null,
+        shift: shift || null,
+        dateFrom: shiftRange.dateFrom,
+        dateTo: shiftRange.dateTo,
+        pcpImportBatchId: kpiBatchId,
+      });
+      if (startedGeneration !== collectionSnapshotGenerationRef.current) {
+        return resolveCollectionSnapshotAfterLocalUpdates({
+          queryClient, queryKey, startedGeneration,
+          currentGeneration: collectionSnapshotGenerationRef.current, snapshot,
+        });
+      }
+      if (!collectionSnapshotMatchesPendingLot(queryClient.getQueryData(queryKey), snapshot)) {
+        throw new Error('Indicadores do novo lote aguardando confirmação do servidor.');
+      }
+      return { ...snapshot, _collection_snapshot_completed_at: Date.now() };
+    },
     enabled: !!cellName,
     staleTime: 0,
     refetchOnMount: true,
@@ -473,25 +497,32 @@ export default function TraceabilityCollection({ embedded = false }) {
 
   const { data: shiftKpis = {}, isError: shiftKpisUnavailable, dataUpdatedAt: shiftKpisUpdatedAt } = useQuery({
     queryKey: ['operator-shift-kpis', opSession?.id, shift, shiftRange.dateFrom, shiftRange.dateTo],
-    queryFn: () => getOperatorShiftKpisV2(opSession?.id),
+    queryFn: async ({ queryKey }) => {
+      const startedGeneration = collectionSnapshotGenerationRef.current;
+      const snapshot = await getOperatorShiftKpisV2(opSession?.id);
+      return resolveCollectionSnapshotAfterLocalUpdates({
+        queryClient, queryKey, startedGeneration,
+        currentGeneration: collectionSnapshotGenerationRef.current, snapshot,
+      });
+    },
     enabled: !!opSession?.id,
     retry: false,
     refetchInterval: false,
   });
 
   const cellStats = {
-    expected: Number(kpis.expected) || 0,
-    approved: Number(kpis.approved) || 0,
-    rejected: Number(kpis.rejected) || 0,
-    pending: Number(kpis.pending) || 0,
-    rework: Number(kpis.rework) || 0,
-    replacement: Number(kpis.replacement) || 0,
+    expected: kpis.lot_kpis_stale ? '—' : Number(kpis.expected) || 0,
+    approved: kpis.lot_kpis_stale ? '—' : Number(kpis.approved) || 0,
+    rejected: kpis.lot_kpis_stale ? '—' : Number(kpis.rejected) || 0,
+    pending: kpis.lot_kpis_stale ? '—' : Number(kpis.pending) || 0,
+    rework: kpis.lot_kpis_stale ? '—' : Number(kpis.rework) || 0,
+    replacement: kpis.lot_kpis_stale ? '—' : Number(kpis.replacement) || 0,
   };
   const activeGeneralLots = Array.isArray(kpis.active_general_lots) ? kpis.active_general_lots : [];
-  const activeContextPreferred = hasRealtimeActiveContextUpdate || (
-    Boolean(kpis.active_context)
-    && (!feedbackMatchesCurrentScope || preferActiveContextSnapshot)
-  );
+  // O snapshot e a projeção do ACK mantêm este contexto alinhado. Preferi-lo
+  // impede que o feedback da peça anterior congele o banner depois de uma
+  // reconciliação que já confirmou outro lote ativo.
+  const activeContextPreferred = hasRealtimeActiveContextUpdate || kpis.active_context !== undefined;
   const { generalLot: currentGeneralLot, clientLotCode: currentClientLotCode, customerName: currentCustomerName } = resolveCollectionLotContext({
     feedback,
     lastIdentifiedFeedback,
@@ -502,11 +533,19 @@ export default function TraceabilityCollection({ embedded = false }) {
   });
 
   const refreshKpis = useCallback(() => {
-    invalidateAffectedCollectionQueries(queryClient, {
-      cellName,
-      machineId: machine?.id,
-      operatorId: opSession?.id,
-    });
+    scheduleCollectionQueryInvalidation(queryClient, {
+      predicate: (query) => {
+        const key = query.queryKey || [];
+        if (key[0] === 'collection-kpis') {
+          return (!cellName || key[1] === cellName)
+            && (!machine?.id || !key[2] || key[2] === machine.id);
+        }
+        if (key[0] === 'operator-shift-kpis') {
+          return !opSession?.id || key[1] === opSession.id;
+        }
+        return false;
+      },
+    }, JSON.stringify(['collection-central-kpis', cellName || null, machine?.id || null, opSession?.id || null]));
   }, [queryClient, cellName, machine?.id, opSession?.id]);
 
   const refreshData = useCallback(() => {
@@ -518,10 +557,78 @@ export default function TraceabilityCollection({ embedded = false }) {
     }, COLLECTION_QUERY_REFRESH_INTERVAL_MS);
   }, [refreshKpis]);
 
+  useEffect(() => {
+    if (kpis.counter_reconciliation_required) {
+      scheduleCollectionCounterReconciliation(queryClient, [
+        'collection-kpis', cellName, machine?.id, shift,
+        shiftRange.dateFrom, shiftRange.dateTo, kpiBatchId,
+      ]);
+    }
+    if (shiftKpis.counter_reconciliation_required) {
+      scheduleCollectionCounterReconciliation(queryClient, [
+        'operator-shift-kpis', opSession?.id, shift, shiftRange.dateFrom, shiftRange.dateTo,
+      ]);
+    }
+  }, [cellName, kpis.counter_reconciliation_required, machine?.id, opSession?.id,
+    queryClient, shift, shiftKpis.counter_reconciliation_required,
+    shiftRange.dateFrom, shiftRange.dateTo, kpiBatchId]);
+
+  // Uma troca de lote exige nova base de contagem. A coleta segue imediatamente;
+  // no máximo três snapshots reconciliam essa transição, sem GET por leitura.
+  useEffect(() => {
+    if (!kpis.lot_kpis_stale) return undefined;
+    const timers = [3_000, 8_000, 35_000].map((delay) => window.setTimeout(() => {
+      scheduleCollectionQueryInvalidation(queryClient, {
+        queryKey: ['collection-kpis', cellName, machine?.id],
+      });
+    }, delay));
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [cellName, kpis.lot_kpis_stale, kpis.active_context?.active_pcp_import_batch_id,
+    kpis.active_context?.active_general_lot_code, machine?.id, queryClient]);
+
   useEffect(() => () => {
     if (refreshReadsTimerRef.current !== null) clearTimeout(refreshReadsTimerRef.current);
     refreshReadsTimerRef.current = null;
   }, [cellName, machine?.id, opSession?.id]);
+
+  // Decisões e deltas são aplicados localmente no caminho quente. Esta leitura
+  // completa existe apenas como reconciliação de segurança; a dispersão evita
+  // que milhares de estações consultem histórico/KPIs no mesmo segundo. O
+  // state_version retornado pelo snapshot continua sendo a revisão canônica.
+  useEffect(() => {
+    if (!cellName || !opSession?.id) return undefined;
+    let cancelled = false;
+    let timeoutId = null;
+
+    const reconcileVisibleOnline = () => {
+      if (cancelled || navigator.onLine === false || document.visibilityState === 'hidden') return;
+      refreshData();
+    };
+    const schedule = () => {
+      const jitter = Math.floor(Math.random() * COLLECTION_SAFETY_RECONCILIATION_JITTER_MS);
+      timeoutId = window.setTimeout(() => {
+        timeoutId = null;
+        if (cancelled) return;
+        reconcileVisibleOnline();
+        schedule();
+      }, COLLECTION_SAFETY_RECONCILIATION_MIN_MS + jitter);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') reconcileVisibleOnline();
+    };
+
+    window.addEventListener('focus', reconcileVisibleOnline);
+    window.addEventListener('online', reconcileVisibleOnline);
+    document.addEventListener('visibilitychange', onVisibility);
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      window.removeEventListener('focus', reconcileVisibleOnline);
+      window.removeEventListener('online', reconcileVisibleOnline);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [cellName, machine?.id, opSession?.id, refreshData]);
 
   // Busca silenciosa da timeline da peça ativa
   useEffect(() => {
@@ -561,9 +668,8 @@ export default function TraceabilityCollection({ embedded = false }) {
       machineName: machine?.name || null,
       ...event,
     });
-    refreshData();
     return result;
-  }, [cellName, shift, operator, operatorId, machine, refreshData]);
+  }, [cellName, shift, operator, operatorId, machine]);
 
   const handleQueueResult = useCallback(({
     event,
@@ -607,6 +713,22 @@ export default function TraceabilityCollection({ embedded = false }) {
     }
 
     if (!isCollectionTerminalState(state)) return;
+    collectionSnapshotGenerationRef.current += 1;
+    applyCollectionTerminalResultToCache(queryClient, {
+      event,
+      result: domainResult,
+      state,
+      enrichmentOnly,
+      defaults: {
+        cellId: selectedCellId,
+        cellName,
+        machineId: machine?.id || null,
+        machineName: machine?.name || null,
+        operatorId,
+        operatorName: operator,
+        shift,
+      },
+    }, locallyProjectedEventIdsRef.current);
     if (isLatest && domainResult?.item) {
       setSelectedPiece({
         id: domainResult.item.id || domainResult.reading?.piece_id,
@@ -628,12 +750,13 @@ export default function TraceabilityCollection({ embedded = false }) {
     // Dados completos podem chegar depois da decisão: atualiza a tela e o
     // armazenamento do feedback, sem repetir som, aviso ou recarga de consultas.
     if (enrichmentOnly) return;
-    refreshData();
 
     const message = collectionFeedbackMessage({ message: domainResult?.message || error?.message }, state);
     if (state === COLLECTION_STATES.APPROVED) {
       toast.success(message || 'Leitura aprovada.', {
-        id: 'collection-final-approved',
+        // Atualiza o aviso provisório da mesma esteira visual em vez de deixar
+        // "aguardando registro" aberto ao lado de uma decisão já terminal.
+        id: COLLECTION_STATUS_TOAST_ID,
       });
       if (isLatest) navigator.vibrate?.([70, 40, 70]);
     } else if ([
@@ -642,14 +765,14 @@ export default function TraceabilityCollection({ embedded = false }) {
       COLLECTION_STATES.PENDING_REVIEW,
     ].includes(state)) {
       toast.warning(message || 'Leitura requer atenção.', {
-        id: 'collection-final-warning',
+        id: COLLECTION_STATUS_TOAST_ID,
       });
     } else {
       toast.error(message || 'Leitura não aprovada.', {
-        id: 'collection-final-error',
+        id: COLLECTION_STATUS_TOAST_ID,
       });
     }
-  }, [operator, feedbackSessionId, refreshData, updateFeedback]);
+  }, [cellName, feedbackSessionId, machine, operator, operatorId, queryClient, selectedCellId, shift, updateFeedback]);
 
   // ─── Fila de coleta com filtros ─────────────────────────────────────────────
   const {
@@ -659,7 +782,6 @@ export default function TraceabilityCollection({ embedded = false }) {
     processNow,
     retryQueueErrors,
     pipelineV3Enabled,
-    realtimeStatus,
     online: collectionOnline,
   } = useCollectionQueue(processEvent, {
     cellName,
@@ -669,6 +791,10 @@ export default function TraceabilityCollection({ embedded = false }) {
     operatorId,
     queryClient,
     onResult: handleQueueResult,
+    // O plano Free suporta menos conexões Realtime do que o parque fabril.
+    // Cada estação confirma a escrita pelo RPC HTTP imediato e reconcilia por
+    // consulta com dispersão, sem manter WebSocket por tela.
+    enableV3Realtime: false,
   });
 
   // ─── Handler principal de leitura — enfileira e processa ────────────────────
@@ -758,7 +884,7 @@ export default function TraceabilityCollection({ embedded = false }) {
         if (result?.pending || result?.status === 'queued') {
           toast.info(
             result.message || 'Leitura recebida e aguardando validação.',
-            { id: 'collection-local-accepted' },
+            { id: COLLECTION_STATUS_TOAST_ID },
           );
           return result;
         }
@@ -1137,31 +1263,33 @@ export default function TraceabilityCollection({ embedded = false }) {
       {/* Detalhamento de Peças da Estação / Célula */}
       {cellName && (
         <div className="space-y-4">
-          {(kpisUnavailable || shiftKpisUnavailable) && (
+          {(kpisUnavailable || shiftKpisUnavailable || kpis.lot_kpis_stale) && (
             <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
-              Indicadores temporariamente indisponíveis. Os últimos valores confirmados são preservados; isso não significa produção zerada. A captura das leituras continua independente.
+              {kpis.lot_kpis_stale
+                ? 'Novo lote identificado. Atualizando seus indicadores; a captura das leituras continua disponível.'
+                : 'Indicadores temporariamente indisponíveis. Os últimos valores confirmados são preservados; isso não significa produção zerada. A captura das leituras continua independente.'}
             </div>
           )}
           {/* Painel de Integridade da Estação */}
-          <div className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-4">
+          <div data-testid="collection-integrity-panel" className="bg-card border border-border/60 rounded-2xl p-5 shadow-sm space-y-4">
             <div className="flex justify-between items-center pb-2">
               <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
                 Painel de Integridade da Estação: {cellName}
               </h4>
               <div className="flex items-center gap-2">
                 <span className={`h-2 w-2 rounded-full ${
-                  collectionOnline && !kpisUnavailable && !shiftKpisUnavailable && (!pipelineV3Enabled || realtimeStatus === 'SUBSCRIBED')
+                  collectionOnline && !kpisUnavailable && !shiftKpisUnavailable
                     ? 'bg-emerald-500 animate-pulse'
                     : 'bg-slate-400'
                 }`} />
                 <span className="text-xs text-muted-foreground font-medium">
                   {kpisUnavailable || shiftKpisUnavailable
-                    ? 'Indicadores aguardando atualização'
+                    ? 'Indicadores aguardando reconciliação HTTP'
                     : !collectionOnline
                     ? 'Offline — leituras preservadas localmente'
-                    : pipelineV3Enabled && realtimeStatus !== 'SUBSCRIBED'
-                      ? 'Reconciliação segura ativa'
-                      : 'Monitoramento em Tempo Real'}
+                    : pipelineV3Enabled
+                      ? 'Confirmação imediata · indicadores a cada 60–90 s'
+                      : 'Coleta ativa · indicadores a cada 60–90 s'}
                 </span>
               </div>
             </div>
@@ -1233,6 +1361,9 @@ export default function TraceabilityCollection({ embedded = false }) {
             onOpenTraceability={handleOpenTraceabilityDrawer}
             refreshSignal={refreshReadsSignal}
             canReject={true}
+            realtimeEnabled={false}
+            periodicReconciliationEnabled={false}
+            localResultGenerationRef={collectionSnapshotGenerationRef}
           />
         </div>
 
@@ -1332,6 +1463,9 @@ export default function TraceabilityCollection({ embedded = false }) {
           refreshReadsSignal={refreshReadsSignal}
           contextReady={collectionContextReady}
           contextMessage={collectionContextMessage}
+          realtimeEnabled={false}
+          periodicReconciliationEnabled={false}
+          localResultGenerationRef={collectionSnapshotGenerationRef}
         />
       </CollectionErrorBoundary>
     </div>

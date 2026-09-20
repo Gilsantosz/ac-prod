@@ -4,7 +4,13 @@ import execution from 'k6/execution';
 import { check, fail, sleep } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
 import encoding from 'k6/encoding';
-import { assertIsolatedCollectionTarget, assertVerifiedCollectionSession, validateCollectionIdentities } from './collection-load-preflight.js';
+import {
+  assertIsolatedCollectionTarget,
+  assertVerifiedCollectionSession,
+  COLLECTION_LOAD_PROFILE_REQUIREMENTS,
+  validateCollectionCodeWindow,
+  validateCollectionIdentities,
+} from './collection-load-preflight.js';
 
 /*
  * AC.Prod Collection Fabric v3 — workload mutante de capacidade.
@@ -22,8 +28,11 @@ const profile = (__ENV.K6_PROFILE || 'smoke').toLowerCase();
 const sloProfile = (__ENV.K6_SLO_PROFILE || 'production').toLowerCase();
 const runId = __ENV.K6_RUN_ID || '';
 const sequenceBase = Number(__ENV.K6_SEQUENCE_BASE || 0);
+const codeOffset = Number(__ENV.K6_CODE_OFFSET);
 const target = __ENV.K6_TARGET || '';
 const writesConfirmation = __ENV.K6_CONFIRM_WRITES || '';
+const ingressRpc = 'ingest_collection_batch_immediate_v3';
+const immediateBatchSize = 5;
 
 if (!supabaseUrl || !anonKey || !fixturePath) {
   fail('Defina SUPABASE_URL, SUPABASE_ANON_KEY e K6_FIXTURES.');
@@ -35,6 +44,9 @@ if (!/^[a-zA-Z0-9_-]{1,32}$/.test(runId)) {
 }
 if (!Number.isSafeInteger(sequenceBase) || sequenceBase < 1) {
   fail('K6_SEQUENCE_BASE deve ser um inteiro positivo, reservado para esta rodada.');
+}
+if (!Number.isSafeInteger(codeOffset) || codeOffset < 0) {
+  fail('K6_CODE_OFFSET deve ser um inteiro nao negativo, reservado para esta rodada.');
 }
 if (!['production', 'test'].includes(sloProfile)) {
   fail('K6_SLO_PROFILE deve ser production ou test.');
@@ -73,11 +85,12 @@ const allowedProfiles = new Set([
   'idempotency',
   'contention_piece',
   'contention_cell_lot',
+  'global_ramp',
 ]);
 if (!allowedProfiles.has(profile)) {
   fail(
     'K6_PROFILE invalido. Use smoke, nominal, burst, microbatch, priority, '
-    + 'idempotency, contention_piece ou contention_cell_lot.',
+    + 'idempotency, contention_piece, contention_cell_lot ou global_ramp.',
   );
 }
 
@@ -117,6 +130,10 @@ const contentionPieceBlockedOrDuplicated = new Counter(
 );
 const contentionCellLotOutcomes = new Counter('collection_contention_cell_lot_outcomes');
 const contentionCellLotApprovals = new Counter('collection_contention_cell_lot_approvals');
+const duplicateReceipts = new Counter('collection_duplicate_receipts');
+const missingLedgerRows = new Counter('collection_missing_ledger_rows');
+const duplicateLedgerRows = new Counter('collection_duplicate_ledger_rows');
+const nonApprovedLedgerRows = new Counter('collection_non_approved_ledger_rows');
 
 const commonThresholds = {
   checks: ['rate==1'],
@@ -144,6 +161,11 @@ const commonThresholds = {
   collection_server_dlq_messages: ['count==0'],
   collection_final_health_failures: ['count==0'],
   collection_realtime_connection_failures: ['count==0'],
+  collection_duplicate_receipts: ['count==0'],
+  collection_missing_ledger_rows: ['count==0'],
+  collection_duplicate_ledger_rows: ['count==0'],
+  collection_non_approved_ledger_rows: ['count==0'],
+  http_req_failed: ['rate==0'],
 };
 
 const scenarioProfiles = {
@@ -255,6 +277,24 @@ const scenarioProfiles = {
       maxDuration: '45s',
     },
   },
+  global_ramp: {
+    global_40_events_per_second: {
+      executor: 'ramping-arrival-rate',
+      exec: 'globalRamp',
+      startTime: '35s',
+      startRate: 1,
+      timeUnit: '1s',
+      stages: [
+        { duration: '30s', target: 10 },
+        { duration: '1m', target: 40 },
+        { duration: '10m', target: 40 },
+        { duration: '30s', target: 0 },
+      ],
+      preAllocatedVUs: 200,
+      maxVUs: 500,
+      gracefulStop: '30s',
+    },
+  },
 };
 
 const profileThresholds = profile === 'idempotency'
@@ -286,23 +326,17 @@ if (profile === 'contention_cell_lot') {
 }
 
 export const options = {
-  setupTimeout: '2m',
+  setupTimeout: profile === 'global_ramp' ? '10m' : '2m',
   scenarios: scenarioProfiles[profile],
   thresholds: { ...commonThresholds, ...profileThresholds },
   discardResponseBodies: false,
+  batch: 20,
+  batchPerHost: 20,
   userAgent: `acprod-collection-fabric-v3-k6/${runId}`,
 };
 
-const profileRequirements = {
-  smoke: { devices: 1, codes: 1 },
-  nominal: { devices: 100, codes: 18000, cells: 2 },
-  burst: { devices: 100, codes: 6000, cells: 2 },
-  microbatch: { devices: 5, codes: 125 },
-  priority: { devices: 100, codes: 1625, cells: 2 },
-  idempotency: { devices: 20, codes: 20 },
-  contention_piece: { devices: 20, codes: 1 },
-  contention_cell_lot: { devices: 50, codes: 50 },
-};
+const profileRequirements = COLLECTION_LOAD_PROFILE_REQUIREMENTS;
+const activeDevices = devices.slice(0, profileRequirements[profile].devices);
 
 const scenarioOffsets = {
   smoke: 0,
@@ -315,6 +349,21 @@ const scenarioOffsets = {
   idempotency: 6_000_000,
   contention_piece: 7_000_000,
   contention_cell_lot: 8_000_000,
+  global_ramp: 9_000_000,
+};
+
+const scenarioCodeOffsets = {
+  smoke: 0,
+  nominal: 0,
+  burst: 0,
+  microbatch: 0,
+  priority_replay_seed: 0,
+  priority_live: 125,
+  priority_replay: 1325,
+  idempotency: 0,
+  contention_piece: 0,
+  contention_cell_lot: 0,
+  global_ramp: 0,
 };
 
 function authHeaders(device) {
@@ -392,7 +441,7 @@ function iterationNumber() {
 }
 
 function selectDevice(iteration) {
-  return devices[iteration % devices.length];
+  return activeDevices[iteration % activeDevices.length];
 }
 
 function eventCode(codeOffset, iteration, batchSize, eventIndex) {
@@ -401,11 +450,7 @@ function eventCode(codeOffset, iteration, batchSize, eventIndex) {
 
 function createEvents(scenarioName, sourceMode, batchSize, iteration) {
   const offset = scenarioOffsets[scenarioName];
-  const codeOffset = scenarioName === 'priority_live'
-    ? 125
-    : scenarioName === 'priority_replay'
-      ? 1325
-      : 0;
+  const scenarioCodeOffset = codeOffset + scenarioCodeOffsets[scenarioName];
   const capturedAt = new Date(
     Date.now() - (sourceMode === 'offline_replay'
       ? Number(__ENV.K6_REPLAY_AGE_SECONDS || 60) * 1000
@@ -414,7 +459,7 @@ function createEvents(scenarioName, sourceMode, batchSize, iteration) {
 
   const device = selectDevice(iteration);
   return Array.from({ length: batchSize }, (_, eventIndex) => {
-    const code = eventCode(codeOffset, iteration, batchSize, eventIndex);
+    const code = eventCode(scenarioCodeOffset, iteration, batchSize, eventIndex);
     if (fixture.code_cells?.[code] && fixture.code_cells[code] !== device.cell_id) {
       fail('Fixture recusada: codigo destinado a outra celula; nenhuma coleta deste batch foi enviada.');
     }
@@ -432,43 +477,58 @@ function createEvents(scenarioName, sourceMode, batchSize, iteration) {
 function submitBatch(scenarioName, sourceMode, batchSize, iteration = iterationNumber()) {
   const device = selectDevice(iteration);
   const events = createEvents(scenarioName, sourceMode, batchSize, iteration);
-  const response = rpc(
-    'ingest_collection_batch_v3',
-    {
-      p_batch_id: deterministicUuid(`${runId}:${scenarioName}:batch:${iteration}`),
-      p_device_id: device.device_id,
-      p_events: {
-        operator_session_id: device.operator_session_id,
-        source_mode: sourceMode,
-        app_version: `k6-${runId}`,
-        events,
+  const results = [];
+  let allPersisted = true;
+  let lastResponse = null;
+
+  // Replica o cliente real: o transporte imediato aceita no máximo cinco
+  // eventos e preserva cada sublote já confirmado caso um posterior falhe.
+  for (let offset = 0; offset < events.length; offset += immediateBatchSize) {
+    const chunk = events.slice(offset, offset + immediateBatchSize);
+    const response = rpc(
+      ingressRpc,
+      {
+        p_batch_id: deterministicUuid(`${runId}:${scenarioName}:batch:${iteration}:${offset}`),
+        p_device_id: device.device_id,
+        p_events: {
+          operator_session_id: device.operator_session_id,
+          source_mode: sourceMode,
+          app_version: `k6-${runId}`,
+          events: chunk,
+        },
       },
-    },
-    device,
-    { source_mode: sourceMode, workload: scenarioName },
-  );
+      device,
+      { source_mode: sourceMode, workload: scenarioName },
+    );
+    lastResponse = response;
+    ackMs.add(response.timings.duration, { source_mode: sourceMode, workload: scenarioName });
+    const body = jsonResponse(response);
+    const chunkResults = Array.isArray(body?.results) ? body.results : [];
+    const responseOk = response.status === 200 && chunkResults.length === chunk.length;
+    const chunkPersisted = responseOk && chunkResults.every((result) => (
+      result.persisted === true
+      && !result.error_code
+      && result.queue_status !== 'rejected'
+      && result.decision_committed_at
+    ));
+    if (!responseOk) ingressFailures.add(1, { source_mode: sourceMode, workload: scenarioName });
+    if (!chunkPersisted) persistenceFailures.add(1, { source_mode: sourceMode, workload: scenarioName });
+    allPersisted = allPersisted && chunkPersisted;
+    results.push(...chunkResults);
 
-  ackMs.add(response.timings.duration, { source_mode: sourceMode, workload: scenarioName });
-  const body = jsonResponse(response);
-  const results = Array.isArray(body?.results) ? body.results : [];
-  const responseOk = response.status === 200 && results.length === events.length;
+    check(response, {
+      'ingresso imediato v3 responde 200': () => response.status === 200,
+      'resposta imediata contem um resultado por evento': () => chunkResults.length === chunk.length,
+      'decisoes foram persistidas antes da resposta': () => chunkPersisted,
+    });
+    if (!chunkPersisted) break;
+  }
 
-  if (!responseOk) ingressFailures.add(1, { source_mode: sourceMode, workload: scenarioName });
-  const allPersisted = responseOk && results.every((result) => (
-    result.persisted === true
-    && !result.error_code
-    && result.queue_status !== 'rejected'
-  ));
-  if (!allPersisted) persistenceFailures.add(1, { source_mode: sourceMode, workload: scenarioName });
-
-  check(response, {
-    'ingresso v3 responde 200': () => response.status === 200,
-    'ACK contem um resultado por evento': () => results.length === events.length,
-    'todos os eventos foram persistidos': () => allPersisted,
-  });
-
-  if (allPersisted) observeEvents(device, events, sourceMode, scenarioName);
-  return { device, events, results, response };
+  if (allPersisted && results.length === events.length) {
+    observeEvents(device, events, sourceMode, scenarioName);
+    verifyCanonicalLedger(device, events, scenarioName);
+  }
+  return { device, events, results, response: lastResponse };
 }
 
 function receiptUrl(clientEventIds) {
@@ -487,8 +547,36 @@ function receiptUrl(clientEventIds) {
   return `${supabaseUrl}/rest/v1/coletas_producao?select=${select}&client_event_id=in.${encodeURIComponent(tuple)}`;
 }
 
-function ledgerUrl(clientEventId) {
-  return `${supabaseUrl}/rest/v1/production_stage_readings?select=id,client_event_id,status,pipeline_version,lot_id,cell_name,machine_id&client_event_id=eq.${encodeURIComponent(clientEventId)}&pipeline_version=eq.3`;
+function ledgerUrl(clientEventIds) {
+  const ids = Array.isArray(clientEventIds) ? clientEventIds : [clientEventIds];
+  const tuple = `(${ids.map((id) => `"${id}"`).join(',')})`;
+  return `${supabaseUrl}/rest/v1/production_stage_readings?select=id,client_event_id,status,pipeline_version,lot_id,cell_name,machine_id&client_event_id=in.${encodeURIComponent(tuple)}&pipeline_version=eq.3`;
+}
+
+function verifyCanonicalLedger(device, events, workload) {
+  const response = http.get(ledgerUrl(events.map((event) => event.client_event_id)), {
+    headers: authHeaders(device),
+    tags: { operation: 'verify_canonical_ledger', profile, workload },
+    timeout: __ENV.K6_HTTP_TIMEOUT || '10s',
+  });
+  const rows = jsonResponse(response);
+  const ids = Array.isArray(rows) ? rows.map((row) => row.client_event_id) : [];
+  const uniqueIds = new Set(ids);
+  const missing = events.filter((event) => !uniqueIds.has(event.client_event_id)).length;
+  const duplicates = Math.max(0, ids.length - uniqueIds.size);
+  const nonApproved = Array.isArray(rows)
+    ? rows.filter((row) => row.status !== 'approved').length
+    : events.length;
+  if (missing > 0) missingLedgerRows.add(missing, { workload });
+  if (duplicates > 0) duplicateLedgerRows.add(duplicates, { workload });
+  if (nonApproved > 0) nonApprovedLedgerRows.add(nonApproved, { workload });
+  check(response, {
+    'ledger respondeu 200': () => response.status === 200,
+    'cada evento possui um unico fato canonico': () => (
+      Array.isArray(rows) && missing === 0 && duplicates === 0 && rows.length === events.length
+    ),
+    'todos os fatos da carga produtiva foram aprovados': () => nonApproved === 0,
+  });
 }
 
 function waitForCoordinatedLaunch(startAt) {
@@ -508,7 +596,7 @@ function waitForCoordinatedLaunch(startAt) {
 
 function submitContentionEvent(workload, code, setupData) {
   const vuIndex = Number(execution.vu.idInTest) - 1;
-  const device = devices[vuIndex];
+  const device = activeDevices[vuIndex];
   const clientEventId = `k6-v3:${runId}:${workload}:${vuIndex}`;
   const event = {
     client_event_id: clientEventId,
@@ -521,7 +609,7 @@ function submitContentionEvent(workload, code, setupData) {
 
   waitForCoordinatedLaunch(setupData?.contention_launch_at);
   const response = rpc(
-    'ingest_collection_batch_v3',
+    ingressRpc,
     {
       p_batch_id: deterministicUuid(`${runId}:${workload}:batch:${vuIndex}`),
       p_device_id: device.device_id,
@@ -594,7 +682,12 @@ function observeEvents(device, events, sourceMode, workload) {
       continue;
     }
 
+    const responseReceiptIds = new Set();
     for (const row of rows) {
+      if (responseReceiptIds.has(row.client_event_id)) {
+        duplicateReceipts.add(1, { source_mode: sourceMode, workload });
+      }
+      responseReceiptIds.add(row.client_event_id);
       if (row.dead_lettered_at && pendingDecision.has(row.client_event_id)) {
         deadLetteredEvents.add(1, { source_mode: sourceMode, workload });
         pendingDecision.delete(row.client_event_id);
@@ -645,22 +738,90 @@ function fetchHealth(device) {
   return response.status === 200 ? jsonResponse(response) : null;
 }
 
+function verifyRemoteIdentities() {
+  const preflightBatchSize = 10;
+  for (let offset = 0; offset < activeDevices.length; offset += preflightBatchSize) {
+    const current = activeDevices.slice(offset, offset + preflightBatchSize);
+    const requests = [];
+    for (const device of current) {
+      const params = {
+        headers: authHeaders(device),
+        timeout: '10s',
+        tags: { operation: 'identity_preflight', profile },
+      };
+      requests.push({ method: 'GET', url: `${supabaseUrl}/auth/v1/user`, params });
+      requests.push({
+        method: 'GET',
+        url: `${supabaseUrl}/rest/v1/operator_sessions?select=id,auth_user_id,cell_id,machine_id,device_id,ended_at,revoked_at,expires_at&id=eq.${device.operator_session_id}`,
+        params,
+      });
+    }
+
+    const responses = http.batch(requests);
+    for (let index = 0; index < current.length; index += 1) {
+      const device = current[index];
+      const userResponse = responses[index * 2];
+      const sessionResponse = responses[(index * 2) + 1];
+      const sessions = jsonResponse(sessionResponse);
+      if (
+        userResponse.status !== 200
+        || sessionResponse.status !== 200
+        || !Array.isArray(sessions)
+        || sessions.length !== 1
+      ) {
+        fail('Preflight remoto recusado: usuario ou sessao operacional nao verificavel.');
+      }
+      try {
+        assertVerifiedCollectionSession(
+          device,
+          jsonResponse(userResponse),
+          sessions[0],
+          Date.now(),
+          profileRequirements[profile].tokenValidityMinutes || 15,
+        );
+      } catch (error) {
+        fail(error.message);
+      }
+    }
+  }
+}
+
+function assertUnusedRunNamespace() {
+  const prefix = encodeURIComponent(`k6-v3:${runId}:*`);
+  const response = http.get(
+    `${supabaseUrl}/rest/v1/coletas_producao?select=client_event_id&client_event_id=like.${prefix}&limit=1`,
+    {
+      headers: authHeaders(activeDevices[0]),
+      timeout: '10s',
+      tags: { operation: 'run_namespace_preflight', profile },
+    },
+  );
+  const rows = jsonResponse(response);
+  if (response.status !== 200 || !Array.isArray(rows)) {
+    fail('Preflight remoto recusado: namespace da rodada nao pode ser verificado.');
+  }
+  if (rows.length > 0) {
+    fail('K6_RUN_ID ja possui recibos visiveis; use um namespace novo e uma nova faixa de codigos.');
+  }
+}
+
 function validateFixture() {
   const requirement = profileRequirements[profile];
   try {
     validateCollectionIdentities(fixture, requirement, (token) => (
       JSON.parse(encoding.b64decode(token.split('.')[1], 'rawurl', 's'))
     ));
+    validateCollectionCodeWindow(fixture, profile, codeOffset);
   } catch (error) { fail(error.message); }
-  if (devices.length < requirement.devices) {
+  if (activeDevices.length < requirement.devices) {
     fail(`Fixture insuficiente: ${profile} exige ${requirement.devices} dispositivos distintos.`);
   }
-  if (codes.length < requirement.codes) {
-    fail(`Fixture insuficiente: ${profile} exige ${requirement.codes} codigos produtivos validos e exclusivos.`);
+  if (codes.length < codeOffset + requirement.codes) {
+    fail(`Fixture insuficiente: ${profile} exige ${requirement.codes} codigos a partir de K6_CODE_OFFSET.`);
   }
 
   const deviceIds = new Set();
-  for (const [index, device] of devices.entries()) {
+  for (const [index, device] of activeDevices.entries()) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(device.device_id || '')) {
       fail(`Fixture invalida: device_id UUID ausente/invalido no indice ${index}.`);
     }
@@ -676,10 +837,11 @@ function validateFixture() {
     deviceIds.add(device.device_id);
   }
 
-  const invalidCode = codes.find((code) => !/^\d{8}$/.test(code));
+  const activeCodes = codes.slice(codeOffset, codeOffset + requirement.codes);
+  const invalidCode = activeCodes.find((code) => !/^\d{8}$/.test(code));
   if (invalidCode) fail('Fixture invalida: todos os codigos devem conter exatamente oito digitos.');
-  if (new Set(codes).size !== codes.length) {
-    fail('Fixture invalida: os codigos produtivos devem ser exclusivos nesta rodada.');
+  if (new Set(activeCodes).size !== activeCodes.length) {
+    fail('Fixture invalida: a janela de codigos deve ser exclusiva nesta rodada.');
   }
 
   if (profile === 'contention_piece' || profile === 'contention_cell_lot') {
@@ -699,22 +861,24 @@ export function setup() {
   validateFixture();
   // Decoding JWTs is not authentication: confirm each identity and operational
   // scope against the isolated backend before the first mutating request.
-  for (const device of devices) {
-    const params = { headers: authHeaders(device), timeout: '10s', tags: { operation: 'identity_preflight', profile } };
-    const userResponse = http.get(`${supabaseUrl}/auth/v1/user`, params);
-    const sessionResponse = http.get(
-      `${supabaseUrl}/rest/v1/operator_sessions?select=id,auth_user_id,cell_id,machine_id,ended_at,revoked_at,expires_at&id=eq.${device.operator_session_id}`,
-      params,
-    );
-    const sessions = jsonResponse(sessionResponse);
-    if (userResponse.status !== 200 || sessionResponse.status !== 200 || !Array.isArray(sessions) || sessions.length !== 1) {
-      fail('Preflight remoto recusado: usuario ou sessao operacional nao verificavel.');
-    }
-    try { assertVerifiedCollectionSession(device, jsonResponse(userResponse), sessions[0]); }
-    catch (error) { fail(error.message); }
-  }
-  const health = fetchHealth(devices[0]);
+  verifyRemoteIdentities();
+  assertUnusedRunNamespace();
+  const health = fetchHealth(activeDevices[0]);
   if (!health) fail('Health v3 indisponivel antes da carga.');
+
+  const release = rpc('get_public_collection_immediate_release', {}, activeDevices[0], {
+    workload: 'release_gate',
+  });
+  const releaseBody = jsonResponse(release);
+  if (
+    release.status !== 200
+    || releaseBody?.ready !== true
+    || releaseBody?.transport !== 'immediate_v3'
+    || releaseBody?.ingress_rpc !== ingressRpc
+    || Number(releaseBody?.max_events_per_request) !== immediateBatchSize
+  ) {
+    fail('Gate publico do transporte imediato V3 nao esta pronto; nenhuma carga foi iniciada.');
+  }
 
   const requiredFlags = [
     'collection_pipeline_v3_ingress',
@@ -738,6 +902,10 @@ export function setup() {
   return {
     started_at: new Date().toISOString(),
     contention_launch_at: Date.now() + 5000,
+    baseline: {
+      deadlocks: Number(health.database_failures?.deadlocks || 0),
+      statement_timeouts: Number(health.database_failures?.statement_timeouts || 0),
+    },
   };
 }
 
@@ -750,8 +918,9 @@ export function nominal() {
 }
 
 export function connectedDevice() {
-  const deviceIndex = (Number(execution.vu.idInTest) - 1) % 100;
-  const device = devices[deviceIndex];
+  const deviceIndex = (Number(execution.vu.idInTest) - 1) % activeDevices.length;
+  const device = activeDevices[deviceIndex];
+  const connectionDurationMs = 605000;
   const topic = `realtime:collection:device:${device.device_id}`;
   const joinedAt = Date.now();
   let joined = false;
@@ -805,7 +974,7 @@ export function connectedDevice() {
       });
 
       socket.on('close', () => {
-        if (Date.now() - joinedAt < 600000 && !failed) {
+        if (Date.now() - joinedAt < connectionDurationMs - 5000 && !failed) {
           realtimeConnectionFailures.add(1, { device_slot: String(deviceIndex) });
           failed = true;
         }
@@ -829,7 +998,7 @@ export function connectedDevice() {
         }
       }, 5000);
 
-      socket.setTimeout(() => socket.close(), 605000);
+      socket.setTimeout(() => socket.close(), connectionDurationMs);
     },
   );
 
@@ -848,6 +1017,10 @@ export function connectedDevice() {
 
 export function burst() {
   submitBatch('burst', 'live', 1);
+}
+
+export function globalRamp() {
+  submitBatch('global_ramp', 'live', 1);
 }
 
 export function microbatch() {
@@ -876,7 +1049,7 @@ export function idempotency() {
 
   for (let delivery = 0; delivery < 5; delivery += 1) {
     const response = rpc(
-      'ingest_collection_batch_v3',
+      ingressRpc,
       {
         p_batch_id: batchId,
         p_device_id: device.device_id,
@@ -895,6 +1068,7 @@ export function idempotency() {
     const valid = response.status === 200
       && result?.persisted === true
       && result.client_event_id === event.client_event_id
+      && result.decision_committed_at
       && !result.error_code;
     if (!valid) {
       ingressFailures.add(1, { workload: 'idempotency' });
@@ -947,7 +1121,7 @@ export function idempotency() {
 }
 
 export function contentionSamePiece(setupData) {
-  const row = submitContentionEvent('contention_piece', codes[0], setupData);
+  const row = submitContentionEvent('contention_piece', codes[codeOffset], setupData);
   if (!row) return;
 
   contentionPieceOutcomes.add(1);
@@ -967,7 +1141,7 @@ export function contentionSameCellLot(setupData) {
   const vuIndex = Number(execution.vu.idInTest) - 1;
   const row = submitContentionEvent(
     'contention_cell_lot',
-    codes[vuIndex],
+    codes[codeOffset + vuIndex],
     setupData,
   );
   if (!row) return;
@@ -979,8 +1153,8 @@ export function contentionSameCellLot(setupData) {
   });
 }
 
-export function teardown() {
-  const device = devices[0];
+export function teardown(setupData) {
+  const device = activeDevices[0];
   const drainDeadline = Date.now() + Number(__ENV.K6_DRAIN_TIMEOUT_MS || 30000);
   let health = null;
 
@@ -999,8 +1173,16 @@ export function teardown() {
     return;
   }
 
-  const deadlocks = Number(health.database_failures?.deadlocks || 0);
-  const statementTimeouts = Number(health.database_failures?.statement_timeouts || 0);
+  const deadlocks = Math.max(
+    0,
+    Number(health.database_failures?.deadlocks || 0)
+      - Number(setupData?.baseline?.deadlocks || 0),
+  );
+  const statementTimeouts = Math.max(
+    0,
+    Number(health.database_failures?.statement_timeouts || 0)
+      - Number(setupData?.baseline?.statement_timeouts || 0),
+  );
   const dlqMessages = Number(health.counts?.dlq_messages || 0);
   if (deadlocks > 0) serverDeadlocks.add(deadlocks);
   if (statementTimeouts > 0) serverStatementTimeouts.add(statementTimeouts);
@@ -1027,8 +1209,7 @@ export function teardown() {
       && Number(result.queues?.projection_length || 0) === 0
     ),
     'sem deadlock ou statement timeout': (result) => (
-      Number(result.database_failures?.deadlocks || 0) === 0
-      && Number(result.database_failures?.statement_timeouts || 0) === 0
+      deadlocks === 0 && statementTimeouts === 0
     ),
     'DLQ vazia': (result) => Number(result.counts?.dlq_messages || 0) === 0,
   });

@@ -69,6 +69,82 @@ expansão.
 - Validação local: lint, typecheck, build e 540 testes aprovados. A capacidade
   nominal/burst continua sem certificação e `capacity_estimate=null`.
 
+## Cache dos probes públicos — aplicação de 2026-09-13
+
+O script `20260913054000_collection_immediate_release_snapshot.sql` foi aplicado
+ao projeto `uozuzdfvnufsjsonswag`. Os dois auditores de catálogo foram preservados
+em `private`; os getters públicos passaram a ler snapshots privados. O refresh
+recalcula ambos a cada minuto, a expiração máxima é de três minutos e qualquer
+mudança das flags V3 invalida a fotografia imediatamente.
+
+O ledger remoto registra essa aplicação como
+`20260913060647_collection_immediate_release_snapshot`, conferido novamente em
+20/09/2026. O prefixo local `20260913054000` identifica o arquivo de origem;
+não reaplique nem repare o histórico remoto só por essa diferença de carimbo.
+
+O postflight de `2026-09-13T06:07:05Z` confirmou `ready=true` e
+`snapshot_status=fresh` nos dois getters. O job 15 estava ativo com frequência
+de um minuto; as execuções de 06:07 e 06:08 UTC terminaram com sucesso em
+126 ms e 151 ms. Um `EXPLAIN` do getter imediato registrou 0,806 ms e quatro
+buffers em cache. Essa medida SQL exclui HTTP e obtenção de conexão e não é
+evidência de capacidade de ingresso. Os valores estão no
+[postflight sanitizado](../evidence/capacity/20260913-snapshot-postflight.json).
+
+Antes da aplicação, `node scripts/test_collection_snapshot_db.mjs` aprovou
+38 verificações em PostgreSQL 17.11 nativo descartável: ACL, expiração, flags,
+drift de auditor, aplicação/reaplicação e propagação runtime → gate. Os auditores
+antigos e o cron são fixtures nesse ensaio. A substituição dos hashes ocorre
+somente numa cópia da migração em memória, depois de provar que o script real
+rejeita a baseline simulada. O ensaio não substitui o preflight real nem mede
+capacidade de produção.
+
+Para observar esta implantação, leia ambos os getters e verifique a execução
+recente do job `collection-immediate-release-snapshot-v1`. O runtime deve informar
+`health_source=runtime_catalog_snapshot` e `snapshot_used=true`; ambos precisam
+informar `snapshot_status=fresh`. Um getter com `ready=false` exige investigar
+`snapshot_status`, o último refresh e a auditoria, sem substituir o resultado
+por um sinal de sucesso no frontend.
+
+### Reversão aditiva dos probes, se necessária
+
+Este procedimento não foi aplicado. A reversão deve ser uma nova migração
+transacional; preserve os snapshots, auditores, registro de migrations e todos
+os dados de coleta.
+
+1. Capture as definições e ACL atuais. Confirme que os auditores privados são
+   `SECURITY DEFINER`, pertencem a `postgres`, mantêm o `search_path` aprovado e
+   que seus hashes coincidem com `expected_audit_function_hash` dos respectivos
+   snapshots. Ausência ou divergência exige revisão antes da reversão.
+2. Use `CREATE OR REPLACE FUNCTION` para substituir somente os dois getters
+   públicos por wrappers SQL `STABLE SECURITY DEFINER`, de retorno `jsonb`,
+   propriedade `postgres` e `search_path=pg_catalog, public, private, pg_temp`.
+   O corpo de `public.get_public_collection_runtime_health()` deve ser
+   `SELECT private.audit_collection_runtime_health_v1();`; o corpo de
+   `public.get_public_collection_immediate_release()` deve ser
+   `SELECT private.audit_collection_immediate_release_v1();`. O auditor imediato
+   continuará consultando o getter runtime público, agora dinâmico.
+3. Reaplique a ACL explícita: revogue `EXECUTE` de `PUBLIC`, `anon`,
+   `authenticated` e `service_role` em ambos os getters; conceda ao runtime
+   somente `anon`, `authenticated` e `service_role`, e ao imediato somente
+   `anon` e `authenticated`. Mantenha todos os auditores e refreshers privados
+   sem grants aos clientes.
+4. Desative somente o job com nome
+   `collection-immediate-release-snapshot-v1`, usando `cron.alter_job` com
+   `active := false`. Resolva seu ID pelo nome no alvo; não suponha que o ID 15
+   será igual em outro ambiente. Preserve o job e seu histórico. Os demais
+   jobs de decisão, projeção e OEE continuam fora desta reversão.
+5. Antes do commit, valide os getters dinâmicos, ownership e ACL. Registre a
+   reversão em uma nova versão de `app_schema_releases` e emita
+   `NOTIFY pgrst, 'reload schema'`. Ajuste de forma coordenada a verificação do
+   deploy: o runtime dinâmico volta a informar `health_source=runtime_catalog`
+   e `snapshot_used=false`. Não rotule essa resposta como snapshot fresco para
+   contornar uma verificação que esteja recusando a implantação.
+
+A reversão recoloca a auditoria pesada nas requisições públicas. Interrompa os
+ensaios de carga desses probes antes de executá-la e repita a medição após a
+mudança. Nenhum recibo, fato, lançamento, outbox, arquivo ou DLQ deve ser apagado
+ou reprocessado para reverter este cache.
+
 ## Papéis e registros obrigatórios
 
 | Papel | Responsabilidade | Responsável / evidência |
@@ -111,8 +187,8 @@ ao ensaio só são habilitadas nesse alvo, após os pré-requisitos estruturais.
 1. Crie/restaure um staging sem tráfego produtivo, com a mesma versão PostgreSQL,
    extensões e classe de compute pretendida. Registre diferenças inevitáveis.
 2. Gere usuários e sessões operacionais exclusivos do teste. A fixture de k6 deve
-   conter ao menos 100 `device_id` distintos, sessões autorizadas e 18.000 códigos
-   produtivos exclusivos, válidos e prontos para a etapa testada.
+   conter 100 identidades para os perfis nominais ou 1.000 para a prova global,
+   além de códigos produtivos exclusivos, válidos e prontos para a etapa testada.
 3. Guarde a fixture fora do repositório, com permissão somente para o operador do
    teste. Formato mínimo:
 
@@ -139,17 +215,21 @@ ao ensaio só são habilitadas nesse alvo, após os pré-requisitos estruturais.
    Cada dispositivo da carga deve ter usuário Auth e sessão operacional distintos.
    Um JWT compartilhado não comprova múltiplos usuários e é recusado. O preflight
    valida o emissor, papel `authenticated`, pelo menos 15 minutos de validade e
-   confirma o usuário no Auth e a sessão/contexto pela API com RLS, sem imprimir
-   tokens. Não use `service_role` no k6. Nominal, burst e priority exigem pelo
-   menos duas células e `code_cells` para todos os códigos; ordene os códigos
+   confirma todos os usuários no Auth e as sessões/contextos pela API com RLS,
+   em lotes de preflight e sem imprimir tokens. Não use `service_role` no k6.
+   O perfil global exige ao menos 45 minutos restantes no JWT e na sessão para
+   cobrir preflight, rampa, sustentação e drenagem sem renovar identidade no meio.
+   Nominal, burst, priority e global_ramp exigem pelo menos duas células, dois
+   postos por célula e `code_cells` para todos os códigos; ordene os códigos
    conforme a seleção circular de dispositivos do perfil. Um código destinado
    a outra célula interrompe o envio antes de ingressar o batch.
    Os perfis de contenção exigem uma `machine_id` distinta por dispositivo;
    os primeiros 50 códigos devem ser peças distintas do mesmo lote/célula, e o
    primeiro código é reutilizado por 20 máquinas no perfil `contention_piece`.
    Não versionar, imprimir nem anexar esse arquivo aos resultados.
-4. Reserve, por dispositivo e rodada, um `K6_SEQUENCE_BASE` que ainda não exista.
-   Registre o valor; não o reutilize com outro `K6_RUN_ID`.
+4. Reserve, por dispositivo e rodada, um `K6_SEQUENCE_BASE` que ainda não exista
+   e uma janela exclusiva de peças por `K6_CODE_OFFSET`. Registre os dois valores;
+   não reutilize o ID, a sequência ou a janela em outro perfil/rodada.
 5. Confirme que `app.settings.supabase_url` (ou o secret Vault versionado
    `project_url`/`supabase_url`) aponta para o próprio staging. A migration deriva
    os endpoints dos workers desse valor e aborta se encontrar endpoint de outro
@@ -216,7 +296,10 @@ Não envie um evento ao v2 e ao v3. O roteamento do dispositivo é exclusivo.
 ## 5. Executar a carga reproduzível
 
 O script [collection-fabric-v3.js](../../tests/load/collection-fabric-v3.js)
-exige confirmação de staging e nunca habilita flags. Ele aceita exclusivamente
+mede o RPC efetivamente usado pelo frontend,
+`ingest_collection_batch_immediate_v3`, exige seu gate público pronto, confirma a
+decisão antes da resposta e acompanha a projeção assíncrona. Ele exige confirmação
+de staging e nunca habilita flags. Aceita exclusivamente
 o projeto isolado `capacity-test` (`smnsihksrhzbkhcbdjfu`); a antiga exceção para
 carga no projeto principal foi removida.
 Use uma fixture protegida e execute cada perfil separadamente. Exemplo normal:
@@ -230,22 +313,28 @@ export K6_SLO_PROFILE="production"
 export K6_FIXTURES="/caminho-seguro/collection-v3-fixture.json"
 mkdir -p artifacts
 
-K6_SEQUENCE_BASE=100000000 K6_PROFILE=smoke K6_RUN_ID=smoke-r1 \
+# Validação offline: confere JWTs, células, postos, roteamento e janela; envia 0 requests.
+K6_PROFILE=smoke K6_RUN_ID=smoke-r1 K6_SEQUENCE_BASE=100000000 K6_CODE_OFFSET=0 \
+  node scripts/mes/plan-collection-capacity.mjs
+
+K6_SEQUENCE_BASE=100000000 K6_CODE_OFFSET=0 K6_PROFILE=smoke K6_RUN_ID=smoke-r1 \
   k6 run --summary-export=artifacts/smoke-r1.json tests/load/collection-fabric-v3.js
-K6_SEQUENCE_BASE=110000000 K6_PROFILE=idempotency K6_RUN_ID=idempotency-r1 \
+K6_SEQUENCE_BASE=110000000 K6_CODE_OFFSET=1 K6_PROFILE=idempotency K6_RUN_ID=idempotency-r1 \
   k6 run --summary-export=artifacts/idempotency-r1.json tests/load/collection-fabric-v3.js
-K6_SEQUENCE_BASE=120000000 K6_PROFILE=microbatch K6_RUN_ID=microbatch-r1 \
+K6_SEQUENCE_BASE=120000000 K6_CODE_OFFSET=21 K6_PROFILE=microbatch K6_RUN_ID=microbatch-r1 \
   k6 run --summary-export=artifacts/microbatch-r1.json tests/load/collection-fabric-v3.js
-K6_SEQUENCE_BASE=130000000 K6_PROFILE=priority K6_RUN_ID=priority-r1 \
+K6_SEQUENCE_BASE=130000000 K6_CODE_OFFSET=146 K6_PROFILE=priority K6_RUN_ID=priority-r1 \
   k6 run --summary-export=artifacts/priority-r1.json tests/load/collection-fabric-v3.js
-K6_SEQUENCE_BASE=140000000 K6_PROFILE=contention_piece K6_RUN_ID=piece-r1 \
+K6_SEQUENCE_BASE=140000000 K6_CODE_OFFSET=1771 K6_PROFILE=contention_piece K6_RUN_ID=piece-r1 \
   k6 run --summary-export=artifacts/piece-r1.json tests/load/collection-fabric-v3.js
-K6_SEQUENCE_BASE=150000000 K6_PROFILE=contention_cell_lot K6_RUN_ID=cell-lot-r1 \
+K6_SEQUENCE_BASE=150000000 K6_CODE_OFFSET=1772 K6_PROFILE=contention_cell_lot K6_RUN_ID=cell-lot-r1 \
   k6 run --summary-export=artifacts/cell-lot-r1.json tests/load/collection-fabric-v3.js
-K6_SEQUENCE_BASE=160000000 K6_PROFILE=nominal K6_RUN_ID=nominal-r1 \
+K6_SEQUENCE_BASE=160000000 K6_CODE_OFFSET=1822 K6_PROFILE=nominal K6_RUN_ID=nominal-r1 \
   k6 run --summary-export=artifacts/nominal-r1.json tests/load/collection-fabric-v3.js
-K6_SEQUENCE_BASE=170000000 K6_PROFILE=burst K6_RUN_ID=burst-r1 \
+K6_SEQUENCE_BASE=170000000 K6_CODE_OFFSET=19822 K6_PROFILE=burst K6_RUN_ID=burst-r1 \
   k6 run --summary-export=artifacts/burst-r1.json tests/load/collection-fabric-v3.js
+K6_SEQUENCE_BASE=180000000 K6_CODE_OFFSET=25822 K6_PROFILE=global_ramp K6_RUN_ID=global-r1 \
+  k6 run --summary-export=artifacts/global-r1.json tests/load/collection-fabric-v3.js
 ```
 
 ### Isolamento obrigatório
@@ -256,11 +345,65 @@ grava recibos, fatos, outbox e KPIs somente no teste isolado e não possui limpe
 automática. Não use dados reais; reserve peças sintéticas exclusivas e preserve
 os dados já existentes no teste.
 
-Comece obrigatoriamente pelo `smoke`. Antes de executar qualquer outro perfil,
+O plano offline deve passar antes do `smoke`; ele não consulta a rede nem inicia o
+k6 e só emite contagens e o checksum da fixture. Comece a carga obrigatoriamente
+pelo `smoke`. Antes de executar qualquer outro perfil,
 confirme health `ready=true`, filas drenadas, DLQ vazia, reconciliação correta e
 ausência de usuários reais. Registre a autorização, o checksum da fixture
-sanitizado e a faixa de sequência. O perfil nominal grava 18.000 eventos por
-rodada; repetições exigem novos códigos e novas faixas.
+sanitizado, a faixa de sequência e a janela de códigos. O perfil nominal grava
+18.000 eventos; o global_ramp distribui 40 eventos/s por dez minutos entre 1.000
+identidades HTTP e reserva 26.300 códigos, sem abrir WebSockets. Repetições exigem
+novos IDs, códigos, offsets e faixas.
+
+### Sondagem somente leitura no projeto principal
+
+O limite gratuito de Realtime não comporta 1.000 conexões WebSocket simultâneas.
+A página de coleta deve operar com ACK HTTP e reconciliação com jitter. Para medir
+o caminho público do banco sem inserir coletas, use o roteiro separado abaixo.
+Ele executa exclusivamente `GET` no gate estável, distribui as iterações entre
+1.000 IDs lógicos e aplica a rampa 10 → 35 → 40 req/s, mantendo 40 req/s por dez
+minutos. Esse resultado mede leitura do gate; não certifica ingresso produtivo.
+
+```bash
+mkdir -p .mes-runtime/k6-capacity
+SUPABASE_URL="https://uozuzdfvnufsjsonswag.supabase.co" \
+SUPABASE_ANON_KEY="CHAVE-PUBLICA" \
+K6_TARGET="production-readonly" \
+K6_CONFIRM_READS="production-gate-readonly-40rps" \
+K6_READONLY_PROFILE="global" \
+K6_RUN_ID="prod-readonly-r1" \
+k6 run --summary-export=.mes-runtime/k6-capacity/prod-readonly-r1.json \
+  tests/load/collection-production-readonly.js
+```
+
+Sem `K6_READONLY_PROFILE=global`, o padrão é uma rampa curta de 50 segundos que
+passa por 10, 35 e 40 req/s e percorre os 1.000 IDs lógicos. O script recusa
+outro alvo, redirects, gate incompleto ou qualquer resposta que
+não confirme o RPC imediato, o lote máximo de cinco e a projeção assíncrona. Ele
+não possui código de login, POST, ingresso, fila, worker ou limpeza.
+
+Se o smoke abortar, compare a saúde da borda com o custo SQL antes de aumentar a
+carga. O diagnóstico abaixo envia somente `GET`, simultaneamente, para
+`/auth/v1/health` e para o gate público. Ele percorre degraus isolados de 1, 5,
+10 e 15 req/s por endpoint, inclui p95/p99 de cada degrau no resumo e aborta ao
+primeiro erro, iteração descartada ou degradação sustentada. No último degrau,
+a carga total é 30 GET/s: 15 req/s em cada endpoint.
+
+```bash
+mkdir -p .mes-runtime/k6-capacity
+SUPABASE_URL="https://uozuzdfvnufsjsonswag.supabase.co" \
+SUPABASE_ANON_KEY="CHAVE-PUBLICA" \
+K6_TARGET="production-readonly" \
+K6_CONFIRM_READS="production-gate-readonly-40rps" \
+K6_RUN_ID="prod-readonly-diagnostic-r1" \
+k6 run --summary-export=.mes-runtime/k6-capacity/prod-readonly-diagnostic-r1.json \
+  tests/load/collection-production-readonly-diagnostic.js
+```
+
+Uma execução em que `/auth/v1/health` permanece estável e somente o gate degrada
+isola custo dentro do PostgREST/PostgreSQL. Se os dois degradarem juntos, trate
+primeiro rede, borda ou limite compartilhado. Este diagnóstico não grava nem
+certifica ingestão, idempotência, projeção ou capacidade global de produção.
 
 Use uma nova faixa de sequence para cada comando. Repita nominal e rajada pelo
 menos três vezes depois de aquecimento, sem alterar timeouts, concorrência ou
@@ -268,7 +411,10 @@ carga para esconder falhas. Colete simultaneamente CPU, memória, conexões,
 locks, I/O, WAL, fila, DLQ e heartbeats. O polling do k6 é parte deliberada da
 carga fim a fim e deve ser descrito no relatório.
 
-O sucesso de `ACK/decision_committed_at/projected_at` não demonstra sozinho que
+O teste falha se o gate público não selecionar o RPC imediato com limite de cinco
+eventos. Cada resposta deve trazer `decision_committed_at`; depois, o roteiro
+confere um único recibo, projeção concluída e exatamente um fato aprovado por
+`client_event_id`. O sucesso de `ACK/decision_committed_at/projected_at` não demonstra sozinho que
 a coleta foi aprovada: os perfis nominal/burst atuais observam término, inclusive
 rejeições de negócio. Antes de homologar, reconcilie todos os IDs da rodada com
 o resultado esperado da fixture, leituras, lançamentos e projeções; códigos

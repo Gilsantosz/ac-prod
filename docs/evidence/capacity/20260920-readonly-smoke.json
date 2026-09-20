@@ -1,0 +1,223 @@
+{
+    "metrics": {
+        "http_req_sending": {
+            "max": 6.507,
+            "p(90)": 0.8135999999999999,
+            "p(95)": 1.03165,
+            "p(99)": 1.40219,
+            "avg": 0.4067591623036645,
+            "min": 0.076,
+            "med": 0.2905
+        },
+        "http_req_connecting": {
+            "med": 0,
+            "max": 65.291,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 13.843010000000003,
+            "avg": 0.4869856020942409,
+            "min": 0
+        },
+        "iteration_duration": {
+            "p(99)": 130.21175408,
+            "avg": 50.25715371774713,
+            "min": 29.288401,
+            "med": 43.998841,
+            "max": 250.37919,
+            "p(90)": 69.88776160000002,
+            "p(95)": 89.7943958
+        },
+        "checks": {
+            "passes": 3056,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "http_req_blocked": {
+            "med": 0.001,
+            "max": 189.786,
+            "p(90)": 0.004,
+            "p(95)": 0.007,
+            "p(99)": 47.585660000000004,
+            "avg": 1.751927356021052,
+            "min": 0
+        },
+        "http_req_duration": {
+            "med": 42.721000000000004,
+            "max": 280.473,
+            "p(90)": 65.0694,
+            "p(95)": 77.43915,
+            "p(99)": 114.58260000000007,
+            "avg": 47.54104908376971,
+            "min": 28.462
+        },
+        "collection_readonly_requests": {
+            "count": 1528,
+            "rate": 30.487185625339862,
+            "thresholds": {
+                "count>=1450": false
+            }
+        },
+        "vus": {
+            "value": 0,
+            "min": 0,
+            "max": 3
+        },
+        "http_req_tls_handshaking": {
+            "max": 120.527,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 33.32312000000002,
+            "avg": 1.1840314136125651,
+            "min": 0,
+            "med": 0
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 1528,
+            "thresholds": {
+                "rate==0": false
+            },
+            "value": 0
+        },
+        "http_req_waiting": {
+            "p(99)": 113.81191000000007,
+            "avg": 46.79685340314138,
+            "min": 28.012,
+            "med": 42.079499999999996,
+            "max": 272.483,
+            "p(90)": 64.3792,
+            "p(95)": 76.27159999999994
+        },
+        "http_req_receiving": {
+            "max": 25.103,
+            "p(90)": 0.5563,
+            "p(95)": 0.884,
+            "p(99)": 2.1761500000000007,
+            "avg": 0.3374365183246075,
+            "min": 0.067,
+            "med": 0.2215
+        },
+        "collection_public_gate_failures": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "data_sent": {
+            "count": 217057,
+            "rate": 4330.7964988739495
+        },
+        "dropped_iterations": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "data_received": {
+            "count": 2475404,
+            "rate": 49390.11861630157
+        },
+        "http_req_duration{expected_response:true}": {
+            "p(95)": 77.43915,
+            "p(99)": 114.58260000000007,
+            "avg": 47.54104908376971,
+            "min": 28.462,
+            "med": 42.721000000000004,
+            "max": 280.473,
+            "p(90)": 65.0694
+        },
+        "iterations": {
+            "rate": 30.467233278726418,
+            "count": 1527
+        },
+        "collection_public_gate_ms": {
+            "p(90)": 65.0694,
+            "p(95)": 77.43915,
+            "p(99)": 114.58260000000007,
+            "avg": 47.54104908376971,
+            "min": 28.462,
+            "med": 42.721000000000004,
+            "max": 280.473,
+            "thresholds": {
+                "p(95)<1000": false,
+                "p(99)<2000": false
+            }
+        },
+        "http_req_duration{operation:public_immediate_gate}": {
+            "med": 42.721000000000004,
+            "max": 280.473,
+            "p(90)": 65.0694,
+            "p(95)": 77.43915,
+            "p(99)": 114.58260000000007,
+            "avg": 47.54104908376971,
+            "min": 28.462,
+            "thresholds": {
+                "p(95)<1000": false,
+                "p(99)<2000": false
+            }
+        },
+        "vus_max": {
+            "max": 50,
+            "value": 50,
+            "min": 50
+        },
+        "http_reqs": {
+            "count": 1528,
+            "rate": 30.487185625339862
+        }
+    },
+    "setup_data": {
+        "logical_devices": 1000,
+        "preflight_at": "2026-09-20T13:02:45.830Z"
+    },
+    "root_group": {
+        "groups": {
+            "setup": {
+                "name": "setup",
+                "path": "::setup",
+                "id": "5c0f8025f7e0b6654089e5b00e950f1a",
+                "groups": {},
+                "checks": {
+                        "gate publico responde 200": {
+                            "name": "gate publico responde 200",
+                            "path": "::setup::gate publico responde 200",
+                            "id": "36280c43462badb45a2b8cf7009e959a",
+                            "passes": 1,
+                            "fails": 0
+                        },
+                        "gate publico confirma transporte imediato pronto": {
+                            "id": "f8569e99551de0aa376cfa60ded6ee64",
+                            "passes": 1,
+                            "fails": 0,
+                            "name": "gate publico confirma transporte imediato pronto",
+                            "path": "::setup::gate publico confirma transporte imediato pronto"
+                        }
+                    }
+            }
+        },
+        "checks": {
+            "gate publico responde 200": {
+                "id": "c9b98cc61392af68adf7a0e76466d755",
+                "passes": 1527,
+                "fails": 0,
+                "name": "gate publico responde 200",
+                "path": "::gate publico responde 200"
+            },
+            "gate publico confirma transporte imediato pronto": {
+                "path": "::gate publico confirma transporte imediato pronto",
+                "id": "b3a6b02c2bead5fa89cfe1651956eac6",
+                "passes": 1527,
+                "fails": 0,
+                "name": "gate publico confirma transporte imediato pronto"
+            }
+        },
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e"
+    }
+}

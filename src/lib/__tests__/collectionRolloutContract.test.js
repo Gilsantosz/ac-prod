@@ -63,9 +63,9 @@ describe('AC.Prod2 collection rollout contract', () => {
     const synchronizerCalls = routeTree.match(/\buse(?:ProductionRealtime|Realtime)Sync\s*\(/g) || [];
 
     expect(synchronizerCalls).toEqual(['useProductionRealtimeSync(']);
-    expect(app).toContain('shouldEnableGlobalProductionRealtime(location.pathname)');
+    expect(app).toContain('shouldEnableGlobalProductionRealtime(location.pathname, location.search)');
     expect(app).toContain('useProductionRealtimeSync({ enabled: globalRealtimeEnabled });');
-    expect(routePolicy).toContain("normalizePathname(pathname) !== '/coleta'");
+    expect(routePolicy).toContain("normalizedPath === '/coleta'");
     expect(app).toContain('<Route element={<AppLayout />}>');
     expect(app).toContain('<Route path="/resumo-diario" element={<DailySummary />} />');
     expect(layout).not.toMatch(/use(?:ProductionRealtime|Realtime)Sync/);

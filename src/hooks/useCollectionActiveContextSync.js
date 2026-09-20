@@ -1,16 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { scheduleCollectionQueryInvalidation } from '@/hooks/collectionQueryInvalidation';
+import { collectionContextMatchesMachine } from '@/lib/collectionContextScope';
 import {
   subscribeToCollectionActiveContext,
   unsubscribeFromCollectionActiveContext,
 } from '@/lib/collectionService';
 
-export const COLLECTION_CONTEXT_SAFETY_MIN_MS = 4 * 60 * 1000;
-export const COLLECTION_CONTEXT_SAFETY_JITTER_MS = 2 * 60 * 1000;
+export const COLLECTION_CONTEXT_SAFETY_MIN_MS = 60_000;
+export const COLLECTION_CONTEXT_SAFETY_JITTER_MS = 30_000;
+export const COLLECTION_CONTEXT_HTTP_MIN_MS = 60_000;
+export const COLLECTION_CONTEXT_HTTP_JITTER_MS = 30_000;
 
-function sameMachine(activeMachineId, eventMachineId) {
-  if (!activeMachineId || !eventMachineId) return true;
-  return String(activeMachineId) === String(eventMachineId);
+export function getCollectionContextSafetyDelay(realtimeEnabled, randomValue = Math.random()) {
+  const numericValue = Number(randomValue);
+  const boundedValue = Number.isFinite(numericValue)
+    ? Math.min(1, Math.max(0, numericValue))
+    : 0;
+  const minMs = realtimeEnabled ? COLLECTION_CONTEXT_SAFETY_MIN_MS : COLLECTION_CONTEXT_HTTP_MIN_MS;
+  const jitterMs = realtimeEnabled ? COLLECTION_CONTEXT_SAFETY_JITTER_MS : COLLECTION_CONTEXT_HTTP_JITTER_MS;
+  return minMs + Math.floor(boundedValue * jitterMs);
 }
 
 /**
@@ -23,6 +31,8 @@ export function useCollectionActiveContextSync({
   cellName,
   machineId,
   queryClient,
+  realtimeEnabled = false,
+  periodicReconciliationEnabled = true,
 }) {
   const scopeKey = useMemo(() => [
     cellId || '',
@@ -50,6 +60,11 @@ export function useCollectionActiveContextSync({
 
   useEffect(() => {
     if (!cellName) return undefined;
+    if (!realtimeEnabled) {
+      setLatestUpdate((current) => current?.scopeKey === scopeKey ? null : current);
+      setSnapshotPriorityScope(scopeKey);
+      return undefined;
+    }
     let cancelled = false;
 
     const channel = subscribeToCollectionActiveContext({
@@ -60,7 +75,7 @@ export function useCollectionActiveContextSync({
         if (cancelled) return;
         const row = payload.new || null;
         const eventMachineId = row?.machine_id || null;
-        if (!sameMachine(machineId, eventMachineId)) return;
+        if (!row || !collectionContextMatchesMachine(machineId, eventMachineId)) return;
 
         setLatestUpdate({ scopeKey, context: row });
         setSnapshotPriorityScope(scopeKey);
@@ -95,25 +110,24 @@ export function useCollectionActiveContextSync({
       cancelled = true;
       unsubscribeFromCollectionActiveContext(channel);
     };
-  }, [cellId, cellName, invalidateContextSnapshot, machineId, scopeKey]);
+  }, [cellId, cellName, invalidateContextSnapshot, machineId, realtimeEnabled, scopeKey]);
 
   useEffect(() => {
-    if (!cellName) return undefined;
+    if (!cellName || !periodicReconciliationEnabled) return undefined;
     let cancelled = false;
     let safetyTimer = null;
 
     const reconcileSnapshot = () => {
-      if (cancelled) return;
+      if (cancelled || navigator.onLine === false || document.visibilityState === 'hidden') return;
       setLatestUpdate((current) => current?.scopeKey === scopeKey ? null : current);
       setSnapshotPriorityScope(scopeKey);
       invalidateContextSnapshot();
     };
     const scheduleSafetyCheck = () => {
-      const jitter = Math.floor(Math.random() * COLLECTION_CONTEXT_SAFETY_JITTER_MS);
       safetyTimer = window.setTimeout(() => {
         reconcileSnapshot();
         if (!cancelled) scheduleSafetyCheck();
-      }, COLLECTION_CONTEXT_SAFETY_MIN_MS + jitter);
+      }, getCollectionContextSafetyDelay(realtimeEnabled));
     };
     const onVisibility = () => {
       if (document.visibilityState === 'visible') reconcileSnapshot();
@@ -131,7 +145,13 @@ export function useCollectionActiveContextSync({
       window.removeEventListener('online', reconcileSnapshot);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [cellName, invalidateContextSnapshot, scopeKey]);
+  }, [
+    cellName,
+    invalidateContextSnapshot,
+    periodicReconciliationEnabled,
+    realtimeEnabled,
+    scopeKey,
+  ]);
 
   const hasRealtimeUpdate = latestUpdate?.scopeKey === scopeKey;
   const preferSnapshot = snapshotPriorityScope === scopeKey;
