@@ -179,8 +179,12 @@ function resultFor(persona, active, event, decision) {
       progress_percent: active.progress_percent,
     },
     order: { customer_name: active.customer_name, order_number: `OP-${persona.key}` },
-    item: { id: `${persona.key}-${event.raw_value}`, piece_uid: event.raw_value, piece_name: 'Peça E2E' },
-    route: { step_name: persona.cellName, cell_name: persona.cellName },
+    step_code: persona.key === 'corte' ? 'cut' : 'edge',
+    item: { id: `${persona.key}-${event.raw_value}`, piece_uid: event.raw_value, piece_name: 'Peça E2E',
+      current_stage: persona.key === 'corte' ? 'edge' : 'separation',
+      route_steps: ['cut', 'edge', 'separation'],
+      completed_steps: persona.key === 'corte' ? ['cut'] : ['cut', 'edge'],
+    },
     reading: { tag_value: event.raw_value, cell_name: persona.cellName },
   };
 }
@@ -383,7 +387,7 @@ async function installSupabaseMock(context, backend, persona, browserProfile) {
     }
     if (requestPath.endsWith('/rest/v1/rpc/get_operator_shift_kpis_v2')) {
       backend.state.queryCounts.shiftKpis += 1;
-      return fulfill({ approved: 20, rejected: 1, blocked: 0 });
+      return fulfill({ approved: 20, rejected: 1, blocked: 1 });
     }
     if (requestPath.endsWith('/rest/v1/rpc/ingest_collection_batch_immediate_v3')) {
       const payload = request.postDataJSON();
@@ -557,6 +561,10 @@ test('múltiplas estações isolam contexto, sincronizam lotes e não duplicam f
     await expectIntegrityMetric(approvedCortePage, 'Pendente', 78);
     await expectIntegrityMetric(bordo, 'Aprovado', 21);
     await expectIntegrityMetric(bordo, 'Pendente', 78);
+    await expect(bordo.getByText('Produzido no turno', { exact: true }).locator('..')).toContainText('22');
+    await expect(duplicatedCortePage.getByText('Produzido no turno', { exact: true }).locator('..')).toContainText('21');
+    await expect(bordo.getByText('Etapa da leitura: Bordo', { exact: true })).toBeVisible();
+    await expect(bordo.getByText('Etapa atual da peça: Separação', { exact: true })).toBeVisible();
 
     // A aba que adquiriu o lock pode transportar o evento da aba irmã, mas
     // cada interface deve receber apenas a decisão de sua própria sessão.
@@ -648,6 +656,16 @@ test('múltiplas estações isolam contexto, sincronizam lotes e não duplicam f
     await expect(kioskBanner).toContainText(nextContext.customer_name);
     await corteA.waitForTimeout(1_000);
     expect(backend.state.queryCounts).toEqual(queriesBeforeKiosk);
+
+    // Uma reconciliação compacta do mesmo lote pode omitir seus nomes; ela
+    // continua atualizando as métricas sem apagar a identidade já confirmada.
+    backend.state.activeByCell.set(PERSONAS.corte.cellName, {
+      ...nextContext, active_general_lot_code: null, customer_name: null,
+    });
+    await kiosk.getByRole('button', { name: 'Atualizar', exact: true }).click();
+    await expect.poll(() => backend.state.queryCounts.snapshot).toBeGreaterThan(queriesBeforeKiosk.snapshot);
+    await expect(kioskBanner).toContainText(nextContext.active_general_lot_code);
+    await expect(kioskBanner).toContainText(nextContext.customer_name);
 
     // O contexto da outra célula não sofre vazamento quando Corte troca lote.
     await expectLot(bordo, PERSONAS.bordo.activeContext);

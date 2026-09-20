@@ -54,7 +54,7 @@ import {
   getOperatorShiftKpisV2,
   requestPieceReplacement,
 } from '@/lib/collectionService';
-import { applyCollectionTerminalResultToCache, collectionSnapshotMatchesPendingLot } from '@/lib/collectionLocalProjection';
+import { applyCollectionTerminalResultToCache, collectionSnapshotMatchesPendingLot, preserveCollectionSnapshotIdentity } from '@/lib/collectionLocalProjection';
 import { resolveCollectionSnapshotAfterLocalUpdates, scheduleCollectionCounterReconciliation } from '@/hooks/collectionCounterReconciliation';
 
 const COLLECTION_STATUS_TOAST_ID = 'collection-live-status';
@@ -486,7 +486,10 @@ export default function TraceabilityCollection({ embedded = false }) {
       if (!collectionSnapshotMatchesPendingLot(queryClient.getQueryData(queryKey), snapshot)) {
         throw new Error('Indicadores do novo lote aguardando confirmação do servidor.');
       }
-      return { ...snapshot, _collection_snapshot_completed_at: Date.now() };
+      return {
+        ...preserveCollectionSnapshotIdentity(queryClient.getQueryData(queryKey), snapshot),
+        _collection_snapshot_completed_at: Date.now(),
+      };
     },
     enabled: !!cellName,
     staleTime: 0,
@@ -1326,7 +1329,7 @@ export default function TraceabilityCollection({ embedded = false }) {
           {shiftKpisUpdatedAt ? <TraceabilityKpiCards kpis={{
             ...kpis,
             ...shiftKpis,
-            total: (shiftKpis.approved || 0) + (shiftKpis.rejected || 0) + (shiftKpis.blocked || 0),
+            total: (shiftKpis.approved || 0) + (shiftKpis.rejected || 0),
           }} /> : <p className="text-sm text-muted-foreground">Indicadores do turno aguardando confirmação do servidor.</p>}
         </div>
       )}
