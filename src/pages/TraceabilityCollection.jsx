@@ -54,7 +54,7 @@ import {
   getOperatorShiftKpisV2,
   requestPieceReplacement,
 } from '@/lib/collectionService';
-import { applyCollectionTerminalResultToCache, collectionSnapshotMatchesPendingLot, preserveCollectionSnapshotIdentity } from '@/lib/collectionLocalProjection';
+import { applyCollectionTerminalResultToCache, collectionSnapshotIsBehindDecision, collectionSnapshotMatchesPendingLot, preserveCollectionSnapshotIdentity } from '@/lib/collectionLocalProjection';
 import { resolveCollectionSnapshotAfterLocalUpdates, scheduleCollectionCounterReconciliation } from '@/hooks/collectionCounterReconciliation';
 
 const COLLECTION_STATUS_TOAST_ID = 'collection-live-status';
@@ -477,6 +477,9 @@ export default function TraceabilityCollection({ embedded = false }) {
         dateTo: shiftRange.dateTo,
         pcpImportBatchId: kpiBatchId,
       });
+      if (collectionSnapshotIsBehindDecision(queryClient.getQueryData(queryKey), snapshot)) {
+        return { ...queryClient.getQueryData(queryKey), counter_reconciliation_required: true };
+      }
       if (startedGeneration !== collectionSnapshotGenerationRef.current) {
         return resolveCollectionSnapshotAfterLocalUpdates({
           queryClient, queryKey, startedGeneration,

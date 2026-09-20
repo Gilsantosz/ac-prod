@@ -53,6 +53,27 @@ a uma prova de operadores simultâneos em dispositivos independentes.
 
 ## Limite desta evidência
 
+### Repetição após a PR #93
+
+O commit `741876c270f31867aeea9837cd3ac80783211265` foi confirmado no Pages
+(run `35514349633`) e no Cloudflare (versão `5b1ee565`, 100% do tráfego).
+Uma repetição em Corte foi classificada como duplicada em 215,217 ms, sem
+apontamento de produção. Outra peça foi aprovada em 233,903 ms, gerando um
+único apontamento. Os cinco recibos da rodada estavam sincronizados: três
+aprovações e duas duplicatas, com três apontamentos distintos.
+
+A repetição confirmou a etapa da leitura e o total de produção corrigidos,
+mas reproduziu uma janela adicional: um GET iniciado **depois** da decisão
+podia ler o contexto anterior durante os segundos de projeção assíncrona.
+Isso revertia temporariamente o lote do cliente no cabeçalho, mesmo com a
+peça correta no histórico.
+
+A correção subsequente compara o evento confirmado com o evento do contexto
+retornado. Durante uma janela limitada de 30 segundos, preserva o contexto
+local se o snapshot ainda for anterior e usa a reconciliação já agrupada em
+3/8 segundos. Um evento posterior de outro posto prevalece; após o limite, o
+snapshot volta a prevalecer. Não há consulta adicional por ACK comum.
+
 O ensaio funcional não mede capacidade global. A execução k6 de leitura
 registrou 28.200 GETs, zero falhas e p95 de 87,17 ms, mas não executou 1.000
 logins ou 2.000 gravações por minuto. O teste de navegador com três sessões usa
