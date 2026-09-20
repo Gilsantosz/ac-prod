@@ -1,0 +1,32 @@
+{
+  "change": "collection-public-runtime-and-immediate-release-snapshots",
+  "project_ref": "uozuzdfvnufsjsonswag",
+  "migration_file": "supabase/migrations/20260913054000_collection_immediate_release_snapshot.sql",
+  "application_status": "applied",
+  "postflight": {
+    "observed_at": "2026-09-13T06:07:05Z",
+    "runtime": { "ready": true, "snapshot_status": "fresh" },
+    "immediate_release": { "ready": true, "snapshot_status": "fresh" },
+    "cron": {
+      "job_id": 15,
+      "active": true,
+      "schedule": "* * * * *",
+      "successful_runs": [
+        { "minute_utc": "2026-09-13T06:07Z", "duration_ms": 126 },
+        { "minute_utc": "2026-09-13T06:08Z", "duration_ms": 151 }
+      ]
+    },
+    "immediate_getter_explain": {
+      "execution_time_ms": 0.806,
+      "shared_buffer_hits": 4,
+      "scope": "single SQL execution; excludes HTTP and connection acquisition"
+    }
+  },
+  "local_validation": {
+    "script": "scripts/test_collection_snapshot_db.mjs",
+    "engine": "native PostgreSQL 17.11",
+    "checks_passed": 38,
+    "scope": "cache, ACL, expiry, rollout invalidation and audit propagation with fixture auditors and cron; production baseline hashes substituted only in an in-memory test copy"
+  },
+  "capacity_verdict": "not established by this postflight"
+}

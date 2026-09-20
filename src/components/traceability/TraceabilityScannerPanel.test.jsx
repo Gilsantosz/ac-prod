@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import TraceabilityScannerPanel from './TraceabilityScannerPanel';
@@ -36,6 +36,32 @@ function renderScanner(overrides = {}) {
 }
 
 describe('TraceabilityScannerPanel — captura rápida de 8 dígitos', () => {
+  it('foca a coleta ao confirmar contexto depois da ativação da própria aba', async () => {
+    const panel = (ready) => <>
+      <button role="tab" aria-controls="collection-panel" aria-selected="true" autoFocus>Coleta</button>
+      <div role="tabpanel" id="collection-panel">
+        <TraceabilityScannerPanel mode="scanner" contextReady={ready} cellName="Corte"
+          shift="1º Turno" operator="Operador" onRead={vi.fn()} />
+      </div>
+    </>;
+    const view = render(panel(false));
+    expect(screen.getByLabelText('Identificação produtiva')).toBeDisabled();
+    view.rerender(panel(true));
+    await waitFor(() => expect(screen.getByLabelText('Identificação produtiva')).toHaveFocus());
+  });
+
+  it('não rouba o foco de outra ação ao liberar o contexto', async () => {
+    const panel = (ready) => <>
+      <button autoFocus>Outra ação</button>
+      <TraceabilityScannerPanel mode="scanner" contextReady={ready} cellName="Corte"
+        shift="1º Turno" operator="Operador" onRead={vi.fn()} />
+    </>;
+    const view = render(panel(false));
+    view.rerender(panel(true));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+    expect(screen.getByRole('button', { name: 'Outra ação' })).toHaveFocus();
+  });
+
   it('não dispara com 7 dígitos e dispara imediatamente no oitavo', async () => {
     const user = userEvent.setup();
     const { onRead, input } = renderScanner();

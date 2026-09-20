@@ -57,20 +57,26 @@ export default function TraceabilityScannerPanel({
   }, []);
 
   const refocus = useCallback(() => {
-    if (mode !== 'scanner' || isSuspended) return;
+    if (mode !== 'scanner' || !contextReady || isSuspended) return;
     if (refocusTimerRef.current) clearTimeout(refocusTimerRef.current);
     refocusTimerRef.current = setTimeout(() => {
       refocusTimerRef.current = null;
       if (!mountedRef.current || typeof document === 'undefined') return;
       const activeElement = document.activeElement;
       const hasOpenDialog = Boolean(document.querySelector('[role="dialog"], [data-state="open"]'));
+      const panelId = inputRef.current?.closest('[role="tabpanel"]')?.id;
+      const activatingScannerTab = Boolean(panelId
+        && activeElement?.getAttribute('role') === 'tab'
+        && activeElement.getAttribute('aria-selected') === 'true'
+        && activeElement.getAttribute('aria-controls') === panelId);
       const userIsUsingAnotherControl = (activeElement
         && activeElement !== document.body
         && activeElement !== inputRef.current
+        && !activatingScannerTab
         && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(activeElement.tagName)) || hasOpenDialog;
       if (!userIsUsingAnotherControl) inputRef.current?.focus();
     }, 20);
-  }, [mode, isSuspended]);
+  }, [mode, contextReady, isSuspended]);
 
   useEffect(() => {
     refocus();

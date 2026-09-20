@@ -236,7 +236,7 @@ jobs:
           print(f'ASYNC_COLLECTION_RELEASE_OK migration={expected_migration} release={expected_release}')
           PY
 
-      - name: Recalcular saúde real da coleta v9.2.3
+      - name: Validar snapshot recente da saúde real da coleta v9.2.3
         env:
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
@@ -302,10 +302,14 @@ jobs:
               failures.append(f"migration={payload.get('migration_version')!r}; esperado={expected_migration!r}")
           if str(payload.get('release_version','')) != expected_release:
               failures.append(f"release={payload.get('release_version')!r}; esperado={expected_release!r}")
-          if payload.get('health_source') != 'runtime_catalog':
-              failures.append(f"health_source={payload.get('health_source')!r}; esperado='runtime_catalog'")
-          if payload.get('snapshot_used') is not False:
-              failures.append(f"snapshot_used={payload.get('snapshot_used')!r}; esperado=false")
+          if payload.get('health_source') != 'runtime_catalog_snapshot':
+              failures.append(f"health_source={payload.get('health_source')!r}; esperado='runtime_catalog_snapshot'")
+          if payload.get('snapshot_used') is not True:
+              failures.append(f"snapshot_used={payload.get('snapshot_used')!r}; esperado=true")
+          if payload.get('snapshot_format') != 'collection_runtime_health_snapshot_v1':
+              failures.append(f"snapshot_format={payload.get('snapshot_format')!r}; esperado='collection_runtime_health_snapshot_v1'")
+          if payload.get('snapshot_status') != 'fresh':
+              failures.append(f"snapshot_status={payload.get('snapshot_status')!r}; esperado='fresh'")
           for flag in required_flags:
               if flags.get(flag) is not True:
                   failures.append(f'{flag}=false')
@@ -433,7 +437,7 @@ jobs:
             "collection_async_release_version": "${REQUIRED_ASYNC_COLLECTION_RELEASE_VERSION}",
             "collection_runtime_migration_version": "${REQUIRED_RUNTIME_COLLECTION_MIGRATION_VERSION}",
             "collection_runtime_release_version": "${REQUIRED_RUNTIME_COLLECTION_RELEASE_VERSION}",
-            "collection_health_probe": "runtime_catalog",
+            "collection_health_probe": "runtime_catalog_snapshot",
             "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
           EOF

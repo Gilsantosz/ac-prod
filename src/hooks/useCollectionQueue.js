@@ -10,6 +10,7 @@ import {
   retryErrors,
   runCollectionQueueMaintenance,
   runStaleProcessingRecovery,
+  sanitizeCollectionEventPayload,
 } from '@/lib/collectionEventQueue';
 import { flushCollectionMicroBatchQueue } from '@/lib/collectionMicroBatchQueue';
 import {
@@ -277,6 +278,10 @@ export function useCollectionQueue(processFn, options = {}) {
   const publishedFinalResultsRef = useRef(new Map());
   const terminalEventIdsRef = useRef(new Set());
   const pipelineFlagModesRef = useRef({ ingress: null, broadcast: null });
+  const crossTabResultChannelRef = useRef(null);
+  const crossTabInstanceIdRef = useRef(
+    globalThis.crypto?.randomUUID?.() || `collection-tab-${Date.now()}-${Math.random()}`,
+  );
   const processFnRef = useRef(processFn);
   const processBatchFnRef = useRef(processBatchFn);
   const onResultRef = useRef(onResult);
@@ -355,9 +360,18 @@ export function useCollectionQueue(processFn, options = {}) {
     }, QUEUE_STATS_REFRESH_DEBOUNCE_MS);
   }, [runStatsRefresh]);
 
-  const handleBatchResult = useCallback((payload) => {
+  const handleBatchResult = useCallback((payload, { relayToSiblingTabs = true } = {}) => {
     const state = payload.state || collectionStateFromResult(payload.result);
     const clientEventId = payload.event?.client_event_id || payload.result?.client_event_id;
+    const eventSessionId = payload.event?.operator_session_id
+      || payload.event?.operatorSessionId
+      || null;
+    const currentSessionId = getOperatorSession()?.session_id || null;
+    // A aba que adquiriu o Web Lock pode escoar eventos persistidos por outra
+    // aba do mesmo dispositivo. Quando o evento identifica uma sessão, apenas
+    // a aba dona pode emitir feedback visual/sonoro. Eventos legados sem essa
+    // identidade preservam o comportamento anterior.
+    const belongsToCurrentSession = !eventSessionId || eventSessionId === currentSessionId;
     const terminal = isCollectionTerminalState(state);
     // O Broadcast pode finalizar antes da resposta HTTP do lote. Um ACK
     // atrasado nunca rebaixa uma decisão já exibida para "aguardando". A
@@ -388,6 +402,33 @@ export function useCollectionQueue(processFn, options = {}) {
         publishedFinalResultsRef.current.delete(publishedFinalResultsRef.current.keys().next().value);
       }
     }
+    if (terminal && relayToSiblingTabs) {
+      const eventClientId = payload.event?.client_event_id;
+      const resultClientId = payload.result?.client_event_id;
+      // Somente decisões inequivocamente ligadas a uma sessão/evento podem
+      // atravessar abas. Tokens de autenticação e de sessão nunca são enviados.
+      if (eventSessionId && eventClientId && (!resultClientId || resultClientId === eventClientId)) {
+        try {
+          const safePayload = sanitizeCollectionEventPayload({
+            ...payload,
+            error: payload.error ? {
+              message: payload.error.message,
+              code: payload.error.code,
+              retryable: payload.error.retryable === true,
+            } : null,
+          });
+          crossTabResultChannelRef.current?.postMessage({
+            source: crossTabInstanceIdRef.current,
+            operator_session_id: eventSessionId,
+            client_event_id: eventClientId,
+            payload: safePayload,
+          });
+        } catch (error) {
+          console.warn('[CollectionQueue] Falha ao avisar a aba operadora sobre a decisão:', error);
+        }
+      }
+    }
+    if (!belongsToCurrentSession) return;
     emitBatchResult(payload);
     if (typeof onResultRef.current === 'function') {
       onResultRef.current(payload);
@@ -395,6 +436,39 @@ export function useCollectionQueue(processFn, options = {}) {
       notifyBatchResult(payload);
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof globalThis.BroadcastChannel !== 'function') return undefined;
+    const channelName = `acprod-collection-result:${runtimeEnvironment.projectRef}:${deviceId}`;
+    const channel = new BroadcastChannel(channelName);
+    crossTabResultChannelRef.current = channel;
+
+    channel.onmessage = (message) => {
+      const envelope = message?.data;
+      if (!envelope || envelope.source === crossTabInstanceIdRef.current) return;
+      const currentSessionId = getOperatorSession()?.session_id || null;
+      const event = envelope.payload?.event || {};
+      const eventSessionId = event.operator_session_id || event.operatorSessionId || null;
+      const eventClientId = event.client_event_id || null;
+      const resultClientId = envelope.payload?.result?.client_event_id || null;
+      if (!currentSessionId
+        || envelope.operator_session_id !== currentSessionId
+        || eventSessionId !== currentSessionId
+        || !envelope.client_event_id
+        || envelope.client_event_id !== eventClientId
+        || (resultClientId && resultClientId !== eventClientId)) return;
+
+      handleBatchResult(envelope.payload, { relayToSiblingTabs: false });
+    };
+
+    return () => {
+      channel.onmessage = null;
+      channel.close();
+      if (crossTabResultChannelRef.current === channel) {
+        crossTabResultChannelRef.current = null;
+      }
+    };
+  }, [deviceId, handleBatchResult]);
 
   useEffect(() => {
     const reconciliationRequested = microBatch

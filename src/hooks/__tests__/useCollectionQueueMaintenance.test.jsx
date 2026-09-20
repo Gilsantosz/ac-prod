@@ -54,6 +54,7 @@ vi.mock('@/lib/collectionEventQueue', () => ({
   retryErrors: mocks.retryErrors,
   runCollectionQueueMaintenance: mocks.runCollectionQueueMaintenance,
   runStaleProcessingRecovery: mocks.runStaleProcessingRecovery,
+  sanitizeCollectionEventPayload: (value) => value,
 }));
 
 vi.mock('@/lib/collectionMicroBatchQueue', () => ({
@@ -104,6 +105,7 @@ const defaultStats = {
 const originalRequestIdleCallback = window.requestIdleCallback;
 const originalCancelIdleCallback = window.cancelIdleCallback;
 const originalNavigatorLocks = navigator.locks;
+const originalBroadcastChannel = globalThis.BroadcastChannel;
 
 function setOnline(value) {
   Object.defineProperty(navigator, 'onLine', {
@@ -178,6 +180,162 @@ describe('useCollectionQueue maintenance scheduling', () => {
       configurable: true,
       value: originalCancelIdleCallback,
     });
+    Object.defineProperty(globalThis, 'BroadcastChannel', {
+      configurable: true,
+      value: originalBroadcastChannel,
+    });
+  });
+
+  it('aceita decisão local somente para a sessão/evento da aba e fecha o canal ao desmontar', () => {
+    const channels = [];
+    class FakeBroadcastChannel {
+      constructor(name) {
+        this.name = name;
+        this.onmessage = null;
+        this.closed = false;
+        channels.push(this);
+      }
+
+      postMessage() {}
+
+      close() {
+        this.closed = true;
+      }
+    }
+    Object.defineProperty(globalThis, 'BroadcastChannel', {
+      configurable: true,
+      value: FakeBroadcastChannel,
+    });
+    mocks.getOperatorSession.mockReturnValue({ session_id: 'operator-session-b' });
+    const onResult = vi.fn();
+    const { unmount } = renderHook(() => useCollectionQueue(vi.fn(), {
+      eventKind: 'production_stage',
+      onResult,
+      enableV3Realtime: false,
+    }));
+    const channel = channels[0];
+    const payload = {
+      event: {
+        client_event_id: 'client-event-b',
+        operator_session_id: 'operator-session-b',
+      },
+      result: {
+        client_event_id: 'client-event-b',
+        status: 'approved',
+      },
+      state: 'APPROVED',
+    };
+
+    act(() => {
+      channel.onmessage({ data: {
+        source: 'sibling-tab',
+        operator_session_id: 'outra-sessao',
+        client_event_id: 'client-event-b',
+        payload,
+      } });
+      channel.onmessage({ data: {
+        source: 'sibling-tab',
+        operator_session_id: 'operator-session-b',
+        client_event_id: 'evento-divergente',
+        payload,
+      } });
+    });
+    expect(onResult).not.toHaveBeenCalled();
+
+    act(() => {
+      channel.onmessage({ data: {
+        source: 'sibling-tab',
+        operator_session_id: 'operator-session-b',
+        client_event_id: 'client-event-b',
+        payload,
+      } });
+    });
+    expect(onResult).toHaveBeenCalledTimes(1);
+    expect(onResult).toHaveBeenCalledWith(payload);
+
+    unmount();
+    expect(channel.closed).toBe(true);
+    expect(channel.onmessage).toBeNull();
+  });
+
+  it('a aba que escoa a fila apenas retransmite o resultado pertencente à sessão irmã', async () => {
+    setOnline(true);
+    const channels = [];
+    class FakeBroadcastChannel {
+      constructor(name) {
+        this.name = name;
+        this.onmessage = null;
+        this.postMessage = vi.fn();
+        channels.push(this);
+      }
+
+      close() {}
+    }
+    Object.defineProperty(globalThis, 'BroadcastChannel', {
+      configurable: true,
+      value: FakeBroadcastChannel,
+    });
+    mocks.getOperatorSession.mockReturnValue({ session_id: 'operator-session-a' });
+    const onResult = vi.fn();
+    const observed = [];
+    const observeResult = (event) => observed.push(event.detail);
+    window.addEventListener('collection-batch-result', observeResult);
+    const { unmount } = renderHook(() => useCollectionQueue(vi.fn(), {
+      eventKind: 'production_stage',
+      onResult,
+      enableV3Realtime: false,
+    }));
+    await act(async () => { await Promise.resolve(); });
+
+    const batchResult = mocks.flushCollectionMicroBatchQueue.mock.calls[0][1].onResult;
+    const siblingPayload = {
+      event: {
+        client_event_id: 'client-event-b',
+        operator_session_id: 'operator-session-b',
+      },
+      result: { client_event_id: 'client-event-b', status: 'approved' },
+      state: 'APPROVED',
+    };
+    const ownPayload = {
+      event: {
+        client_event_id: 'client-event-a',
+        operator_session_id: 'operator-session-a',
+      },
+      result: { client_event_id: 'client-event-a', status: 'approved' },
+      state: 'APPROVED',
+    };
+
+    act(() => {
+      batchResult(siblingPayload);
+      batchResult(ownPayload);
+    });
+
+    expect(channels[0].postMessage).toHaveBeenCalledTimes(2);
+    expect(channels[0].postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      operator_session_id: 'operator-session-b',
+      client_event_id: 'client-event-b',
+    }));
+    expect(onResult).toHaveBeenCalledTimes(1);
+    expect(onResult).toHaveBeenCalledWith(ownPayload);
+    expect(observed).toEqual([ownPayload]);
+
+    // O identificador do lote pode chegar depois do recibo compacto. Essa
+    // atualização também chega à aba dona, sem emitir feedback nesta aba.
+    act(() => {
+      batchResult({ ...siblingPayload, result: { ...siblingPayload.result,
+        lot: { id: 'lot-b', lot_code: 'CLIENTE-B' } } });
+    });
+    expect(channels[0].postMessage).toHaveBeenCalledTimes(3);
+    expect(channels[0].postMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+      operator_session_id: 'operator-session-b',
+      payload: expect.objectContaining({ enrichmentOnly: true,
+        result: expect.objectContaining({ lot: { id: 'lot-b', lot_code: 'CLIENTE-B' } }) }),
+    }));
+    expect(onResult).toHaveBeenCalledTimes(1);
+    expect(observed).toEqual([ownPayload]);
+
+    window.removeEventListener('collection-batch-result', observeResult);
+    unmount();
   });
 
   it('agenda prune fora do hotpath e repete somente após seis horas', async () => {

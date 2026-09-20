@@ -556,7 +556,7 @@ def main() -> int:
             '"collection_async_release_version"',
             '"collection_runtime_migration_version"',
             '"collection_runtime_release_version"',
-            '"collection_health_probe": "runtime_catalog"',
+            '"collection_health_probe": "runtime_catalog_snapshot"',
             "needs: [database-release]",
             "actions/checkout@v6",
             "actions/setup-node@v6",
@@ -710,7 +710,7 @@ def main() -> int:
         app,
         (
             "const { user, isLoadingAuth, authError, navigateToLogin } = useAuth();",
-            "shouldEnableGlobalProductionRealtime(location.pathname)",
+            "shouldEnableGlobalProductionRealtime(location.pathname, location.search)",
             "useProductionRealtimeSync({ enabled: globalRealtimeEnabled });",
         ),
         "Realtime condicionado à sessão autenticada e à rota",
@@ -718,8 +718,16 @@ def main() -> int:
     realtime_route_policy = read(repo / "src" / "lib" / "realtimeRoutePolicy.js")
     require_all(
         realtime_route_policy,
-        ("normalizePathname(pathname) !== '/coleta'",),
-        "isolamento do Realtime global na coleta",
+        (
+            "const normalizedPath = normalizePathname(pathname);",
+            "normalizedPath === '/coleta'",
+            "normalizedPath === '/coleta-rastreabilidade'",
+            "normalizedPath === '/coleta-codigo-rfid'",
+            "if (normalizedPath !== '/entrada') return true;",
+            "new URLSearchParams(search || inlineSearch).get('modo')",
+            "return Boolean(mode) && mode !== 'coleta' && mode !== 'collection';",
+        ),
+        "isolamento do Realtime global na coleta e no modo efetivo da entrada",
     )
     collection_recent_reads = read(
         repo / "src" / "components" / "collection" / "CollectionRecentReadsPanel.jsx"
@@ -730,12 +738,19 @@ def main() -> int:
             "subscribeToCollectionHistory({",
             "{ queryKey: ['collection-kpis', cellName] }",
             "{ queryKey: ['operator-shift-kpis', operatorId] }",
-            "COLLECTION_HISTORY_FALLBACK_MIN_MS = 15_000",
-            "COLLECTION_HISTORY_FALLBACK_MAX_MS = 19_000",
-            "if (!cellName || realtimeStatus === 'online') return undefined;",
+            "COLLECTION_HISTORY_FALLBACK_MIN_MS = 60_000",
+            "COLLECTION_HISTORY_FALLBACK_MAX_MS = 90_000",
+            "if (!cellName || !periodicReconciliationEnabled) return undefined;",
             "getCollectionHistoryFallbackDelay()",
         ),
         "fallback filtrado de histórico, KPIs e lotes na coleta",
+    )
+    require_all(
+        traceability_page,
+        ("COLLECTION_SAFETY_RECONCILIATION_MIN_MS = 60_000",
+         "COLLECTION_SAFETY_RECONCILIATION_JITTER_MS = 30_000",
+         "realtimeEnabled={false}", "periodicReconciliationEnabled={false}"),
+        "reconciliação centralizada sem canais e timers duplicados na coleta",
     )
 
     approval_modal = read(repo / "src" / "components" / "replacement" / "ReplacementApproveModal.jsx")

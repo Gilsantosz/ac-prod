@@ -90,7 +90,7 @@ const AuthenticatedApp = () => {
   const globalRealtimeEnabled = !!user
     && !isLoadingAuth
     && !authError
-    && shouldEnableGlobalProductionRealtime(location.pathname);
+    && shouldEnableGlobalProductionRealtime(location.pathname, location.search);
   useProductionRealtimeSync({ enabled: globalRealtimeEnabled });
 
   // Show loading spinner while checking auth

@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const userId = '00000000-0000-4000-8000-000000000001';
-const now = '2026-06-19T11:00:00.000Z';
+const now = new Date().toISOString();
 const lot = {
   id: 'lot-test-001',
   lot_code: 'LSM-TEST-001',
@@ -115,12 +115,15 @@ const MIME_TYPES = {
 async function serveStaticBuild(page) {
   if (!process.env.PLAYWRIGHT_STATIC_DIST) return;
   const dist = path.resolve(process.cwd(), 'dist');
-  await page.route('http://app.test/**', async (route) => {
+  // O build promove assets HTTP para HTTPS por CSP; ambos ficam locais.
+  await page.route(/^https?:\/\/app[.]test\//, async (route) => {
     const url = new URL(route.request().url());
     let relativePath = decodeURIComponent(url.pathname).replace(/^\/ac-prod\/?/, '');
     if (!relativePath || !path.extname(relativePath)) relativePath = 'index.html';
     const filePath = path.resolve(dist, relativePath);
-    if (!filePath.startsWith(dist)) return route.fulfill({ status: 403, body: 'Forbidden' });
+    if (filePath !== dist && !filePath.startsWith(`${dist}${path.sep}`)) {
+      return route.fulfill({ status: 403, body: 'Forbidden' });
+    }
     try {
       const body = await fs.readFile(filePath);
       return route.fulfill({
@@ -204,6 +207,20 @@ async function mockSupabase(page) {
         id: 'cell-cut', name: 'Corte', active: true, shift_hours: { shift1: 8, shift2: 8, shift3: 8 }, notes: '',
       }]);
     }
+    if (path.endsWith('/rest/v1/production_machines')) {
+      return fulfill([{ id: 'machine-cut', name: 'Nanshing E2E', station_name: 'Corte', cell_name: 'Corte', active: true }]);
+    }
+    if (path.endsWith('/rest/v1/rpc/set_operator_session_context')) {
+      return fulfill({ success: true, cell_name: 'Corte', machine_name: 'Nanshing E2E' });
+    }
+    if (path.endsWith('/rest/v1/rpc/get_collection_pipeline_flags_v3')) {
+      return fulfill({
+        collection_pipeline_v3_ingress: { enabled: true, rollout_scope: {
+          all: true, immediate_rpc: 'ingest_collection_batch_immediate_v3', immediate_max_events: 5,
+        } },
+        collection_pipeline_v3_broadcast: { enabled: false, rollout_scope: { all: true } },
+      });
+    }
     if (path.endsWith('/rest/v1/daily_goals')) return fulfill([]);
     if (path.endsWith('/rest/v1/production_entries')) {
       if (method === 'POST') {
@@ -238,9 +255,9 @@ async function mockSupabase(page) {
           registration_masked: '***123',
           shift: '1º Turno',
           primary_cell_id: 'cell-cut',
-          primary_machine_id: null,
+          primary_machine_id: 'machine-cut',
           cells: [{ id: 'cell-cut', name: 'Corte', is_primary: true }],
-          machines: [],
+          machines: [{ id: 'machine-cut', name: 'Nanshing E2E', cell_id: 'cell-cut', cell_name: 'Corte', is_primary: true }],
         },
       });
     }
@@ -248,11 +265,22 @@ async function mockSupabase(page) {
       return fulfill({ success: true, expires_at: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString() });
     }
 
-    if (path.endsWith('/rest/v1/rpc/process_production_reading')) {
-      const payload = request.postDataJSON()?.p_payload || {};
+    if (path.endsWith('/rest/v1/rpc/ingest_collection_batch_immediate_v3')) {
+      const batch = request.postDataJSON();
+      const event = batch.p_events.events[0];
+      const payload = { rawValue: event.raw_value, readerType: event.reader_type };
+      const respond = (result) => fulfill({
+        batch_id: batch.p_batch_id, device_id: batch.p_device_id, received_at_db: now,
+        results: [{ client_event_id: event.client_event_id, persisted: true,
+          received_at_db: now, decided_at: new Date().toISOString(), projection_status: 'pending',
+          decision: result.status === 'wrong_step' ? 'blocked' : result.status,
+          result: { ...result, client_event_id: event.client_event_id,
+            collection_state: result.status === 'wrong_step' ? 'BLOCKED' : result.status.toUpperCase() },
+        }],
+      });
       state.processCount += 1;
-      if (payload.rawValue === 'LSM-TEST-001-WRONG') {
-        return fulfill({
+      if (payload.rawValue === '09950002') {
+        return respond({
           success: false,
           status: 'wrong_step',
           message: 'Etapa esperada: Marcenaria.',
@@ -266,7 +294,7 @@ async function mockSupabase(page) {
         });
       }
       if (state.processCount > 1) {
-        return fulfill({
+        return respond({
           success: false,
           status: 'duplicated',
           message: 'Esta peça já foi baixada nesta etapa.',
@@ -291,7 +319,7 @@ async function mockSupabase(page) {
         created_at: now,
       };
       state.readings.unshift(reading);
-      return fulfill({
+      return respond({
         success: true,
         status: 'approved',
         message: 'Leitura aprovada. Próxima etapa: Marcenaria.',
@@ -309,7 +337,7 @@ async function mockSupabase(page) {
       state.occurrenceCreated = true;
       const reading = {
         id: 'reading-rejected-001',
-        tag_value: 'LSM-TEST-001-WRONG',
+        tag_value: '09950002',
         reader_type: 'keyboard_barcode',
         step_name: 'Marcenaria',
         cell_name: 'Corte',
@@ -367,15 +395,15 @@ test('fluxo principal de entrada e rastreabilidade produtiva', async ({ page }) 
   await page.getByRole('tab', { name: 'Coleta Código / RFID' }).click();
   const scanner = page.getByLabel('Identificação produtiva');
   await expect(scanner).toBeFocused();
-  await scanner.fill('LSM-TEST-001-P001');
+  await scanner.fill('09950001');
   await scanner.press('Enter');
   await expect(page.getByRole('status').filter({ hasText: 'Leitura aprovada' })).toBeVisible();
 
-  await scanner.fill('LSM-TEST-001-P001');
+  await scanner.fill('09950001');
   await scanner.press('Enter');
   await expect(page.getByRole('status').filter({ hasText: 'já foi baixada' })).toBeVisible();
 
-  await scanner.fill('LSM-TEST-001-WRONG');
+  await scanner.fill('09950002');
   await scanner.press('Enter');
   await expect(page.getByRole('status').filter({ hasText: 'Etapa esperada' })).toBeVisible();
 
