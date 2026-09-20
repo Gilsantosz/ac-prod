@@ -39,6 +39,20 @@ p95 **77,44 ms**, p99 **114,58 ms**, máximo **280,47 ms**. O script exige
 snapshot fresco e ainda não expirado, além do contrato de release.
 Artefato: [resumo k6](../evidence/capacity/20260920-readonly-smoke.json).
 
+A rampa longa terminou com **28.200 GETs**, zero falhas HTTP, zero iterações
+descartadas e 56.400 verificações aprovadas. Sustentou 40 GET/s por dez minutos,
+além da rampa inicial e redução final (12 min 30 s de cenário). Latência:
+p95 **87,17 ms**, p99 **165,18 ms**, máximo **1.897,13 ms**. Todos os thresholds
+passaram, com parada automática mantida. Artefato:
+[resumo k6 global somente leitura](../evidence/capacity/20260920-readonly-global.json).
+
+As amostras de banco de 13:05:10Z e 13:18:00Z tiveram o mesmo `stats_reset`:
+delta de deadlocks 0, rollbacks 2, commits 29.001 e temporários 77.462.072 bytes.
+Havia tráfego concorrente do aplicativo e jobs; esses deltas não são atribuídos
+exclusivamente ao teste. As duas amostras registraram zero esperas por lock,
+16/22 conexões e snapshot fresco. Isso não comprova ausência de espera entre
+amostras nem desempenho de gravação.
+
 Essa medição não executa login, ingresso de peças, projeção nem WebSocket.
 Os 1.000 IDs lógicos do perfil são identificadores de requisição; não são
 1.000 operadores autenticados. Portanto, não comprovam capacidade produtiva.
