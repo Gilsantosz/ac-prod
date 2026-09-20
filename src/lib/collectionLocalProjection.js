@@ -72,6 +72,20 @@ export function collectionSnapshotMatchesPendingLot(previous, incoming, now = Da
   ));
 }
 
+/** A consulta pode iniciar após o ACK e ainda ler a projeção do evento anterior. */
+export function collectionSnapshotIsBehindDecision(previous, incoming, now = Date.now()) {
+  const eventId = previous?._collection_context_event_id;
+  const receivedAt = Number(previous?._collection_context_received_at);
+  if (!eventId || !Number.isFinite(receivedAt) || now - receivedAt >= 30_000) return false;
+  const context = incoming?.active_context;
+  if (context?.source_client_event_id === eventId) return false;
+  const decidedAt = Number(previous._collection_context_decided_at);
+  const projectedEventAt = Date.parse(context?.last_event_occurred_at);
+  // Os dois horários são do servidor. Outro posto mais recente deve prevalecer.
+  return !(Number.isFinite(decidedAt) && Number.isFinite(projectedEventAt)
+    && projectedEventAt >= decidedAt);
+}
+
 /** Um snapshot compacto do mesmo lote não apaga nomes já confirmados. */
 export function preserveCollectionSnapshotIdentity(previous, incoming) {
   const oldContext = previous?.active_context;
@@ -334,6 +348,10 @@ export function applyCollectionTerminalResultToCache(queryClient, payload = {}, 
       ...next,
       _collection_context_event_id: clientEventId,
       _collection_context_event_at: contextEventAt,
+      _collection_context_decided_at: Date.parse(payload.result?.decision_committed_at
+        || payload.result?.committed_at || payload.result?.decided_at),
+      _collection_context_received_at: payload.enrichmentOnly
+        ? previous._collection_context_received_at : Date.now(),
     }, row, payload.result);
   });
 

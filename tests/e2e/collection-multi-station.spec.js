@@ -66,6 +66,7 @@ function createSharedBackend() {
       persona.cellName,
       { ...persona.activeContext },
     ])),
+    receiptContextByCell: new Map(),
     contextConfirmations: [],
     ingested: [],
     seenDomainReads: new Set(),
@@ -167,6 +168,7 @@ function resultFor(persona, active, event, decision) {
     message: approved ? 'Peça liberada pelo pipeline imediato.' : 'Leitura duplicada na mesma etapa.',
     quantity: event.quantity,
     client_event_id: event.client_event_id,
+    committed_at: new Date().toISOString(),
     lot: {
       id: active.active_lot_id,
       lot_code: active.active_lot_code,
@@ -396,7 +398,8 @@ async function installSupabaseMock(context, backend, persona, browserProfile) {
       // Mantém a chamada aberta por um instante para provar serialização entre
       // abas do mesmo dispositivo e paralelismo entre estações independentes.
       await new Promise((resolve) => setTimeout(resolve, 750));
-      const active = backend.state.activeByCell.get(persona.cellName);
+      const active = backend.state.receiptContextByCell.get(persona.cellName)
+        || backend.state.activeByCell.get(persona.cellName);
       const results = payload.p_events.events.map((event) => {
         if (backend.state.seenClientEventIds.has(event.client_event_id)) {
           backend.state.duplicateClientEventIds.push(event.client_event_id);
@@ -626,6 +629,21 @@ test('múltiplas estações isolam contexto, sincronizam lotes e não duplicam f
     expect(backend.state.maxInFlightByProfile.get('workstation-corte')).toBe(1);
     expect(backend.state.maxInFlight).toBeGreaterThanOrEqual(2);
 
+    // A decisão imediata já mudou o cliente, mas a projeção do banco ainda
+    // aponta o anterior. Até um GET iniciado depois do ACK deve preservá-lo.
+    const immediateContext = { ...PERSONAS.corte.activeContext,
+      active_lot_id: '10000000-0000-4000-8000-000000000503',
+      active_lot_code: 'CLI-CORTE-IMEDIATO', customer_name: 'Cliente Imediato E2E' };
+    backend.state.receiptContextByCell.set(PERSONAS.corte.cellName, immediateContext);
+    await approvedCortePage.getByLabel('Identificação produtiva').fill('09950102');
+    await expect.poll(() => feedbackState(approvedCortePage)).toBe('APPROVED');
+    await expectLot(approvedCortePage, immediateContext);
+    const snapshotsBeforeStaleGet = backend.state.queryCounts.snapshot;
+    await approvedCortePage.getByRole('button', { name: 'Atualizar', exact: true }).click();
+    await expect.poll(() => backend.state.queryCounts.snapshot).toBeGreaterThan(snapshotsBeforeStaleGet);
+    await expectLot(approvedCortePage, immediateContext);
+    await expectIntegrityMetric(approvedCortePage, 'Aprovado', 22);
+
     // Troca autoritativa de lote após uma leitura já confirmada: o snapshot
     // atual deve superar o feedback local antigo nos modos normal e foco.
     const nextContext = {
@@ -635,6 +653,8 @@ test('múltiplas estações isolam contexto, sincronizam lotes e não duplicam f
       active_lot_code: 'CLI-CORTE-02',
       customer_name: 'Cliente Corte Atualizado E2E',
       progress_percent: 5,
+      source_client_event_id: 'newer-station-event',
+      last_event_occurred_at: new Date().toISOString(),
     };
     backend.state.activeByCell.set(PERSONAS.corte.cellName, nextContext);
     const snapshotsBeforeContextSwitch = backend.state.queryCounts.snapshot;

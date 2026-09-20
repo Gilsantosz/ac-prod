@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { COLLECTION_STATES } from '@/lib/collectionStateMachine';
-import { applyCollectionTerminalResultToCache, collectionHistoryRowFromTerminalResult, collectionSnapshotMatchesPendingLot, preserveCollectionSnapshotIdentity } from '@/lib/collectionLocalProjection';
+import { applyCollectionTerminalResultToCache, collectionHistoryRowFromTerminalResult, collectionSnapshotIsBehindDecision, collectionSnapshotMatchesPendingLot, preserveCollectionSnapshotIdentity } from '@/lib/collectionLocalProjection';
 
 function createQueryClient(entries) {
   const cache = entries.map(([queryKey, data]) => ({ queryKey, data }));
@@ -51,6 +51,31 @@ function approvedPayload() {
 }
 
 describe('projeção local de decisão terminal', () => {
+  it('recusa a projeção anterior mesmo quando a consulta começa depois do ACK', () => {
+    const queryClient = createQueryClient([[['collection-kpis', 'Corte', 'machine-corte'], {
+      approved: 20, active_context: { active_pcp_import_batch_id: 'batch-1', active_lot_id: 'old-client' },
+    }]]);
+    const payload = approvedPayload();
+    payload.result.committed_at = new Date().toISOString();
+    applyCollectionTerminalResultToCache(queryClient, payload, new Set());
+    const confirmed = queryClient.cache[0].data;
+    expect(confirmed).toMatchObject({ approved: 21, active_context: { active_lot_code: 'CLI-001' } });
+    const older = { approved: 20, active_context: {
+      active_pcp_import_batch_id: 'batch-1', active_lot_id: 'old-client',
+      source_client_event_id: 'older-event', last_event_occurred_at: '2020-01-01T00:00:00Z',
+    } };
+    expect(collectionSnapshotIsBehindDecision(confirmed, older)).toBe(true);
+    expect(collectionSnapshotIsBehindDecision(confirmed, { active_context: null })).toBe(true);
+    expect(collectionSnapshotIsBehindDecision(confirmed, { active_context: {
+      source_client_event_id: 'event-001',
+    } })).toBe(false);
+    expect(collectionSnapshotIsBehindDecision(confirmed, { active_context: {
+      source_client_event_id: 'newer-station-event',
+      last_event_occurred_at: new Date(Date.parse(payload.result.committed_at) + 1).toISOString(),
+    } })).toBe(false);
+    expect(collectionSnapshotIsBehindDecision(confirmed, older, confirmed._collection_context_received_at + 30_000)).toBe(false);
+    expect(collectionSnapshotIsBehindDecision({}, older)).toBe(false);
+  });
   it('exibe a etapa coletada do recibo V3 separada da próxima etapa da peça', () => {
     const row = collectionHistoryRowFromTerminalResult({
       event: { client_event_id: 'v3-event', cellName: 'Bordo' },
