@@ -4,10 +4,15 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_run:
+    workflows: ['Deploy AC.Prod2 — contrato banco/front no mesmo release']
+    types: [completed]
+    branches: [main]
 permissions:
   contents: read
 jobs:
   report-assets:
+    if: github.event_name != 'workflow_run'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -18,28 +23,47 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Read public deployment assets
-        run: |
-          python3 - <<'PY'
-          import urllib.request,json,pathlib,subprocess
-          pathlib.Path('.report-smoke-output').mkdir(exist_ok=True)
-          subprocess.run(['git','archive','--format=tar','HEAD','-o','.report-smoke-output/source.tar'],check=True)
-          for path in ['build-info.json','assets/leo-madeiras-logo-CfJe40-o.jpg']:
-              try:
-                  r=urllib.request.urlopen('https://gilsantosz.github.io/ac-prod/'+path,timeout=20)
-                  b=r.read()
-                  print('DEPLOYED_ASSET',path,r.status,r.headers.get('Content-Type'),len(b),b[:16].hex())
-                  if path.endswith('.json'): print('DEPLOYED_VERSION',b.decode())
-              except Exception as e: print('DEPLOYED_ASSET_ERROR',path,str(e))
-          PY
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - name: Browser regression
+      - name: Browser regression including actual downloads and first offline export
         run: node scripts/report-assets-smoke.mjs
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: report-assets-validation
-          path: .report-smoke-output/
+          path: |
+            .report-smoke-output/*.json
+            .report-smoke-output/*.png
+            .report-smoke-output/*.xlsx
+            .report-smoke-output/*.pdf
           include-hidden-files: true
           retention-days: 7
+  verify-published-release:
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Confirm public build matches the successful deployment
+        env:
+          EXPECTED_COMMIT: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.request
+          expected=os.environ['EXPECTED_COMMIT']
+          url='https://gilsantosz.github.io/ac-prod/build-info.json'
+          last='No response'
+          for attempt in range(15):
+              try:
+                  req=urllib.request.Request(url+'?verify='+expected,headers={'Cache-Control':'no-cache'})
+                  with urllib.request.urlopen(req,timeout=5) as response:
+                      data=json.load(response)
+                  last=data.get('commit_sha')
+                  if last==expected:
+                      print('PUBLISHED_RELEASE_VERIFIED',json.dumps(data))
+                      break
+              except Exception as error:
+                  last=str(error)
+              time.sleep(5)
+          else:
+              raise SystemExit('Public release mismatch: '+str(last))
+          PY
