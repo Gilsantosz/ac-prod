@@ -55,6 +55,10 @@ jobs:
           path: capacity-artifacts/
           retention-days: 3
           if-no-files-found: error
+      - name: Install pinned k6 (no load execution)
+        run: bash scripts/capacity/install-k6.sh
+      - name: Validate deterministic plan and fail-closed evaluator
+        run: node --test scripts/capacity/real/*.test.mjs
       - name: Install locked dependencies
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
@@ -73,3 +77,16 @@ jobs:
           VITE_SUPABASE_ANON_KEY: placeholder-anon-key
           VITE_APP_BASE: /ac-prod/
         run: npm run build
+      - name: Read-only staging release preflight - not a capacity benchmark
+        env:
+          CAPACITY_PUBLIC_KEY: sb_publishable_tlwxkijLdIPChVHTYr1qAQ_xlEEbkV7
+        run: node scripts/capacity/real/preflight.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: capacity-readiness-${{ github.sha }}
+          path: |
+            capacity-artifacts/plan.json
+            capacity-artifacts/real-readiness.json
+          retention-days: 7
+          if-no-files-found: warn

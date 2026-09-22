@@ -1,0 +1,9 @@
+{
+ "project_ref":"smnsihksrhzbkhcbdjfu","production_mutated":false,
+ "applied":[
+  {"version":"20260922163308","name":"capacity_stage_sync_trigger_parity_20260922","pre_md5":"e0998ca91163fadf2ba231afc51c0ad5","post_md5":"06ebbec1fcd7fef010449b94dc859801"},
+  {"version":"20260922163414","source":"supabase/migrations/20260908154004_collection_immediate_decision.sql","post_md5":"e147cef4f1ad70afe37ede4a2b08237a"},
+  {"version":"20260922163435","source":"supabase/migrations/20260908154813_collection_immediate_worker_reuse.sql","post_md5":"90ffa0ee5c0f4b6b82c3a92a7d056bcf"},
+  {"version":"20260922165032","name":"capacity_real_private_fixture_v1","seed_function_md5":"db302de82fee26db5df964cf86fb7951","seed_execution":"FAILED_ROLLED_BACK","error":"42702: login_name ambiguous","fix_applied":false}
+ ]
+}

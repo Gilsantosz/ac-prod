@@ -1,0 +1,8 @@
+{
+ "date":"2026-09-22","target":"smnsihksrhzbkhcbdjfu","source_sha":"cea2a7bca2591b483a3de1a29829334fe681a03f",
+ "baseline_run_id":35753945125,"baseline_unit_tests_passed":953,"baseline_unit_test_files_passed":152,
+ "load_executed":false,"capacity":"NOT_PROVEN","result":"FAIL","phase":"PREFLIGHT",
+ "fixture":{"status":"FAILED_ROLLED_BACK","sqlstate":"42702","field":"login_name","runs":0,"machines":0,"operators":0,"pieces":0,"auth_users_existing":2},
+ "metrics":{"ack_p95_ms":null,"ack_p99_ms":null,"processing_p99_ms":null,"realtime_p95_ms":null,"error_rate":null,"lost_collections":null,"duplicated_production":null,"involuntary_logouts":null,"deadlocks":null,"counter_divergence":null,"dropped_iterations":null,"db_cpu":null,"db_memory":null,"db_connections":null},
+ "scenarios":{"A":"NOT_EXECUTED","B":"NOT_EXECUTED","C":"NOT_EXECUTED","D":"NOT_EXECUTED","E":"NOT_EXECUTED","F":"NOT_EXECUTED","G":"NOT_EXECUTED","H":"NOT_EXECUTED","I":"NOT_EXECUTED","J":"NOT_EXECUTED","K":"NOT_EXECUTED"}
+}
