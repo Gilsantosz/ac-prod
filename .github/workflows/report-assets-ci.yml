@@ -1,0 +1,51 @@
+name: Report branding and browser exports
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  report-assets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify image bytes and locate consumers
+        run: |
+          python3 - <<'PY'
+          import pathlib,struct,zlib
+          p=pathlib.Path('src/assets/leo-madeiras-logo.jpg'); b=p.read_bytes()
+          print('LOGO_SIGNATURE',b[:16].hex(),'SIZE',len(b))
+          if b[:8]==b'\x89PNG\r\n\x1a\n':
+              i=8; data=b''
+              while i<len(b):
+                  n=struct.unpack('>I',b[i:i+4])[0]; kind=b[i+4:i+8]; chunk=b[i+8:i+8+n]
+                  crc=struct.unpack('>I',b[i+8+n:i+12+n])[0]
+                  print('PNG_CHUNK',kind.decode(),n,'CRC_OK',crc==zlib.crc32(kind+chunk))
+                  if kind==b'IDAT': data+=chunk
+                  i+=n+12
+              try: print('PNG_DECOMPRESSED_BYTES',len(zlib.decompress(data)))
+              except Exception as e: print('PNG_DECODE_ERROR',str(e))
+          for p in pathlib.Path('src').rglob('*'):
+              if p.suffix not in ('.js','.jsx','.ts','.tsx'): continue
+              for n,line in enumerate(p.read_text().splitlines(),1):
+                  if 'leo-madeiras-logo' in line or 'exportReportExcel(' in line: print('CONSUMER',str(p),n,line.strip())
+          PY
+      - run: npx playwright install --with-deps chromium
+      - name: Browser regression
+        run: node scripts/report-assets-smoke.mjs
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: report-assets-validation
+          path: .report-smoke-output/
+          retention-days: 7
