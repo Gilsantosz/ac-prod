@@ -16,9 +16,10 @@ import { CalendarRange, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { buildAnnualProductionSummary } from '@/lib/dashboardPeriod';
+import { aggregateGoalBuckets } from '@/lib/dashboardGoalAnalysis';
 import { aggregateAnalysis, normalizeAnalysisEntries } from '@/lib/operationalAnalysis';
 
-export default function AnnualProductionSummary({ entries = [], year, chartRef, unitLabel = '', loading = false }) {
+export default function AnnualProductionSummary({ entries = [], analysis, year, chartRef, unitLabel = '', loading = false }) {
   const gradientId = useId().replace(/:/g, '');
   const summary = useMemo(
     () => buildAnnualProductionSummary(entries, year),
@@ -26,12 +27,12 @@ export default function AnnualProductionSummary({ entries = [], year, chartRef, 
   );
   const { totals } = summary;
   const months = useMemo(() => {
-    const groups = aggregateAnalysis(normalizeAnalysisEntries(entries), (e) => Number(e.date.slice(5, 7)) - 1);
+    const groups = analysis ? aggregateGoalBuckets(analysis.goalBuckets, (e) => Number(e.date.slice(5, 7)) - 1) : aggregateAnalysis(normalizeAnalysisEntries(entries), (e) => Number(e.date.slice(5, 7)) - 1);
     return summary.months.map((month) => {
       const group = groups.find((g) => g.key === month.index);
-      return { ...month, produced: group?.produced ?? null, target: group?.target ?? null, attainment: group?.attainment ?? null };
+      return { ...month, produced: analysis && group?.measurementPending && !group?.count ? null : group?.produced ?? null, target: group?.target ?? null, attainment: group?.attainment ?? null };
     });
-  }, [entries, summary]);
+  }, [entries, summary, analysis]);
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
@@ -55,7 +56,7 @@ export default function AnnualProductionSummary({ entries = [], year, chartRef, 
           <Badge variant="secondary" className="w-fit">12 meses</Badge>
         </div>
 
-        {totals.records === 0 && totals.target === 0 ? (
+        {totals.records === 0 && totals.target === 0 && !analysis?.goalBuckets?.length ? (
           <div className="flex h-56 items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground">
             Nenhum dado encontrado para {year} com os filtros selecionados.
           </div>

@@ -50,6 +50,7 @@ export async function fetchDashboardProductionEntries(referenceDate, year) {
       .lt('date', endDate)
       .order('date', { ascending: false })
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .range(offset, offset + PAGE_SIZE - 1);
 
     if (error) throw error;
@@ -86,17 +87,38 @@ export async function fetchDashboardYearBounds() {
   };
 }
 
+// Goal history is effective-dated. A lower date bound would discard the last
+// valid goal inherited from previous months. Never fall back to legacy daily_goals.
 export async function fetchDashboardDailyGoals(referenceDate, year) {
-  const { startDate, endDate } = getDashboardPeriodRange(referenceDate, year);
+  const { endDate } = getDashboardPeriodRange(referenceDate, year);
   const rows = [];
   for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data, error } = await supabase.from('daily_goals')
-      .select('id,date,shift,cell,target')
-      .gte('date', startDate).lt('date', endDate)
+    const { data, error } = await supabase.from('production_daily_goals')
+      .select('id,date,shift,cell_name,metric_unit,target,capacity,updated_at')
+      .lt('date', endDate)
       .order('date', { ascending: true }).order('id', { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1);
     if (error) throw error;
-    rows.push(...(data || []));
+    rows.push(...(data || []).map((goal) => ({ ...goal, cell: goal.cell_name })));
     if ((data || []).length < PAGE_SIZE) return rows;
   }
+}
+
+export async function fetchDashboardGoalContext(referenceDate, year) {
+  const { startDate, endDate } = getDashboardPeriodRange(referenceDate, year);
+  const loadCalendar = async () => {
+    const rows = [];
+    for (let offset = 0; ; offset += PAGE_SIZE) {
+      const { data, error } = await supabase.from('workday_calendar')
+        .select('id,date,cell,shift,is_workday,updated_at')
+        .gte('date', startDate).lt('date', endDate)
+        .order('date', { ascending: true }).order('id', { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (error) throw error;
+      rows.push(...(data || []));
+      if ((data || []).length < PAGE_SIZE) return rows;
+    }
+  };
+  const [goals, calendar] = await Promise.all([fetchDashboardDailyGoals(referenceDate, year), loadCalendar()]);
+  return { goals, calendar };
 }

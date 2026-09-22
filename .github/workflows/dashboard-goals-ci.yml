@@ -1,0 +1,49 @@
+name: Dashboard goals and KPI regression
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/pages/Dashboard.jsx'
+      - 'src/lib/dashboard*'
+      - 'src/lib/reports/productionAnalysisReport.js'
+      - 'src/components/reports/**'
+      - 'src/components/dashboard/**'
+      - 'scripts/dashboard-goal-kpi-smoke.mjs'
+      - '.github/workflows/dashboard-goals-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/pages/Dashboard.jsx'
+      - 'src/lib/dashboard*'
+      - 'src/lib/reports/productionAnalysisReport.js'
+      - 'src/components/reports/**'
+      - 'src/components/dashboard/**'
+      - 'scripts/dashboard-goal-kpi-smoke.mjs'
+      - '.github/workflows/dashboard-goals-ci.yml'
+permissions:
+  contents: read
+jobs:
+  goal-kpi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Goal history, units, calendar, query and report regressions
+        run: npx vitest run src/lib/dashboardGoalAnalysis.test.js src/lib/dashboardData.test.js
+      - name: Install isolated browser
+        run: npx playwright install --with-deps chromium > /tmp/goal-browser.log 2>&1 || { tail -60 /tmp/goal-browser.log; exit 1; }
+      - name: Real dashboard and export tests with synthetic data only
+        run: node scripts/dashboard-goal-kpi-smoke.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dashboard-goal-kpi-validation
+          path: goal-kpi-artifacts/
+          retention-days: 7

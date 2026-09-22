@@ -10,6 +10,7 @@ import {
   DASHBOARD_PRODUCTION_SELECT,
   fetchDashboardProductionEntries,
   fetchDashboardDailyGoals,
+  fetchDashboardGoalContext,
 } from '@/lib/dashboardData';
 
 function productionQuery(page) {
@@ -28,7 +29,7 @@ function productionQuery(page) {
   return query;
 }
 
-describe('dashboardData', () => {
+ describe('dashboardData', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('carrega somente a projeção necessária e preserva o contrato do dashboard', async () => {
@@ -104,15 +105,39 @@ describe('dashboardData', () => {
       fetchDashboardProductionEntries('2026-08-31', 'disabled'),
     ).rejects.toThrow('query failed');
   });
-  it('carrega metas do período escolhido em vez de usar somente as 200 mais recentes', async () => {
-    const query = productionQuery([{ id: 'goal', date: '2025-08-01', cell: 'Corte', target: 80 }]);
+  it('carrega histórico de metas oficiais, inclusive vigências anteriores ao recorte', async () => {
+    const query = productionQuery([{ id: 'goal', date: '2025-08-01', cell_name: 'Corte', metric_unit: 'sheets', target: 80 }]);
     fromMock.mockReturnValue(query);
     const goals = await fetchDashboardDailyGoals('2026-09-05', '2025');
-    expect(fromMock).toHaveBeenCalledWith('daily_goals');
-    expect(query.gte).toHaveBeenCalledWith('date', '2025-01-01');
+    expect(fromMock).toHaveBeenCalledWith('production_daily_goals');
+    expect(query.gte).not.toHaveBeenCalled();
     expect(query.lt).toHaveBeenCalledWith('date', '2026-01-01');
     expect(query.range).toHaveBeenCalledWith(0, 999);
     expect(goals[0].target).toBe(80);
+  });
+
+  it('pagina mais de 1000 metas oficiais e preserva unidade/ordem estável', async () => {
+    const first = productionQuery(Array.from({ length: 1000 }, (_, i) => ({ id: String(i), cell_name: 'Bordo', metric_unit: 'meters' })));
+    const second = productionQuery([{ id: 'last', cell_name: 'Corte', metric_unit: 'sheets', target: 150 }]);
+    fromMock.mockReturnValueOnce(first).mockReturnValueOnce(second);
+    const rows = await fetchDashboardDailyGoals('2026-09-21', 'disabled');
+    expect(rows).toHaveLength(1001);
+    expect(rows.at(-1)).toMatchObject({ cell: 'Corte', metric_unit: 'sheets', target: 150 });
+    expect(second.range).toHaveBeenCalledWith(1000, 1999);
+    expect(first.order).toHaveBeenCalledWith('id', { ascending: true });
+  });
+  it('erro de metas não retorna lista vazia como se não houvesse cadastro', async () => {
+    const query = productionQuery([]);
+    query.range.mockResolvedValue({ data: null, error: new Error('goal read failed') });
+    fromMock.mockReturnValue(query);
+    await expect(fetchDashboardDailyGoals('2026-09-21', 'disabled')).rejects.toThrow('goal read failed');
+  });
+  it('consulta calendário e metas sem aceitar um contexto parcial', async () => {
+    const goals = productionQuery([{ id: 'g', cell_name: 'Bordo', target: 3000 }]);
+    const calendar = productionQuery([]);
+    calendar.range.mockResolvedValue({ data: null, error: new Error('calendar failed') });
+    fromMock.mockImplementation((table) => table === 'production_daily_goals' ? goals : calendar);
+    await expect(fetchDashboardGoalContext('2026-09-21', 'disabled')).rejects.toThrow('calendar failed');
   });
 
 });

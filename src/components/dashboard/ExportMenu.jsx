@@ -11,7 +11,7 @@ function describePeriod({ from, to }) {
   return from === to ? display(to) : `${display(from)} a ${display(to)}`;
 }
 
-export default function ExportMenu({ entries, allEntries, filters }) {
+export default function ExportMenu({ entries, allEntries, filters, goalContext }) {
   const { user } = useAuth();
   const annualMode = isAnnualFilterActive(filters.year);
   const period = useMemo(() => ({
@@ -31,27 +31,29 @@ export default function ExportMenu({ entries, allEntries, filters }) {
 
   const buildReport = (source, selectedPeriod) => createProductionAnalysisReport({
     generatedAt: new Date().toISOString(), period: selectedPeriod,
-    comparisonPeriod: null, entries: filterProductionUnit(source, filters.metric_unit),
-    filters, fetchedRowCount: source.length,
+    comparisonPeriod: null, entries: goalContext ? allEntries : filterProductionUnit(source, filters.metric_unit),
+    goalContext, filters, fetchedRowCount: source.length,
   }, { generatedBy: user?.name || user?.email || '' });
-  const report = useMemo(() => buildReport(entries, period), [entries, period, filters, user?.name, user?.email]);
-
+  const report = useMemo(() => buildReport(entries, period), [entries, allEntries, period, filters, goalContext, user?.name, user?.email]);
+  const weeklyReport = useMemo(() => weeklyPeriod && goalContext ? buildReport(allEntries, weeklyPeriod) : null,
+    [allEntries, weeklyPeriod, goalContext, filters, user?.name, user?.email]);
+  const unavailable = goalContext && goalContext.status !== 'ready';
+  const empty = (value) => !value.metadata.rowCount && !value.metadata.analysis?.goalBuckets?.length;
   const reportGroups = [{
     id: 'selected-period',
     label: annualMode ? `Ano de ${filters.year}` : 'Período selecionado',
     description: describePeriod(period),
     report,
-    disabled: !report.metadata.rowCount,
+    disabled: Boolean(unavailable) || empty(report),
   }];
   if (weeklyPeriod) {
     reportGroups.push({
       id: 'last-seven-days',
       label: 'Últimos 7 dias',
       description: describePeriod(weeklyPeriod),
-      getReport: () => buildReport(weeklyEntries, weeklyPeriod),
-      disabled: !weeklyEntries.length,
+      getReport: () => weeklyReport || buildReport(weeklyEntries, weeklyPeriod),
+      disabled: Boolean(unavailable) || (weeklyReport ? empty(weeklyReport) : !weeklyEntries.length),
     });
   }
-
   return <ExportReportMenu reportGroups={reportGroups} />;
 }
