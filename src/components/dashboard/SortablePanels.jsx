@@ -28,7 +28,6 @@ export default function SortablePanels({
     setReady(true);
   }, []);
 
-  // Resolve a lista de painéis visíveis ordenados
   const ordered = order
     .map((id) => panels.find((p) => p.id === id))
     .filter(Boolean);
@@ -49,7 +48,7 @@ export default function SortablePanels({
     onReorder(ids);
   };
 
-  // Controles encapsulados posicionados no topo direito de cada cartão
+  // Normal-flow toolbar reserves its own space instead of covering mobile titles.
   function PanelControls({ panel, index, dragHandleProps }) {
     if (!editable) return null;
     const size = sizes[panel.id] || 'full';
@@ -58,6 +57,8 @@ export default function SortablePanels({
 
     return (
       <div
+        role="group"
+        aria-label={`Controles de layout: ${panel.title || panel.id}`}
         className="flex items-center gap-1 p-1 rounded-xl bg-background/80 dark:bg-card/85 backdrop-blur-md border border-border/50 shadow-sm"
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
@@ -78,7 +79,7 @@ export default function SortablePanels({
           aria-label={`Mover para baixo: ${panel.title || panel.id}`}
           title="Mover para baixo"
           disabled={!canMoveDown}
-          onClick={() => movePanel(index, 1)}
+          onClick={() => movePanel(index, -1 + 2)}
           className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/70 transition-colors disabled:opacity-25 disabled:pointer-events-none"
         >
           <ArrowDown className="h-3.5 w-3.5" />
@@ -91,11 +92,7 @@ export default function SortablePanels({
             className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/70 transition-colors"
             title={size === 'half' ? 'Expandir para largura total' : 'Dividir em meia largura'}
           >
-            {size === 'half' ? (
-              <Square className="h-3.5 w-3.5" />
-            ) : (
-              <Columns2 className="h-3.5 w-3.5" />
-            )}
+            {size === 'half' ? <Square className="h-3.5 w-3.5" /> : <Columns2 className="h-3.5 w-3.5" />}
           </button>
         )}
 
@@ -121,38 +118,17 @@ export default function SortablePanels({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48 bg-card/95 backdrop-blur-md">
-            {canMoveUp && (
-              <DropdownMenuItem onClick={() => movePanel(index, -1)}>
-                <ArrowUp className="h-4 w-4 mr-2" /> Mover para cima
-              </DropdownMenuItem>
-            )}
-            {canMoveDown && (
-              <DropdownMenuItem onClick={() => movePanel(index, 1)}>
-                <ArrowDown className="h-4 w-4 mr-2" /> Mover para baixo
-              </DropdownMenuItem>
-            )}
+            {canMoveUp && <DropdownMenuItem onClick={() => movePanel(index, -1)}><ArrowUp className="h-4 w-4 mr-2" /> Mover para cima</DropdownMenuItem>}
+            {canMoveDown && <DropdownMenuItem onClick={() => movePanel(index, 1)}><ArrowDown className="h-4 w-4 mr-2" /> Mover para baixo</DropdownMenuItem>}
             {onToggleSize && (
               <DropdownMenuItem onClick={() => onToggleSize(panel.id)}>
-                {size === 'half' ? (
-                  <>
-                    <Square className="h-4 w-4 mr-2" /> Expandir largura
-                  </>
-                ) : (
-                  <>
-                    <Columns2 className="h-4 w-4 mr-2" /> Dividir largura
-                  </>
-                )}
+                {size === 'half' ? <><Square className="h-4 w-4 mr-2" /> Expandir largura</> : <><Columns2 className="h-4 w-4 mr-2" /> Dividir largura</>}
               </DropdownMenuItem>
             )}
             {onToggleHide && (
               <>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => onToggleHide(panel.id)}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <EyeOff className="h-4 w-4 mr-2" /> Ocultar painel
-                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onToggleHide(panel.id)} className="text-destructive focus:text-destructive"><EyeOff className="h-4 w-4 mr-2" /> Ocultar painel</DropdownMenuItem>
               </>
             )}
           </DropdownMenuContent>
@@ -175,17 +151,12 @@ export default function SortablePanels({
     return (sizes[id] || 'full') === 'half' ? 'col-span-1' : 'col-span-1 md:col-span-2';
   }
 
-  // Renderização estática antes de montar o DnD (evita flash de layout)
   if (!ready) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
         {ordered.map((panel, index) => (
           <div key={panel.id} className={`group/panel relative min-w-0 ${colClass(panel.id)}`}>
-            {editable && (
-              <div className="absolute top-4 right-4 z-20 opacity-90 group-hover/panel:opacity-100 transition-opacity">
-                <PanelControls panel={panel} index={index} />
-              </div>
-            )}
+            {editable && <div className="flex justify-end mb-2"><PanelControls panel={panel} index={index} /></div>}
             {panel.node}
           </div>
         ))}
@@ -197,27 +168,13 @@ export default function SortablePanels({
     <DragDropContext onDragEnd={handleDragEnd}>
       <Droppable droppableId="dashboard-panels">
         {(provided) => (
-          <div
-            ref={provided.innerRef}
-            {...provided.droppableProps}
-            className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6"
-          >
+          <div ref={provided.innerRef} {...provided.droppableProps} className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
             {ordered.map((panel, index) => (
               <Draggable isDragDisabled={!editable} key={panel.id} draggableId={panel.id} index={index}>
                 {(prov, snapshot) => (
-                  <div
-                    ref={prov.innerRef}
-                    {...prov.draggableProps}
-                    className={`group/panel relative min-w-0 ${colClass(panel.id)} ${snapshot.isDragging ? 'z-50' : ''}`}
-                  >
-                    {editable && (
-                      <div className="absolute top-4 right-4 z-20 opacity-90 group-hover/panel:opacity-100 transition-opacity">
-                        <PanelControls panel={panel} index={index} dragHandleProps={prov.dragHandleProps} />
-                      </div>
-                    )}
-                    <div className={snapshot.isDragging ? 'ring-2 ring-sky-400 rounded-2xl shadow-2xl' : ''}>
-                      {panel.node}
-                    </div>
+                  <div ref={prov.innerRef} {...prov.draggableProps} className={`group/panel relative min-w-0 ${colClass(panel.id)} ${snapshot.isDragging ? 'z-50' : ''}`}>
+                    {editable && <div className="flex justify-end mb-2"><PanelControls panel={panel} index={index} dragHandleProps={prov.dragHandleProps} /></div>}
+                    <div className={snapshot.isDragging ? 'ring-2 ring-sky-400 rounded-2xl shadow-2xl' : ''}>{panel.node}</div>
                   </div>
                 )}
               </Draggable>
