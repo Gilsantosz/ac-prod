@@ -1,4 +1,4 @@
-import leoLogoUrl from '@/assets/leo-madeiras-logo.jpg';
+import { loadCompanyLogoDataUrl, normalizeReportImage } from '@/lib/brandAssets';
 import { buildRawCsv, escapeCsvCell } from '@/lib/reports/reportDataUtils';
 
 export const REPORT_BRAND = {
@@ -11,22 +11,7 @@ export const REPORT_BRAND = {
   border: [226, 232, 240],
 };
 
-let logoDataUrlPromise = null;
-
-export async function loadLeoLogoDataUrl() {
-  if (!logoDataUrlPromise) {
-    logoDataUrlPromise = fetch(leoLogoUrl)
-      .then((res) => res.blob())
-      .then((blob) => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      }))
-      .catch(() => null);
-  }
-  return logoDataUrlPromise;
-}
+export const loadLeoLogoDataUrl = loadCompanyLogoDataUrl;
 
 export async function drawBrandedPdfHeader(doc, {
   title,
@@ -37,18 +22,27 @@ export async function drawBrandedPdfHeader(doc, {
 } = {}) {
   const pageW = doc.internal.pageSize.getWidth();
   const margin = 14;
-  const logo = logoDataUrl === undefined ? await loadLeoLogoDataUrl() : logoDataUrl;
+  let logo = null;
+  try {
+    logo = normalizeReportImage(logoDataUrl === undefined ? await loadLeoLogoDataUrl() : logoDataUrl);
+  } catch (error) {
+    console.warn('[report-pdf] Falha na marca opcional; preservando o relatório.', error?.message);
+  }
 
   doc.setFillColor(...REPORT_BRAND.primary);
   doc.roundedRect(margin, 10, pageW - margin * 2, 28, 4, 4, 'F');
 
   if (logo) {
-    // Card flutuante com borda branca proeminente para destacar do fundo verde
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(255, 255, 255);
-    doc.setLineWidth(0.8);
-    doc.roundedRect(margin + 4, 13, 22, 22, 3.5, 3.5, 'FD');
-    doc.addImage(logo, 'PNG', margin + 5, 14, 20, 20);
+    try {
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(255, 255, 255);
+      doc.setLineWidth(0.8);
+      doc.roundedRect(margin + 4, 13, 22, 22, 3.5, 3.5, 'FD');
+      doc.addImage(logo.dataUrl, logo.pdfFormat, margin + 5, 14, 20, 20);
+    } catch (error) {
+      // Branding must not interrupt data export; company name remains in the header.
+      console.warn('[report-pdf] Imagem da marca inválida; preservando o relatório.', error?.message);
+    }
   }
 
   doc.setTextColor(...REPORT_BRAND.yellow);
@@ -125,7 +119,7 @@ export function escapeCsv(value, delimiter = ';') {
 }
 
 export function buildBrandedCsv({ columns = [], rows = [], delimiter = ';' }) {
-  // Compatibilidade para consumidores legados: CSV agora representa somente dados brutos.
+  // Compatibilidade para consumidores legados: CSV representa somente dados brutos.
   return buildRawCsv({ columns, rows, delimiter, includeBom: true });
 }
 
@@ -134,8 +128,14 @@ export function downloadBlob(blob, filename) {
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  try {
+    document.body.appendChild(a);
+    a.click();
+  } finally {
+    a.remove();
+    // Safari/installed PWAs can consume the URL after the click handler returns.
+    // Revoking it synchronously can cancel the download before it starts.
+    const cleanup = setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    cleanup?.unref?.();
+  }
 }

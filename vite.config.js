@@ -15,9 +15,7 @@ export default defineConfig(() => {
 
   return {
     base: normalizedBase,
-
     logLevel: 'info',
-
     plugins: [
       react(),
       {
@@ -25,8 +23,7 @@ export default defineConfig(() => {
         configureServer(server) {
           server.middlewares.use((req, res, next) => {
             const url = req.url || '';
-
-            // Não intercepta nem redireciona WebSockets e requisições internas do Vite (HMR, React Refresh, etc.)
+            // Não intercepta nem redireciona WebSockets e requisições internas do Vite.
             const isViteInternal =
               req.headers.upgrade === 'websocket' ||
               req.headers['sec-websocket-key'] ||
@@ -36,16 +33,11 @@ export default defineConfig(() => {
               url.startsWith('/@react-refresh') ||
               url.startsWith('/@id') ||
               url.startsWith('/@fs');
-
-            if (isViteInternal) {
-              return next();
-            }
+            if (isViteInternal) return next();
 
             if (normalizedBase !== '/') {
               const accept = req.headers.accept || '';
               const isHtml = accept.includes('text/html');
-
-              // Redireciona a raiz e o base path sem barra para a URL canônica apenas em requisições de navegação HTML
               if ((url === '/' || url === '' || url === '/index.html') && isHtml) {
                 res.writeHead(302, { Location: normalizedBase });
                 res.end();
@@ -57,15 +49,9 @@ export default defineConfig(() => {
                 res.end();
                 return;
               }
-
-              // SPA fallback: apenas reescreve para o index.html se for uma requisição GET de navegação (HTML)
               const isGet = req.method === 'GET';
-
-              if (isGet && isHtml && url.startsWith(normalizedBase)) {
-                req.url = normalizedBase;
-              }
+              if (isGet && isHtml && url.startsWith(normalizedBase)) req.url = normalizedBase;
             }
-
             next();
           });
         },
@@ -74,17 +60,12 @@ export default defineConfig(() => {
             const url = req.url || '';
             const accept = req.headers.accept || '';
             const isHtml = accept.includes('text/html');
-
             const isViteInternal =
               req.headers.upgrade === 'websocket' ||
               req.headers['sec-websocket-key'] ||
               url.includes('/@') ||
               url.includes('token=');
-
-            if (isViteInternal) {
-              return next();
-            }
-
+            if (isViteInternal) return next();
             if (normalizedBase !== '/') {
               if ((url === baseWithoutTrailingSlash || url.startsWith(`${baseWithoutTrailingSlash}?`)) && isHtml) {
                 const query = url.includes('?') ? url.slice(url.indexOf('?')) : '';
@@ -98,9 +79,7 @@ export default defineConfig(() => {
         }
       },
       VitePWA({
-        devOptions: {
-          enabled: false,
-        },
+        devOptions: { enabled: false },
         registerType: 'autoUpdate',
         injectRegister: 'script-defer',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icons/*.png'],
@@ -118,48 +97,27 @@ export default defineConfig(() => {
           start_url: normalizedBase,
           lang: 'pt-BR',
           icons: [
-            {
-              src: `${normalizedBase}icons/icon-192-v2.png`,
-              sizes: '192x192',
-              type: 'image/png',
-              purpose: 'any maskable',
-            },
-            {
-              src: `${normalizedBase}icons/icon-512-v2.png`,
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'any maskable',
-            },
+            { src: `${normalizedBase}icons/icon-192-v2.png`, sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+            { src: `${normalizedBase}icons/icon-512-v2.png`, sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
           ],
         },
         workbox: {
           skipWaiting: true,
           clientsClaim: true,
           cleanupOutdatedCaches: true,
-          // Mantém somente os arquivos estáticos do aplicativo no cache.
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-          // O motor Excel é carregado e armazenado pelo navegador somente quando o usuário exporta.
-          globIgnores: ['**/exceljs.min-*.js'],
+          // Inclui também marca legada e todos os módulos de exportação. O motor
+          // Excel continua lazy no JS, mas não desaparece no primeiro uso offline.
+          globPatterns: ['**/*.{js,css,html,ico,png,jpg,jpeg,svg,woff2}'],
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-          // Dados MES são transacionais: nunca reutilizar respostas antigas do Supabase.
-          // O modo offline e a fila durável de coletas são controlados pela aplicação,
-          // não pelo cache HTTP do Service Worker.
+          // Apenas estáticos no cache. Dados MES continuam transacionais e nunca
+          // reutilizam respostas antigas do Supabase; a fila durável é da aplicação.
           runtimeCaching: [
-            {
-              urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
-              handler: 'NetworkOnly',
-            },
+            { urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i, handler: 'NetworkOnly' },
           ],
         },
       }),
     ],
-
-    resolve: {
-      alias: {
-        '@': path.resolve(__dirname, './src'),
-      },
-    },
-
+    resolve: { alias: { '@': path.resolve(__dirname, './src') } },
     build: {
       rollupOptions: {
         output: {

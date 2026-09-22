@@ -1,0 +1,83 @@
+name: Branding and export browser regression
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/assets/**'
+      - 'src/lib/reportBranding*'
+      - 'src/lib/brand*'
+      - 'src/lib/reports/**'
+      - 'src/components/ui/LeoLogo*'
+      - 'src/components/reports/ExportReportMenu*'
+      - 'public/brand/**'
+      - 'vite.config.js'
+      - 'index.html'
+      - 'scripts/branding-export-browser-smoke.mjs'
+      - 'scripts/verify-branding-deployment.mjs'
+      - '.github/workflows/branding-export-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/assets/**'
+      - 'src/lib/reportBranding*'
+      - 'src/lib/brand*'
+      - 'src/lib/reports/**'
+      - 'src/components/ui/LeoLogo*'
+      - 'src/components/reports/ExportReportMenu*'
+      - 'public/brand/**'
+      - 'vite.config.js'
+      - 'index.html'
+      - 'scripts/branding-export-browser-smoke.mjs'
+      - 'scripts/verify-branding-deployment.mjs'
+      - '.github/workflows/branding-export-ci.yml'
+  workflow_run:
+    workflows: ['Deploy AC.Prod2 — contrato banco/front no mesmo release']
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  browser-exports:
+    if: github.event_name != 'workflow_run'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install isolated browser
+        run: npx playwright install --with-deps chromium > /tmp/branding-browser-install.log 2>&1 || { tail -60 /tmp/branding-browser-install.log; exit 1; }
+      - name: Test logo and real PDF/Excel files without production access
+        run: node scripts/branding-export-browser-smoke.mjs
+      - name: Preserve diagnostic files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branding-export-smoke
+          path: branding-smoke-artifacts/
+          retention-days: 7
+  verify-deployed:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: main
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Verify public release, original PNG and offline Excel engine
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node scripts/verify-branding-deployment.mjs
