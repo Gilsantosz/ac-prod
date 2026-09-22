@@ -1,4 +1,4 @@
-import leoLogoUrl from '@/assets/leo-madeiras-logo.jpg';
+import { LEO_LOGO_DATA_URL } from '@/lib/brandLogo';
 import { buildRawCsv, escapeCsvCell } from '@/lib/reports/reportDataUtils';
 
 export const REPORT_BRAND = {
@@ -11,21 +11,9 @@ export const REPORT_BRAND = {
   border: [226, 232, 240],
 };
 
-let logoDataUrlPromise = null;
-
+// Reuse the original PNG embedded in the application; no image HTTP request.
 export async function loadLeoLogoDataUrl() {
-  if (!logoDataUrlPromise) {
-    logoDataUrlPromise = fetch(leoLogoUrl)
-      .then((res) => res.blob())
-      .then((blob) => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      }))
-      .catch(() => null);
-  }
-  return logoDataUrlPromise;
+  return LEO_LOGO_DATA_URL;
 }
 
 export async function drawBrandedPdfHeader(doc, {
