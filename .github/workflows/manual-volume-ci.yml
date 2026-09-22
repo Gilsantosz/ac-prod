@@ -1,0 +1,36 @@
+name: Manual volume regression
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/lib/manualProductionService.js'
+      - 'scripts/manual-volume-regression.mjs'
+      - 'supabase/migrations/*manual_volume*'
+      - '.github/workflows/manual-volume-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/lib/manualProductionService.js'
+      - 'scripts/manual-volume-regression.mjs'
+      - 'supabase/migrations/*manual_volume*'
+      - '.github/workflows/manual-volume-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  manual-volume:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Validate service syntax
+        run: node --check src/lib/manualProductionService.js
+      - name: Run manual-volume regression tests
+        run: node --test scripts/manual-volume-regression.mjs
