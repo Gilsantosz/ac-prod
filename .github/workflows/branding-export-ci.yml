@@ -1,0 +1,51 @@
+name: Branding and export browser regression
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/assets/**'
+      - 'src/lib/reportBranding*'
+      - 'src/lib/brand*'
+      - 'src/lib/reports/**'
+      - 'src/components/ui/LeoLogo*'
+      - 'src/components/reports/ExportReportMenu*'
+      - 'public/brand/**'
+      - 'scripts/branding-export-browser-smoke.mjs'
+      - '.github/workflows/branding-export-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/assets/**'
+      - 'src/lib/reportBranding*'
+      - 'src/lib/brand*'
+      - 'src/lib/reports/**'
+      - 'src/components/ui/LeoLogo*'
+      - 'public/brand/**'
+      - 'scripts/branding-export-browser-smoke.mjs'
+      - '.github/workflows/branding-export-ci.yml'
+permissions:
+  contents: read
+jobs:
+  browser-exports:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install isolated browser
+        run: npx playwright install --with-deps chromium
+      - name: Test logo and real PDF/Excel files without production access
+        run: node scripts/branding-export-browser-smoke.mjs
+      - name: Preserve diagnostic files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branding-export-smoke
+          path: branding-smoke-artifacts/
+          retention-days: 7
