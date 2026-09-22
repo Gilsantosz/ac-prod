@@ -18,6 +18,7 @@ export default function GoalProgressPanel({ items = [] }) {
 
         <div className="space-y-5 overflow-y-auto pr-2 pb-2 flex-1">
           {items.map((it) => {
+            const unrecorded = it.count === 0;
             const pct = Math.min(100, Math.round((it.produced / it.target) * 100));
             const done = it.produced >= it.target;
             const remaining = Math.max(0, it.target - it.produced);
@@ -31,11 +32,11 @@ export default function GoalProgressPanel({ items = [] }) {
                     {done && <Badge className="gap-1 bg-emerald-600 hover:bg-emerald-600"><CheckCircle2 className="w-3 h-3" /> Meta batida</Badge>}
                   </div>
                   <span className="text-sm tabular-nums text-muted-foreground">
-                    {it.produced.toLocaleString('pt-BR')} / {it.target.toLocaleString('pt-BR')} {unitLabel} ({pct}%)
+                    {it.produced.toLocaleString('pt-BR')} / {it.target.toLocaleString('pt-BR')} {unitLabel} ({unrecorded ? 'sem apontamento' : `${pct}%`})
                   </span>
                 </div>
-                <Progress value={pct} className={done ? '[&>div]:bg-emerald-600' : ''} />
-                {!done && (
+                {!unrecorded && <Progress value={pct} className={done ? '[&>div]:bg-emerald-600' : ''} />}
+                {!done && !unrecorded && (
                   <p className="text-xs text-muted-foreground">Faltam {remaining.toLocaleString('pt-BR')} {unitLabel} para bater a meta.</p>
                 )}
               </div>

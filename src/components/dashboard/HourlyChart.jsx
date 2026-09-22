@@ -4,7 +4,7 @@ import GlassChartCard from '@/components/ui/GlassChartCard';
 import { ResponsiveContainer, Bar, XAxis, YAxis, Tooltip, Line, ComposedChart, CartesianGrid, Legend } from 'recharts';
 import { sortByHour } from '@/lib/productionMetrics';
 
-export default function HourlyChart({ grouped, unitLabel = '' }) {
+export default function HourlyChart({ grouped, unitLabel = '', subtitle }) {
   const id = useId().replace(/:/g, '');
   const isAnimated = process.env.NODE_ENV !== 'test';
   const data = sortByHour(grouped).map((g) => ({
@@ -17,7 +17,7 @@ export default function HourlyChart({ grouped, unitLabel = '' }) {
   return (
     <GlassChartCard
       title="Produtividade por Hora"
-      subtitle={`${unitLabel || 'unidades'} · atingimento no eixo direito`}
+      subtitle={subtitle || `${unitLabel || 'unidades'} · atingimento no eixo direito`}
       headerClassName="pr-36"
     >
       <ResponsiveContainer width="100%" height={290}>

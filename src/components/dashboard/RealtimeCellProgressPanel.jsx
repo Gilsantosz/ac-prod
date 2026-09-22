@@ -13,8 +13,8 @@ export default function RealtimeCellProgressPanel({ analysis, date, shift, loadi
     {loading ? <p role="status" className="text-sm text-muted-foreground">Atualizando o recorte…</p>
       : !cells.length ? <p className="text-sm text-muted-foreground py-5">Nenhum registro para os filtros selecionados.</p>
         : <div className="space-y-3">{cells.map((cell) => <div key={cell.key} className="rounded-xl border border-border/40 bg-secondary/20 p-3">
-          <div className="flex justify-between items-baseline gap-3 flex-wrap mb-2"><strong className="text-sm">{cell.cell}</strong><span className="text-sm tabular-nums">{formatMetric(cell.produced)} / {formatMetric(cell.target)} {cell.unitLabel}</span></div>
-          {cell.attainment == null ? <p className="text-xs text-muted-foreground">Sem base de meta</p> : <><Progress value={Math.min(100, cell.attainment)} className="[&>div]:bg-gradient-to-r [&>div]:from-emerald-400 [&>div]:to-emerald-700" /><p className="mt-2 text-xs text-muted-foreground">{formatMetric(cell.attainment)}% da meta · saldo de {formatMetric(cell.gap)} {cell.unitLabel}</p></>}
+          <div className="flex justify-between items-baseline gap-3 flex-wrap mb-2"><strong className="text-sm">{cell.cell}</strong><span className="text-sm tabular-nums">{cell.measurementPending && !cell.count ? 'A medir' : cell.count === 0 ? 'Sem apontamento' : formatMetric(cell.produced)} / {formatMetric(cell.target)} {cell.unitLabel}</span></div>
+          {cell.attainment == null ? <p className="text-xs text-muted-foreground">{cell.measurementPending ? 'Medição em unidade compatível pendente' : cell.count === 0 ? 'Meta prevista · aguardando apontamentos' : 'Sem base completa de meta'}</p> : <><Progress value={Math.min(100, cell.attainment)} className="[&>div]:bg-gradient-to-r [&>div]:from-emerald-400 [&>div]:to-emerald-700" /><p className="mt-2 text-xs text-muted-foreground">{formatMetric(cell.attainment)}% da meta · saldo de {formatMetric(cell.gap)} {cell.unitLabel}</p></>}
         </div>)}</div>}
   </Card>;
 }

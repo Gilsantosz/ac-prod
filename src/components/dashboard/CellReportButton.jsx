@@ -18,9 +18,10 @@ import {
 } from '@/components/ui/select';
 import { FileText, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { createProductionAnalysisReport } from '@/lib/reports/productionAnalysisReport';
 import { exportCellReport } from '@/lib/exportCellReport';
 
-export default function CellReportButton({ cells, allEntries, date, periodLabel }) {
+export default function CellReportButton({ cells, allEntries, date, periodLabel, goalContext }) {
   const [open, setOpen] = useState(false);
   const [cell, setCell] = useState('');
   const [busy, setBusy] = useState(false);
@@ -31,17 +32,23 @@ export default function CellReportButton({ cells, allEntries, date, periodLabel 
       return;
     }
     const cellEntries = allEntries.filter((e) => e.cell === cell && (!date || e.date === date));
-    if (!cellEntries.length) {
+    if (!cellEntries.length && !goalContext) {
       toast.error('Nenhum registro para esta célula no período selecionado');
       return;
     }
     setBusy(true);
     try {
-      await exportCellReport(cell, date, allEntries, undefined, periodLabel);
+      if (goalContext) {
+        if (goalContext.status !== 'ready') throw new Error('Atualize a produção e as metas antes de exportar.');
+        const report = createProductionAnalysisReport({ entries: allEntries, period: goalContext.period,
+          filters: { ...goalContext.filters, cell }, goalContext, generatedAt: new Date().toISOString(), fetchedRowCount: cellEntries.length });
+        const { exportReport } = await import('@/lib/reports/reportEngine');
+        await exportReport(report, 'pdf');
+      } else await exportCellReport(cell, date, allEntries, undefined, periodLabel);
       toast.success('Relatório PDF gerado');
       setOpen(false);
-    } catch {
-      toast.error('Falha ao gerar relatório');
+    } catch (error) {
+      toast.error(error?.message || 'Falha ao gerar relatório');
     } finally {
       setBusy(false);
     }
@@ -58,7 +65,7 @@ export default function CellReportButton({ cells, allEntries, date, periodLabel 
           <DialogHeader>
             <DialogTitle className="flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <FileText className="w-5 h-5" />
+                <FileText className="w-4 h-4" />
               </span>
               <span>Gerar Relatório da Célula</span>
             </DialogTitle>
