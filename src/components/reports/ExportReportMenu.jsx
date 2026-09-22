@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react';
+import { Fragment, useId, useRef, useState } from 'react';
 import { ChevronDown, Download, FileSpreadsheet, FileText, Loader2, Table2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -19,6 +20,7 @@ const SUCCESS_LABELS = { pdf: 'Relatório PDF gerado.', xlsx: 'Relatório Excel 
 export default function ExportReportMenu({
   report,
   getReport,
+  reportGroups,
   formats = ['pdf', 'xlsx', 'csv'],
   disabled = false,
   className = '',
@@ -28,16 +30,21 @@ export default function ExportReportMenu({
 }) {
   const [activeFormat, setActiveFormat] = useState(null);
   const exportLock = useRef(false);
+  const menuId = useId();
   const availableFormats = formats.filter((format) => REPORT_FORMAT_OPTIONS[format]);
+  // Existing consumers retain the same one-report menu. The dashboard can expose
+  // several periods without duplicating buttons, download logic or export locks.
+  const groups = reportGroups ?? [{ id: 'default', label: 'Escolha a finalidade', report, getReport }];
+  const canExportGroup = (group) => !disabled && !group.disabled && Boolean(group.report || group.getReport);
 
-  const handleExport = async (format) => {
-    if ((!report && !getReport) || exportLock.current) return;
+  const handleExport = async (format, group) => {
+    if (!canExportGroup(group) || exportLock.current) return;
     exportLock.current = true;
     setActiveFormat(format);
-    const toastId = `report-export-${report?.id || 'async'}`;
+    const toastId = `report-export-${group.report?.id || 'async'}-${group.id}`;
     toast.loading(PROGRESS_LABELS[format], { id: toastId });
     try {
-      const resolvedReport = getReport ? await getReport(format) : report;
+      const resolvedReport = group.getReport ? await group.getReport(format) : group.report;
       if (!resolvedReport) throw new Error('Não há dados disponíveis para este relatório.');
       let result;
       if (formatExporters[format]) {
@@ -64,7 +71,7 @@ export default function ExportReportMenu({
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
-          disabled={disabled || (!report && !getReport) || isLoading || availableFormats.length === 0}
+          disabled={!groups.some(canExportGroup) || isLoading || availableFormats.length === 0}
           className={`gap-2 bg-card border-border/80 text-foreground hover:bg-secondary/60 rounded-full shadow-sm ${className}`}
         >
           {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
@@ -72,22 +79,37 @@ export default function ExportReportMenu({
           <ChevronDown className="w-3.5 h-3.5 opacity-70" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-72">
-        <DropdownMenuLabel>Escolha a finalidade</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {availableFormats.map((format) => {
-          const Icon = FORMAT_ICONS[format];
-          const option = REPORT_FORMAT_OPTIONS[format];
-          return (
-            <DropdownMenuItem key={format} disabled={isLoading} onClick={() => handleExport(format)} className="gap-3 py-2.5 cursor-pointer">
-              <Icon className="w-4 h-4 shrink-0" />
-              <span className="flex flex-col">
-                <span className="font-medium">{option.label}</span>
-                <span className="text-[11px] text-muted-foreground font-normal">{option.description}</span>
-              </span>
-            </DropdownMenuItem>
-          );
-        })}
+      <DropdownMenuContent align="end" className="w-72 max-w-[calc(100vw-1rem)] max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto">
+        {groups.map((group, index) => (
+          <Fragment key={group.id}>
+            {index > 0 && <DropdownMenuSeparator />}
+            <DropdownMenuGroup aria-labelledby={`${menuId}-${index}`}>
+              <DropdownMenuLabel id={`${menuId}-${index}`}>
+                {group.label}
+                {group.description && <span className="block text-[11px] font-normal text-muted-foreground">{group.description}</span>}
+                {group.disabled && <span className="block text-[11px] font-normal text-muted-foreground">Sem dados neste período</span>}
+              </DropdownMenuLabel>
+              {availableFormats.map((format) => {
+                const Icon = FORMAT_ICONS[format];
+                const option = REPORT_FORMAT_OPTIONS[format];
+                return (
+                  <DropdownMenuItem
+                    key={format}
+                    disabled={isLoading || !canExportGroup(group)}
+                    onSelect={() => handleExport(format, group)}
+                    className="gap-3 py-2.5 cursor-pointer"
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span className="flex flex-col">
+                      <span className="font-medium">{option.label}</span>
+                      <span className="text-[11px] text-muted-foreground font-normal">{option.description}</span>
+                    </span>
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuGroup>
+          </Fragment>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );
