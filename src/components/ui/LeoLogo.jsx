@@ -1,13 +1,15 @@
+import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import leoLogoUrl from '@/assets/leo-madeiras-logo.jpg';
+import { LEO_COMPANY_NAME, LEO_LOGO_URL } from '@/lib/brandAssets';
 
-export default function LeoLogo({ size = "sm", className }) {
+export default function LeoLogo({ size = 'sm', className }) {
+  const [imageFailed, setImageFailed] = useState(false);
   const sizeClass = {
     sm: 'w-9 h-9 rounded-xl',
     md: 'w-11 h-11 rounded-2xl',
     lg: 'w-14 h-14 rounded-2xl',
   }[size] || 'w-9 h-9 rounded-xl';
-  
+
   return (
     <div
       className={cn(
@@ -15,14 +17,19 @@ export default function LeoLogo({ size = "sm", className }) {
         sizeClass,
         className
       )}
-      aria-label="Leo Madeiras"
+      aria-label={LEO_COMPANY_NAME}
     >
-      <img
-        src={leoLogoUrl}
-        alt="Leo Madeiras"
-        className="h-full w-full object-cover"
-        draggable={false}
-      />
+      {imageFailed ? (
+        <span role="img" aria-label={LEO_COMPANY_NAME} className="text-[#ffed00] font-extrabold text-xs leading-none">Leo</span>
+      ) : (
+        <img
+          src={LEO_LOGO_URL}
+          alt={LEO_COMPANY_NAME}
+          className="h-full w-full object-contain"
+          draggable={false}
+          onError={() => setImageFailed(true)}
+        />
+      )}
     </div>
   );
 }

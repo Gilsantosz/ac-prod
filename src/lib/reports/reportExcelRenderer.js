@@ -1,4 +1,5 @@
 import { downloadBlob, loadLeoLogoDataUrl, REPORT_BRAND } from '@/lib/reportBranding';
+import { normalizeReportImage, LEO_LOGO_ASPECT_RATIO } from '@/lib/brandAssets';
 import { validateReportDefinition } from '@/lib/reports/reportDefinition';
 import {
   assertReportRowLimit,
@@ -109,11 +110,18 @@ async function addSummaryWorksheet(workbook, report, options) {
   worksheet.getCell('C5').font = { size: 9, color: { argb: 'FFFFFFFF' } };
 
   if (options.includeLogo !== false) {
-    const logo = options.logoDataUrl === undefined ? await loadLeoLogoDataUrl() : options.logoDataUrl;
-    if (logo) {
-      const extension = /^data:image\/(jpe?g)/i.test(logo) ? 'jpeg' : 'png';
-      const imageId = workbook.addImage({ base64: logo, extension });
-      worksheet.addImage(imageId, { tl: { col: 0.15, row: 0.2 }, ext: { width: 125, height: 75 } });
+    try {
+      const logo = normalizeReportImage(options.logoDataUrl === undefined ? await loadLeoLogoDataUrl() : options.logoDataUrl);
+      if (logo) {
+        // Excel requires the actual file extension: a PNG must not be stored as JPEG.
+        const imageId = workbook.addImage({ base64: logo.dataUrl, extension: logo.extension });
+        worksheet.addImage(imageId, { tl: { col: 0.15, row: 0.2 }, ext: { width: 85, height: 85 / LEO_LOGO_ASPECT_RATIO } });
+      } else if (options.logoDataUrl != null) {
+        console.warn('[report-excel] Logomarca inválida omitida; os dados serão exportados.');
+      }
+    } catch (error) {
+      // An optional brand asset must never prevent production data from downloading.
+      console.warn('[report-excel] Falha ao inserir logomarca; os dados serão exportados.', error?.message);
     }
   }
 
