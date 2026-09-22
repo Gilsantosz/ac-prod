@@ -1,4 +1,5 @@
 import { downloadBlob, loadLeoLogoDataUrl, REPORT_BRAND } from '@/lib/reportBranding';
+import { getReportImage, LEO_LOGO_WIDTH, LEO_LOGO_HEIGHT } from '@/lib/brandLogo';
 import { validateReportDefinition } from '@/lib/reports/reportDefinition';
 import {
   assertReportRowLimit,
@@ -109,11 +110,17 @@ async function addSummaryWorksheet(workbook, report, options) {
   worksheet.getCell('C5').font = { size: 9, color: { argb: 'FFFFFFFF' } };
 
   if (options.includeLogo !== false) {
-    const logo = options.logoDataUrl === undefined ? await loadLeoLogoDataUrl() : options.logoDataUrl;
-    if (logo) {
-      const extension = /^data:image\/(jpe?g)/i.test(logo) ? 'jpeg' : 'png';
-      const imageId = workbook.addImage({ base64: logo, extension });
-      worksheet.addImage(imageId, { tl: { col: 0.15, row: 0.2 }, ext: { width: 125, height: 75 } });
+    // Branding is optional: an invalid image must not suppress production data.
+    try {
+      const logo = getReportImage(options.logoDataUrl === undefined
+        ? await loadLeoLogoDataUrl() : options.logoDataUrl);
+      if (logo) {
+        const imageId = workbook.addImage({ base64: logo.dataUrl, extension: logo.extension });
+        worksheet.addImage(imageId, { tl: { col: 0.15, row: 0.2 },
+          ext: { width: 110 * LEO_LOGO_WIDTH / LEO_LOGO_HEIGHT, height: 110 } });
+      }
+    } catch (error) {
+      console.warn('Logomarca indisponível no Excel; os dados do relatório serão preservados.', error?.message);
     }
   }
 
