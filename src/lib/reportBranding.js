@@ -1,4 +1,4 @@
-import { LEO_LOGO_DATA_URL } from '@/lib/brandLogo';
+import { LEO_LOGO_DATA_URL, getReportImage } from '@/lib/brandLogo';
 import { buildRawCsv, escapeCsvCell } from '@/lib/reports/reportDataUtils';
 
 export const REPORT_BRAND = {
@@ -25,18 +25,22 @@ export async function drawBrandedPdfHeader(doc, {
 } = {}) {
   const pageW = doc.internal.pageSize.getWidth();
   const margin = 14;
-  const logo = logoDataUrl === undefined ? await loadLeoLogoDataUrl() : logoDataUrl;
+  const logo = getReportImage(logoDataUrl === undefined ? await loadLeoLogoDataUrl() : logoDataUrl);
 
   doc.setFillColor(...REPORT_BRAND.primary);
   doc.roundedRect(margin, 10, pageW - margin * 2, 28, 4, 4, 'F');
 
   if (logo) {
-    // Card flutuante com borda branca proeminente para destacar do fundo verde
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(255, 255, 255);
-    doc.setLineWidth(0.8);
-    doc.roundedRect(margin + 4, 13, 22, 22, 3.5, 3.5, 'FD');
-    doc.addImage(logo, 'PNG', margin + 5, 14, 20, 20);
+    // A imagem é opcional; os dados do PDF não podem depender dela.
+    try {
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(255, 255, 255);
+      doc.setLineWidth(0.8);
+      doc.roundedRect(margin + 4, 13, 22, 22, 3.5, 3.5, 'FD');
+      doc.addImage(logo.dataUrl, logo.format, margin + 5, 14, 20, 20, undefined, 'FAST');
+    } catch (error) {
+      console.warn('Logomarca indisponível no PDF; os dados do relatório serão preservados.', error?.message);
+    }
   }
 
   doc.setTextColor(...REPORT_BRAND.yellow);
