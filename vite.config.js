@@ -136,10 +136,9 @@ export default defineConfig(() => {
           skipWaiting: true,
           clientsClaim: true,
           cleanupOutdatedCaches: true,
-          // Mantém somente os arquivos estáticos do aplicativo no cache.
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-          // O motor Excel é carregado e armazenado pelo navegador somente quando o usuário exporta.
-          globIgnores: ['**/exceljs.min-*.js'],
+          // Apenas arquivos estáticos, incluindo o motor Excel e imagens legadas.
+          // A primeira exportação também deve funcionar após a instalação offline.
+          globPatterns: ['**/*.{js,css,html,ico,png,jpg,jpeg,svg,woff2}'],
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           // Dados MES são transacionais: nunca reutilizar respostas antigas do Supabase.
           // O modo offline e a fila durável de coletas são controlados pela aplicação,
