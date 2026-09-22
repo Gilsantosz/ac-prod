@@ -79,7 +79,7 @@ export default function SortablePanels({
           aria-label={`Mover para baixo: ${panel.title || panel.id}`}
           title="Mover para baixo"
           disabled={!canMoveDown}
-          onClick={() => movePanel(index, -1 + 2)}
+          onClick={() => movePanel(index, 1)}
           className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/70 transition-colors disabled:opacity-25 disabled:pointer-events-none"
         >
           <ArrowDown className="h-3.5 w-3.5" />
