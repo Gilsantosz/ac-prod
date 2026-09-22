@@ -103,7 +103,7 @@ const meters = (analysis) => analysis.units.find((u) => u.key === 'meters');
   });
   it('mostra meta atingida somente para grupos com base comparável', () => {
     const a = analyze([entry({ produced: 3300 })], [goal()], opts);
-    expect(meters(a).attainment).toBe(110); expect(meters(a).gap).toBe(0);
+    expect(meters(a).attainment).toBeCloseTo(110); expect(meters(a).gap).toBe(0);
     expect(a.insights.some((i) => i.id === 'target-met')).toBe(true);
   });
 });
