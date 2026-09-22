@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
 const mocks = vi.hoisted(() => ({ production: vi.fn(), goals: vi.fn(), report: vi.fn() }));
-vi.mock('@/lib/dashboardData', () => ({ fetchDashboardProductionEntries: mocks.production, fetchDashboardDailyGoals: mocks.goals, fetchDashboardYearBounds: async () => ({ oldestDate: '2025-01-01', newestDate: '2026-12-31' }) }));
+vi.mock('@/lib/dashboardData', () => ({ fetchDashboardProductionEntries: mocks.production, fetchDashboardGoalContext: mocks.goals, fetchDashboardYearBounds: async () => ({ oldestDate: '2025-01-01', newestDate: '2026-12-31' }) }));
 vi.mock('@/lib/reports/productionReportData', () => ({ fetchProductionReportSnapshot: mocks.report }));
 vi.mock('@/hooks/useCells', () => ({ HOURS_KEY: {}, useCells: () => ({ activeCells: [{ name: 'Corte' }, { name: 'Bordo' }, { name: 'Embalagem' }], getCell: () => ({}) }) }));
 vi.mock('@/hooks/useTheme', () => ({ useTheme: () => ['light', vi.fn()] }));
@@ -20,7 +20,7 @@ vi.mock('@/components/dashboard/CellReportButton', () => ({ default: () => null 
 vi.mock('@/components/dashboard/DashboardLayoutSettings', () => ({ default: () => null }));
 vi.mock('@/components/dashboard/SortablePanels', () => ({ default: ({ panels }) => <div>{panels.map((p) => <section key={p.id} data-testid={p.id}>{p.node}</section>)}</div> }));
 vi.mock('@/components/dashboard/GeneralLotProgressPanel', () => ({ default: ({ lotIds }) => <output data-testid="lot-scope">{JSON.stringify(lotIds)}</output> }));
-vi.mock('@/components/dashboard/MonthlyGoalTracker', () => ({ default: ({ tracking }) => <output data-testid="monthly-values">{JSON.stringify(tracking)}</output> }));
+vi.mock('@/components/dashboard/GoalPeriodSummary', () => ({ default: ({ analysis }) => <output data-testid="monthly-values">{JSON.stringify(analysis.units[0] || {})}</output> }));
 vi.mock('@/components/dashboard/ExportMenu', () => ({ default: ({ entries }) => <output data-testid="dashboard-export">{JSON.stringify(entries)}</output> }));
 vi.mock('@/components/reports/ExportReportMenu', () => ({ default: ({ report, disabled }) => <output data-testid="report-export" data-disabled={disabled}>{JSON.stringify(report?.tables[0].rows || [])}</output> }));
 vi.mock('@/components/trend/ExportTrendButton', () => ({ default: () => null }));
@@ -53,7 +53,15 @@ beforeEach(() => {
   HTMLElement.prototype.setPointerCapture = () => {};
   HTMLElement.prototype.releasePointerCapture = () => {};
   mocks.production.mockImplementation(async (date, year) => entries.filter(e => year !== 'disabled' ? e.date.startsWith(year) : e.date.slice(0, 7) === date.slice(0, 7)));
-  mocks.goals.mockResolvedValue([]);
+  // The new context uses registry goals, not the target stored on each reading.
+  // Explicit weekend overrides keep this original Aug 1/2 filter fixture productive.
+  mocks.goals.mockResolvedValue({
+    goals: entries.filter(e => e.approval_status !== 'reversed').map((e, i) => ({
+      id: `registered-${i}`, date: e.date, cell_name: e.cell, shift: e.shift,
+      metric_unit: e.cell === 'Corte' ? 'sheets' : e.cell === 'Bordo' ? 'meters' : 'pieces', target: e.target,
+    })),
+    calendar: ['2026-08-01', '2026-08-02'].map(date => ({ date, is_workday: true })),
+  });
   mocks.report.mockImplementation(async ({ period, filters = {} }) => ({ period, filters, generatedAt: '2026-09-05T12:00:00Z', comparisonPeriod: null, comparisonEntries: [], entries: entries.filter(e => e.date >= period.from && e.date <= period.to && (!filters.cell || filters.cell === 'all' || e.cell === filters.cell) && (!filters.shift || filters.shift === 'all' || e.shift === filters.shift)) }));
 });
 
@@ -63,6 +71,7 @@ describe('filtros conectados aos indicadores e gráficos', () => {
     fireEvent.change(screen.getByLabelText('Data do painel'), { target: { value: '2026-08-01' } });
     await waitFor(() => expect(data('dashboard-export').reduce((s, e) => s + e.produced, 0)).toBe(40));
     expect(data('monthly-values').produced).toBe(40); // não inclui 90 do dia seguinte
+    await waitFor(() => expect(data('monthly-values').target).toBe(80)); // dois turnos, uma meta por turno
     expect(JSON.parse(screen.getByTestId('hourly').querySelector('output').textContent)[0].Produzido).toBe(40);
     await selectRadix('Turno do painel', '1º Turno');
     await waitFor(() => expect(data('dashboard-export').map(e => e.produced)).toEqual([10]));
