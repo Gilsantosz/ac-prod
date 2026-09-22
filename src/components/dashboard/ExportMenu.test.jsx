@@ -69,7 +69,8 @@ describe('um único botão Exportar no painel', () => {
     expect(actualFormat).toBe(format);
     expect(report.period).toMatchObject({ from: '2026-09-15', to: '2026-09-21' });
     expect(exportedRows(report).map((row) => row.produced).sort((a, b) => a - b)).toEqual([25, 875]);
-    expect(report.filters).toMatchObject(filters);
+    // The report builder exposes localized captions rather than raw UI filter keys.
+    expect(report.filters).toMatchObject({ Células: filters.cell, Turnos: filters.shift, Unidade: 'metros' });
   });
 
   it('permite exportar a semana quando o dia selecionado não tem dados', async () => {
