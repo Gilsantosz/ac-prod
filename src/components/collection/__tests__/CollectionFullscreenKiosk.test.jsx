@@ -45,6 +45,10 @@ describe('CollectionFullscreenKiosk Component', () => {
       approved: 85,
       rejected: 3,
       pending: 32,
+      shiftProduced: 10,
+      shiftApproved: 7,
+      shiftRejected: 1,
+      shiftBlocked: 2,
     },
     currentGeneralLot: {
       general_lot_code: '26072640',
@@ -82,11 +86,15 @@ describe('CollectionFullscreenKiosk Component', () => {
     expect(screen.getByText('Cliente Exemplo LTDA')).toBeInTheDocument();
     expect(screen.getByText('42,5%')).toBeInTheDocument();
 
-    // Os 4 KPIs solicitados
-    expect(screen.getByText('120')).toBeInTheDocument(); // Previsto
-    expect(screen.getByText('85')).toBeInTheDocument();  // Aprovado
-    expect(screen.getByText('3')).toBeInTheDocument();   // Reprovado
-    expect(screen.getByText('32')).toBeInTheDocument();  // Pendente
+    // Os 4 KPIs solicitados no modo foco
+    expect(screen.getByText('Produção no turno')).toBeInTheDocument();
+    expect(screen.getByText('Aprovadas')).toBeInTheDocument();
+    expect(screen.getByText('Reprovadas')).toBeInTheDocument();
+    expect(screen.getByText('Bloqueadas')).toBeInTheDocument();
+    expect(screen.getByText('10')).toBeInTheDocument();
+    expect(screen.getByText('7')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
 
     // Painéis de coleta e histórico recente
     expect(screen.getByTestId('mock-scanner-panel')).toBeInTheDocument();
