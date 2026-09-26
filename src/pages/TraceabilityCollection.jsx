@@ -542,6 +542,18 @@ export default function TraceabilityCollection({ embedded = false }) {
     selectedPiece,
     preferActiveContext: activeContextPreferred,
   });
+  const displayFeedback = useMemo(() => {
+    if (!feedback || currentClientLotProgress == null) return feedback;
+    const feedbackLotCode = String(feedback.lot?.lot_code || '').trim();
+    const currentLotCode = String(currentClientLotCode || '').trim();
+    if (!feedbackLotCode || feedbackLotCode !== currentLotCode) return feedback;
+    if (feedback.lot_progress_percent != null || feedback.lot?.progress_percent != null) return feedback;
+    return {
+      ...feedback,
+      lot_progress_percent: currentClientLotProgress,
+      lot: feedback.lot ? { ...feedback.lot, progress_percent: currentClientLotProgress } : feedback.lot,
+    };
+  }, [feedback, currentClientLotCode, currentClientLotProgress]);
 
   const refreshKpis = useCallback(() => {
     scheduleCollectionQueryInvalidation(queryClient, {
@@ -1116,7 +1128,7 @@ export default function TraceabilityCollection({ embedded = false }) {
       onModeChange={setMode}
       onRead={handleRead}
       loading={false}
-      feedback={feedback}
+      feedback={displayFeedback}
       cellName={cellName}
       shift={shift}
       operator={operator}
@@ -1164,6 +1176,7 @@ export default function TraceabilityCollection({ embedded = false }) {
     mode,
     handleRead,
     feedback,
+    displayFeedback,
     cellName,
     shift,
     operator,
