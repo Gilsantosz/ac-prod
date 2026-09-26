@@ -47,6 +47,26 @@ export function ensureTraceableForecastModels(stageModels = []) {
 }
 
 export async function fetchGeneralLotTracking({ batchId = null, limit = 25 } = {}) {
+  if (batchId) {
+    const { data: bundle, error: bundleError } = await supabase.rpc('get_general_lot_tracking_bundle_v1', {
+      p_batch_id: batchId,
+      p_limit: limit,
+    });
+    if (!bundleError) {
+      if (!bundle || !Object.hasOwn(bundle, 'tracking')
+        || !Object.hasOwn(bundle, 'route_progress') || !Object.hasOwn(bundle, 'completion_metrics')) {
+        throw new Error('Resposta incompleta do acompanhamento de lotes. Atualize novamente.');
+      }
+      return mergeRouteStageProgress(
+        normalizeTrackingPayload(bundle.tracking),
+        bundle.route_progress,
+        bundle.completion_metrics,
+      );
+    }
+    // Allow a staged database/frontend rollout. Permission and runtime failures
+    // remain failures; only a missing versioned endpoint uses the old contract.
+    if (!['PGRST202', '42883'].includes(bundleError.code)) throw bundleError;
+  }
   const trackingPromise = supabase.rpc('get_general_lot_tracking', {
     p_batch_id: batchId || null,
     p_limit: limit,

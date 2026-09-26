@@ -101,6 +101,12 @@ function isActivePiece(piece = {}) {
   return !['cancelled', 'replaced'].includes(normalizeStatus(piece.status));
 }
 
+// Groups carry an exact count, while individual pieces retain weight one.
+const pieceWeight = (piece) => piece.piece_count === undefined ? 1 : Number(piece.piece_count);
+const pieceCompletedSteps = (piece) => [
+  ...(piece.completed_steps || []), ...(piece.approved_steps || []),
+].map(stepKey);
+
 function buildApprovedPieceSteps(readings = []) {
   return new Set(
     readings
@@ -112,7 +118,7 @@ function buildApprovedPieceSteps(readings = []) {
 function isPieceFullyCompleted(piece, approvedPieceSteps) {
   const route = (piece.route_steps || []).map(stepKey);
   if (route.length > 0) {
-    const completedSteps = new Set((piece.completed_steps || []).map(stepKey));
+    const completedSteps = new Set(pieceCompletedSteps(piece));
     return route.every((step) => completedSteps.has(step) || approvedPieceSteps.has(`${piece.id}::${step}`));
   }
   return COMPLETED_STATUSES.has(normalizeStatus(piece.status));
@@ -120,7 +126,7 @@ function isPieceFullyCompleted(piece, approvedPieceSteps) {
 
 function hasPieceStepEvidence(piece, step, approvedPieceSteps) {
   const targetStep = stepKey(step);
-  const completedSteps = new Set((piece.completed_steps || []).map(stepKey));
+  const completedSteps = new Set(pieceCompletedSteps(piece));
   if (completedSteps.has(targetStep) || approvedPieceSteps.has(`${piece.id}::${targetStep}`)) {
     return true;
   }
@@ -275,13 +281,13 @@ export function buildPieceRouteProgress(lot, pieces = [], readings = []) {
     ));
     const collected = requiredPieces.filter((piece) => (
       hasPieceStepEvidence(piece, route.step_name, approvedByPieceStep)
-    )).length;
-    const total = requiredPieces.length;
+    )).reduce((sum, piece) => sum + pieceWeight(piece), 0);
+    const total = requiredPieces.reduce((sum, piece) => sum + pieceWeight(piece), 0);
 
     const rejected = readings.filter((reading) => (
       reading.status === 'rejected'
       && stepKey(reading.step_name) === stepKey(route.step_name)
-    )).length;
+    )).reduce((sum, reading) => sum + Number(reading.reading_count ?? 1), 0);
     return {
       ...route,
       stage_code: stageFromStep(route.step_name),
@@ -302,24 +308,27 @@ export function buildPieceProgress(pieces = [], readings = [], fallback = {}) {
       .filter((reading) => reading.status === 'approved' && reading.piece_id)
       .map((reading) => reading.piece_id)
   );
-  const total = active.length;
-  const completed = active.filter((piece) => isPieceFullyCompleted(piece, approvedByPieceStep)).length;
-  const blocked = active.filter((piece) => BLOCKED_STATUSES.has(normalizeStatus(piece.status))).length;
+  const total = active.reduce((sum, piece) => sum + pieceWeight(piece), 0);
+  const completed = active.filter((piece) => isPieceFullyCompleted(piece, approvedByPieceStep))
+    .reduce((sum, piece) => sum + pieceWeight(piece), 0);
+  const blocked = active.filter((piece) => BLOCKED_STATUSES.has(normalizeStatus(piece.status)))
+    .reduce((sum, piece) => sum + pieceWeight(piece), 0);
   const inProgress = active.filter((piece) => (
     !isPieceFullyCompleted(piece, approvedByPieceStep)
     && !BLOCKED_STATUSES.has(normalizeStatus(piece.status))
     && (
       (Array.isArray(piece.completed_steps) && piece.completed_steps.length > 0)
+      || (Array.isArray(piece.approved_steps) && piece.approved_steps.length > 0)
       || approvedPieceIds.has(piece.id)
     )
-  )).length;
+  )).reduce((sum, piece) => sum + pieceWeight(piece), 0);
   const totalOperations = active.reduce(
-    (sum, piece) => sum + uniqueValues((piece.route_steps || []).map(stepKey)).length,
+    (sum, piece) => sum + pieceWeight(piece) * uniqueValues((piece.route_steps || []).map(stepKey)).length,
     0
   );
   const completedOperations = active.reduce((sum, piece) => {
     const required = uniqueValues((piece.route_steps || []).map(stepKey));
-    return sum + required.filter((step) => hasPieceStepEvidence(piece, step, approvedByPieceStep)).length;
+    return sum + pieceWeight(piece) * required.filter((step) => hasPieceStepEvidence(piece, step, approvedByPieceStep)).length;
   }, 0);
   const calculatedPercent = totalOperations > 0
     ? Number(((completedOperations / totalOperations) * 100).toFixed(2))
@@ -474,17 +483,48 @@ async function fetchLotsByOrder(orderId, warnings) {
 
 async function fetchRowsForLots(tableName, lotIds, warnings) {
   if (!lotIds.length) return [];
-  const { data, error } = await supabase
-    .from(tableName)
-    .select('*')
-    .in('lot_id', lotIds)
-    .order('created_at', { ascending: false })
-    .range(0, 4999);
+  const rows = [];
+  let total;
+  do {
+    const { data, error, count } = await supabase
+      .from(tableName)
+      .select('*', rows.length ? undefined : { count: 'exact' })
+      .in('lot_id', lotIds)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(rows.length, rows.length + 499);
+    if (error) {
+      if (isSchemaError(error) && rows.length === 0) {
+        warnings.push(`${tableName}: ${error.message}`);
+        return [];
+      }
+      throw error;
+    }
+    if (total === undefined) {
+      if (!Number.isSafeInteger(count) || count < 0) throw new Error(`Contagem indisponível: ${tableName}`);
+      total = count;
+    }
+    if (!data?.length && rows.length < total) throw new Error(`Leitura incompleta: ${tableName}`);
+    rows.push(...(data || []));
+  } while (rows.length < total);
+  return uniqueById(rows);
+}
+
+async function fetchBoardPieceGroups(lotIds) {
+  if (!lotIds.length) return { groups: [], rejected: [], latest_approved: [] };
+  const { data, error } = await supabase.rpc('get_traceability_piece_groups_v1', { p_lot_ids: lotIds });
   if (error) {
-    if (!isSchemaError(error)) warnings.push(`${tableName}: ${error.message}`);
-    return [];
+    // Versioned rollout only. Other failures must not display incomplete totals.
+    if (['PGRST202', '42883'].includes(error.code)) return null;
+    throw error;
   }
-  return data || [];
+  if (data?.version !== 1 || !Array.isArray(data.groups) || !Array.isArray(data.rejected)
+    || !Array.isArray(data.latest_approved)
+    || data.groups.some(group => !Number.isSafeInteger(Number(group.piece_count)) || Number(group.piece_count) < 1)
+    || data.groups.reduce((sum, group) => sum + Number(group.piece_count), 0) !== Number(data.piece_count)) {
+    throw new Error('Resumo incompleto da rastreabilidade. Atualize novamente.');
+  }
+  return data;
 }
 
 function normalizeRpcSummary(data = null) {
@@ -759,15 +799,22 @@ export async function fetchTraceabilityBoardLots({ stageFilter = null, searchQue
   const orderIds = lots.map(getLotOrderId).filter(Boolean);
   const batchIds = lots.map((lot) => lot.pcp_import_batch_id).filter(Boolean);
 
-  const [ordersRaw, batchesRaw, items, readings, tags, routes, pieces] = await Promise.all([
+  const grouped = await fetchBoardPieceGroups(lotIds);
+  const groupedLotIds = new Set(grouped?.groups.map(group => group.lot_id) || []);
+  const detailLotIds = grouped ? lotIds.filter(id => !groupedLotIds.has(id)) : lotIds;
+  const [ordersRaw, batchesRaw, items, detailReadings, tags, routes, detailPieces] = await Promise.all([
     fetchOrdersByIds(orderIds, warnings),
     fetchPcpBatchesByIds(batchIds, warnings),
-    fetchRowsForLots('production_lot_items', lotIds, warnings),
-    fetchRowsForLots('production_stage_readings', lotIds, warnings),
-    fetchRowsForLots('production_tags', lotIds, warnings),
-    fetchRowsForLots('production_routes', lotIds, warnings),
-    fetchRowsForLots('production_pieces', lotIds, warnings),
+    fetchRowsForLots('production_lot_items', detailLotIds, warnings),
+    fetchRowsForLots('production_stage_readings', detailLotIds, warnings),
+    fetchRowsForLots('production_tags', detailLotIds, warnings),
+    fetchRowsForLots('production_routes', detailLotIds, warnings),
+    grouped ? Promise.resolve([]) : fetchRowsForLots('production_pieces', lotIds, warnings),
   ]);
+  const pieces = grouped ? grouped.groups : detailPieces;
+  const readings = grouped ? [...detailReadings,
+    ...grouped.rejected.filter(row => groupedLotIds.has(row.lot_id)),
+    ...grouped.latest_approved.filter(row => groupedLotIds.has(row.lot_id))] : detailReadings;
 
   const pieceOrderIds = pieces.map(piece => piece.production_order_id).filter(Boolean);
   const extraOrders = await fetchOrdersByIds(pieceOrderIds.filter(id => !orderIds.includes(id)), warnings);
@@ -810,7 +857,7 @@ export async function fetchTraceabilityBoardLots({ stageFilter = null, searchQue
         production_routes: sortRoutes(lotRoutes),
         production_tags: lotTags,
         production_stage_readings: lotReadings,
-        production_pieces: lotPieces,
+        production_pieces: grouped ? [] : lotPieces,
         traceability_progress: runtime.progress,
         route_progress: runtime.routeProgress,
         latest_reading: runtime.latestReading,
@@ -884,7 +931,7 @@ export async function fetchTraceabilityBoardLots({ stageFilter = null, searchQue
 
   return finalLots
     .filter((lot) => !stageFilter || stageFilter === 'all' || lot.current_stage === stageFilter)
-    .filter((lot) => lotMatchesSearch(
+    .filter((lot) => (hasSearch && matchedLotIds.has(lot.id)) || lotMatchesSearch(
       lot,
       lot.production_orders,
       lot.production_lot_items,
