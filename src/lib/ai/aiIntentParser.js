@@ -152,13 +152,14 @@ export function parseIntent(prompt, options = {}) {
 
   const generalLotMatch = text.match(/\blote\s+geral(?:\s+(?:do\s+pcp|da\s+carga))?\s*[:#-]?\s*([A-Z0-9-]+)/i)
     || text.match(/\bcarga\s*[:#-]?\s*([A-Z0-9-]+)/i);
-  const clientLotMatch = text.match(/\blote\s+(?:do\s+)?cliente\s*[:#-]?\s*([A-Z0-9-]+)/i);
+  const clientLotMatch = text.match(/\blote\s+(?:do\s+)?cliente\s*[:#-]?\s*([A-Z0-9-]+)/i)
+    || text.match(/\bpedido\s*[:#-]?\s*([A-Z0-9-]+)/i);
   const lotMatch = text.match(/\blote(?!\s+(?:geral|do\s+cliente|cliente)\b)\s*[:#-]?\s*([A-Z0-9-]+)/i);
   const generalLotCode = generalLotMatch ? generalLotMatch[1].trim() : null;
   const clientLotCode = clientLotMatch ? clientLotMatch[1].trim() : null;
   const lotCode = lotMatch ? lotMatch[1].trim() : (clientLotCode || generalLotCode);
 
-  const orderMatch = text.match(/\bpedido\s+(\d+)/i);
+  const orderMatch = clientLotMatch ? null : text.match(/\bpedido\s+(\d+)/i);
   const orderNumber = orderMatch ? orderMatch[1].trim() : null;
 
   const loadMatch = text.match(/\bcarga\s+(\d+)/i);
