@@ -148,13 +148,13 @@ export function GeneralLotSummaryCard({ lot, selected = false, onSelect }) {
 
           <div className="flex-1 space-y-3">
             <div className="flex items-center justify-between gap-4 text-xs">
-              <span className="font-semibold text-muted-foreground">Andamento até ficar pronto para separação</span>
+              <span className="font-semibold text-muted-foreground">Andamento dos pedidos por célula produtiva</span>
               <strong className="text-foreground">{Number(lot.progress_percent || 0).toFixed(1)}%</strong>
             </div>
             <ProgressBar value={lot.progress_percent} />
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
               <div><span className="block text-muted-foreground">Peças</span><strong>{lot.total_pieces || 0}</strong></div>
-              <div><span className="block text-muted-foreground">Lotes de clientes</span><strong>{lot.client_lots_count || 0}</strong></div>
+              <div><span className="block text-muted-foreground">Pedidos</span><strong>{lot.client_lots_count || 0}</strong></div>
               <div><span className="block text-muted-foreground">Prontas p/ separação</span><strong>{lot.ready_for_separation_pieces || 0}</strong></div>
               <div><span className="block text-muted-foreground">Gargalo previsto</span><strong>{lot.bottleneck_stage || 'Sem dados'}</strong></div>
             </div>
@@ -194,7 +194,7 @@ export function ClientLotHierarchy({
   if (!clientLots.length) {
     return (
       <Card className="p-8 border-dashed text-center text-sm text-muted-foreground">
-        Nenhum lote de cliente foi vinculado a este lote geral.
+        Nenhum pedido foi vinculado a este lote geral.
       </Card>
     );
   }
@@ -209,7 +209,7 @@ export function ClientLotHierarchy({
               <span className="text-xs font-extrabold text-violet-700 truncate" title={customerName}>{customerName}</span>
             </div>
             <Badge variant="outline" className="w-fit border-violet-500/20 text-violet-700 bg-background/60 text-[10px]">
-              {lots.length} {lots.length === 1 ? 'lote na mesma capa' : 'lotes na mesma capa'}
+              {lots.length} {lots.length === 1 ? 'pedido na mesma capa' : 'pedidos na mesma capa'}
             </Badge>
           </div>
 
@@ -229,7 +229,7 @@ export function ClientLotHierarchy({
                   >
                     <div className="flex flex-col xl:flex-row xl:items-center gap-4">
                       <div className="xl:w-40 shrink-0">
-                        <span className="text-[10px] font-bold uppercase text-muted-foreground">Lote do cliente</span>
+                        <span className="text-[10px] font-bold uppercase text-muted-foreground">Pedido</span>
                         <p className="text-xl font-black text-foreground">{lot.lot_code}</p>
                         <Badge variant="outline" className={`mt-1 text-[9px] ${status.className}`}>{status.label}</Badge>
                       </div>
@@ -240,7 +240,7 @@ export function ClientLotHierarchy({
 
                       <div className="grid grid-cols-2 gap-3 xl:w-72 text-xs shrink-0">
                         <div className="rounded-xl bg-secondary/35 p-3">
-                          <span className="flex items-center gap-1 text-muted-foreground"><Factory className="w-3.5 h-3.5" /> Andamento</span>
+                          <span className="flex items-center gap-1 text-muted-foreground"><Factory className="w-3.5 h-3.5" /> Andamento do Pedido</span>
                           <strong className="block mt-1">{Number(lot.progress_percent || 0).toFixed(1)}%</strong>
                         </div>
                         <div className="rounded-xl bg-secondary/35 p-3">
