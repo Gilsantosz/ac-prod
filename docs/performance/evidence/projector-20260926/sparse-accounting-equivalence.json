@@ -1,0 +1,994 @@
+{
+  "at": "2026-09-26T15:00:36.637Z",
+  "passed": true,
+  "results": [
+    {
+      "batch": null,
+      "lot": null,
+      "rows": 61031,
+      "before_ms": 657.739274,
+      "after_ms": 378.008025,
+      "identical": true
+    },
+    {
+      "batch": "02e3c479-d017-5aaa-a42f-17c0406a0853",
+      "lot": null,
+      "rows": 6000,
+      "before_ms": 109.91153200000008,
+      "after_ms": 86.70043299999998,
+      "identical": true
+    },
+    {
+      "batch": "057e3714-5153-566e-9093-f4e9a77cdfa7",
+      "lot": null,
+      "rows": 6000,
+      "before_ms": 114.008914,
+      "after_ms": 62.14856099999997,
+      "identical": true
+    },
+    {
+      "batch": "175e9a20-c165-5165-9c5e-77c016ad8bdb",
+      "lot": null,
+      "rows": 6000,
+      "before_ms": 100.41555399999993,
+      "after_ms": 58.68524600000001,
+      "identical": true
+    },
+    {
+      "batch": "720a42cb-e074-5fe3-9f48-3901afa74444",
+      "lot": null,
+      "rows": 2,
+      "before_ms": 46.73268700000017,
+      "after_ms": 38.16864499999997,
+      "identical": true
+    },
+    {
+      "batch": "7743d921-c616-59fa-82c1-10f62da3375d",
+      "lot": null,
+      "rows": 6000,
+      "before_ms": 106.50674000000004,
+      "after_ms": 78.19030199999975,
+      "identical": true
+    },
+    {
+      "batch": "7a30cacf-9dfb-554b-8af3-15ef2261b170",
+      "lot": null,
+      "rows": 6000,
+      "before_ms": 99.76195199999984,
+      "after_ms": 60.69919000000027,
+      "identical": true
+    },
+    {
+      "batch": "867da675-5e4c-5bb4-8fd9-eeee5fb2794a",
+      "lot": null,
+      "rows": 6000,
+      "before_ms": 83.538051,
+      "after_ms": 63.429339000000255,
+      "identical": true
+    },
+    {
+      "batch": "a100d04b-e3e8-5c63-b9fb-182fb599f389",
+      "lot": null,
+      "rows": 6000,
+      "before_ms": 93.35660600000028,
+      "after_ms": 55.181924999999865,
+      "identical": true
+    },
+    {
+      "batch": "a1c65d81-3774-53aa-8523-f29bea38439f",
+      "lot": null,
+      "rows": 6000,
+      "before_ms": 84.25981599999977,
+      "after_ms": 58.77258400000028,
+      "identical": true
+    },
+    {
+      "batch": "a47dc571-306a-5313-87c3-9f7c3428a18a",
+      "lot": null,
+      "rows": 1027,
+      "before_ms": 37.80834199999981,
+      "after_ms": 30.86369599999989,
+      "identical": true
+    },
+    {
+      "batch": "c0422c23-40fb-5229-8e3d-553ec1b56f66",
+      "lot": null,
+      "rows": 6000,
+      "before_ms": 84.34967600000027,
+      "after_ms": 66.03886199999988,
+      "identical": true
+    },
+    {
+      "batch": "c04cd264-4792-5b74-a349-54bdb2db21d4",
+      "lot": null,
+      "rows": 2,
+      "before_ms": 31.51352199999974,
+      "after_ms": 35.25835300000017,
+      "identical": true
+    },
+    {
+      "batch": "ea2d89dd-938e-56c7-b1a8-e08ba6b9b825",
+      "lot": null,
+      "rows": 6000,
+      "before_ms": 85.34809799999994,
+      "after_ms": 51.74422600000025,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "0c843e69-96a0-52ea-87aa-5d05c1eb9bdb",
+      "rows": 600,
+      "before_ms": 35.608434000000216,
+      "after_ms": 34.395442,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "102104f8-2aa7-5789-b0af-ec620f46dc8c",
+      "rows": 600,
+      "before_ms": 33.7943379999997,
+      "after_ms": 37.65516800000023,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "108d26e6-41be-57bf-9403-f2f98eedb2de",
+      "rows": 600,
+      "before_ms": 39.64333400000032,
+      "after_ms": 33.78895899999998,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "10e33f42-dd60-55f3-9627-420128d65463",
+      "rows": 600,
+      "before_ms": 34.62218100000018,
+      "after_ms": 32.73349199999984,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "12e77755-cd7a-5483-8a5f-dc6b8d01804b",
+      "rows": 600,
+      "before_ms": 32.53711299999986,
+      "after_ms": 33.75552700000026,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "15c11d05-f3f7-52f7-8cb4-1708274aef4a",
+      "rows": 600,
+      "before_ms": 36.05851799999982,
+      "after_ms": 36.344334000000345,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "16538563-45d6-5452-b501-5ebe353d786b",
+      "rows": 600,
+      "before_ms": 40.82519400000001,
+      "after_ms": 36.14796999999999,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "1caa6c6b-63ee-585d-9970-2823f7d54d1f",
+      "rows": 600,
+      "before_ms": 35.377715999999964,
+      "after_ms": 30.102675999999974,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "22041cb2-41e3-58b3-a9a2-c5c7845467cd",
+      "rows": 600,
+      "before_ms": 37.096056999999746,
+      "after_ms": 33.27664000000004,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "247e1359-77fb-569a-a94d-d10c899ea844",
+      "rows": 600,
+      "before_ms": 31.630347000000256,
+      "after_ms": 33.38619299999982,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "24b444f1-356d-52cb-acb3-28f860952241",
+      "rows": 600,
+      "before_ms": 40.44885599999998,
+      "after_ms": 32.500890000000254,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "282ea942-99cb-5e89-8e49-c36ba121f6f4",
+      "rows": 600,
+      "before_ms": 36.49670500000002,
+      "after_ms": 35.10687700000017,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "28938258-8d64-5b1e-99ae-5b0e2a9b443f",
+      "rows": 600,
+      "before_ms": 34.724564999999984,
+      "after_ms": 35.03713199999993,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "30e2a0ff-7f21-5c1a-9c82-20adae0ed234",
+      "rows": 600,
+      "before_ms": 36.67606899999964,
+      "after_ms": 43.10843100000011,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "35757163-f3d9-56b3-9f54-1b29f9c895b7",
+      "rows": 600,
+      "before_ms": 41.15383800000018,
+      "after_ms": 40.35628200000065,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "3715b643-44b0-56ba-838c-680b7b306742",
+      "rows": 600,
+      "before_ms": 32.83031699999992,
+      "after_ms": 33.13306399999965,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "390ebeb5-2105-5fe6-b567-7d1e3de2df4c",
+      "rows": 600,
+      "before_ms": 36.17861300000004,
+      "after_ms": 29.947471999999834,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "3a788a70-2f2f-57e6-957f-77383ae87f97",
+      "rows": 600,
+      "before_ms": 36.261045000000195,
+      "after_ms": 29.614250999999967,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "3eeff2ea-1691-5d9b-86f7-d4cfbc36d33c",
+      "rows": 600,
+      "before_ms": 38.04444000000058,
+      "after_ms": 35.30442299999959,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "3efe5ac6-7ba9-5bbc-a062-266bafee7d70",
+      "rows": 600,
+      "before_ms": 38.287154999999984,
+      "after_ms": 30.69431600000007,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "42b98ba2-1c4b-50b8-b531-3467666b6662",
+      "rows": 600,
+      "before_ms": 37.32297100000051,
+      "after_ms": 34.76709200000005,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "45170579-2367-5141-8893-7e4ef133dabd",
+      "rows": 600,
+      "before_ms": 35.4321460000001,
+      "after_ms": 35.462469000000056,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "46537085-690c-5967-8214-1c8d021db663",
+      "rows": 600,
+      "before_ms": 40.20079900000019,
+      "after_ms": 32.825834000000214,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "47c87069-88f6-5118-9dc5-c72fd3b3acbb",
+      "rows": 600,
+      "before_ms": 32.55617600000005,
+      "after_ms": 33.01130699999976,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "4fb2b784-24a4-55be-b0e9-0da0cfa33aff",
+      "rows": 600,
+      "before_ms": 33.47979099999975,
+      "after_ms": 34.71094300000004,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "50cc6ff8-ab10-53b2-9e3c-51762f96a168",
+      "rows": 600,
+      "before_ms": 34.946874999999636,
+      "after_ms": 30.035259999999653,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "50d96fcf-c1b6-5f24-9e5f-0fadb4be845d",
+      "rows": 2,
+      "before_ms": 29.547853000000032,
+      "after_ms": 28.66928800000005,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "513c1a9a-cd54-5842-8daa-e9e40cf4e19b",
+      "rows": 600,
+      "before_ms": 36.34885000000031,
+      "after_ms": 30.562229999999545,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "515730d0-c7a4-5ff6-a389-2d005bec96d8",
+      "rows": 1027,
+      "before_ms": 37.047631000000365,
+      "after_ms": 33.88162099999954,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "544e2e93-6f54-5f92-b892-b74ac44b0c3a",
+      "rows": 600,
+      "before_ms": 32.5032540000002,
+      "after_ms": 33.55149799999981,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "59d35672-37fc-5abc-b5f6-a597c72675f0",
+      "rows": 600,
+      "before_ms": 32.212101000000075,
+      "after_ms": 33.2931209999997,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "5a6a38d8-6038-5327-a645-39eb9e1d134e",
+      "rows": 600,
+      "before_ms": 42.72293199999967,
+      "after_ms": 37.89429800000016,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "5d865b2f-780c-56fc-aa09-9d27c0b56430",
+      "rows": 600,
+      "before_ms": 40.30913699999928,
+      "after_ms": 32.754767000000356,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "61c89754-04a9-579a-b278-3f57943e4d84",
+      "rows": 600,
+      "before_ms": 43.4183579999999,
+      "after_ms": 40.97369299999991,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "670ff1dc-4888-537a-a2ff-ba9ab499347c",
+      "rows": 600,
+      "before_ms": 46.84311700000035,
+      "after_ms": 38.611901999999645,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "698f654e-e3af-595d-bce9-382d88d4ccdf",
+      "rows": 600,
+      "before_ms": 43.62182500000017,
+      "after_ms": 44.56677899999977,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "69c90f3b-e923-5068-b6de-a55b230fedc9",
+      "rows": 600,
+      "before_ms": 45.731761999999435,
+      "after_ms": 35.79941500000041,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "6acb7aaa-74b5-5fcf-8b43-b5bfa1b56c97",
+      "rows": 600,
+      "before_ms": 44.04482199999984,
+      "after_ms": 41.282924000000094,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "6b2243f8-d1a4-5c2f-b749-8d8271a8263b",
+      "rows": 600,
+      "before_ms": 46.88602400000036,
+      "after_ms": 40.52375200000006,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "6e725356-8eff-5948-8ffa-c329e63522c3",
+      "rows": 600,
+      "before_ms": 46.69892600000003,
+      "after_ms": 39.900620999999774,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "73522a03-b1b6-5b4e-8633-734647d9693d",
+      "rows": 600,
+      "before_ms": 39.198279000000184,
+      "after_ms": 32.58287300000029,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "74ba6f8f-f5bc-5faa-a7f6-bb5284ae59c8",
+      "rows": 600,
+      "before_ms": 40.56434199999967,
+      "after_ms": 35.27180899999985,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "7768152c-646d-5e2d-80bb-4888a94dfbd8",
+      "rows": 600,
+      "before_ms": 35.99563500000022,
+      "after_ms": 31.444924999999785,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "783a75ba-dc4b-513c-902c-035ae87c611c",
+      "rows": 600,
+      "before_ms": 39.7681649999995,
+      "after_ms": 34.02368800000022,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "78aa809e-8d39-5be0-8076-0a1f00b8622f",
+      "rows": 600,
+      "before_ms": 36.83469000000059,
+      "after_ms": 37.09955499999978,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "7a167dce-12a5-5428-938d-8a32ff7acdd2",
+      "rows": 600,
+      "before_ms": 39.31915900000058,
+      "after_ms": 38.58202799999981,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "7fc22713-1ce5-5d2d-8ee2-32e1a3e25f7e",
+      "rows": 600,
+      "before_ms": 35.29332499999964,
+      "after_ms": 31.861187000000427,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "80b5da80-2091-58d4-9e6b-03b30356be92",
+      "rows": 600,
+      "before_ms": 36.08551499999976,
+      "after_ms": 33.57929899999999,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "80e4321f-05dc-5579-9a10-4b29a494aeae",
+      "rows": 600,
+      "before_ms": 33.53677400000015,
+      "after_ms": 33.41062300000067,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "81afdd29-e98b-5b50-8649-7afad3a9c138",
+      "rows": 600,
+      "before_ms": 35.9109499999995,
+      "after_ms": 29.235165000000052,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "83583d91-0972-599f-9ee0-d9e500125ca8",
+      "rows": 600,
+      "before_ms": 35.55018399999972,
+      "after_ms": 31.243521000000328,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "8805c2d1-6ab3-5453-a16b-f2d85583f104",
+      "rows": 600,
+      "before_ms": 34.750568999999814,
+      "after_ms": 31.358531000000767,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "8c0ba22b-d448-5f20-8afe-d0b84bd6e9a6",
+      "rows": 600,
+      "before_ms": 34.29010999999991,
+      "after_ms": 30.767981999999392,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "8c5b9629-2a2a-5304-9cf8-3501e8ee1d68",
+      "rows": 600,
+      "before_ms": 36.700888999999734,
+      "after_ms": 33.60233700000026,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "9342b635-69c9-5a1d-a64c-077381c49f15",
+      "rows": 600,
+      "before_ms": 35.50790400000005,
+      "after_ms": 30.568156000000272,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "95103e78-abc7-530b-8c27-f7894eea3f5b",
+      "rows": 600,
+      "before_ms": 34.94378700000016,
+      "after_ms": 31.86036999999942,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "957460fe-92e0-5800-a618-f2a834fbceb6",
+      "rows": 600,
+      "before_ms": 35.752214999999524,
+      "after_ms": 36.17815200000041,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "978a078c-9fa4-5fb8-8ddb-ac46bc3ecc1b",
+      "rows": 600,
+      "before_ms": 32.990162999999484,
+      "after_ms": 33.158785999999964,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "983c0e0f-4168-5cf6-abb0-019fd57458b3",
+      "rows": 600,
+      "before_ms": 35.25624299999981,
+      "after_ms": 29.949727000000166,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "9b2db041-e743-532b-bf4e-bd695e5e5515",
+      "rows": 600,
+      "before_ms": 36.11470100000042,
+      "after_ms": 38.57909699999982,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "9c067763-4efe-59ed-9b33-b2e856fda1d5",
+      "rows": 600,
+      "before_ms": 42.64698999999928,
+      "after_ms": 42.35187700000006,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "a02a1d19-a0ae-50aa-9c24-c1b46b866623",
+      "rows": 600,
+      "before_ms": 35.88262300000042,
+      "after_ms": 36.18217300000015,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "a099aeef-d61b-5918-984b-139432baf295",
+      "rows": 600,
+      "before_ms": 38.26326399999925,
+      "after_ms": 39.19773400000031,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "a2a8b87e-6451-5637-bd6e-1389c7a9bfe9",
+      "rows": 600,
+      "before_ms": 35.90975800000069,
+      "after_ms": 33.77789399999983,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "a6086adc-4753-50cb-b388-9e021d2f05ee",
+      "rows": 600,
+      "before_ms": 35.5927300000003,
+      "after_ms": 29.168816999999763,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "a75d77a5-530d-53a8-b01d-6d26ed501a15",
+      "rows": 600,
+      "before_ms": 35.46808599999986,
+      "after_ms": 32.542787999999746,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "aa658384-9e79-5456-99bf-9def552b8287",
+      "rows": 600,
+      "before_ms": 35.1366109999999,
+      "after_ms": 33.655171999999766,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "aaa38991-5595-5093-b839-87fe724f3af3",
+      "rows": 600,
+      "before_ms": 32.78790800000024,
+      "after_ms": 33.165296999999555,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "ab707ac1-5410-574c-b29a-862ff38febff",
+      "rows": 600,
+      "before_ms": 35.88665200000014,
+      "after_ms": 30.507791999999426,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "addb9c80-1106-5f64-9e35-68f4a55e81b8",
+      "rows": 600,
+      "before_ms": 39.541966999999204,
+      "after_ms": 38.61221900000055,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "adf57b4e-89fe-57d9-abad-b6f65db04186",
+      "rows": 600,
+      "before_ms": 36.13360400000056,
+      "after_ms": 35.79696899999908,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "b03b28eb-c2d7-5625-b2c1-b8db793788f8",
+      "rows": 600,
+      "before_ms": 36.31590099999994,
+      "after_ms": 33.17851399999927,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "b1b51983-1c1e-5146-b7e7-de8a6515444b",
+      "rows": 600,
+      "before_ms": 33.253930000000764,
+      "after_ms": 31.66094499999963,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "b5a2aada-b68c-5bf2-b686-930cf614eb91",
+      "rows": 600,
+      "before_ms": 35.24225800000022,
+      "after_ms": 29.230141000000003,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "b65ac614-207f-5c4e-9243-7d9b04c92d09",
+      "rows": 600,
+      "before_ms": 32.40542499999901,
+      "after_ms": 32.67891899999995,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "b69ee11d-520a-5318-8a69-f959a5b21d4e",
+      "rows": 600,
+      "before_ms": 34.47037099999943,
+      "after_ms": 30.923657999999705,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "b84fc27c-e7bb-58a6-a0f5-e9396901e489",
+      "rows": 600,
+      "before_ms": 36.014422000000195,
+      "after_ms": 36.27680800000053,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "b9ca3932-89ba-5c69-a74c-aadefb4cea87",
+      "rows": 600,
+      "before_ms": 34.40718100000049,
+      "after_ms": 33.070614000000205,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "bac5a02c-6aac-5599-b750-ae6ef8438bfe",
+      "rows": 600,
+      "before_ms": 38.59160100000008,
+      "after_ms": 29.75152800000069,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "bb3b8f61-9db2-512c-a3ba-a2c8ca218d1b",
+      "rows": 600,
+      "before_ms": 42.15305499999886,
+      "after_ms": 34.24906499999997,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "bc96dfe2-6c32-5f64-ba29-e0d3276620c7",
+      "rows": 600,
+      "before_ms": 32.85369399999945,
+      "after_ms": 32.668117000001075,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "be041017-53dd-55ac-b62e-74cba66cbf16",
+      "rows": 600,
+      "before_ms": 37.27348299999903,
+      "after_ms": 36.12255499999992,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "c267e0cf-71f4-5bf1-ad23-5c976a7d7ba3",
+      "rows": 600,
+      "before_ms": 40.604269000001295,
+      "after_ms": 118.05104000000028,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "cab44b45-2f3e-5504-9e29-987af5d8cb27",
+      "rows": 600,
+      "before_ms": 66.81505499999912,
+      "after_ms": 70.5166850000005,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "ccc57863-c370-5281-a7bf-0c04ce4b8084",
+      "rows": 600,
+      "before_ms": 38.75794599999972,
+      "after_ms": 34.12491399999999,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "dd42d86d-1683-5c14-8bfa-04c4823b73e5",
+      "rows": 600,
+      "before_ms": 40.46474699999999,
+      "after_ms": 36.94246199999907,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "e11a3ba7-5e69-595a-8676-f6ebafd5ad01",
+      "rows": 600,
+      "before_ms": 39.377942999999505,
+      "after_ms": 34.38117200000124,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "e304010a-8245-5009-99fc-b3d467d4f56f",
+      "rows": 600,
+      "before_ms": 44.729848999999376,
+      "after_ms": 45.895698000000266,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "e55589b8-0305-54e1-878a-bb4d219e5dfc",
+      "rows": 600,
+      "before_ms": 47.839772999999695,
+      "after_ms": 45.38244699999996,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "e5f0e8ab-835c-59f1-a200-fc2861f3d690",
+      "rows": 600,
+      "before_ms": 42.61378899999909,
+      "after_ms": 47.72650200000135,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "e99a3ce1-5f8b-5425-952a-f9224da82872",
+      "rows": 600,
+      "before_ms": 47.91789400000016,
+      "after_ms": 39.431947999999466,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "eea4b4b0-1cf8-58d3-bc91-caee27dd5559",
+      "rows": 600,
+      "before_ms": 45.75017900000057,
+      "after_ms": 44.78573499999948,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "ef437f41-022d-52c1-b9d0-e5081ea2334e",
+      "rows": 600,
+      "before_ms": 41.73956100000032,
+      "after_ms": 43.27692399999978,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "ef7fc64a-9bac-5689-b022-d9fd4c5b3881",
+      "rows": 600,
+      "before_ms": 43.73754100000042,
+      "after_ms": 41.14314600000034,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "f2084572-da11-5253-8e3a-828700140220",
+      "rows": 600,
+      "before_ms": 47.9369370000004,
+      "after_ms": 34.24402999999984,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "f4799da0-0f1d-516a-a2e8-820b44843050",
+      "rows": 600,
+      "before_ms": 42.487309000000096,
+      "after_ms": 46.85881899999913,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "f4d311d5-f970-5af0-b357-522be9f2cd45",
+      "rows": 600,
+      "before_ms": 56.4577819999995,
+      "after_ms": 44.16598200000044,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "f567d028-b7a2-5cd8-81dd-07795ec48c71",
+      "rows": 600,
+      "before_ms": 40.71869700000025,
+      "after_ms": 40.66152399999919,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "f6b35e81-d90b-5d50-b45c-452125df825f",
+      "rows": 600,
+      "before_ms": 57.27419100000043,
+      "after_ms": 47.761076000000685,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "fc0d8a3a-ad37-5c96-a245-75c6e0d1c628",
+      "rows": 600,
+      "before_ms": 48.36569000000054,
+      "after_ms": 43.88040100000035,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "fd194537-6f29-5839-85b2-708fcb2730d3",
+      "rows": 600,
+      "before_ms": 39.71361099999922,
+      "after_ms": 43.60740900000019,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "fd9d5e95-a9f4-5e9b-9858-712e8e5afde5",
+      "rows": 2,
+      "before_ms": 39.45144699999946,
+      "after_ms": 35.64242700000068,
+      "identical": true
+    },
+    {
+      "batch": null,
+      "lot": "ff70bef2-068d-5d29-b206-dc89c7febb89",
+      "rows": 600,
+      "before_ms": 48.877189000000726,
+      "after_ms": 41.850734999999986,
+      "identical": true
+    }
+  ],
+  "policies": [
+    {
+      "index": 0,
+      "rows": 61031,
+      "identical": true
+    },
+    {
+      "index": 1,
+      "rows": 61031,
+      "identical": true
+    },
+    {
+      "index": 2,
+      "rows": 61031,
+      "identical": true
+    },
+    {
+      "index": 6,
+      "rows": 61031,
+      "identical": true
+    },
+    {
+      "index": 20,
+      "rows": 3600,
+      "identical": true
+    },
+    {
+      "index": 99,
+      "rows": 3000,
+      "identical": true
+    },
+    {
+      "index": 100,
+      "rows": 61031,
+      "identical": true
+    },
+    {
+      "index": 120,
+      "rows": 3600,
+      "identical": true
+    },
+    {
+      "index": 140,
+      "rows": 3600,
+      "identical": true
+    },
+    {
+      "index": 199,
+      "rows": 3000,
+      "identical": true
+    }
+  ]
+}

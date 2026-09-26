@@ -1,0 +1,242 @@
+[
+  {
+    "scenario": "scoped_manager",
+    "checks": [
+      {
+        "table": "production_lots",
+        "expected": 103,
+        "actual": 103,
+        "equal": true
+      },
+      {
+        "table": "production_orders",
+        "expected": 103,
+        "actual": 103,
+        "equal": true
+      },
+      {
+        "table": "production_stage_readings",
+        "expected": 197,
+        "actual": 197,
+        "equal": true
+      }
+    ],
+    "passed": true
+  },
+  {
+    "scenario": "scoped_operator",
+    "checks": [
+      {
+        "table": "production_lots",
+        "expected": 103,
+        "actual": 103,
+        "equal": true
+      },
+      {
+        "table": "production_orders",
+        "expected": 103,
+        "actual": 103,
+        "equal": true
+      },
+      {
+        "table": "production_stage_readings",
+        "expected": 197,
+        "actual": 197,
+        "equal": true
+      }
+    ],
+    "passed": true
+  },
+  {
+    "scenario": "multiple_cells",
+    "checks": [
+      {
+        "table": "production_lots",
+        "expected": 103,
+        "actual": 103,
+        "equal": true
+      },
+      {
+        "table": "production_orders",
+        "expected": 103,
+        "actual": 103,
+        "equal": true
+      },
+      {
+        "table": "production_stage_readings",
+        "expected": 306,
+        "actual": 306,
+        "equal": true
+      }
+    ],
+    "passed": true
+  },
+  {
+    "scenario": "foreign_scope",
+    "checks": [
+      {
+        "table": "production_lots",
+        "expected": 0,
+        "actual": 0,
+        "equal": true
+      },
+      {
+        "table": "production_orders",
+        "expected": 0,
+        "actual": 0,
+        "equal": true
+      },
+      {
+        "table": "production_stage_readings",
+        "expected": 0,
+        "actual": 0,
+        "equal": true
+      }
+    ],
+    "passed": true
+  },
+  {
+    "scenario": "inactive_admin",
+    "checks": [
+      {
+        "table": "production_lots",
+        "expected": 0,
+        "actual": 0,
+        "equal": true
+      },
+      {
+        "table": "production_orders",
+        "expected": 0,
+        "actual": 0,
+        "equal": true
+      },
+      {
+        "table": "production_stage_readings",
+        "expected": 0,
+        "actual": 0,
+        "equal": true
+      }
+    ],
+    "passed": true
+  },
+  {
+    "scenario": "active_admin",
+    "checks": [
+      {
+        "table": "production_lots",
+        "expected": 103,
+        "actual": 103,
+        "equal": true
+      },
+      {
+        "table": "production_orders",
+        "expected": 103,
+        "actual": 103,
+        "equal": true
+      },
+      {
+        "table": "production_stage_readings",
+        "expected": 6113,
+        "actual": 6113,
+        "equal": true
+      }
+    ],
+    "passed": true
+  },
+  {
+    "scenario": "global_manager",
+    "checks": [
+      {
+        "table": "production_lots",
+        "expected": 103,
+        "actual": 103,
+        "equal": true
+      },
+      {
+        "table": "production_orders",
+        "expected": 103,
+        "actual": 103,
+        "equal": true
+      },
+      {
+        "table": "production_stage_readings",
+        "expected": 6113,
+        "actual": 6113,
+        "equal": true
+      }
+    ],
+    "passed": true
+  },
+  {
+    "scenario": "unscoped_operator",
+    "checks": [
+      {
+        "table": "production_lots",
+        "expected": 0,
+        "actual": 0,
+        "equal": true
+      },
+      {
+        "table": "production_orders",
+        "expected": 0,
+        "actual": 0,
+        "equal": true
+      },
+      {
+        "table": "production_stage_readings",
+        "expected": 0,
+        "actual": 0,
+        "equal": true
+      }
+    ],
+    "passed": true
+  },
+  {
+    "scenario": "cell_fallback",
+    "checks": [
+      {
+        "table": "production_lots",
+        "expected": 103,
+        "actual": 103,
+        "equal": true
+      },
+      {
+        "table": "production_orders",
+        "expected": 103,
+        "actual": 103,
+        "equal": true
+      },
+      {
+        "table": "production_stage_readings",
+        "expected": 197,
+        "actual": 197,
+        "equal": true
+      }
+    ],
+    "passed": true
+  },
+  {
+    "scenario": "blank_scope",
+    "checks": [
+      {
+        "table": "production_lots",
+        "expected": 0,
+        "actual": 0,
+        "equal": true
+      },
+      {
+        "table": "production_orders",
+        "expected": 0,
+        "actual": 0,
+        "equal": true
+      },
+      {
+        "table": "production_stage_readings",
+        "expected": 0,
+        "actual": 0,
+        "equal": true
+      }
+    ],
+    "passed": true
+  }
+]

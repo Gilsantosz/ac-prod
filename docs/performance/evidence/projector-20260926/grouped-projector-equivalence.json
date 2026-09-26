@@ -1,0 +1,84 @@
+{
+  "at": "2026-09-26T14:56:40.291Z",
+  "passed": true,
+  "results": [
+    {
+      "batch": "02e3c479-d017-5aaa-a42f-17c0406a0853",
+      "before_ms": 424.655669,
+      "after_ms": 255.89410700000008,
+      "identical": true
+    },
+    {
+      "batch": "057e3714-5153-566e-9093-f4e9a77cdfa7",
+      "before_ms": 427.521876,
+      "after_ms": 300.08643800000027,
+      "identical": true
+    },
+    {
+      "batch": "175e9a20-c165-5165-9c5e-77c016ad8bdb",
+      "before_ms": 408.11502799999994,
+      "after_ms": 291.8284790000007,
+      "identical": true
+    },
+    {
+      "batch": "720a42cb-e074-5fe3-9f48-3901afa74444",
+      "before_ms": 97.355231,
+      "after_ms": 72.01101999999992,
+      "identical": true
+    },
+    {
+      "batch": "7743d921-c616-59fa-82c1-10f62da3375d",
+      "before_ms": 482.700016,
+      "after_ms": 291.50068199999987,
+      "identical": true
+    },
+    {
+      "batch": "7a30cacf-9dfb-554b-8af3-15ef2261b170",
+      "before_ms": 477.6081280000001,
+      "after_ms": 261.9921210000002,
+      "identical": true
+    },
+    {
+      "batch": "867da675-5e4c-5bb4-8fd9-eeee5fb2794a",
+      "before_ms": 414.94413699999996,
+      "after_ms": 261.4910010000003,
+      "identical": true
+    },
+    {
+      "batch": "a100d04b-e3e8-5c63-b9fb-182fb599f389",
+      "before_ms": 535.4079529999999,
+      "after_ms": 255.241097000001,
+      "identical": true
+    },
+    {
+      "batch": "a1c65d81-3774-53aa-8523-f29bea38439f",
+      "before_ms": 385.9646859999998,
+      "after_ms": 252.175072,
+      "identical": true
+    },
+    {
+      "batch": "a47dc571-306a-5313-87c3-9f7c3428a18a",
+      "before_ms": 137.1610639999999,
+      "after_ms": 96.09880599999997,
+      "identical": true
+    },
+    {
+      "batch": "c0422c23-40fb-5229-8e3d-553ec1b56f66",
+      "before_ms": 382.25957000000017,
+      "after_ms": 252.2154989999999,
+      "identical": true
+    },
+    {
+      "batch": "c04cd264-4792-5b74-a349-54bdb2db21d4",
+      "before_ms": 90.55493600000045,
+      "after_ms": 73.33696899999995,
+      "identical": true
+    },
+    {
+      "batch": "ea2d89dd-938e-56c7-b1a8-e08ba6b9b825",
+      "before_ms": 384.1950339999994,
+      "after_ms": 291.8800260000007,
+      "identical": true
+    }
+  ]
+}
