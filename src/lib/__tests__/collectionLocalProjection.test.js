@@ -228,7 +228,7 @@ describe('projeção local de decisão terminal', () => {
     expect(collectionSnapshotMatchesPendingLot({}, oldSnapshot, 2000)).toBe(true);
   });
 
-  it('trocar somente o lote do cliente preserva os totais do lote geral', () => {
+  it('trocar somente o pedido preserva os totais do lote geral', () => {
     const queryClient = createQueryClient([
       [['collection-kpis', 'Corte', 'machine-corte'], {
         expected: 100, approved: 20, pending: 79, rejected: 1,
