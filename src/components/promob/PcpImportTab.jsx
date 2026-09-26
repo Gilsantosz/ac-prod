@@ -179,14 +179,14 @@ export default function PcpImportTab({ preselectedFile, clearPreselected }) {
       }
 
       if (!rowPayload.clientLotCode) {
-        errors.push('Lote do cliente não informado.');
+        errors.push('Pedido não informado.');
       } else if (!rowPayload.customer) {
         errors.push(`Cliente não informado para o lote ${rowPayload.clientLotCode}.`);
       } else {
         const normalizedCustomer = rowPayload.customer.trim().toUpperCase();
         const existingCustomer = clientLotCustomers.get(rowPayload.clientLotCode);
         if (existingCustomer && existingCustomer !== normalizedCustomer) {
-          errors.push(`Lote ${rowPayload.clientLotCode} possui clientes diferentes no arquivo.`);
+          errors.push(`Pedido ${rowPayload.clientLotCode} possui clientes diferentes no arquivo.`);
         } else {
           clientLotCustomers.set(rowPayload.clientLotCode, normalizedCustomer);
         }
@@ -227,7 +227,7 @@ export default function PcpImportTab({ preselectedFile, clearPreselected }) {
       const key = row.clientLotCode || `linha-sem-lote-${row.row_number}`;
       const current = groupMap.get(key) || {
         generalLotCode: row.generalLotCode || 'Sem lote geral',
-        clientLotCode: row.clientLotCode || 'Sem lote cliente',
+        clientLotCode: row.clientLotCode || 'Sem pedido',
         orderCode: row.orderCode || 'Sem pedido',
         customer: row.customer || 'Cliente não informado',
         pieces: 0,
