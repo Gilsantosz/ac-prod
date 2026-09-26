@@ -529,7 +529,12 @@ export default function TraceabilityCollection({ embedded = false }) {
   // impede que o feedback da peça anterior congele o banner depois de uma
   // reconciliação que já confirmou outro lote ativo.
   const activeContextPreferred = hasRealtimeActiveContextUpdate || kpis.active_context !== undefined;
-  const { generalLot: currentGeneralLot, clientLotCode: currentClientLotCode, customerName: currentCustomerName } = resolveCollectionLotContext({
+  const {
+    generalLot: currentGeneralLot,
+    clientLotCode: currentClientLotCode,
+    customerName: currentCustomerName,
+    clientLotProgress: currentClientLotProgress,
+  } = resolveCollectionLotContext({
     feedback,
     lastIdentifiedFeedback,
     activeGeneralLots,
@@ -1151,6 +1156,7 @@ export default function TraceabilityCollection({ embedded = false }) {
           generalLot={currentGeneralLot}
           clientLotCode={currentClientLotCode}
           customerName={currentCustomerName}
+          clientLotProgress={currentClientLotProgress}
         />
       )}
     />
@@ -1167,6 +1173,7 @@ export default function TraceabilityCollection({ embedded = false }) {
     currentGeneralLot,
     currentClientLotCode,
     currentCustomerName,
+    currentClientLotProgress,
     activeDowntime,
     refreshData,
     updateFeedback,
@@ -1457,6 +1464,7 @@ export default function TraceabilityCollection({ embedded = false }) {
           currentGeneralLot={currentGeneralLot}
           currentClientLotCode={currentClientLotCode}
           currentCustomerName={currentCustomerName}
+          currentClientLotProgress={currentClientLotProgress}
           activeDowntime={activeDowntime}
           refetchActiveDowntime={refetchActiveDowntime}
           refreshData={refreshData}
