@@ -1,0 +1,92 @@
+name: Capacity real - isolated validation
+
+on:
+  push:
+    branches: [test/capacity-real-20260922]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capacity-real-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Capture exact source and non-secret provisioning capability
+        env:
+          HAS_CAPACITY_ANON: ${{ secrets.CAPACITY_TEST_ANON_KEY != '' }}
+          HAS_CAPACITY_SERVICE_ROLE: ${{ secrets.CAPACITY_TEST_SERVICE_ROLE_KEY != '' }}
+          HAS_SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          mkdir -p capacity-artifacts
+          git archive --format=tar HEAD | gzip > capacity-artifacts/source.tar.gz
+          git rev-parse HEAD > capacity-artifacts/source-sha.txt
+          node --input-type=module <<'JS'
+          import { writeFileSync } from 'node:fs';
+          const capability = {
+            timestamp: new Date().toISOString(),
+            project_ref: 'smnsihksrhzbkhcbdjfu',
+            production_project_ref: 'uozuzdfvnufsjsonswag',
+            capacity_anon_available: process.env.HAS_CAPACITY_ANON === 'true',
+            capacity_service_role_available: process.env.HAS_CAPACITY_SERVICE_ROLE === 'true',
+            management_token_available: process.env.HAS_SUPABASE_ACCESS_TOKEN === 'true',
+            load_executed: false,
+            capacity_result: 'NOT_MEASURED'
+          };
+          writeFileSync('capacity-artifacts/provisioning-capability.json', JSON.stringify(capability, null, 2));
+          console.log(JSON.stringify(capability));
+          JS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: capacity-source-${{ github.sha }}
+          path: capacity-artifacts/
+          retention-days: 3
+          if-no-files-found: error
+      - name: Install pinned k6 (no load execution)
+        run: bash scripts/capacity/install-k6.sh
+      - name: Validate deterministic plan and fail-closed evaluator
+        run: node --test scripts/capacity/real/*.test.mjs
+      - name: Install locked dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: npm ci
+      - name: Validate current source contracts
+        run: python3 scripts/audit_collection_rollout.py --repo .
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit regressions
+        run: npm run test:unit
+      - name: Build validation only - no deployment
+        env:
+          VITE_SUPABASE_URL: https://placeholder.supabase.co
+          VITE_SUPABASE_ANON_KEY: placeholder-anon-key
+          VITE_APP_BASE: /ac-prod/
+        run: npm run build
+      - name: Read-only staging release preflight - not a capacity benchmark
+        env:
+          CAPACITY_PUBLIC_KEY: sb_publishable_tlwxkijLdIPChVHTYr1qAQ_xlEEbkV7
+        run: node scripts/capacity/real/preflight.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: capacity-readiness-${{ github.sha }}
+          path: |
+            capacity-artifacts/plan.json
+            capacity-artifacts/real-readiness.json
+          retention-days: 7
+          if-no-files-found: warn
