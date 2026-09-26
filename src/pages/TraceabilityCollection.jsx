@@ -1182,6 +1182,7 @@ export default function TraceabilityCollection({ embedded = false }) {
           clientLotCode={currentClientLotCode}
           customerName={currentCustomerName}
           clientLotProgress={currentClientLotProgressDisplay}
+          cellStats={cellStats}
         />
       )}
     />
@@ -1200,6 +1201,7 @@ export default function TraceabilityCollection({ embedded = false }) {
     currentClientLotCode,
     currentCustomerName,
     currentClientLotProgressDisplay,
+    cellStats,
     activeDowntime,
     refreshData,
     updateFeedback,

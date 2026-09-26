@@ -101,6 +101,45 @@ describe('CollectionFullscreenKiosk Component', () => {
     expect(screen.getByTestId('mock-recent-reads-panel')).toBeInTheDocument();
   });
 
+  it('renderiza como overlay no body e bloqueia a rolagem da página de trás', () => {
+    document.body.style.overflow = 'auto';
+    document.documentElement.style.overflow = 'auto';
+
+    const { unmount } = render(<CollectionFullscreenKiosk {...defaultProps} />);
+    const kiosk = screen.getByTestId('collection-fullscreen-kiosk');
+
+    expect(kiosk.parentElement).toBe(document.body);
+    expect(kiosk).toHaveClass('z-[9999]');
+    expect(kiosk).toHaveClass('h-[100dvh]');
+    expect(kiosk).toHaveClass('w-[100dvw]');
+    expect(document.body.style.overflow).toBe('hidden');
+    expect(document.documentElement.style.overflow).toBe('hidden');
+
+    unmount();
+
+    expect(document.body.style.overflow).toBe('auto');
+    expect(document.documentElement.style.overflow).toBe('auto');
+  });
+
+  it('calcula o atendimento do pedido no modo foco quando o progresso não veio pronto', () => {
+    render(
+      <CollectionFullscreenKiosk
+        {...defaultProps}
+        currentGeneralLot={{ general_lot_code: '15587' }}
+        currentClientLotCode="143352"
+        currentClientLotProgress={null}
+        cellStats={{
+          ...defaultProps.cellStats,
+          expected: 2113,
+          approved: 476,
+        }}
+      />
+    );
+
+    expect(screen.getByText('143352')).toBeInTheDocument();
+    expect(screen.getByText('22,5%')).toBeInTheDocument();
+  });
+
   it('permite abrir o modal de parada e fechar o modo kiosk', () => {
     render(<CollectionFullscreenKiosk {...defaultProps} />);
 

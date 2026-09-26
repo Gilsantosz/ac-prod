@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Minimize2, 
   AlertTriangle, 
@@ -49,6 +50,18 @@ export default function CollectionFullscreenKiosk({
   periodicReconciliationEnabled = true,
   localResultGenerationRef,
 }) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
+  }, [open]);
+
   // Ativar fullscreen nativo quando o modo kiosk for aberto
   useEffect(() => {
     if (open) {
@@ -80,9 +93,10 @@ export default function CollectionFullscreenKiosk({
   const rejected = cellStats?.shiftRejected ?? cellStats?.rejected ?? 0;
   const blocked = cellStats?.shiftBlocked ?? cellStats?.blocked ?? 0;
 
-  return (
+  const kioskMarkup = (
     <div 
-      className="fixed inset-0 z-50 flex flex-col bg-slate-950 text-slate-100 overflow-y-auto select-none"
+      className="fixed left-0 top-0 right-0 bottom-0 z-[9999] flex h-[100dvh] w-[100dvw] max-h-[100dvh] max-w-[100dvw] flex-col overflow-y-auto overscroll-contain bg-slate-950 text-slate-100 select-none"
+      style={{ margin: 0 }}
       data-testid="collection-fullscreen-kiosk"
     >
       {/* ─── Top Bar Operacional ────────────────────────────────────────────── */}
@@ -171,6 +185,7 @@ export default function CollectionFullscreenKiosk({
           clientLotCode={currentClientLotCode}
           customerName={currentCustomerName}
           clientLotProgress={currentClientLotProgress}
+          cellStats={cellStats}
           focus
         />
 
@@ -287,4 +302,6 @@ export default function CollectionFullscreenKiosk({
       </main>
     </div>
   );
+
+  return createPortal(kioskMarkup, document.body);
 }

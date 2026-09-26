@@ -27,4 +27,18 @@ describe('lotes em ambos os modos da coleta', () => {
     expect(screen.getByText('42,5%')).toBeInTheDocument();
     expect(screen.queryByText('70,8%')).not.toBeInTheDocument();
   });
+
+  it('calcula o atendimento do pedido por célula quando o progresso ainda não veio do banco', () => {
+    render(
+      <CollectionLotBanner
+        generalLot={{ general_lot_code: '15587' }}
+        clientLotCode="143352"
+        cellStats={{ expected: 2113, approved: 476 }}
+      />
+    );
+
+    expect(screen.getByText('143352')).toBeInTheDocument();
+    expect(screen.getByText('22,5%')).toBeInTheDocument();
+    expect(screen.queryByText('—')).not.toBeInTheDocument();
+  });
 });

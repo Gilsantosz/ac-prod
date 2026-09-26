@@ -1,5 +1,24 @@
-export default function CollectionLotBanner({ generalLot, clientLotCode, customerName, clientLotProgress, focus = false }) {
-  const progress = clientLotProgress ?? generalLot?.progress_percent;
+function clampPercent(value) {
+  if (!Number.isFinite(value)) return null;
+  return Math.max(0, Math.min(100, value));
+}
+
+function calculateProgressFallback(cellStats) {
+  const expected = Number(cellStats?.expected);
+  const approved = Number(cellStats?.approved);
+  if (!Number.isFinite(expected) || expected <= 0 || !Number.isFinite(approved)) return null;
+  return clampPercent((approved / expected) * 100);
+}
+
+export default function CollectionLotBanner({
+  generalLot,
+  clientLotCode,
+  customerName,
+  clientLotProgress,
+  cellStats,
+  focus = false,
+}) {
+  const progress = clientLotProgress ?? generalLot?.progress_percent ?? calculateProgressFallback(cellStats);
   const progressKnown = progress != null && Number.isFinite(Number(progress));
   return (
     <section
