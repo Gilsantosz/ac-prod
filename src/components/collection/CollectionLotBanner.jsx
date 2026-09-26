@@ -1,5 +1,5 @@
-export default function CollectionLotBanner({ generalLot, clientLotCode, customerName, focus = false }) {
-  const progress = generalLot?.progress_percent;
+export default function CollectionLotBanner({ generalLot, clientLotCode, customerName, clientLotProgress, focus = false }) {
+  const progress = clientLotProgress ?? generalLot?.progress_percent;
   const progressKnown = progress != null && Number.isFinite(Number(progress));
   return (
     <section
@@ -19,7 +19,7 @@ export default function CollectionLotBanner({ generalLot, clientLotCode, custome
           {customerName && <p className="mt-1 text-xs font-medium text-emerald-100">{customerName}</p>}
         </div>
         <div className="rounded-xl border border-white/15 bg-white/10 px-4 py-3 sm:text-right">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-100">Andamento do Pedido</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-100">Atendimento do Pedido</p>
           <p className="mt-1 text-2xl font-black tabular-nums">
             {progressKnown ? `${Number(progress).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%` : '—'}
           </p>
