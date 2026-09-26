@@ -217,7 +217,7 @@ export async function runOperationalAlertDiagnostics() {
       }
     }
 
-    // Criar alertas agrupados de peças paradas por lote geral + lote do cliente + etapa
+    // Criar alertas agrupados de peças paradas por lote geral + pedido + etapa
     Object.values(groupedStuckPieces).forEach(group => {
       const lot = lotMap[group.lotId] || {};
       const batch = batchMap[group.batchId] || {};
