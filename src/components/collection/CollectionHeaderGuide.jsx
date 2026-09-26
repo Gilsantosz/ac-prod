@@ -91,10 +91,10 @@ export default function CollectionHeaderGuide({ operator, cellName, machine }) {
           <div className="rounded-xl border border-border/70 bg-card/60 p-3.5 shadow-sm space-y-1.5 transition-all hover:border-emerald-500/40">
             <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold text-xs">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/20 text-[11px]">3</span>
-              <span>Andamento do Lote</span>
+              <span>Andamento do Pedido</span>
             </div>
             <p className="text-[12px] text-muted-foreground leading-relaxed">
-              Ao confirmar a bipagem, a tela exibirá o <strong>Lote Geral</strong> e a porcentagem atualizada do lote do cliente em tempo real.
+              Ao confirmar a bipagem, a tela exibirá o <strong>Lote Geral</strong> e o andamento do <strong>Pedido</strong> por célula produtiva em tempo real.
             </p>
           </div>
 
