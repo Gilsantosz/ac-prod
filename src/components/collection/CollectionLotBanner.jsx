@@ -23,7 +23,7 @@ export default function CollectionLotBanner({
   return (
     <section
       data-testid="collection-lot-banner"
-      className={`rounded-2xl border-2 border-emerald-600 bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-800 px-5 py-4 text-white shadow-lg ${focus ? 'sm:p-6' : ''}`}
+      className={`rounded-2xl border-2 border-emerald-600 bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-800 px-5 py-4 text-white shadow-lg ${focus ? 'sm:px-6 sm:py-4' : ''}`}
     >
       <div className="grid gap-4 sm:grid-cols-[1.2fr_1fr_auto] sm:items-center">
         <div>

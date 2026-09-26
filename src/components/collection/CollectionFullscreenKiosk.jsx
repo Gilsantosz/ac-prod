@@ -16,6 +16,80 @@ import CollectionRecentReadsPanel from '@/components/collection/CollectionRecent
 import ActiveDowntimeBanner from '@/components/collection/ActiveDowntimeBanner';
 import CollectionLotBanner from '@/components/collection/CollectionLotBanner';
 
+const METRIC_TONES = {
+  slate: {
+    card: 'bg-slate-900/90 border-slate-800 hover:border-slate-700',
+    label: 'text-slate-400',
+    value: 'text-slate-100',
+    hint: 'text-slate-400',
+    icon: 'text-slate-400',
+  },
+  emerald: {
+    card: 'bg-emerald-950/40 border-emerald-500/30 hover:border-emerald-500/50',
+    label: 'text-emerald-400',
+    value: 'text-emerald-400',
+    hint: 'text-emerald-300/70',
+    icon: 'text-emerald-400',
+  },
+  rose: {
+    card: 'bg-rose-950/40 border-rose-500/30 hover:border-rose-500/50',
+    label: 'text-rose-400',
+    value: 'text-rose-400',
+    hint: 'text-rose-300/70',
+    icon: 'text-rose-400',
+  },
+  amber: {
+    card: 'bg-amber-950/40 border-amber-500/30 hover:border-amber-500/50',
+    label: 'text-amber-400',
+    value: 'text-amber-400',
+    hint: 'text-amber-300/70',
+    icon: 'text-amber-400',
+  },
+  sky: {
+    card: 'bg-sky-950/40 border-sky-500/30 hover:border-sky-500/50',
+    label: 'text-sky-300',
+    value: 'text-sky-300',
+    hint: 'text-sky-200/70',
+    icon: 'text-sky-300',
+  },
+  lime: {
+    card: 'bg-lime-950/35 border-lime-500/30 hover:border-lime-500/50',
+    label: 'text-lime-300',
+    value: 'text-lime-300',
+    hint: 'text-lime-200/70',
+    icon: 'text-lime-300',
+  },
+  red: {
+    card: 'bg-red-950/40 border-red-500/30 hover:border-red-500/50',
+    label: 'text-red-300',
+    value: 'text-red-300',
+    hint: 'text-red-200/70',
+    icon: 'text-red-300',
+  },
+  violet: {
+    card: 'bg-violet-950/40 border-violet-500/30 hover:border-violet-500/50',
+    label: 'text-violet-300',
+    value: 'text-violet-300',
+    hint: 'text-violet-200/70',
+    icon: 'text-violet-300',
+  },
+};
+
+function KioskMetricCard({ label, value, hint, icon: Icon, tone }) {
+  const color = METRIC_TONES[tone] || METRIC_TONES.slate;
+
+  return (
+    <div className={`flex min-h-[78px] items-center justify-between gap-3 rounded-xl border px-4 py-3 shadow-lg transition-colors ${color.card}`}>
+      <div className="min-w-0">
+        <p className={`truncate text-[10px] font-black uppercase tracking-wider ${color.label}`}>{label}</p>
+        <p className={`mt-1 font-mono text-2xl font-black leading-none tabular-nums sm:text-3xl ${color.value}`}>{value}</p>
+        {hint && <p className={`mt-1 truncate text-[10px] font-semibold ${color.hint}`}>{hint}</p>}
+      </div>
+      <Icon className={`h-4 w-4 shrink-0 ${color.icon}`} />
+    </div>
+  );
+}
+
 export default function CollectionFullscreenKiosk({
   open,
   onClose,
@@ -181,7 +255,7 @@ export default function CollectionFullscreenKiosk({
       )}
 
       {/* ─── Conteúdo Principal Kiosk ───────────────────────────────────────── */}
-      <main className="flex-1 p-4 sm:p-6 space-y-6 max-w-[1800px] w-full mx-auto">
+      <main className="flex-1 p-3 sm:p-4 space-y-4 max-w-[1800px] w-full mx-auto">
 
         {/* 1. Lotes em Andamento & Progresso Geral Banner */}
         <CollectionLotBanner
@@ -194,106 +268,28 @@ export default function CollectionFullscreenKiosk({
         />
 
         {/* 2. Indicadores do lote geral em coleta */}
-        <section className="space-y-3">
+        <section className="space-y-2">
           <h3 className="text-xs font-black uppercase tracking-[0.22em] text-slate-400">
             Lote geral em coleta
           </h3>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-slate-700 transition-colors">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Previsto</span>
-                <Activity className="w-5 h-5 text-slate-400" />
-              </div>
-              <div>
-                <p className="text-4xl sm:text-5xl font-black font-mono text-slate-100 tabular-nums">{lotExpected}</p>
-                <p className="text-[11px] text-slate-400 mt-1">Total de peças para a célula</p>
-              </div>
-            </div>
-
-            <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-emerald-500/50 transition-colors">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Aprovado</span>
-                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-              </div>
-              <div>
-                <p className="text-4xl sm:text-5xl font-black font-mono text-emerald-400 tabular-nums">{lotApproved}</p>
-                <p className="text-[11px] text-emerald-300/70 mt-1">Peças bipadas com sucesso no lote</p>
-              </div>
-            </div>
-
-            <div className="bg-rose-950/40 border border-rose-500/30 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-rose-500/50 transition-colors">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold uppercase tracking-wider text-rose-400">Reprovado</span>
-                <XCircle className="w-5 h-5 text-rose-400" />
-              </div>
-              <div>
-                <p className="text-4xl sm:text-5xl font-black font-mono text-rose-400 tabular-nums">{lotRejected}</p>
-                <p className="text-[11px] text-rose-300/70 mt-1">Defeitos / não conformidades no lote</p>
-              </div>
-            </div>
-
-            <div className="bg-amber-950/40 border border-amber-500/30 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-amber-500/50 transition-colors">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Pendente</span>
-                <Clock className="w-5 h-5 text-amber-400" />
-              </div>
-              <div>
-                <p className="text-4xl sm:text-5xl font-black font-mono text-amber-400 tabular-nums">{lotPending}</p>
-                <p className="text-[11px] text-amber-300/70 mt-1">Peças aguardando bipagem no lote</p>
-              </div>
-            </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <KioskMetricCard label="Previsto" value={lotExpected} hint="Total da célula" icon={Activity} tone="slate" />
+            <KioskMetricCard label="Aprovado" value={lotApproved} hint="Sucesso no lote" icon={CheckCircle2} tone="emerald" />
+            <KioskMetricCard label="Reprovado" value={lotRejected} hint="NC do lote" icon={XCircle} tone="rose" />
+            <KioskMetricCard label="Pendente" value={lotPending} hint="Aguardando bipagem" icon={Clock} tone="amber" />
           </div>
         </section>
 
         {/* 3. Indicadores do turno da estação */}
-        <section className="space-y-3">
+        <section className="space-y-2">
           <h3 className="text-xs font-black uppercase tracking-[0.22em] text-slate-400">
             Turno da estação
           </h3>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-slate-700 transition-colors">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Produção no turno</span>
-                <Activity className="w-5 h-5 text-slate-400" />
-              </div>
-              <div>
-                <p className="text-4xl sm:text-5xl font-black font-mono text-slate-100 tabular-nums">{producedInShift}</p>
-                <p className="text-[11px] text-slate-400 mt-1">Aprovadas + reprovadas no turno</p>
-              </div>
-            </div>
-
-            <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-emerald-500/50 transition-colors">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Aprovadas no turno</span>
-                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-              </div>
-              <div>
-                <p className="text-4xl sm:text-5xl font-black font-mono text-emerald-400 tabular-nums">{shiftApproved}</p>
-                <p className="text-[11px] text-emerald-300/70 mt-1">Peças aprovadas nesta estação</p>
-              </div>
-            </div>
-
-            <div className="bg-rose-950/40 border border-rose-500/30 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-rose-500/50 transition-colors">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold uppercase tracking-wider text-rose-400">Reprovadas no turno</span>
-                <XCircle className="w-5 h-5 text-rose-400" />
-              </div>
-              <div>
-                <p className="text-4xl sm:text-5xl font-black font-mono text-rose-400 tabular-nums">{shiftRejected}</p>
-                <p className="text-[11px] text-rose-300/70 mt-1">Defeitos / não conformidades no turno</p>
-              </div>
-            </div>
-
-            <div className="bg-amber-950/40 border border-amber-500/30 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-amber-500/50 transition-colors">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Bloqueadas no turno</span>
-                <Clock className="w-5 h-5 text-amber-400" />
-              </div>
-              <div>
-                <p className="text-4xl sm:text-5xl font-black font-mono text-amber-400 tabular-nums">{shiftBlocked}</p>
-                <p className="text-[11px] text-amber-300/70 mt-1">Leituras bloqueadas no turno</p>
-              </div>
-            </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <KioskMetricCard label="Produção no turno" value={producedInShift} hint="Aprov. + reprov." icon={Activity} tone="sky" />
+            <KioskMetricCard label="Aprovadas no turno" value={shiftApproved} hint="Nesta estação" icon={CheckCircle2} tone="lime" />
+            <KioskMetricCard label="Reprovadas no turno" value={shiftRejected} hint="NC no turno" icon={XCircle} tone="red" />
+            <KioskMetricCard label="Bloqueadas no turno" value={shiftBlocked} hint="Bloqueios do turno" icon={Clock} tone="violet" />
           </div>
         </section>
 
