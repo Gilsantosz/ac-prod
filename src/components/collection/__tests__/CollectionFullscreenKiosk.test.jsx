@@ -86,11 +86,23 @@ describe('CollectionFullscreenKiosk Component', () => {
     expect(screen.getByText('Cliente Exemplo LTDA')).toBeInTheDocument();
     expect(screen.getByText('42,5%')).toBeInTheDocument();
 
-    // Os 4 KPIs solicitados no modo foco
+    // KPIs do lote geral seguem visíveis no modo foco
+    expect(screen.getByText('Lote geral em coleta')).toBeInTheDocument();
+    expect(screen.getByText('Previsto')).toBeInTheDocument();
+    expect(screen.getByText('Aprovado')).toBeInTheDocument();
+    expect(screen.getByText('Reprovado')).toBeInTheDocument();
+    expect(screen.getByText('Pendente')).toBeInTheDocument();
+    expect(screen.getByText('120')).toBeInTheDocument();
+    expect(screen.getByText('85')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('32')).toBeInTheDocument();
+
+    // KPIs do turno entram como bloco adicional
+    expect(screen.getByText('Turno da estação')).toBeInTheDocument();
     expect(screen.getByText('Produção no turno')).toBeInTheDocument();
-    expect(screen.getByText('Aprovadas')).toBeInTheDocument();
-    expect(screen.getByText('Reprovadas')).toBeInTheDocument();
-    expect(screen.getByText('Bloqueadas')).toBeInTheDocument();
+    expect(screen.getByText('Aprovadas no turno')).toBeInTheDocument();
+    expect(screen.getByText('Reprovadas no turno')).toBeInTheDocument();
+    expect(screen.getByText('Bloqueadas no turno')).toBeInTheDocument();
     expect(screen.getByText('10')).toBeInTheDocument();
     expect(screen.getByText('7')).toBeInTheDocument();
     expect(screen.getByText('1')).toBeInTheDocument();

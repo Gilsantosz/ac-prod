@@ -88,10 +88,14 @@ export default function CollectionFullscreenKiosk({
 
   if (!open) return null;
 
+  const lotExpected = cellStats?.expected ?? '—';
+  const lotApproved = cellStats?.approved ?? '—';
+  const lotRejected = cellStats?.rejected ?? '—';
+  const lotPending = cellStats?.pending ?? '—';
   const producedInShift = cellStats?.shiftProduced ?? ((Number(cellStats?.shiftApproved) || 0) + (Number(cellStats?.shiftRejected) || 0));
-  const approved = cellStats?.shiftApproved ?? cellStats?.approved ?? 0;
-  const rejected = cellStats?.shiftRejected ?? cellStats?.rejected ?? 0;
-  const blocked = cellStats?.shiftBlocked ?? cellStats?.blocked ?? 0;
+  const shiftApproved = cellStats?.shiftApproved ?? 0;
+  const shiftRejected = cellStats?.shiftRejected ?? 0;
+  const shiftBlocked = cellStats?.shiftBlocked ?? 0;
 
   const kioskMarkup = (
     <div 
@@ -189,58 +193,111 @@ export default function CollectionFullscreenKiosk({
           focus
         />
 
-        {/* 2. Os 4 KPIs Fundamentais do turno */}
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* PRODUÇÃO NO TURNO */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-slate-700 transition-colors">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Produção no turno</span>
-              <Activity className="w-5 h-5 text-slate-400" />
+        {/* 2. Indicadores do lote geral em coleta */}
+        <section className="space-y-3">
+          <h3 className="text-xs font-black uppercase tracking-[0.22em] text-slate-400">
+            Lote geral em coleta
+          </h3>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-slate-700 transition-colors">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Previsto</span>
+                <Activity className="w-5 h-5 text-slate-400" />
+              </div>
+              <div>
+                <p className="text-4xl sm:text-5xl font-black font-mono text-slate-100 tabular-nums">{lotExpected}</p>
+                <p className="text-[11px] text-slate-400 mt-1">Total de peças para a célula</p>
+              </div>
             </div>
-            <div>
-              <p className="text-4xl sm:text-5xl font-black font-mono text-slate-100 tabular-nums">{producedInShift}</p>
-              <p className="text-[11px] text-slate-400 mt-1">Aprovadas + reprovadas no turno</p>
-            </div>
-          </div>
 
-          {/* APROVADAS */}
-          <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-emerald-500/50 transition-colors">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Aprovadas</span>
-              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+            <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-emerald-500/50 transition-colors">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Aprovado</span>
+                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-4xl sm:text-5xl font-black font-mono text-emerald-400 tabular-nums">{lotApproved}</p>
+                <p className="text-[11px] text-emerald-300/70 mt-1">Peças bipadas com sucesso no lote</p>
+              </div>
             </div>
-            <div>
-              <p className="text-4xl sm:text-5xl font-black font-mono text-emerald-400 tabular-nums">{approved}</p>
-              <p className="text-[11px] text-emerald-300/70 mt-1">Peças bipadas com sucesso</p>
-            </div>
-          </div>
 
-          {/* REPROVADAS */}
-          <div className="bg-rose-950/40 border border-rose-500/30 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-rose-500/50 transition-colors">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold uppercase tracking-wider text-rose-400">Reprovadas</span>
-              <XCircle className="w-5 h-5 text-rose-400" />
+            <div className="bg-rose-950/40 border border-rose-500/30 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-rose-500/50 transition-colors">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold uppercase tracking-wider text-rose-400">Reprovado</span>
+                <XCircle className="w-5 h-5 text-rose-400" />
+              </div>
+              <div>
+                <p className="text-4xl sm:text-5xl font-black font-mono text-rose-400 tabular-nums">{lotRejected}</p>
+                <p className="text-[11px] text-rose-300/70 mt-1">Defeitos / não conformidades no lote</p>
+              </div>
             </div>
-            <div>
-              <p className="text-4xl sm:text-5xl font-black font-mono text-rose-400 tabular-nums">{rejected}</p>
-              <p className="text-[11px] text-rose-300/70 mt-1">Defeitos / Não conformidades</p>
-            </div>
-          </div>
 
-          {/* BLOQUEADAS */}
-          <div className="bg-amber-950/40 border border-amber-500/30 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-amber-500/50 transition-colors">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Bloqueadas</span>
-              <Clock className="w-5 h-5 text-amber-400" />
-            </div>
-            <div>
-              <p className="text-4xl sm:text-5xl font-black font-mono text-amber-400 tabular-nums">{blocked}</p>
-              <p className="text-[11px] text-amber-300/70 mt-1">Leituras bloqueadas no turno</p>
+            <div className="bg-amber-950/40 border border-amber-500/30 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-amber-500/50 transition-colors">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Pendente</span>
+                <Clock className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <p className="text-4xl sm:text-5xl font-black font-mono text-amber-400 tabular-nums">{lotPending}</p>
+                <p className="text-[11px] text-amber-300/70 mt-1">Peças aguardando bipagem no lote</p>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* 3. Área de Coleta Principal (Bipagem / Scanner Físico / Câmera / Manual) */}
+        {/* 3. Indicadores do turno da estação */}
+        <section className="space-y-3">
+          <h3 className="text-xs font-black uppercase tracking-[0.22em] text-slate-400">
+            Turno da estação
+          </h3>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-slate-700 transition-colors">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Produção no turno</span>
+                <Activity className="w-5 h-5 text-slate-400" />
+              </div>
+              <div>
+                <p className="text-4xl sm:text-5xl font-black font-mono text-slate-100 tabular-nums">{producedInShift}</p>
+                <p className="text-[11px] text-slate-400 mt-1">Aprovadas + reprovadas no turno</p>
+              </div>
+            </div>
+
+            <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-emerald-500/50 transition-colors">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Aprovadas no turno</span>
+                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-4xl sm:text-5xl font-black font-mono text-emerald-400 tabular-nums">{shiftApproved}</p>
+                <p className="text-[11px] text-emerald-300/70 mt-1">Peças aprovadas nesta estação</p>
+              </div>
+            </div>
+
+            <div className="bg-rose-950/40 border border-rose-500/30 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-rose-500/50 transition-colors">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold uppercase tracking-wider text-rose-400">Reprovadas no turno</span>
+                <XCircle className="w-5 h-5 text-rose-400" />
+              </div>
+              <div>
+                <p className="text-4xl sm:text-5xl font-black font-mono text-rose-400 tabular-nums">{shiftRejected}</p>
+                <p className="text-[11px] text-rose-300/70 mt-1">Defeitos / não conformidades no turno</p>
+              </div>
+            </div>
+
+            <div className="bg-amber-950/40 border border-amber-500/30 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-amber-500/50 transition-colors">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Bloqueadas no turno</span>
+                <Clock className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <p className="text-4xl sm:text-5xl font-black font-mono text-amber-400 tabular-nums">{shiftBlocked}</p>
+                <p className="text-[11px] text-amber-300/70 mt-1">Leituras bloqueadas no turno</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* 4. Área de Coleta Principal (Bipagem / Scanner Físico / Câmera / Manual) */}
         <section className="grid lg:grid-cols-[1.5fr_1fr] gap-6 items-start">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
@@ -270,7 +327,7 @@ export default function CollectionFullscreenKiosk({
             />
           </div>
 
-          {/* 4. Painel de Leituras Recentes em Tempo Real */}
+          {/* 5. Painel de Leituras Recentes em Tempo Real */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl h-full flex flex-col">
             <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-4 flex items-center gap-2">
               <Activity className="w-4 h-4 text-emerald-400" />
