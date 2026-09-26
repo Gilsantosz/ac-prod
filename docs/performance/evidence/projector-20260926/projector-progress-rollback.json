@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-26T15:22:50.384Z",
+  "changes": [
+    "20260926150100_grouped_projector_progress",
+    "20260926150600_sparse_replacement_accounting",
+    "20260926151700_collection_authorization_covering_indexes",
+    "20260926152000_bound_authorization_scope",
+    "20260926152500_recorded_piece_scope"
+  ],
+  "baseline": "78d22cc38a5d648d099c36ece0d8232f331bd8ce53fa8e20b8f52c1a3759be75",
+  "before": "9023e83cb687c00fd7725f0e2c9354158c81eac6bcac496f7bacb03c38dbb87b",
+  "after": "9023e83cb687c00fd7725f0e2c9354158c81eac6bcac496f7bacb03c38dbb87b",
+  "passed": true
+}

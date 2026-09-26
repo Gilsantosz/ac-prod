@@ -1,0 +1,56 @@
+{
+  "at": "2026-09-26T15:01:38.496Z",
+  "cases": [
+    {
+      "label": "ordinary_roots",
+      "identical": true,
+      "roots": 6000
+    },
+    {
+      "label": "explicit_route_precedes_flags_and_normalizes_aliases",
+      "identical": true,
+      "roots": 6000
+    },
+    {
+      "label": "pending_replacement_without_piece",
+      "identical": true,
+      "roots": 6000
+    },
+    {
+      "label": "linked_replacement_in_production",
+      "identical": true,
+      "roots": 6000
+    },
+    {
+      "label": "completed_replacement",
+      "identical": true,
+      "roots": 6000
+    },
+    {
+      "label": "replacement_of_replacement",
+      "identical": true,
+      "roots": 6000
+    },
+    {
+      "label": "cancelled_newer_replacement",
+      "identical": true,
+      "roots": 6000
+    },
+    {
+      "label": "manual_quantity_allocated_across_client_lots",
+      "identical": true,
+      "roots": 6000
+    },
+    {
+      "label": "empty_route_flag_fallback",
+      "identical": true,
+      "roots": 6000
+    },
+    {
+      "label": "cancelled_original_excluded_from_progress",
+      "identical": true,
+      "roots": 6000
+    }
+  ],
+  "passed": true
+}
