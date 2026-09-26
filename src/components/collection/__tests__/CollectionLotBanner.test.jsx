@@ -6,7 +6,8 @@ describe('lotes em ambos os modos da coleta', () => {
   it.each([false, true])('mantém os rótulos visíveis sem dados no modo foco=%s', (focus) => {
     render(<CollectionLotBanner focus={focus} clientLotCode="CLI-001" />);
     expect(screen.getByText('Lote Geral')).toBeInTheDocument();
-    expect(screen.getByText('Lote do Cliente')).toBeInTheDocument();
+    expect(screen.getByText('Pedido')).toBeInTheDocument();
+    expect(screen.getByText('Andamento do Pedido')).toBeInTheDocument();
     expect(screen.getByText('CLI-001')).toBeInTheDocument();
     expect(screen.getByText('Aguardando identificação')).toBeInTheDocument();
     expect(screen.getByText('—')).toBeInTheDocument();
