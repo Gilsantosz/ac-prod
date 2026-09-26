@@ -48,10 +48,10 @@ export function validateReplacementLabelData(order, originalPiece = null, replac
     issues.push('Lote Geral da produção não localizado.');
   }
 
-  // 4. Lote do Cliente
+  // 4. Pedido
   const customerLot = order?.order_number || orig.customer_lot_code || orig.order_number || order?.customer_name;
   if (!customerLot || String(customerLot).trim() === '' || customerLot === 'N/A') {
-    issues.push('Lote do Cliente / Pedido não localizado.');
+    issues.push('Pedido não localizado.');
   }
 
   // 5. Descrição do Produto
