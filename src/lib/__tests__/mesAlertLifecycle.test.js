@@ -35,7 +35,7 @@ describe('MES Alert Lifecycle & Diagnostics Unit Tests', () => {
     vi.useRealTimers();
   });
 
-  it('agrupa pecas paradas pelo mesmo lote geral + lote cliente + etapa', async () => {
+  it('agrupa pecas paradas pelo mesmo lote geral + pedido + etapa', async () => {
     const mockPieces = [
       {
         id: 'p1',
