@@ -168,15 +168,20 @@ export function resolveCollectionLotContext({
       : source.lot?.id || source.lot?.lot_code
         ? candidates.find((lot) => (source.lot?.id && lot.lot_id === source.lot.id) || (source.lot?.lot_code && lot.lot_code === source.lot.lot_code))
         : candidates[0];
-  const progress = match?.progress_percent ?? source.general_lot?.progress_percent;
+  const generalProgress = source.general_lot?.progress_percent ?? match?.progress_percent;
+  const clientLotProgress = source.lot_progress_percent
+    ?? source.lot?.progress_percent
+    ?? match?.progress_percent
+    ?? source.general_lot?.progress_percent;
   const selectedFallback = !preferActiveContext && !hasCollectionLotIdentity(source) && !match ? selectedPiece : null;
   return {
     generalLot: {
       id: batchId || match?.id || null,
       general_lot_code: generalCode || match?.general_lot_code || selectedFallback?.general_lot_code || null,
-      progress_percent: progress != null && Number.isFinite(Number(progress)) ? Number(progress) : null,
+      progress_percent: generalProgress != null && Number.isFinite(Number(generalProgress)) ? Number(generalProgress) : null,
     },
     clientLotCode: source.lot?.lot_code || match?.lot_code || selectedFallback?.lot_code || null,
     customerName: source.order?.customer_name || match?.customer_name || selectedFallback?.client_name || null,
+    clientLotProgress: clientLotProgress != null && Number.isFinite(Number(clientLotProgress)) ? Number(clientLotProgress) : null,
   };
 }
