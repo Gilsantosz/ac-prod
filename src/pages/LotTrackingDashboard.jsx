@@ -317,7 +317,7 @@ export default function LotTrackingDashboard() {
           <section className="space-y-3">
             <div>
               <h2 className="text-base font-extrabold text-foreground">Lotes gerais em produção</h2>
-              <p className="text-xs text-muted-foreground">Clique no lote geral para abrir os lotes de clientes e o detalhamento das etapas.</p>
+              <p className="text-xs text-muted-foreground">Clique no lote geral para abrir os pedidos e o andamento por célula produtiva.</p>
             </div>
             {generalLots.length === 0 ? (
               <Card className="p-10 border-dashed text-center text-sm text-muted-foreground">Nenhum lote geral ativo foi encontrado.</Card>
@@ -358,10 +358,10 @@ export default function LotTrackingDashboard() {
                     <table className="w-full text-xs">
                       <thead className="bg-secondary/40 text-muted-foreground">
                         <tr>
-                          <th className="px-4 py-3 text-left">Lote cliente</th>
+                          <th className="px-4 py-3 text-left">Pedido</th>
                           <th className="px-4 py-3 text-left">Cliente</th>
                           <th className="px-4 py-3 text-right">Peças prontas</th>
-                          <th className="px-4 py-3 text-right">Andamento</th>
+                          <th className="px-4 py-3 text-right">Andamento do Pedido</th>
                           <th className="px-4 py-3 text-left">Gargalo</th>
                           <th className="px-4 py-3 text-left">Previsão</th>
                           <th className="px-4 py-3 text-center">Situação</th>
