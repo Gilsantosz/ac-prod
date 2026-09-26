@@ -812,7 +812,7 @@ export default function PromobIntegration() {
                 <table className="w-full text-sm">
                   <thead className="bg-secondary/30 border-b border-border/60">
                     <tr>
-                      {['Data Criada', 'Código OP', 'Cliente', 'Projeto / Lote', 'Andamento do Lote', 'Entrega', 'Status', 'Ações'].map(h => (
+                      {['Data Criada', 'Código OP', 'Cliente', 'Projeto / Lote', 'Andamento do Pedido', 'Entrega', 'Status', 'Ações'].map(h => (
                         <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                           {h}
                         </th>
