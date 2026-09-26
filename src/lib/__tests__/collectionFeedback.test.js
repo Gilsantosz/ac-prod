@@ -62,13 +62,13 @@ describe('apresentação de recibos e lotes da coleta', () => {
       feedback: { client_event_id: 'event-2', collection_state: 'PENDING_DATABASE' },
       lastIdentifiedFeedback: identified, activeGeneralLots: [],
     });
-    expect(context).toMatchObject({ generalLot: { general_lot_code: 'GER-001', progress_percent: null }, clientLotCode: 'CLI-001', customerName: 'Cliente A' });
+    expect(context).toMatchObject({ generalLot: { general_lot_code: 'GER-001', progress_percent: null }, clientLotCode: 'CLI-001', customerName: 'Cliente A', clientLotProgress: null });
   });
 
   it('usa lote geral e cliente da projeção quando o recibo não trouxe dados completos', () => {
     expect(resolveCollectionLotContext({ activeGeneralLots: [{
       id: 'batch-1', general_lot_code: 'GER-001', lot_id: 'client-lot-1', lot_code: 'CLI-001', progress_percent: 0,
-    }] })).toMatchObject({ generalLot: { general_lot_code: 'GER-001', progress_percent: 0 }, clientLotCode: 'CLI-001' });
+    }] })).toMatchObject({ generalLot: { general_lot_code: 'GER-001', progress_percent: 0 }, clientLotCode: 'CLI-001', clientLotProgress: 0 });
     expect(resolveCollectionLotContext({ activeContext: {
       active_pcp_import_batch_id: 'batch-2', active_general_lot_code: 'GER-002', active_lot_code: 'CLI-002',
     } })).toMatchObject({ generalLot: { general_lot_code: 'GER-002', progress_percent: null }, clientLotCode: 'CLI-002' });
