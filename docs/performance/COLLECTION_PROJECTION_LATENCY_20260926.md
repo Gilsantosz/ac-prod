@@ -20,3 +20,9 @@ Os relatórios compactos estão em `evidence/projector-20260926`. A sequência f
 Duas tentativas foram descartadas: aumentar o pool local de dez para 30 conexões e usar resumos parciais na tela de lotes. Nenhuma trouxe melhora consistente. O pool local foi restaurado a dez conexões, e o código do cache parcial foi revertido. Essas tentativas não integram a entrega.
 
 A configuração de observabilidade do laboratório segue a documentação do [PostgREST 16](https://docs.postgrest.org/en/stable/references/observability.html). As métricas do pool e o cabeçalho Server-Timing registram a disputa entre consultas e gravações; o teste mantém as 200 sessões e a carga original.
+
+## Publicação
+
+Migração `20260926152704_collection_projection_read_latency` aplicada ao projeto compartilhado em 26/09/2026 às 15:27 UTC. As seis definições de funções e os três índices foram conferidos após a aplicação. A publicação de código correspondente é acompanhada na PR #104.
+
+O cenário formal A, após todas estas alterações, concluiu 61 coletas: confirmação p95 de 221,43 ms e p99 de 319,41 ms, sem falhas nos critérios do cenário. Trata-se de evidência do laboratório, não de homologação global nem de medição do ambiente público. O cenário B com 200 sessões será retomado em seguida.
