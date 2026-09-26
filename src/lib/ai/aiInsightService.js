@@ -238,7 +238,7 @@ export function formatInsightAnswer(context, analysis, { focus = 'production' } 
     lines = [
       `Resumo de lotes confirmado de ${periodLabel(context.filters)}:`,
       `Lotes: ${kpis.lots}; bloqueados: ${kpis.blockedLots}; em atraso: ${kpis.lateLots}; concluídos: ${kpis.completedLots}.`,
-      'Informe o código do lote geral ou do lote do cliente para eu detalhar cada etapa da rota, quantidade concluída e previsão.',
+      'Informe o código do lote geral ou do pedido para eu detalhar cada etapa da rota, quantidade concluída e previsão.',
     ];
   } else {
     lines = [
