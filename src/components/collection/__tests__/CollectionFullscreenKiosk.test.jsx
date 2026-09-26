@@ -52,6 +52,7 @@ describe('CollectionFullscreenKiosk Component', () => {
     },
     currentClientLotCode: 'LOTE-CLI-001',
     currentCustomerName: 'Cliente Exemplo LTDA',
+    currentClientLotProgress: 42.5,
     activeDowntime: null,
     refetchActiveDowntime: vi.fn(),
     refreshData: vi.fn(),
@@ -79,7 +80,7 @@ describe('CollectionFullscreenKiosk Component', () => {
     expect(screen.getByText('26072640')).toBeInTheDocument();
     expect(screen.getByText('LOTE-CLI-001')).toBeInTheDocument();
     expect(screen.getByText('Cliente Exemplo LTDA')).toBeInTheDocument();
-    expect(screen.getByText('70,8%')).toBeInTheDocument();
+    expect(screen.getByText('42,5%')).toBeInTheDocument();
 
     // Os 4 KPIs solicitados
     expect(screen.getByText('120')).toBeInTheDocument(); // Previsto
