@@ -95,9 +95,9 @@ describe('aiIntentParser', () => {
     expect(res.action).toBe('cancel_schedule');
   });
 
-  it('distingue lote geral de lote do cliente', () => {
+  it('distingue lote geral de pedido operacional', () => {
     const general = parseIntent('Rastreie o lote geral 15587');
-    const client = parseIntent('Acompanhe o lote do cliente 143345');
+    const client = parseIntent('Acompanhe o pedido 143345');
 
     expect(general).toMatchObject({
       action: 'search_production',
