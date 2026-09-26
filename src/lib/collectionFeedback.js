@@ -152,7 +152,7 @@ export function resolveCollectionLotContext({
   const source = normalizeCollectionFeedback(sourceInput);
   const batchId = source.lot?.pcp_import_batch_id || source.general_lot?.id;
   const generalCode = source.lot?.general_lot_code || source.general_lot?.general_lot_code || source.general_lot_code;
-  const candidates = preferActiveContext ? [] : [...activeGeneralLots];
+  const candidates = [...activeGeneralLots];
   if (activeContext && !preferActiveContext) candidates.push({
     id: activeContext.active_pcp_import_batch_id,
     general_lot_code: activeContext.active_general_lot_code,
@@ -168,9 +168,10 @@ export function resolveCollectionLotContext({
       : source.lot?.id || source.lot?.lot_code
         ? candidates.find((lot) => (source.lot?.id && lot.lot_id === source.lot.id) || (source.lot?.lot_code && lot.lot_code === source.lot.lot_code))
         : candidates[0];
-  const generalProgress = source.general_lot?.progress_percent ?? match?.progress_percent;
+  const generalProgress = source.general_lot?.progress_percent ?? match?.general_progress_percent ?? match?.progress_percent;
   const clientLotProgress = source.lot_progress_percent
     ?? source.lot?.progress_percent
+    ?? match?.client_lot_progress_percent
     ?? match?.progress_percent
     ?? source.general_lot?.progress_percent;
   const selectedFallback = !preferActiveContext && !hasCollectionLotIdentity(source) && !match ? selectedPiece : null;
