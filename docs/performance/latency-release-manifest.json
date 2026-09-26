@@ -1,0 +1,147 @@
+{
+  "release": "20260926143000_collection_latency_optimization.sql",
+  "included": [
+    "20260920153320_collection_projector_lock_order.sql",
+    "20260920154917_collection_immediate_error_details.sql",
+    "20260920160503_collection_piece_lock_and_route_cost.sql",
+    "20260920160859_replacement_reconcile_lock_scope.sql",
+    "20260920163159_scoped_piece_accounting.sql",
+    "20260920164337_stage_member_route_normalization.sql",
+    "20260920164812_piece_read_scope_initplan.sql",
+    "20260926131946_setwise_read_authorization.sql",
+    "20260926132209_grouped_lot_tracking.sql",
+    "20260926132334_shared_read_policy_scopes.sql",
+    "20260926133308_shared_batch_stage_snapshots.sql",
+    "20260926134442_coalesced_batch_projection_order.sql",
+    "20260926140200_history_cell_prefilter.sql",
+    "20260926140210_authorization_scope_cardinality.sql",
+    "20260926140900_history_bound_custom_plans.sql",
+    "20260926141900_authorized_tracking_group_snapshots.sql",
+    "20260926142300_tracking_scope_bound_plans.sql",
+    "20260926143100_finalized_receipt_lock_avoidance.sql"
+  ],
+  "excluded_from_latency_release": [
+    "20260920151401",
+    "20260920152914",
+    "20260920154835",
+    "20260920161303"
+  ],
+  "reviewed_ingress_hash": "aa4f5381ab5b7514c8d816b48af8f41e",
+  "reviewed_audit_hash": "7c929162aca03ce0c34c1ab59d45483d",
+  "baseline_functions": [
+    {
+      "schema": "private",
+      "name": "audit_collection_immediate_release_v1",
+      "args": "",
+      "md5": "d5be4470cb4a9623487c95611914cb07"
+    },
+    {
+      "schema": "private",
+      "name": "get_lot_route_stage_progress_uncached_capacity",
+      "args": "p_batch_id uuid",
+      "md5": "426ca4134aedb1219a5216c48ed66905"
+    },
+    {
+      "schema": "private",
+      "name": "process_collection_batch_v3",
+      "args": "p_worker_id text, p_items jsonb",
+      "md5": "0aeb456f60de5e681884d2901ecd515c"
+    },
+    {
+      "schema": "private",
+      "name": "process_collection_projection_batch_v3",
+      "args": "p_worker_id text, p_items jsonb",
+      "md5": "83396bc4368b95416931be950e1af1ee"
+    },
+    {
+      "schema": "public",
+      "name": "get_collection_dashboard_snapshot_v3",
+      "args": "p_cell_name text, p_workstation_id uuid, p_operator_id uuid, p_pcp_import_batch_id uuid, p_lot_id uuid, p_reference_time timestamp with time zone",
+      "md5": "4e04cc8e0c3eb2e267f40c737795c8ba"
+    },
+    {
+      "schema": "public",
+      "name": "get_collection_dashboard_snapshot_v3",
+      "args": "p_cell_name text, p_workstation_id uuid, p_operator_session_token text, p_pcp_import_batch_id uuid, p_lot_id uuid, p_reference_time timestamp with time zone",
+      "md5": "b386004cd44b40858a7785da53af76ab"
+    },
+    {
+      "schema": "public",
+      "name": "get_collection_history_count_impl",
+      "args": "p_cell_id uuid, p_workstation_id uuid, p_operator_id uuid, p_shift text, p_status text, p_lot_id uuid, p_date_from timestamp with time zone, p_date_to timestamp with time zone, p_cell_name text",
+      "md5": "e14cbca66163a75130e508519d4dd329"
+    },
+    {
+      "schema": "public",
+      "name": "get_collection_history_impl",
+      "args": "p_cell_id uuid, p_workstation_id uuid, p_operator_id uuid, p_shift text, p_status text, p_lot_id uuid, p_limit integer, p_offset integer, p_date_from timestamp with time zone, p_date_to timestamp with time zone, p_cell_name text",
+      "md5": "ddc2429902c35812fd365f535d4e881f"
+    },
+    {
+      "schema": "public",
+      "name": "get_collection_lot_route_metrics",
+      "args": "p_lot_id uuid",
+      "md5": "74c91aed809b961933020a8356a47711"
+    },
+    {
+      "schema": "public",
+      "name": "get_collection_route_stage_metrics",
+      "args": "p_pcp_import_batch_id uuid, p_lot_id uuid, p_step_code text",
+      "md5": "40db885d125cd98bf503a5eea9d8b2a8"
+    },
+    {
+      "schema": "public",
+      "name": "get_general_lot_tracking_base",
+      "args": "p_batch_id uuid, p_limit integer",
+      "md5": "8bcda36036966fcb68c6387d40173550"
+    },
+    {
+      "schema": "public",
+      "name": "get_lot_route_stage_progress",
+      "args": "p_batch_id uuid",
+      "md5": "de535feba777f7ff4f15e411ea2a1e80"
+    },
+    {
+      "schema": "public",
+      "name": "ingest_collection_batch_immediate_v3",
+      "args": "p_batch_id uuid, p_device_id uuid, p_events jsonb",
+      "md5": "90ffa0ee5c0f4b6b82c3a92a7d056bcf"
+    },
+    {
+      "schema": "public",
+      "name": "process_collection_batch_v3",
+      "args": "p_worker_id text, p_items jsonb",
+      "md5": "233e6cf9e90ca86cdc9cf83bba53af96"
+    },
+    {
+      "schema": "public",
+      "name": "process_collection_projection_batch_v3",
+      "args": "p_worker_id text, p_items jsonb",
+      "md5": "26a039f684335b97cac07bdff8bd0921"
+    },
+    {
+      "schema": "public",
+      "name": "reconcile_replacement_piece_trail",
+      "args": "p_piece_id uuid",
+      "md5": "177368d81ae1f084920ca79a5cf3f6fe"
+    },
+    {
+      "schema": "public",
+      "name": "refresh_collection_lot_state",
+      "args": "p_lot_id uuid, p_reading_id uuid",
+      "md5": "b13bda58f4ca1fd5ea908e13963e48af"
+    },
+    {
+      "schema": "public",
+      "name": "refresh_pcp_batch_progress",
+      "args": "p_batch_id uuid",
+      "md5": "639264a21de48ab9cc70d066d7cdf45b"
+    },
+    {
+      "schema": "public",
+      "name": "sync_replacement_trail_from_reading",
+      "args": "",
+      "md5": "555d430fd51f144d9ec01d8ace0db90e"
+    }
+  ]
+}

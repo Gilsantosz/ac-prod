@@ -1,0 +1,483 @@
+[
+  {
+    "batch": "02e3c479-d017-5aaa-a42f-17c0406a0853",
+    "stages": 7,
+    "shared_ms": 386.962382,
+    "canonical_ms": 2399.6046050000004,
+    "checks": [
+      {
+        "stage": "cut",
+        "mismatch": []
+      },
+      {
+        "stage": "edge",
+        "mismatch": []
+      },
+      {
+        "stage": "drill",
+        "mismatch": []
+      },
+      {
+        "stage": "cnc",
+        "mismatch": []
+      },
+      {
+        "stage": "joinery",
+        "mismatch": []
+      },
+      {
+        "stage": "separation",
+        "mismatch": []
+      },
+      {
+        "stage": "packaging",
+        "mismatch": []
+      }
+    ],
+    "passed": true
+  },
+  {
+    "batch": "057e3714-5153-566e-9093-f4e9a77cdfa7",
+    "stages": 7,
+    "shared_ms": 305.77781099999993,
+    "canonical_ms": 2583.3447940000005,
+    "checks": [
+      {
+        "stage": "cut",
+        "mismatch": []
+      },
+      {
+        "stage": "edge",
+        "mismatch": []
+      },
+      {
+        "stage": "drill",
+        "mismatch": []
+      },
+      {
+        "stage": "cnc",
+        "mismatch": []
+      },
+      {
+        "stage": "joinery",
+        "mismatch": []
+      },
+      {
+        "stage": "separation",
+        "mismatch": []
+      },
+      {
+        "stage": "packaging",
+        "mismatch": []
+      }
+    ],
+    "passed": true
+  },
+  {
+    "batch": "175e9a20-c165-5165-9c5e-77c016ad8bdb",
+    "stages": 7,
+    "shared_ms": 305.52173799999946,
+    "canonical_ms": 2262.3978289999995,
+    "checks": [
+      {
+        "stage": "cut",
+        "mismatch": []
+      },
+      {
+        "stage": "edge",
+        "mismatch": []
+      },
+      {
+        "stage": "drill",
+        "mismatch": []
+      },
+      {
+        "stage": "cnc",
+        "mismatch": []
+      },
+      {
+        "stage": "joinery",
+        "mismatch": []
+      },
+      {
+        "stage": "separation",
+        "mismatch": []
+      },
+      {
+        "stage": "packaging",
+        "mismatch": []
+      }
+    ],
+    "passed": true
+  },
+  {
+    "batch": "720a42cb-e074-5fe3-9f48-3901afa74444",
+    "stages": 7,
+    "shared_ms": 92.68394999999873,
+    "canonical_ms": 618.5387989999981,
+    "checks": [
+      {
+        "stage": "cut",
+        "mismatch": []
+      },
+      {
+        "stage": "edge",
+        "mismatch": []
+      },
+      {
+        "stage": "drill",
+        "mismatch": []
+      },
+      {
+        "stage": "cnc",
+        "mismatch": []
+      },
+      {
+        "stage": "joinery",
+        "mismatch": []
+      },
+      {
+        "stage": "separation",
+        "mismatch": []
+      },
+      {
+        "stage": "packaging",
+        "mismatch": []
+      }
+    ],
+    "passed": true
+  },
+  {
+    "batch": "7743d921-c616-59fa-82c1-10f62da3375d",
+    "stages": 7,
+    "shared_ms": 319.8283049999991,
+    "canonical_ms": 2243.8051399999986,
+    "checks": [
+      {
+        "stage": "cut",
+        "mismatch": []
+      },
+      {
+        "stage": "edge",
+        "mismatch": []
+      },
+      {
+        "stage": "drill",
+        "mismatch": []
+      },
+      {
+        "stage": "cnc",
+        "mismatch": []
+      },
+      {
+        "stage": "joinery",
+        "mismatch": []
+      },
+      {
+        "stage": "separation",
+        "mismatch": []
+      },
+      {
+        "stage": "packaging",
+        "mismatch": []
+      }
+    ],
+    "passed": true
+  },
+  {
+    "batch": "7a30cacf-9dfb-554b-8af3-15ef2261b170",
+    "stages": 7,
+    "shared_ms": 314.7703079999992,
+    "canonical_ms": 2239.8717699999997,
+    "checks": [
+      {
+        "stage": "cut",
+        "mismatch": []
+      },
+      {
+        "stage": "edge",
+        "mismatch": []
+      },
+      {
+        "stage": "drill",
+        "mismatch": []
+      },
+      {
+        "stage": "cnc",
+        "mismatch": []
+      },
+      {
+        "stage": "joinery",
+        "mismatch": []
+      },
+      {
+        "stage": "separation",
+        "mismatch": []
+      },
+      {
+        "stage": "packaging",
+        "mismatch": []
+      }
+    ],
+    "passed": true
+  },
+  {
+    "batch": "867da675-5e4c-5bb4-8fd9-eeee5fb2794a",
+    "stages": 7,
+    "shared_ms": 301.33173700000043,
+    "canonical_ms": 2277.697816,
+    "checks": [
+      {
+        "stage": "cut",
+        "mismatch": []
+      },
+      {
+        "stage": "edge",
+        "mismatch": []
+      },
+      {
+        "stage": "drill",
+        "mismatch": []
+      },
+      {
+        "stage": "cnc",
+        "mismatch": []
+      },
+      {
+        "stage": "joinery",
+        "mismatch": []
+      },
+      {
+        "stage": "separation",
+        "mismatch": []
+      },
+      {
+        "stage": "packaging",
+        "mismatch": []
+      }
+    ],
+    "passed": true
+  },
+  {
+    "batch": "a100d04b-e3e8-5c63-b9fb-182fb599f389",
+    "stages": 7,
+    "shared_ms": 305.87209200000143,
+    "canonical_ms": 2282.625981000001,
+    "checks": [
+      {
+        "stage": "cut",
+        "mismatch": []
+      },
+      {
+        "stage": "edge",
+        "mismatch": []
+      },
+      {
+        "stage": "drill",
+        "mismatch": []
+      },
+      {
+        "stage": "cnc",
+        "mismatch": []
+      },
+      {
+        "stage": "joinery",
+        "mismatch": []
+      },
+      {
+        "stage": "separation",
+        "mismatch": []
+      },
+      {
+        "stage": "packaging",
+        "mismatch": []
+      }
+    ],
+    "passed": true
+  },
+  {
+    "batch": "a1c65d81-3774-53aa-8523-f29bea38439f",
+    "stages": 7,
+    "shared_ms": 308.7923129999981,
+    "canonical_ms": 2374.7206470000056,
+    "checks": [
+      {
+        "stage": "cut",
+        "mismatch": []
+      },
+      {
+        "stage": "edge",
+        "mismatch": []
+      },
+      {
+        "stage": "drill",
+        "mismatch": []
+      },
+      {
+        "stage": "cnc",
+        "mismatch": []
+      },
+      {
+        "stage": "joinery",
+        "mismatch": []
+      },
+      {
+        "stage": "separation",
+        "mismatch": []
+      },
+      {
+        "stage": "packaging",
+        "mismatch": []
+      }
+    ],
+    "passed": true
+  },
+  {
+    "batch": "a47dc571-306a-5313-87c3-9f7c3428a18a",
+    "stages": 7,
+    "shared_ms": 131.44513400000142,
+    "canonical_ms": 831.1959580000002,
+    "checks": [
+      {
+        "stage": "cut",
+        "mismatch": []
+      },
+      {
+        "stage": "edge",
+        "mismatch": []
+      },
+      {
+        "stage": "drill",
+        "mismatch": []
+      },
+      {
+        "stage": "cnc",
+        "mismatch": []
+      },
+      {
+        "stage": "joinery",
+        "mismatch": []
+      },
+      {
+        "stage": "separation",
+        "mismatch": []
+      },
+      {
+        "stage": "packaging",
+        "mismatch": []
+      }
+    ],
+    "passed": true
+  },
+  {
+    "batch": "c0422c23-40fb-5229-8e3d-553ec1b56f66",
+    "stages": 7,
+    "shared_ms": 295.71109799999977,
+    "canonical_ms": 2266.3676060000034,
+    "checks": [
+      {
+        "stage": "cut",
+        "mismatch": []
+      },
+      {
+        "stage": "edge",
+        "mismatch": []
+      },
+      {
+        "stage": "drill",
+        "mismatch": []
+      },
+      {
+        "stage": "cnc",
+        "mismatch": []
+      },
+      {
+        "stage": "joinery",
+        "mismatch": []
+      },
+      {
+        "stage": "separation",
+        "mismatch": []
+      },
+      {
+        "stage": "packaging",
+        "mismatch": []
+      }
+    ],
+    "passed": true
+  },
+  {
+    "batch": "c04cd264-4792-5b74-a349-54bdb2db21d4",
+    "stages": 7,
+    "shared_ms": 78.4487079999999,
+    "canonical_ms": 626.3356519999979,
+    "checks": [
+      {
+        "stage": "cut",
+        "mismatch": []
+      },
+      {
+        "stage": "edge",
+        "mismatch": []
+      },
+      {
+        "stage": "drill",
+        "mismatch": []
+      },
+      {
+        "stage": "cnc",
+        "mismatch": []
+      },
+      {
+        "stage": "joinery",
+        "mismatch": []
+      },
+      {
+        "stage": "separation",
+        "mismatch": []
+      },
+      {
+        "stage": "packaging",
+        "mismatch": []
+      }
+    ],
+    "passed": true
+  },
+  {
+    "batch": "ea2d89dd-938e-56c7-b1a8-e08ba6b9b825",
+    "stages": 7,
+    "shared_ms": 304.7484039999981,
+    "canonical_ms": 2370.3696949999976,
+    "checks": [
+      {
+        "stage": "cut",
+        "mismatch": []
+      },
+      {
+        "stage": "edge",
+        "mismatch": []
+      },
+      {
+        "stage": "drill",
+        "mismatch": []
+      },
+      {
+        "stage": "cnc",
+        "mismatch": []
+      },
+      {
+        "stage": "joinery",
+        "mismatch": []
+      },
+      {
+        "stage": "separation",
+        "mismatch": []
+      },
+      {
+        "stage": "packaging",
+        "mismatch": []
+      }
+    ],
+    "passed": true
+  }
+]

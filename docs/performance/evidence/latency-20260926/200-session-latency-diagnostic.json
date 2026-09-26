@@ -1,0 +1,150 @@
+{
+  "run": "B-2026-09-26T14-23-16-739Z",
+  "profile": "B",
+  "config": {
+    "duration": 120,
+    "rate": 60,
+    "machines": 200,
+    "lead": 2
+  },
+  "diagnostic": true,
+  "started_at": "2026-09-26T14:23:16.776Z",
+  "completed_at": "2026-09-26T14:26:15.454Z",
+  "environment": {
+    "api": "http://127.0.0.1:56321",
+    "project": "acprod-load-test-20260920",
+    "kind": "local-real-supabase",
+    "production_capacity_claim": false,
+    "rest_image": "public.ecr.aws/supabase/postgrest:v16.2",
+    "rest_pool": 10,
+    "track_commit_timestamp": true
+  },
+  "connected_peak": 200,
+  "ws_connected_min": 200,
+  "device_channels_min": 100,
+  "collections": 121,
+  "ack_ms": {
+    "count": 121,
+    "p50": 99.042,
+    "p90": 194.119,
+    "p95": 373.584,
+    "p99": 699.23,
+    "max": 897.281
+  },
+  "processing_ms": {
+    "count": 121,
+    "p50": 61,
+    "p90": 104,
+    "p95": 140,
+    "p99": 179,
+    "max": 198
+  },
+  "realtime_ms": {
+    "count": 242,
+    "p50": 9,
+    "p90": 15,
+    "p95": 18,
+    "p99": 45,
+    "max": 53
+  },
+  "technical_errors": 0,
+  "technical_error_rate": 0,
+  "deadlocks": 0,
+  "audit": {
+    "receipts": 121,
+    "undecided": 0,
+    "unprojected": 0,
+    "dead_lettered": 0,
+    "readings": 121,
+    "approved": 121,
+    "entries": 121,
+    "produced": "121",
+    "nonapproved_production": 0,
+    "duplicate_receipts": 0,
+    "duplicate_production": 0,
+    "race_double_production": 0,
+    "counter_mismatches": 0,
+    "active_sessions": 200
+  },
+  "resources": {
+    "db_cpu_percent": {
+      "count": 25,
+      "p50": 159.4661692969871,
+      "p90": 267.9535050033356,
+      "p95": 271.1619181034483,
+      "p99": 287.3266603849778,
+      "max": 287.3266603849778
+    },
+    "db_memory_bytes": {
+      "count": 26,
+      "p50": 1646952448,
+      "p90": 1692409856,
+      "p95": 1693356032,
+      "p99": 1704431616,
+      "max": 1704431616
+    },
+    "connections": {
+      "count": 26,
+      "p50": 29,
+      "p90": 29,
+      "p95": 29,
+      "p99": 30,
+      "max": 30
+    },
+    "waiting_locks": {
+      "count": 26,
+      "p50": 0,
+      "p90": 0,
+      "p95": 0,
+      "p99": 0,
+      "max": 0
+    },
+    "projection_queue": {
+      "count": 26,
+      "p50": 2,
+      "p90": 3,
+      "p95": 4,
+      "p99": 4,
+      "max": 4
+    },
+    "wal_bytes_delta": 38677245
+  },
+  "slo": {
+    "sessions": true,
+    "websockets": true,
+    "required_profile": false,
+    "websocket_continuity": true,
+    "collector_device_channels": true,
+    "ack_p95": true,
+    "ack_p99": true,
+    "processing_p99": true,
+    "actual_commit_measured": true,
+    "realtime_p95": true,
+    "technical_errors": true,
+    "realtime_loss": true,
+    "realtime_duplicates": true,
+    "context_isolation": true,
+    "no_involuntary_logout": true,
+    "no_deadlocks": true,
+    "database_consistency": true,
+    "workload_decisions": true,
+    "read_path": true,
+    "screen_counter_consistency": true,
+    "instrumentation": true,
+    "execution": true,
+    "recovery": true,
+    "adversarial_mix": true,
+    "concurrent_same_event": true,
+    "context_switch_scenario": true,
+    "visible_cross_client": true,
+    "record_completeness": true
+  },
+  "result": "DIAGNOSTIC_PASS",
+  "source_manifest_sha256": "7182bf110a6f928f64a1fbda171f614b3112761b94e802627898543476aa9d64",
+  "read_model_audit": {
+    "at": "2026-09-26T14:26:14.760Z",
+    "scopes": 100,
+    "mismatches": 0,
+    "passed": true
+  }
+}
