@@ -371,7 +371,7 @@ export default function LotIntegrity() {
   const appliedClientLotParamRef = useRef('');
   const [generalLotSearch, setGeneralLotSearch] = useState('');
 
-  // Filtros dos lotes de clientes
+  // Filtros dos pedidos
   const [clientLotSearch, setClientLotSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all'); // all, started, not_started, completed
   const [filterCell, setFilterCell] = useState('all');
@@ -512,7 +512,7 @@ export default function LotIntegrity() {
       .some((value) => String(value || '').toLocaleLowerCase('pt-BR').includes(term)));
   }, [generalLots, generalLotSearch]);
 
-  // Rolagem suave até o lote do cliente clicado
+  // Rolagem suave até o pedido clicado
   useEffect(() => {
     if (!focusedLotId) return undefined;
 
@@ -668,7 +668,7 @@ export default function LotIntegrity() {
       <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-4">
         <PageHeader
           title="Painel de Integridade de Lote"
-          subtitle="Rastreabilidade hierárquica do lote geral, seus lotes de clientes e todas as etapas até a separação."
+          subtitle="Rastreabilidade hierárquica do lote geral, seus pedidos e o andamento por célula produtiva até a separação."
           icon={ShieldCheck}
         />
         <Button asChild variant="outline" className="rounded-xl gap-2 border-border/60 shrink-0">
@@ -685,7 +685,7 @@ export default function LotIntegrity() {
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-xs font-black text-primary">1</span>
               <h2 className="text-sm font-extrabold text-foreground">Escolha primeiro o lote geral carregado pelo PCP</h2>
             </div>
-            <p className="mt-1 ml-9 text-xs text-muted-foreground">Exemplo: 15587. Os lotes de clientes aparecerão somente dentro dele.</p>
+            <p className="mt-1 ml-9 text-xs text-muted-foreground">Exemplo: 15587. Os pedidos aparecerão somente dentro dele.</p>
           </div>
           <div className="relative w-full md:w-80">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -733,9 +733,9 @@ export default function LotIntegrity() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/10 text-xs font-black text-violet-700">2</span>
-                <h2 className="text-sm font-extrabold text-foreground">Lotes de clientes do lote geral {selectedGeneralLot?.general_lot_code}</h2>
+                <h2 className="text-sm font-extrabold text-foreground">Pedidos do lote geral {selectedGeneralLot?.general_lot_code}</h2>
               </div>
-              <p className="mt-1 ml-9 text-xs text-muted-foreground">Clientes com o mesmo nome permanecem juntos e seus lotes continuam rastreados separadamente.</p>
+              <p className="mt-1 ml-9 text-xs text-muted-foreground">Pedidos do mesmo cliente permanecem juntos e continuam rastreados separadamente por célula produtiva.</p>
             </div>
             <Button onClick={handleRefreshAll} variant="outline" size="sm" className="h-9 rounded-xl gap-2 font-medium shrink-0 border-border/60">
               <RefreshCw className="w-4 h-4" /> Atualizar em tempo real
@@ -744,11 +744,11 @@ export default function LotIntegrity() {
 
           <ProductionRouteFlow stages={selectedGeneralLot?.stages || []} />
 
-          {/* BARRA DE FILTROS DE LOTES DE CLIENTES */}
+          {/* BARRA DE FILTROS DE PEDIDOS */}
           <Card className="p-4 border-border/60 shadow-sm bg-card/60 backdrop-blur-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
             {/* Busca */}
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-muted-foreground">Buscar Cliente ou Lote</Label>
+              <Label className="text-xs font-bold text-muted-foreground">Buscar Cliente ou Pedido</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
@@ -769,9 +769,9 @@ export default function LotIntegrity() {
                 className="w-full h-9 rounded-xl border border-input bg-background px-3 text-xs font-semibold focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
               >
                 <option value="all">Todos os andamentos</option>
-                <option value="started">Lotes Iniciados (Em andamento)</option>
-                <option value="not_started">Lotes Não Iniciados (0%)</option>
-                <option value="completed">Lotes Concluídos (100%)</option>
+                <option value="started">Pedidos iniciados (em andamento)</option>
+                <option value="not_started">Pedidos não iniciados (0%)</option>
+                <option value="completed">Pedidos concluídos (100%)</option>
               </select>
             </div>
 
@@ -813,7 +813,7 @@ export default function LotIntegrity() {
             <Card className="flex justify-center py-12 border-border/60"><Loader2 className="w-7 h-7 animate-spin text-primary" /></Card>
           ) : originalClientLots.length > 0 && filteredClientLots.length === 0 ? (
             <Card className="p-8 border-dashed text-center text-sm text-muted-foreground">
-              Nenhum lote de cliente corresponde aos filtros selecionados. Experimente limpar ou ajustar os filtros.
+              Nenhum pedido corresponde aos filtros selecionados. Experimente limpar ou ajustar os filtros.
             </Card>
           ) : (
             <ClientLotHierarchy
