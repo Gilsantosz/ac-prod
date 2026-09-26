@@ -39,13 +39,13 @@ export default function GeneralLotProgressPanel({ lotIds = [] }) {
       <div className="pr-48 sm:pr-56">
         <div className="flex items-center gap-2 flex-wrap">
           <Layers3 className="w-5 h-5 text-blue-500 shrink-0" />
-          <h3 className="font-semibold text-base text-foreground tracking-tight">Andamento dos lotes gerais PCP</h3>
+          <h3 className="font-semibold text-base text-foreground tracking-tight">Andamento dos pedidos por célula produtiva</h3>
           <span className="text-xs font-semibold rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 px-2.5 py-0.5 border border-blue-500/20">
             {visible.length} lote{visible.length === 1 ? '' : 's'}
           </span>
         </div>
         <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-          Lotes com produção no recorte selecionado. As barras mostram o progresso total atual de cada lote.
+          Pedidos com produção no recorte selecionado. As barras mostram o progresso consolidado por célula produtiva.
         </p>
       </div>
 
@@ -88,7 +88,7 @@ export default function GeneralLotProgressPanel({ lotIds = [] }) {
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Summary icon={Layers3} label="Lotes clientes" value={clientLots} />
+        <Summary icon={Layers3} label="Pedidos" value={clientLots} />
         <Summary icon={PackageCheck} label="Peças finais" value={`${completedPieces}/${totalPieces}`} />
         <Summary icon={UsersRound} label="Lotes gerais" value={visible.length} />
       </div>
@@ -109,7 +109,7 @@ export default function GeneralLotProgressPanel({ lotIds = [] }) {
                   <div className="min-w-0">
                     <span className="font-semibold text-foreground">Lote geral </span>
                     <span className="font-mono font-bold text-foreground">{batch.general_lot_code || batch.file_name || '—'}</span>
-                    <span className="text-muted-foreground"> · {Number(batch.client_lots_count || 0)} lotes de clientes</span>
+                    <span className="text-muted-foreground"> · {Number(batch.client_lots_count || 0)} pedidos</span>
                   </div>
                   <strong className="text-blue-600 dark:text-blue-400 shrink-0 font-semibold">{percent}%</strong>
                 </div>
