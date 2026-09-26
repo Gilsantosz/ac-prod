@@ -347,7 +347,7 @@ export default function PackagingPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border/60 pb-5">
         <PageHeader
           title="Embalagem (Scan-to-Pack)"
-          subtitle="Agrupe lotes de clientes, crie volumes, bipa peças e libere para expedição."
+          subtitle="Agrupe pedidos, crie volumes, bipa peças e libere para expedição."
           icon={Package}
         />
         
