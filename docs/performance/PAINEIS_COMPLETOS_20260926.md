@@ -42,7 +42,21 @@ formal com 200 usuários está sendo medido separadamente no laboratório.
 
 ## Reversão
 
-Aplicar supabase/rollbacks/20260926173800_complete_panel_reads.sql somente após
+Aplicar supabase/rollbacks/20260926174606_complete_panel_reads.sql somente após
 conferir as verificações de origem, e reverter o frontend. O rollback não apaga
 peças, coletas ou históricos; remove somente os objetos novos deste pacote e
 restaura as definições anteriores.
+
+## Banco publicado e capacidade medida
+
+Migração `20260926174606_complete_panel_reads` aplicada no projeto ac-prod
+às 17:46 UTC de 26/09/2026. Conferência no banco hospedado: 8.388 peças
+representadas integralmente em 526 grupos, marcador da coleta imediata
+`ready=true` e zero projeções pendentes. O pacote consolidado foi ensaiado
+localmente com reversão/reaplicação antes dessa execução. SHA-256 do SQL:
+`47e5026888ec0697d68e2ab3a85c28dbb7fe644b47f5d20044a365d81d0988d8`.
+
+O cenário B local de dez minutos passou com 200 sessões, 601 coletas, ACK p95
+351,603 ms e p99 470,035 ms. Esse teste usou o gateway experimental local,
+que permanece desativado no público. O cenário C, a 2.000/min, foi iniciado
+em seguida; sua aprovação não deve ser presumida a partir do cenário B.
