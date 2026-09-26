@@ -523,6 +523,12 @@ export default function TraceabilityCollection({ embedded = false }) {
     pending: kpis.lot_kpis_stale ? '—' : Number(kpis.pending) || 0,
     rework: kpis.lot_kpis_stale ? '—' : Number(kpis.rework) || 0,
     replacement: kpis.lot_kpis_stale ? '—' : Number(kpis.replacement) || 0,
+    shiftApproved: shiftKpisUpdatedAt ? Number(shiftKpis.approved) || 0 : 0,
+    shiftRejected: shiftKpisUpdatedAt ? Number(shiftKpis.rejected) || 0 : 0,
+    shiftBlocked: shiftKpisUpdatedAt ? Number(shiftKpis.blocked) || 0 : 0,
+    shiftProduced: shiftKpisUpdatedAt
+      ? (Number(shiftKpis.approved) || 0) + (Number(shiftKpis.rejected) || 0)
+      : 0,
   };
   const activeGeneralLots = Array.isArray(kpis.active_general_lots) ? kpis.active_general_lots : [];
   // O snapshot e a projeção do ACK mantêm este contexto alinhado. Preferi-lo
@@ -542,18 +548,25 @@ export default function TraceabilityCollection({ embedded = false }) {
     selectedPiece,
     preferActiveContext: activeContextPreferred,
   });
+  const currentClientLotProgressDisplay = useMemo(() => {
+    if (currentClientLotProgress != null) return currentClientLotProgress;
+    const expected = Number(cellStats.expected);
+    const approved = Number(cellStats.approved);
+    if (!Number.isFinite(expected) || expected <= 0 || !Number.isFinite(approved)) return null;
+    return Math.max(0, Math.min(100, (approved / expected) * 100));
+  }, [cellStats.approved, cellStats.expected, currentClientLotProgress]);
   const displayFeedback = useMemo(() => {
-    if (!feedback || currentClientLotProgress == null) return feedback;
+    if (!feedback || currentClientLotProgressDisplay == null) return feedback;
     const feedbackLotCode = String(feedback.lot?.lot_code || '').trim();
     const currentLotCode = String(currentClientLotCode || '').trim();
     if (!feedbackLotCode || feedbackLotCode !== currentLotCode) return feedback;
     if (feedback.lot_progress_percent != null || feedback.lot?.progress_percent != null) return feedback;
     return {
       ...feedback,
-      lot_progress_percent: currentClientLotProgress,
-      lot: feedback.lot ? { ...feedback.lot, progress_percent: currentClientLotProgress } : feedback.lot,
+      lot_progress_percent: currentClientLotProgressDisplay,
+      lot: feedback.lot ? { ...feedback.lot, progress_percent: currentClientLotProgressDisplay } : feedback.lot,
     };
-  }, [feedback, currentClientLotCode, currentClientLotProgress]);
+  }, [feedback, currentClientLotCode, currentClientLotProgressDisplay]);
 
   const refreshKpis = useCallback(() => {
     scheduleCollectionQueryInvalidation(queryClient, {
@@ -1168,7 +1181,7 @@ export default function TraceabilityCollection({ embedded = false }) {
           generalLot={currentGeneralLot}
           clientLotCode={currentClientLotCode}
           customerName={currentCustomerName}
-          clientLotProgress={currentClientLotProgress}
+          clientLotProgress={currentClientLotProgressDisplay}
         />
       )}
     />
@@ -1186,7 +1199,7 @@ export default function TraceabilityCollection({ embedded = false }) {
     currentGeneralLot,
     currentClientLotCode,
     currentCustomerName,
-    currentClientLotProgress,
+    currentClientLotProgressDisplay,
     activeDowntime,
     refreshData,
     updateFeedback,
@@ -1477,7 +1490,7 @@ export default function TraceabilityCollection({ embedded = false }) {
           currentGeneralLot={currentGeneralLot}
           currentClientLotCode={currentClientLotCode}
           currentCustomerName={currentCustomerName}
-          currentClientLotProgress={currentClientLotProgress}
+          currentClientLotProgress={currentClientLotProgressDisplay}
           activeDowntime={activeDowntime}
           refetchActiveDowntime={refetchActiveDowntime}
           refreshData={refreshData}
