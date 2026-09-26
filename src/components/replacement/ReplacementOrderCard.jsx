@@ -188,7 +188,7 @@ export default function ReplacementOrderCard({
         </SummaryBlock>
         <SummaryBlock icon={Box} iconClass="text-blue-500" title="Lotes e pedido">
           {generalLot && <p><span className="text-muted-foreground">Lote geral:</span> <strong className="font-mono text-blue-600 dark:text-blue-400">{generalLot}</strong></p>}
-          <p><span className="text-muted-foreground">Lote cliente:</span> <strong className="font-mono">{clientLot}</strong></p>
+          <p><span className="text-muted-foreground">Pedido:</span> <strong className="font-mono">{clientLot}</strong></p>
           <p className="text-[11px] text-muted-foreground">{orderNumber ? `Pedido: ${orderNumber}` : 'Pedido não informado'}{customerName ? ` · ${customerName}` : ''}</p>
         </SummaryBlock>
         <SummaryBlock icon={Clock} iconClass="text-indigo-500" title="Origem da reprovação">
