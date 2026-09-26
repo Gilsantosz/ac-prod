@@ -304,8 +304,8 @@ export async function executeAiAction(actionPlan, { user, conversationContext = 
         ? new Date(forecast).toLocaleString('pt-BR')
         : 'ainda sem previsão confiável';
       const clientDescription = lotContext.clientLotCode
-        ? `\n- Lote do cliente: **${lotContext.clientLotCode}**${client?.customer_name ? ` — ${client.customer_name}` : ''}`
-        : `\n- Lotes de clientes vinculados: **${lotContext.clientLotCodes.length}**`;
+        ? `\n- Pedido: **${lotContext.clientLotCode}**${client?.customer_name ? ` — ${client.customer_name}` : ''}`
+        : `\n- Pedidos vinculados: **${lotContext.clientLotCodes.length}**`;
       const selectedStages = client?.stages?.length ? client.stages : (general?.stages || []);
       const stagesText = lotStageLines(selectedStages);
       const bottleneck = client?.bottleneck_stage || general?.bottleneck_stage || 'não identificado';
