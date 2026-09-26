@@ -32,6 +32,7 @@ export default function CollectionFullscreenKiosk({
   currentGeneralLot,
   currentClientLotCode,
   currentCustomerName,
+  currentClientLotProgress,
   activeDowntime,
   refetchActiveDowntime,
   refreshData,
@@ -169,6 +170,7 @@ export default function CollectionFullscreenKiosk({
           generalLot={currentGeneralLot}
           clientLotCode={currentClientLotCode}
           customerName={currentCustomerName}
+          clientLotProgress={currentClientLotProgress}
           focus
         />
 
