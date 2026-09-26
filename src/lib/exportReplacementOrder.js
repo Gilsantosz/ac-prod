@@ -293,7 +293,7 @@ export async function createReplacementTechnicalPdf(order) {
       { label: 'Status', value: data.status },
       { label: 'Prioridade', value: data.priority },
       { label: 'Lote geral', value: data.generalLot },
-      { label: 'Lote do cliente', value: data.clientLot },
+      { label: 'Pedido', value: data.clientLot },
     ],
   });
 
