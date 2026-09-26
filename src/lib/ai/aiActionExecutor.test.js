@@ -105,7 +105,7 @@ describe('aiActionExecutor', () => {
     expect(res.content).toContain('aceito pelo provedor');
   });
 
-  it('abre lote geral e lote do cliente já selecionados', async () => {
+  it('abre lote geral e pedido já selecionados', async () => {
     canExecuteAiAction.mockReturnValue(true);
     resolveAiLotContext.mockResolvedValue({
       matchedAs: 'client',
@@ -123,7 +123,7 @@ describe('aiActionExecutor', () => {
 
     const result = await executeAiAction({
       action: 'search_production',
-      rawPrompt: 'rastreie o lote do cliente 143345',
+      rawPrompt: 'rastreie o pedido 143345',
       filters: { clientLotCode: '143345', lotCode: '143345' },
     }, { user: { id: 'u1', role: 'admin' } });
 
