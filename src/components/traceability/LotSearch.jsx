@@ -30,7 +30,7 @@ export default function LotSearch() {
         <input
           value={query}
           onChange={(event) => updateQuery(event.target.value)}
-          placeholder="Buscar por lote geral, lote do cliente, cliente, peça ou código de barras..."
+          placeholder="Buscar por lote geral, pedido, cliente, peça ou código de barras..."
           className="w-full pl-10 pr-4 h-10 rounded-xl border border-border/60 bg-card text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#76FB91]/40 focus:border-[#76FB91]/60"
         />
         {isLoading && (
@@ -50,7 +50,7 @@ export default function LotSearch() {
         <div className="text-center py-12 text-muted-foreground">
           <Search className="w-8 h-8 mx-auto mb-3 opacity-50" />
           <p>Nenhum resultado encontrado para <strong>"{debouncedQuery}"</strong></p>
-          <p className="text-xs mt-1">Tente o lote geral (ex.: 15587), lote do cliente (ex.: 143332), cliente ou peça.</p>
+          <p className="text-xs mt-1">Tente o lote geral (ex.: 15587), pedido (ex.: 143332), cliente ou peça.</p>
         </div>
       )}
 
@@ -58,7 +58,7 @@ export default function LotSearch() {
         <div className="text-center py-12 text-muted-foreground">
           <Search className="w-8 h-8 mx-auto mb-3 opacity-30" />
           <p className="text-sm">Digite pelo menos 2 caracteres para buscar.</p>
-          <p className="text-xs mt-1">A busca reconhece lote geral, lote do cliente, cliente, peça, código de barras e tag.</p>
+          <p className="text-xs mt-1">A busca reconhece lote geral, pedido, cliente, peça, código de barras e tag.</p>
         </div>
       )}
     </div>
@@ -90,7 +90,7 @@ function SearchResult({ lot }) {
             </p>
           )}
           <p className="font-semibold text-sm text-foreground break-words">
-            Lote do cliente <span className="font-mono">{lot.lot_code}</span>
+            Pedido <span className="font-mono">{lot.lot_code}</span>
           </p>
           <p className="text-xs text-muted-foreground break-words">
             {lot.customer_name || order.customer_trade_name || order.customer_name || 'Cliente não informado'}
@@ -107,7 +107,7 @@ function SearchResult({ lot }) {
 
       <div className="space-y-1">
         <div className="flex justify-between text-[11px] text-muted-foreground">
-          <span>Lote do cliente · {percent}% completo</span>
+          <span>Pedido · {percent}% completo por célula produtiva</span>
           <span>{collected}/{total}</span>
         </div>
         <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
