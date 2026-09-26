@@ -75,10 +75,10 @@ export default function CollectionFullscreenKiosk({
 
   if (!open) return null;
 
-  const expected = cellStats?.expected ?? 0;
-  const approved = cellStats?.approved ?? 0;
-  const rejected = cellStats?.rejected ?? 0;
-  const pending = cellStats?.pending ?? 0;
+  const producedInShift = cellStats?.shiftProduced ?? ((Number(cellStats?.shiftApproved) || 0) + (Number(cellStats?.shiftRejected) || 0));
+  const approved = cellStats?.shiftApproved ?? cellStats?.approved ?? 0;
+  const rejected = cellStats?.shiftRejected ?? cellStats?.rejected ?? 0;
+  const blocked = cellStats?.shiftBlocked ?? cellStats?.blocked ?? 0;
 
   return (
     <div 
@@ -174,24 +174,24 @@ export default function CollectionFullscreenKiosk({
           focus
         />
 
-        {/* 2. Os 4 KPIs Fundamentais (Previsto, Aprovado, Reprovado, Pendente) */}
+        {/* 2. Os 4 KPIs Fundamentais do turno */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* PREVISTO */}
+          {/* PRODUÇÃO NO TURNO */}
           <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-slate-700 transition-colors">
             <div className="flex justify-between items-center">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Previsto</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Produção no turno</span>
               <Activity className="w-5 h-5 text-slate-400" />
             </div>
             <div>
-              <p className="text-4xl sm:text-5xl font-black font-mono text-slate-100 tabular-nums">{expected}</p>
-              <p className="text-[11px] text-slate-400 mt-1">Total de peças para a célula</p>
+              <p className="text-4xl sm:text-5xl font-black font-mono text-slate-100 tabular-nums">{producedInShift}</p>
+              <p className="text-[11px] text-slate-400 mt-1">Aprovadas + reprovadas no turno</p>
             </div>
           </div>
 
-          {/* APROVADO */}
+          {/* APROVADAS */}
           <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-emerald-500/50 transition-colors">
             <div className="flex justify-between items-center">
-              <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Aprovado</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Aprovadas</span>
               <CheckCircle2 className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
@@ -200,10 +200,10 @@ export default function CollectionFullscreenKiosk({
             </div>
           </div>
 
-          {/* REPROVADO */}
+          {/* REPROVADAS */}
           <div className="bg-rose-950/40 border border-rose-500/30 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-rose-500/50 transition-colors">
             <div className="flex justify-between items-center">
-              <span className="text-xs font-bold uppercase tracking-wider text-rose-400">Reprovado</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-rose-400">Reprovadas</span>
               <XCircle className="w-5 h-5 text-rose-400" />
             </div>
             <div>
@@ -212,15 +212,15 @@ export default function CollectionFullscreenKiosk({
             </div>
           </div>
 
-          {/* PENDENTE */}
+          {/* BLOQUEADAS */}
           <div className="bg-amber-950/40 border border-amber-500/30 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-3 hover:border-amber-500/50 transition-colors">
             <div className="flex justify-between items-center">
-              <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Pendente</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Bloqueadas</span>
               <Clock className="w-5 h-5 text-amber-400" />
             </div>
             <div>
-              <p className="text-4xl sm:text-5xl font-black font-mono text-amber-400 tabular-nums">{pending}</p>
-              <p className="text-[11px] text-amber-300/70 mt-1">Peças aguardando bipagem</p>
+              <p className="text-4xl sm:text-5xl font-black font-mono text-amber-400 tabular-nums">{blocked}</p>
+              <p className="text-[11px] text-amber-300/70 mt-1">Leituras bloqueadas no turno</p>
             </div>
           </div>
         </section>
