@@ -1,0 +1,37 @@
+{
+  "at": "2026-09-26T14:36:43.601095+00:00",
+  "project": "uozuzdfvnufsjsonswag",
+  "migration": {
+    "name": "collection_latency_optimization",
+    "version": "20260926143631"
+  },
+  "ingress_hash": "aa4f5381ab5b7514c8d816b48af8f41e",
+  "immediate": {
+    "ready": true,
+    "transport": "immediate_v3",
+    "projection": "async_v3_outbox",
+    "ingress_rpc": "ingest_collection_batch_immediate_v3",
+    "schema_flags": {
+      "collection_immediate_rpc_owner": true,
+      "collection_immediate_rpc_exists": true,
+      "collection_immediate_rollout_all": true,
+      "collection_immediate_rpc_security": true,
+      "collection_immediate_batch_limit_5": true,
+      "collection_immediate_context_private": true,
+      "collection_immediate_projection_async": true,
+      "collection_immediate_decision_committed": true,
+      "collection_immediate_definition_approved": true
+    },
+    "release_version": "20260908_acprod_collection_immediate_decision_v3",
+    "snapshot_format": "collection_immediate_release_snapshot_v1",
+    "snapshot_status": "fresh",
+    "migration_version": "20260908154004",
+    "snapshot_expires_at": "2026-09-26T14:39:31.653349+00:00",
+    "gate_release_version": "20260913_acprod_collection_immediate_owner_gate_v1_1",
+    "snapshot_refreshed_at": "2026-09-26T14:36:31.653349+00:00",
+    "gate_migration_version": "20260913043419",
+    "max_events_per_request": 5
+  },
+  "pending_projection": 0,
+  "recent_errors": 0
+}

@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-26T14:33:38.849Z",
+  "release": "20260926143000_collection_latency_optimization.sql",
+  "passed": true,
+  "guards": {
+    "stage_snapshot": true,
+    "tracking_snapshot": true,
+    "cache_private": true,
+    "stage_private": true,
+    "tracking_invoker": true
+  },
+  "rollback_matches_baseline": true,
+  "lab_preserved": true,
+  "previous_ingress_hash": "90ffa0ee5c0f4b6b82c3a92a7d056bcf",
+  "reviewed_ingress_hash": "aa4f5381ab5b7514c8d816b48af8f41e"
+}
