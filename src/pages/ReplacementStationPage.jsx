@@ -160,7 +160,7 @@ function QueueCard({ item, informative = false, completed = false }) {
 
         <section className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           <InfoTile label="Lote geral" value={item.general_lot_code} mono />
-          <InfoTile label="Lote cliente" value={item.client_lot_code} mono />
+          <InfoTile label="Pedido" value={item.client_lot_code} mono />
           <InfoTile label="Pedido" value={item.order_number} mono />
           <InfoTile label="Cliente" value={item.customer_name} />
           <InfoTile label="Ambiente" value={item.environment_name} />
