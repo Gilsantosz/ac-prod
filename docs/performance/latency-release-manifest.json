@@ -1,5 +1,5 @@
 {
-  "release": "20260926143000_collection_latency_optimization.sql",
+  "release": "20260926143631_collection_latency_optimization.sql",
   "included": [
     "20260920153320_collection_projector_lock_order.sql",
     "20260920154917_collection_immediate_error_details.sql",
@@ -143,5 +143,7 @@
       "args": "",
       "md5": "555d430fd51f144d9ec01d8ace0db90e"
     }
-  ]
+  ],
+  "migration_sql_sha256": "be224e1b09ca183a6e7b5f75a40a6453c16a0b66449836a08ac6b92fb8af7a99",
+  "production_applied_at": "2026-09-26T14:36:31Z"
 }

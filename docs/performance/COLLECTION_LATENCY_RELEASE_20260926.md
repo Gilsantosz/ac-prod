@@ -2,7 +2,7 @@
 
 Esta entrega reduz a disputa entre a confirmação de uma coleta e a atualização dos painéis. As rotinas que atualizam lotes usam uma ordem consistente de bloqueios, reaproveitam cálculos por lote e restringem as consultas aos dados autorizados. Reenvios de uma coleta já confirmada leem a decisão gravada sem disputar novamente seu bloqueio exclusivo.
 
-A migração `20260926143000_collection_latency_optimization.sql` reúne 18 alterações ensaiadas em uma única transação, com verificação prévia de 19 definições e quatro políticas do banco real. O limite de espera por bloqueio durante a implantação é dois segundos. A reversão correspondente restaura as definições anteriores e preserva recibos, peças, apontamentos e filas de produção.
+A migração `20260926143631_collection_latency_optimization.sql` reúne 18 alterações ensaiadas em uma única transação, com verificação prévia de 19 definições e quatro políticas do banco real. O limite de espera por bloqueio durante a implantação é dois segundos. A reversão correspondente restaura as definições anteriores e preserva recibos, peças, apontamentos e filas de produção.
 
 ## Evidência de latência e integridade
 
@@ -44,3 +44,7 @@ Aplicar a migração transacional pelo gerenciamento de migrações do Supabase.
 Conferir `get_public_collection_immediate_release().ready`, os hashes revisados do manifesto, a ausência de erros recentes e a convergência dos registros. A publicação do repositório usa o workflow existente e mantém a versão mais recente da interface. Após a publicação, retomar a sequência formal de capacidade no ambiente isolado.
 
 Os resultados compactos estão em `evidence/latency-20260926`. O laboratório mantém as amostras brutas, o manifesto de fontes, os deltas SQL e os scripts de reprodução. O ensaio ponta a ponta de solicitar uma reposição ainda encontra uma divergência anterior de esquema (`replacement_orders.route_steps`); seu reparo e a homologação desse fluxo seguem pendentes. A regressão de gatilhos desta entrega usa uma fixture transacional e não declara aquele fluxo homologado.
+
+## Aplicação no ambiente hospedado
+
+Aplicada no projeto `ac-prod` em 26/09/2026 às 14:36:31 UTC, versão de migração `20260926143631`. O contrato de confirmação imediata retornou `ready=true`, com o hash revisado `aa4f5381ab5b7514c8d816b48af8f41e`. Os cinco lotes existentes receberam seus resumos derivados (35 linhas por etapa); os cinco resumos de rastreabilidade estavam atualizados. A conferência posterior encontrou zero projeções pendentes e zero erros recentes. Estes são testes de implantação, não prova de capacidade hospedada.
