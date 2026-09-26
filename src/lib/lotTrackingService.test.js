@@ -17,7 +17,7 @@ describe('lotTrackingService', () => {
     });
   });
 
-  it('preserva lote geral, lotes de clientes e etapas', () => {
+  it('preserva lote geral, pedidos e etapas', () => {
     const result = normalizeTrackingPayload({
       general_lots: [{
         general_lot_code: '15587',
