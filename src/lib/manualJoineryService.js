@@ -36,7 +36,7 @@ export function groupReadyJoineryPieces(pieces = [], lots = [], batches = []) {
     const current = grouped.get(groupId) || {
       id: groupId,
       lot_id: piece.lot_id || null,
-      lot_code: lot?.lot_code || piece.lot_code || 'Sem lote cliente',
+      lot_code: lot?.lot_code || piece.lot_code || 'Sem pedido',
       current_stage: 'joinery',
       status: lot?.status || 'in_progress',
       general_lot_code: batch?.general_lot_code || null,
