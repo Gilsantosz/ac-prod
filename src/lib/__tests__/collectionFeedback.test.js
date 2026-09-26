@@ -106,6 +106,31 @@ describe('apresentação de recibos e lotes da coleta', () => {
       .toMatchObject({ generalLot: { general_lot_code: 'GER-002' }, clientLotCode: 'CLI-002' });
   });
 
+  it('mantém o atendimento do pedido quando o contexto ativo vem sem progresso', () => {
+    expect(resolveCollectionLotContext({
+      feedback: { client_event_id: 'event-2', collection_state: 'BLOCKED_DUPLICATE' },
+      activeGeneralLots: [{
+        id: 'batch-2',
+        general_lot_code: 'GER-002',
+        lot_id: 'client-lot-2',
+        lot_code: 'CLI-002',
+        progress_percent: 42.5,
+      }],
+      activeContext: {
+        active_pcp_import_batch_id: 'batch-2',
+        active_general_lot_code: 'GER-002',
+        active_lot_id: 'client-lot-2',
+        active_lot_code: 'CLI-002',
+        progress_percent: null,
+      },
+      preferActiveContext: true,
+    })).toMatchObject({
+      generalLot: { general_lot_code: 'GER-002' },
+      clientLotCode: 'CLI-002',
+      clientLotProgress: 42.5,
+    });
+  });
+
   it('remove o filtro do lote antigo ao reconciliar o snapshot autoritativo', () => {
     expect(resolveCollectionKpiBatchId({
       preferSnapshot: true,
