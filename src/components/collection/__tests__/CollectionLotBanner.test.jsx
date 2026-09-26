@@ -7,7 +7,7 @@ describe('lotes em ambos os modos da coleta', () => {
     render(<CollectionLotBanner focus={focus} clientLotCode="CLI-001" />);
     expect(screen.getByText('Lote Geral')).toBeInTheDocument();
     expect(screen.getByText('Pedido')).toBeInTheDocument();
-    expect(screen.getByText('Andamento do Pedido')).toBeInTheDocument();
+    expect(screen.getByText('Atendimento do Pedido')).toBeInTheDocument();
     expect(screen.getByText('CLI-001')).toBeInTheDocument();
     expect(screen.getByText('Aguardando identificação')).toBeInTheDocument();
     expect(screen.getByText('—')).toBeInTheDocument();
@@ -20,5 +20,11 @@ describe('lotes em ambos os modos da coleta', () => {
     expect(screen.getByText('CLI-001')).toBeInTheDocument();
     expect(screen.getByText('Cliente A')).toBeInTheDocument();
     expect(screen.getByText('70,8%')).toBeInTheDocument();
+  });
+
+  it('prioriza a porcentagem de atendimento do pedido quando informada', () => {
+    render(<CollectionLotBanner generalLot={{ general_lot_code: 'GER-001', progress_percent: 70.83 }} clientLotCode="CLI-001" clientLotProgress={42.5} />);
+    expect(screen.getByText('42,5%')).toBeInTheDocument();
+    expect(screen.queryByText('70,8%')).not.toBeInTheDocument();
   });
 });
